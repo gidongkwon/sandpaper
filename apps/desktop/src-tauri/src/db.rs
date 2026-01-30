@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub struct Database {
     conn: Connection,
@@ -150,6 +150,38 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }];
 
 #[derive(Debug, PartialEq)]
+pub struct PageRecord {
+    pub id: i64,
+    pub uid: String,
+    pub title: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BlockRecord {
+    pub id: i64,
+    pub uid: String,
+    pub page_id: i64,
+    pub parent_id: Option<i64>,
+    pub sort_key: String,
+    pub text: String,
+    pub props: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TagRecord {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct EdgeRecord {
+    pub id: i64,
+    pub from_block_id: i64,
+    pub to_block_uid: String,
+    pub kind: String,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct SyncOp {
     pub id: i64,
     pub op_id: String,
@@ -223,6 +255,28 @@ impl Database {
         Ok(())
     }
 
+    pub fn get_page_by_uid(&self, uid: &str) -> rusqlite::Result<Option<PageRecord>> {
+        self.conn
+            .query_row(
+                "SELECT id, uid, title FROM pages WHERE uid = ?1",
+                [uid],
+                |row| {
+                    Ok(PageRecord {
+                        id: row.get(0)?,
+                        uid: row.get(1)?,
+                        title: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    pub fn delete_page(&self, page_id: i64) -> rusqlite::Result<()> {
+        self.conn
+            .execute("DELETE FROM pages WHERE id = ?1", [page_id])?;
+        Ok(())
+    }
+
     pub fn insert_block(
         &self,
         page_id: i64,
@@ -248,6 +302,40 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_block_position(
+        &self,
+        block_id: i64,
+        parent_id: Option<i64>,
+        sort_key: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE blocks SET parent_id = ?1, sort_key = ?2, updated_at = strftime('%s','now')
+             WHERE id = ?3",
+            params![parent_id, sort_key, block_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_block(&self, block_id: i64) -> rusqlite::Result<Option<BlockRecord>> {
+        self.conn
+            .query_row(
+                "SELECT id, uid, page_id, parent_id, sort_key, text, props FROM blocks WHERE id = ?1",
+                [block_id],
+                |row| {
+                    Ok(BlockRecord {
+                        id: row.get(0)?,
+                        uid: row.get(1)?,
+                        page_id: row.get(2)?,
+                        parent_id: row.get(3)?,
+                        sort_key: row.get(4)?,
+                        text: row.get(5)?,
+                        props: row.get(6)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
     pub fn delete_block(&self, block_id: i64) -> rusqlite::Result<()> {
         self.conn
             .execute("DELETE FROM blocks WHERE id = ?1", [block_id])?;
@@ -268,6 +356,94 @@ impl Database {
         )?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
+    }
+
+    pub fn upsert_tag(&self, name: &str) -> rusqlite::Result<TagRecord> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+            [name],
+        )?;
+
+        self.conn.query_row(
+            "SELECT id, name FROM tags WHERE name = ?1",
+            [name],
+            |row| {
+                Ok(TagRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                })
+            },
+        )
+    }
+
+    pub fn attach_tag(&self, block_id: i64, tag_id: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO block_tags (block_id, tag_id) VALUES (?1, ?2)",
+            params![block_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn detach_tag(&self, block_id: i64, tag_id: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM block_tags WHERE block_id = ?1 AND tag_id = ?2",
+            params![block_id, tag_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_tags_for_block(&self, block_id: i64) -> rusqlite::Result<Vec<TagRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.id, t.name
+             FROM tags t
+             INNER JOIN block_tags bt ON bt.tag_id = t.id
+             WHERE bt.block_id = ?1
+             ORDER BY t.name ASC",
+        )?;
+        let rows = stmt.query_map([block_id], |row| {
+            Ok(TagRecord {
+                id: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn insert_edge(
+        &self,
+        from_block_id: i64,
+        to_block_uid: &str,
+        kind: &str,
+    ) -> rusqlite::Result<i64> {
+        self.conn.execute(
+            "INSERT INTO edges (from_block_id, to_block_uid, kind) VALUES (?1, ?2, ?3)",
+            params![from_block_id, to_block_uid, kind],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn list_edges_from_block(&self, from_block_id: i64) -> rusqlite::Result<Vec<EdgeRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, from_block_id, to_block_uid, kind
+             FROM edges
+             WHERE from_block_id = ?1
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([from_block_id], |row| {
+            Ok(EdgeRecord {
+                id: row.get(0)?,
+                from_block_id: row.get(1)?,
+                to_block_uid: row.get(2)?,
+                kind: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_edge(&self, edge_id: i64) -> rusqlite::Result<()> {
+        self.conn
+            .execute("DELETE FROM edges WHERE id = ?1", [edge_id])?;
+        Ok(())
     }
 
     pub fn insert_sync_op(
@@ -428,6 +604,78 @@ mod tests {
 
         let results = db.search_pages("Archive").expect("search after update");
         assert_eq!(results, vec![page_id]);
+    }
+
+    #[test]
+    fn crud_pages_blocks_tags_edges() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db
+            .insert_page("page-uid", "Inbox")
+            .expect("insert page");
+        let page = db
+            .get_page_by_uid("page-uid")
+            .expect("get page")
+            .expect("page exists");
+        assert_eq!(page.title, "Inbox");
+
+        db.update_page_title(page_id, "Archive")
+            .expect("update page");
+        let page = db
+            .get_page_by_uid("page-uid")
+            .expect("get page")
+            .expect("page exists");
+        assert_eq!(page.title, "Archive");
+
+        let parent_id = db
+            .insert_block(page_id, "parent-uid", None, "a", "Parent", "{}")
+            .expect("insert parent");
+        let child_id = db
+            .insert_block(page_id, "child-uid", Some(parent_id), "a", "Child", "{}")
+            .expect("insert child");
+
+        let child = db.get_block(child_id).expect("get child").expect("child");
+        assert_eq!(child.parent_id, Some(parent_id));
+        assert_eq!(child.sort_key, "a");
+
+        db.update_block_text(child_id, "Child updated")
+            .expect("update block");
+        db.update_block_position(child_id, None, "b")
+            .expect("move block");
+
+        let child = db.get_block(child_id).expect("get child").expect("child");
+        assert_eq!(child.parent_id, None);
+        assert_eq!(child.sort_key, "b");
+        assert_eq!(child.text, "Child updated");
+
+        let tag = db.upsert_tag("todo").expect("upsert tag");
+        db.attach_tag(child_id, tag.id).expect("attach tag");
+        let tags = db.list_tags_for_block(child_id).expect("list tags");
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].id, tag.id);
+        assert_eq!(tags[0].name, tag.name);
+
+        db.detach_tag(child_id, tag.id).expect("detach tag");
+        let tags = db.list_tags_for_block(child_id).expect("list tags");
+        assert!(tags.is_empty());
+
+        let edge_id = db
+            .insert_edge(child_id, "target-uid", "ref")
+            .expect("insert edge");
+        let edges = db.list_edges_from_block(child_id).expect("list edges");
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].to_block_uid, "target-uid");
+
+        db.delete_edge(edge_id).expect("delete edge");
+        let edges = db.list_edges_from_block(child_id).expect("list edges");
+        assert!(edges.is_empty());
+
+        db.delete_page(page_id).expect("delete page");
+        let page = db.get_page_by_uid("page-uid").expect("get page");
+        assert!(page.is_none());
+        let child = db.get_block(child_id).expect("get child");
+        assert!(child.is_none());
     }
 
     #[test]
