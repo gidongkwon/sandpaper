@@ -4,6 +4,17 @@ pub struct Database {
     conn: Connection,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct SyncOp {
+    pub id: i64,
+    pub op_id: String,
+    pub page_id: i64,
+    pub device_id: String,
+    pub op_type: String,
+    pub payload: Vec<u8>,
+    pub created_at: i64,
+}
+
 impl Database {
     pub fn new_in_memory() -> rusqlite::Result<Self> {
         let conn = Connection::open_in_memory()?;
@@ -62,7 +73,21 @@ impl Database {
                 VALUES ('delete', old.id, old.content);
                 INSERT INTO blocks_fts(rowid, content)
                 VALUES (new.id, new.content);
-            END;",
+            END;
+
+            CREATE TABLE IF NOT EXISTS sync_ops (
+                id INTEGER PRIMARY KEY,
+                op_id TEXT NOT NULL UNIQUE,
+                page_id INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                op_type TEXT NOT NULL,
+                payload BLOB NOT NULL,
+                created_at INTEGER DEFAULT (strftime('%s','now')),
+                FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS sync_ops_page_created_at
+              ON sync_ops(page_id, created_at);",
         )?;
 
         let applied: i64 = self
@@ -118,6 +143,45 @@ impl Database {
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
     }
+
+    pub fn insert_sync_op(
+        &self,
+        page_id: i64,
+        op_id: &str,
+        device_id: &str,
+        op_type: &str,
+        payload: &[u8],
+    ) -> rusqlite::Result<i64> {
+        self.conn.execute(
+            "INSERT INTO sync_ops (op_id, page_id, device_id, op_type, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![op_id, page_id, device_id, op_type, payload],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn list_sync_ops_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<SyncOp>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, op_id, page_id, device_id, op_type, payload, created_at
+             FROM sync_ops
+             WHERE page_id = ?1
+             ORDER BY created_at ASC, id ASC",
+        )?;
+
+        let rows = stmt.query_map([page_id], |row| {
+            Ok(SyncOp {
+                id: row.get(0)?,
+                op_id: row.get(1)?,
+                page_id: row.get(2)?,
+                device_id: row.get(3)?,
+                op_type: row.get(4)?,
+                payload: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+
+        rows.collect()
+    }
 }
 
 #[cfg(test)]
@@ -131,7 +195,10 @@ mod tests {
 
         let tables = db
             .conn
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('pages', 'blocks')")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'table'
+                 AND name IN ('pages', 'blocks', 'sync_ops')",
+            )
             .and_then(|mut stmt| {
                 let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
                 rows.collect::<rusqlite::Result<Vec<String>>>()
@@ -140,6 +207,7 @@ mod tests {
 
         assert!(tables.contains(&"pages".to_string()));
         assert!(tables.contains(&"blocks".to_string()));
+        assert!(tables.contains(&"sync_ops".to_string()));
     }
 
     #[test]
@@ -166,5 +234,41 @@ mod tests {
         db.delete_block(block_id).expect("delete block");
         let results = db.search_blocks("goodbye").expect("search after delete");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn sync_ops_persisted_per_page() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("Sync page").expect("insert page");
+
+        let payload = br#"{\"kind\":\"add\",\"block\":\"b1\"}"#;
+        db.insert_sync_op(page_id, "op-1", "device-1", "add", payload)
+            .expect("insert op");
+
+        let ops = db
+            .list_sync_ops_for_page(page_id)
+            .expect("list ops");
+
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].op_id, "op-1");
+        assert_eq!(ops[0].op_type, "add");
+        assert_eq!(ops[0].payload, payload);
+    }
+
+    #[test]
+    fn sync_ops_enforce_unique_ids() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("Sync page").expect("insert page");
+        let payload = br#"{\"kind\":\"edit\",\"block\":\"b1\"}"#;
+
+        db.insert_sync_op(page_id, "op-1", "device-1", "edit", payload)
+            .expect("insert op");
+        let result = db.insert_sync_op(page_id, "op-1", "device-1", "edit", payload);
+
+        assert!(result.is_err());
     }
 }

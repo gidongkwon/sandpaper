@@ -96,9 +96,9 @@ Checklist
 - [x] Shadow Markdown: deterministic page -> Markdown serialization
 - [x] Shadow Markdown: inline block ID format (`^block-id`)
 - [x] Shadow Markdown: batch writer (idle or N seconds)
-- [ ] Sync POC: block-level ops (add/move/edit/delete)
-- [ ] Sync POC: per-page op persistence in SQLite
-- [ ] Sync POC: encrypt ops client-side (passphrase-derived key)
+- [x] Sync POC: block-level ops (add/move/edit/delete)
+- [x] Sync POC: per-page op persistence in SQLite
+- [x] Sync POC: encrypt ops client-side (passphrase-derived key)
 
 Implementation details
 - Editor: keep virtualization logic in `apps/desktop/src/editor/virtual-list.ts` and wire it via a `VirtualList` adapter in the main editor view.
