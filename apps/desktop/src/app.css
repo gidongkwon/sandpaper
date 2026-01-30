@@ -1,0 +1,144 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Instrument+Sans:wght@400;500;600&display=swap");
+
+:root {
+  --ink: #1e1a16;
+  --ink-soft: #5c4f45;
+  --paper: #f5efe5;
+  --paper-2: #eadfd2;
+  --accent: #c3742f;
+  --accent-soft: #d9b38f;
+  --outline: rgba(90, 74, 62, 0.2);
+  --shadow: 0 14px 36px rgba(70, 52, 40, 0.18);
+
+  font-family: "Instrument Sans", "Avenir Next", sans-serif;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(900px 600px at 12% 8%, #fbf7f1 0%, #efe4d7 58%, #e4d7c7 100%),
+    repeating-linear-gradient(90deg, rgba(122, 94, 74, 0.06) 0 1px, transparent 1px 140px),
+    repeating-linear-gradient(0deg, rgba(122, 94, 74, 0.05) 0 1px, transparent 1px 140px);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 36px 44px 50px;
+  gap: 28px;
+}
+
+.topbar {
+  display: grid;
+  gap: 6px;
+}
+
+.topbar__title {
+  font-family: "Fraunces", "Georgia", serif;
+  font-size: 30px;
+  letter-spacing: 0.02em;
+}
+
+.topbar__subtitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.24em;
+  color: var(--ink-soft);
+}
+
+.topbar__meta {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.editor {
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--outline);
+  border-radius: 18px;
+  padding: 22px 24px 28px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.block {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+  animation: rise 280ms ease both;
+  animation-delay: calc(var(--i) * 18ms);
+}
+
+.block__bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-top: 12px;
+  background: radial-gradient(circle at 30% 30%, #f6e2cc, #c8742f 60%, #7a4c2a 100%);
+  opacity: 0.6;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(208, 168, 124, 0.3);
+}
+
+.block__input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font: 15px/1.5 "Instrument Sans", "Avenir Next", sans-serif;
+  color: var(--ink);
+  outline: none;
+  resize: none;
+  min-height: 32px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.block__input::placeholder {
+  color: #9b8e84;
+}
+
+.block.is-active .block__input {
+  border-color: rgba(90, 74, 62, 0.4);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 3px rgba(195, 116, 47, 0.22);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .app {
+    padding: 20px;
+  }
+
+  .editor {
+    padding: 18px;
+  }
+}
