@@ -89,7 +89,7 @@ If you prefer a single-app repo, we can collapse into `src/` plus `server/`.
 Checklist
 - [x] Editor prototype: minimal outline editor in Solid
 - [x] Editor prototype: virtualized rendering for 10k-100k blocks
-- [ ] Editor prototype: latency profiling (<16ms) and scroll performance
+- [x] Editor prototype: latency profiling (<16ms) and scroll performance
 - [x] DB & FTS spike: SQLite schema + FTS5
 - [x] DB & FTS spike: search latency at 100k notes
 - [x] DB & FTS spike: incremental updates on every block write

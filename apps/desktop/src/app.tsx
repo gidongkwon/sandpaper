@@ -1,5 +1,10 @@
 import { For, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import {
+  createFpsMeter,
+  createPerfTracker,
+  type PerfStats
+} from "./editor/perf";
 import { getVirtualRange } from "./editor/virtual-list";
 import "./app.css";
 
@@ -33,8 +38,31 @@ function App() {
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [scrollTop, setScrollTop] = createSignal(0);
   const [viewportHeight, setViewportHeight] = createSignal(0);
+  const [perfEnabled, setPerfEnabled] = createSignal(false);
+  const [perfStats, setPerfStats] = createSignal<PerfStats>({
+    count: 0,
+    last: null,
+    p50: null,
+    p95: null
+  });
+  const [scrollFps, setScrollFps] = createSignal(0);
   const inputRefs = new Map<string, HTMLTextAreaElement>();
   let editorRef: HTMLDivElement | undefined;
+  const perfTracker = createPerfTracker({
+    maxSamples: 160,
+    onSample: () => {
+      if (perfEnabled()) {
+        setPerfStats(perfTracker.getStats());
+      }
+    }
+  });
+  const scrollMeter = createFpsMeter({
+    onUpdate: (fps) => {
+      if (perfEnabled()) {
+        setScrollFps(fps);
+      }
+    }
+  });
 
   const range = createMemo(() =>
     getVirtualRange({
@@ -55,8 +83,20 @@ function App() {
     if (!activeId() && blocks.length > 0) {
       setActiveId(blocks[0].id);
     }
+    const perfFlag =
+      new URLSearchParams(window.location.search).has("perf") ||
+      localStorage.getItem("sandpaper:perf") === "1";
+    setPerfEnabled(perfFlag);
+    if (perfFlag) {
+      setPerfStats(perfTracker.getStats());
+    }
 
-    const handleScroll = () => setScrollTop(editorRef?.scrollTop ?? 0);
+    const handleScroll = () => {
+      setScrollTop(editorRef?.scrollTop ?? 0);
+      if (perfEnabled()) {
+        scrollMeter.notifyScroll();
+      }
+    };
     editorRef.addEventListener("scroll", handleScroll);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -68,6 +108,7 @@ function App() {
     onCleanup(() => {
       editorRef?.removeEventListener("scroll", handleScroll);
       resizeObserver.disconnect();
+      scrollMeter.dispose();
     });
   });
 
@@ -129,6 +170,11 @@ function App() {
     focusBlock(target.id, direction === -1 ? "end" : "start");
   };
 
+  const recordLatency = (label: string) => {
+    if (!perfEnabled()) return;
+    perfTracker.mark(label);
+  };
+
   const handleKeyDown = (block: Block, index: number, event: KeyboardEvent) => {
     const target = event.currentTarget as HTMLTextAreaElement;
     const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
@@ -138,12 +184,14 @@ function App() {
 
     if (event.key === "Enter") {
       event.preventDefault();
+      recordLatency("insert");
       insertBlockAfter(index, block.indent);
       return;
     }
 
     if (event.key === "Tab") {
       event.preventDefault();
+      recordLatency("indent");
       const delta = event.shiftKey ? -1 : 1;
       const nextIndent = Math.max(0, block.indent + delta);
       setBlocks(index, "indent", nextIndent);
@@ -152,6 +200,7 @@ function App() {
 
     if (event.key === "Backspace" && block.text.length === 0) {
       event.preventDefault();
+      recordLatency("delete");
       removeBlockAt(index);
       return;
     }
@@ -170,6 +219,23 @@ function App() {
 
   return (
     <div class="app">
+      {perfEnabled() && (
+        <aside class="perf-hud">
+          <div class="perf-hud__title">Perf</div>
+          <div class="perf-hud__row">
+            Input p50 <span>{perfStats().p50?.toFixed(1) ?? "--"}ms</span>
+          </div>
+          <div class="perf-hud__row">
+            Input p95 <span>{perfStats().p95?.toFixed(1) ?? "--"}ms</span>
+          </div>
+          <div class="perf-hud__row">
+            Scroll <span>{scrollFps()} fps</span>
+          </div>
+          <div class="perf-hud__row">
+            Samples <span>{perfStats().count}</span>
+          </div>
+        </aside>
+      )}
       <header class="topbar">
         <div class="topbar__title">Sandpaper</div>
         <div class="topbar__subtitle">Outline prototype</div>
@@ -204,9 +270,10 @@ function App() {
                       placeholder="Write something..."
                       spellcheck={true}
                       onFocus={() => setActiveId(block.id)}
-                      onInput={(event) =>
-                        setBlocks(blockIndex(), "text", event.currentTarget.value)
-                      }
+                      onInput={(event) => {
+                        recordLatency("input");
+                        setBlocks(blockIndex(), "text", event.currentTarget.value);
+                      }}
                       onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                     />
                   </div>

@@ -122,6 +122,41 @@ body {
   box-shadow: 0 0 0 3px rgba(195, 116, 47, 0.22);
 }
 
+.perf-hud {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  min-width: 160px;
+  border-radius: 12px;
+  background: rgba(30, 26, 22, 0.88);
+  color: #f7f2ec;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  box-shadow: 0 16px 36px rgba(30, 26, 22, 0.28);
+  z-index: 10;
+}
+
+.perf-hud__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: #e6d3c2;
+}
+
+.perf-hud__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.perf-hud__row span {
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -140,5 +175,10 @@ body {
 
   .editor {
     padding: 18px;
+  }
+
+  .perf-hud {
+    top: 12px;
+    right: 12px;
   }
 }
