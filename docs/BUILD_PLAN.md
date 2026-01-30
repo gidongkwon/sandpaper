@@ -137,7 +137,7 @@ Exit criteria
 
 Checklist
 - [ ] App shell: Tauri v2 desktop app
-- [ ] Mode switcher: Quick Capture / Editor / Review
+- [x] Mode switcher: Quick Capture / Editor / Review
 - [ ] Vault management: create/select vault
 - [ ] Vault management: multi-vault, no cross-vault links
 - [ ] Vault management: config stored in local app data
@@ -146,7 +146,7 @@ Checklist
 - [x] SQLite core: FTS5 updates on write
 - [x] Editor core: outline ops (split/merge/indent/outdent/move)
 - [ ] Editor core: block refs + backlinks
-- [ ] Editor core: multi-pane editor (2-3 panes)
+- [x] Editor core: multi-pane editor (2-3 panes)
 - [ ] Search: left panel (FTS + filters)
 - [ ] Navigation: open results in editor panes
 - [ ] Shadow Markdown: batched writer (idle or timer)
