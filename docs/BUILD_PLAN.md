@@ -141,7 +141,7 @@ Checklist
 - [ ] Vault management: create/select vault
 - [ ] Vault management: multi-vault, no cross-vault links
 - [ ] Vault management: config stored in local app data
-- [ ] SQLite core: schema + migrations
+- [x] SQLite core: schema + migrations
 - [ ] SQLite core: CRUD for pages/blocks/tags/edges
 - [ ] SQLite core: FTS5 updates on write
 - [ ] Editor core: outline ops (split/merge/indent/outdent/move)

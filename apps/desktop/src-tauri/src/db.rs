@@ -4,6 +4,151 @@ pub struct Database {
     conn: Connection,
 }
 
+pub struct Migration {
+    pub version: i64,
+    pub name: &'static str,
+    pub up: &'static str,
+}
+
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    name: "init",
+    up: "CREATE TABLE IF NOT EXISTS pages (
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            title TEXT NOT NULL,
+            created_at INTEGER DEFAULT (strftime('%s','now')),
+            updated_at INTEGER DEFAULT (strftime('%s','now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS blocks (
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            page_id INTEGER NOT NULL,
+            parent_id INTEGER,
+            sort_key TEXT NOT NULL,
+            text TEXT NOT NULL,
+            props TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER DEFAULT (strftime('%s','now')),
+            updated_at INTEGER DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+            FOREIGN KEY (parent_id) REFERENCES blocks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS edges (
+            id INTEGER PRIMARY KEY,
+            from_block_id INTEGER NOT NULL,
+            to_block_uid TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            created_at INTEGER DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (from_block_id) REFERENCES blocks(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS block_tags (
+            block_id INTEGER NOT NULL,
+            tag_id INTEGER NOT NULL,
+            PRIMARY KEY (block_id, tag_id),
+            FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE,
+            FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS assets (
+            id INTEGER PRIMARY KEY,
+            hash TEXT UNIQUE NOT NULL,
+            path TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            created_at INTEGER DEFAULT (strftime('%s','now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS kv (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS plugin_perms (
+            plugin_id TEXT NOT NULL,
+            permission TEXT NOT NULL,
+            granted_at INTEGER DEFAULT (strftime('%s','now')),
+            PRIMARY KEY (plugin_id, permission)
+        );
+
+        CREATE TABLE IF NOT EXISTS sync_ops (
+            id INTEGER PRIMARY KEY,
+            op_id TEXT NOT NULL UNIQUE,
+            page_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL,
+            op_type TEXT NOT NULL,
+            payload BLOB NOT NULL,
+            created_at INTEGER DEFAULT (strftime('%s','now')),
+            FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS blocks_page_sort
+          ON blocks(page_id, sort_key);
+        CREATE INDEX IF NOT EXISTS blocks_parent_sort
+          ON blocks(parent_id, sort_key);
+        CREATE INDEX IF NOT EXISTS edges_from
+          ON edges(from_block_id);
+        CREATE INDEX IF NOT EXISTS edges_to
+          ON edges(to_block_uid);
+        CREATE INDEX IF NOT EXISTS block_tags_tag
+          ON block_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS sync_ops_page_created_at
+          ON sync_ops(page_id, created_at);
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
+            text,
+            content='blocks',
+            content_rowid='id'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS blocks_fts_insert AFTER INSERT ON blocks BEGIN
+            INSERT INTO blocks_fts(rowid, text)
+            VALUES (new.id, new.text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS blocks_fts_delete AFTER DELETE ON blocks BEGIN
+            INSERT INTO blocks_fts(blocks_fts, rowid, text)
+            VALUES ('delete', old.id, old.text);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS blocks_fts_update AFTER UPDATE ON blocks BEGIN
+            INSERT INTO blocks_fts(blocks_fts, rowid, text)
+            VALUES ('delete', old.id, old.text);
+            INSERT INTO blocks_fts(rowid, text)
+            VALUES (new.id, new.text);
+        END;
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
+            title,
+            content='pages',
+            content_rowid='id'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS pages_fts_insert AFTER INSERT ON pages BEGIN
+            INSERT INTO pages_fts(rowid, title)
+            VALUES (new.id, new.title);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS pages_fts_delete AFTER DELETE ON pages BEGIN
+            INSERT INTO pages_fts(pages_fts, rowid, title)
+            VALUES ('delete', old.id, old.title);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS pages_fts_update AFTER UPDATE ON pages BEGIN
+            INSERT INTO pages_fts(pages_fts, rowid, title)
+            VALUES ('delete', old.id, old.title);
+            INSERT INTO pages_fts(rowid, title)
+            VALUES (new.id, new.title);
+        END;",
+}];
+
 #[derive(Debug, PartialEq)]
 pub struct SyncOp {
     pub id: i64,
@@ -22,7 +167,9 @@ impl Database {
             "PRAGMA foreign_keys = ON;
              PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
-             PRAGMA temp_store = MEMORY;",
+             PRAGMA temp_store = MEMORY;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA cache_size = -64000;",
         )?;
         Ok(Self { conn })
     }
@@ -33,99 +180,70 @@ impl Database {
                 version INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS pages (
-                id INTEGER PRIMARY KEY,
-                title TEXT NOT NULL,
-                created_at INTEGER DEFAULT (strftime('%s','now')),
-                updated_at INTEGER DEFAULT (strftime('%s','now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS blocks (
-                id INTEGER PRIMARY KEY,
-                uid TEXT UNIQUE NOT NULL,
-                page_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                created_at INTEGER DEFAULT (strftime('%s','now')),
-                updated_at INTEGER DEFAULT (strftime('%s','now')),
-                FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
-                content,
-                content='blocks',
-                content_rowid='id'
-            );
-
-            CREATE TRIGGER IF NOT EXISTS blocks_fts_insert AFTER INSERT ON blocks BEGIN
-                INSERT INTO blocks_fts(rowid, content)
-                VALUES (new.id, new.content);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS blocks_fts_delete AFTER DELETE ON blocks BEGIN
-                INSERT INTO blocks_fts(blocks_fts, rowid, content)
-                VALUES ('delete', old.id, old.content);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS blocks_fts_update AFTER UPDATE ON blocks BEGIN
-                INSERT INTO blocks_fts(blocks_fts, rowid, content)
-                VALUES ('delete', old.id, old.content);
-                INSERT INTO blocks_fts(rowid, content)
-                VALUES (new.id, new.content);
-            END;
-
-            CREATE TABLE IF NOT EXISTS sync_ops (
-                id INTEGER PRIMARY KEY,
-                op_id TEXT NOT NULL UNIQUE,
-                page_id INTEGER NOT NULL,
-                device_id TEXT NOT NULL,
-                op_type TEXT NOT NULL,
-                payload BLOB NOT NULL,
-                created_at INTEGER DEFAULT (strftime('%s','now')),
-                FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS sync_ops_page_created_at
-              ON sync_ops(page_id, created_at);",
+            );",
         )?;
 
-        let applied: i64 = self
+        let current_version: i64 = self
             .conn
             .query_row(
-                "SELECT COUNT(1) FROM schema_migrations WHERE version = ?1",
-                [1],
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                [],
                 |row| row.get(0),
-            )?;
+            )
+            .unwrap_or(0);
 
-        if applied == 0 {
-            self.conn.execute(
-                "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
-                params![1, "init"],
-            )?;
+        for migration in MIGRATIONS {
+            if migration.version > current_version {
+                let tx = self.conn.unchecked_transaction()?;
+                tx.execute_batch(migration.up)?;
+                tx.execute(
+                    "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+                    params![migration.version, migration.name],
+                )?;
+                tx.commit()?;
+            }
         }
 
         Ok(())
     }
 
-    pub fn insert_page(&self, title: &str) -> rusqlite::Result<i64> {
-        self.conn
-            .execute("INSERT INTO pages (title) VALUES (?1)", [title])?;
-        Ok(self.conn.last_insert_rowid())
-    }
-
-    pub fn insert_block(&self, page_id: i64, uid: &str, content: &str) -> rusqlite::Result<i64> {
+    pub fn insert_page(&self, uid: &str, title: &str) -> rusqlite::Result<i64> {
         self.conn.execute(
-            "INSERT INTO blocks (uid, page_id, content) VALUES (?1, ?2, ?3)",
-            params![uid, page_id, content],
+            "INSERT INTO pages (uid, title) VALUES (?1, ?2)",
+            params![uid, title],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn update_block_content(&self, block_id: i64, content: &str) -> rusqlite::Result<()> {
+    pub fn update_page_title(&self, page_id: i64, title: &str) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE blocks SET content = ?1, updated_at = strftime('%s','now') WHERE id = ?2",
-            params![content, block_id],
+            "UPDATE pages SET title = ?1, updated_at = strftime('%s','now') WHERE id = ?2",
+            params![title, page_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn insert_block(
+        &self,
+        page_id: i64,
+        uid: &str,
+        parent_id: Option<i64>,
+        sort_key: &str,
+        text: &str,
+        props: &str,
+    ) -> rusqlite::Result<i64> {
+        self.conn.execute(
+            "INSERT INTO blocks (uid, page_id, parent_id, sort_key, text, props)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![uid, page_id, parent_id, sort_key, text, props],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn update_block_text(&self, block_id: i64, text: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE blocks SET text = ?1, updated_at = strftime('%s','now') WHERE id = ?2",
+            params![text, block_id],
         )?;
         Ok(())
     }
@@ -139,6 +257,14 @@ impl Database {
     pub fn search_blocks(&self, query: &str) -> rusqlite::Result<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?1 ORDER BY rowid",
+        )?;
+        let rows = stmt.query_map([query], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    pub fn search_pages(&self, query: &str) -> rusqlite::Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?1 ORDER BY rowid",
         )?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
@@ -188,26 +314,76 @@ impl Database {
 mod tests {
     use super::Database;
 
+    fn table_exists(db: &Database, name: &str) -> bool {
+        db.conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                [name],
+                |_row| Ok(1),
+            )
+            .is_ok()
+    }
+
+    fn table_columns(db: &Database, name: &str) -> Vec<String> {
+        let allowed = match name {
+            "blocks" | "pages" | "edges" | "tags" | "block_tags" | "assets" | "kv"
+            | "plugin_perms" | "sync_ops" => name,
+            _ => panic!("unsupported table name"),
+        };
+        let query = format!("PRAGMA table_info({})", allowed);
+        let mut stmt = db.conn.prepare(&query).expect("table info");
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("table info rows");
+        rows.collect::<rusqlite::Result<Vec<String>>>()
+            .expect("table info collect")
+    }
+
     #[test]
     fn migrations_create_schema() {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let tables = db
-            .conn
-            .prepare(
-                "SELECT name FROM sqlite_master WHERE type = 'table'
-                 AND name IN ('pages', 'blocks', 'sync_ops')",
-            )
-            .and_then(|mut stmt| {
-                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-                rows.collect::<rusqlite::Result<Vec<String>>>()
-            })
-            .expect("table query");
+        let expected_tables = [
+            "pages",
+            "blocks",
+            "edges",
+            "tags",
+            "block_tags",
+            "assets",
+            "kv",
+            "plugin_perms",
+            "sync_ops",
+            "blocks_fts",
+            "pages_fts",
+        ];
 
-        assert!(tables.contains(&"pages".to_string()));
-        assert!(tables.contains(&"blocks".to_string()));
-        assert!(tables.contains(&"sync_ops".to_string()));
+        for table in expected_tables {
+            assert!(table_exists(&db, table), "missing table {table}");
+        }
+    }
+
+    #[test]
+    fn blocks_table_has_columns() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let columns = table_columns(&db, "blocks");
+        let expected = [
+            "id",
+            "uid",
+            "page_id",
+            "parent_id",
+            "sort_key",
+            "text",
+            "props",
+            "created_at",
+            "updated_at",
+        ];
+
+        for column in expected {
+            assert!(columns.contains(&column.to_string()), "missing {column}");
+        }
     }
 
     #[test]
@@ -215,15 +391,15 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("Test page").expect("insert page");
+        let page_id = db.insert_page("page-uid", "Test page").expect("insert page");
         let block_id = db
-            .insert_block(page_id, "b-1", "hello world")
+            .insert_block(page_id, "block-uid", None, "a", "hello world", "{}")
             .expect("insert block");
 
         let results = db.search_blocks("hello").expect("search");
         assert_eq!(results, vec![block_id]);
 
-        db.update_block_content(block_id, "goodbye world")
+        db.update_block_text(block_id, "goodbye world")
             .expect("update block");
         let results = db.search_blocks("hello").expect("search after update");
         assert!(results.is_empty());
@@ -237,11 +413,29 @@ mod tests {
     }
 
     #[test]
+    fn pages_fts_updates_on_update() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-uid", "Daily Notes").expect("insert page");
+        let results = db.search_pages("Daily").expect("search");
+        assert_eq!(results, vec![page_id]);
+
+        db.update_page_title(page_id, "Archive")
+            .expect("update page");
+        let results = db.search_pages("Daily").expect("search after update");
+        assert!(results.is_empty());
+
+        let results = db.search_pages("Archive").expect("search after update");
+        assert_eq!(results, vec![page_id]);
+    }
+
+    #[test]
     fn sync_ops_persisted_per_page() {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("Sync page").expect("insert page");
+        let page_id = db.insert_page("page-uid", "Sync page").expect("insert page");
 
         let payload = br#"{\"kind\":\"add\",\"block\":\"b1\"}"#;
         db.insert_sync_op(page_id, "op-1", "device-1", "add", payload)
@@ -262,7 +456,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("Sync page").expect("insert page");
+        let page_id = db.insert_page("page-uid", "Sync page").expect("insert page");
         let payload = br#"{\"kind\":\"edit\",\"block\":\"b1\"}"#;
 
         db.insert_sync_op(page_id, "op-1", "device-1", "edit", payload)

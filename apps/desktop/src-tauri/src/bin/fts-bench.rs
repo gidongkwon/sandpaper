@@ -7,13 +7,16 @@ fn main() {
     let db = Database::new_in_memory().expect("db init");
     db.run_migrations().expect("migrations");
 
-    let page_id = db.insert_page("Bench page").expect("insert page");
+    let page_id = db
+        .insert_page("page-bench", "Bench page")
+        .expect("insert page");
 
     let start_insert = Instant::now();
     for i in 0..TOTAL_BLOCKS {
         let uid = format!("b-{}", i);
+        let sort_key = format!("{:08}", i);
         let content = format!("note {} alpha beta gamma", i);
-        db.insert_block(page_id, &uid, &content)
+        db.insert_block(page_id, &uid, None, &sort_key, &content, "{}")
             .expect("insert block");
     }
     let insert_time = start_insert.elapsed();
