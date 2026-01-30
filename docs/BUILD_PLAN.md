@@ -151,8 +151,8 @@ Checklist
 - [ ] Navigation: open results in editor panes
 - [ ] Shadow Markdown: batched writer (idle or timer)
 - [ ] Shadow Markdown: read-only generated `.md` per page
-- [ ] Attachments: content-addressed storage in `/assets/<hash>`
-- [ ] Attachments: DB mapping for friendly names
+- [x] Attachments: content-addressed storage in `/assets/<hash>`
+- [x] Attachments: DB mapping for friendly names
 - [ ] Plugin loader v1: plugin discovery in `/plugins/<name>/`
 - [ ] Plugin loader v1: manifest parse + enable/disable
 - [ ] Plugin loader v1: RPC bridge to sandbox runtime

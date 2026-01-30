@@ -10,10 +10,11 @@ pub struct Migration {
     pub up: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    up: "CREATE TABLE IF NOT EXISTS pages (
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        up: "CREATE TABLE IF NOT EXISTS pages (
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             title TEXT NOT NULL,
@@ -147,7 +148,13 @@ const MIGRATIONS: &[Migration] = &[Migration {
             INSERT INTO pages_fts(rowid, title)
             VALUES (new.id, new.title);
         END;",
-}];
+    },
+    Migration {
+        version: 2,
+        name: "assets-original-name",
+        up: "ALTER TABLE assets ADD COLUMN original_name TEXT;",
+    },
+];
 
 #[derive(Debug, PartialEq)]
 pub struct PageRecord {
@@ -179,6 +186,16 @@ pub struct EdgeRecord {
     pub from_block_id: i64,
     pub to_block_uid: String,
     pub kind: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AssetRecord {
+    pub id: i64,
+    pub hash: String,
+    pub path: String,
+    pub mime_type: String,
+    pub size: i64,
+    pub original_name: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -356,6 +373,55 @@ impl Database {
         )?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
+    }
+
+    pub fn upsert_asset(
+        &self,
+        hash: &str,
+        path: &str,
+        mime_type: &str,
+        size: i64,
+        original_name: Option<&str>,
+    ) -> rusqlite::Result<AssetRecord> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO assets (hash, path, mime_type, size, original_name)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![hash, path, mime_type, size, original_name],
+        )?;
+
+        self.conn.query_row(
+            "SELECT id, hash, path, mime_type, size, original_name FROM assets WHERE hash = ?1",
+            [hash],
+            |row| {
+                Ok(AssetRecord {
+                    id: row.get(0)?,
+                    hash: row.get(1)?,
+                    path: row.get(2)?,
+                    mime_type: row.get(3)?,
+                    size: row.get(4)?,
+                    original_name: row.get(5)?,
+                })
+            },
+        )
+    }
+
+    pub fn get_asset_by_hash(&self, hash: &str) -> rusqlite::Result<Option<AssetRecord>> {
+        self.conn
+            .query_row(
+                "SELECT id, hash, path, mime_type, size, original_name FROM assets WHERE hash = ?1",
+                [hash],
+                |row| {
+                    Ok(AssetRecord {
+                        id: row.get(0)?,
+                        hash: row.get(1)?,
+                        path: row.get(2)?,
+                        mime_type: row.get(3)?,
+                        size: row.get(4)?,
+                        original_name: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
     }
 
     pub fn upsert_tag(&self, name: &str) -> rusqlite::Result<TagRecord> {
