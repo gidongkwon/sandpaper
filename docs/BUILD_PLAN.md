@@ -15,6 +15,14 @@ Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Noti
 - Sync: **SQLite-first**, CRDT **only for sync**, **Node** server.
 - Shadow files are **read-only**; no external edits import (for v1).
 
+## Decision Records (must finalize before Phase 1)
+- **Block schema**: fields (id, page_id, parent_id, sort_key, text, props JSON), block-level metadata, and inline formatting storage.
+- **Indexing strategy**: FTS tokenization, stemming/stop-words, and indexing for tags/props.
+- **Shadow Markdown spec**: ID syntax, attribute syntax, code/diagram blocks, and plugin data serialization.
+- **Block operations**: canonical order key (fractional index vs integer sequence), move semantics, and undo/redo storage.
+- **Interoperability strategy**: import/export formats, forward-compat versioning, and schema upgrade policy.
+- **Attachments**: file placement and metadata (mime, size, hash), and GC policy for unused assets.
+
 ## High-level Architecture
 
 ### Core Data Model (canonical)
@@ -41,6 +49,13 @@ Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Noti
 - All ops encrypted client-side (passphrase-derived key)
 - Node sync server stores encrypted ops + metadata
 - Auto-merge at block level
+
+## Missing-to-Implement (address before heavy build-out)
+- **Success metrics**: targets for startup time, editor latency, search, memory, sync merge rates.
+- **Plugin API surface**: commands, events, UI extensions, data access, permissions, versioning.
+- **Security posture**: threat model, plugin sandbox boundaries, key management, update safety.
+- **Mobile constraints**: Android storage path, background sync limits, offline behavior.
+- **Operational plan**: CI, release channels, crash reporting, migration tests.
 
 ---
 
@@ -103,11 +118,17 @@ Benchmarks (latest)
 - 2026-01-30: FTS search on 100k blocks (in-memory, Rust/rusqlite): ~29ms search, ~5.5s inserts.
   - Reproduce: `cd apps/desktop/src-tauri && cargo run --bin fts-bench`
 
+Success metrics (Phase 0)
+- Editor: p95 input-to-paint < 16ms for 1k edits; scroll stays > 55fps with 50k blocks.
+- Search: < 200ms on 100k blocks for common queries.
+- DB writes: batch insert 100k blocks in < 10s; incremental updates < 10ms per edit.
+
 Exit criteria
 - [ ] Editor prototype smooth at 50k+ blocks
 - [ ] FTS update path works on all edits
 - [ ] Shadow files match DB deterministically
 - [ ] CRDT ops prove viable for page-level merge
+ - [ ] Phase 0 success metrics met and documented
 
 ---
 
@@ -149,10 +170,16 @@ Test design
 - Shadow files: golden-file tests for serialization + writer batching.
 - Plugin loader: manifest validation and permission gating tests.
 
+Success metrics (Phase 1)
+- App startup < 1.5s on mid-tier hardware.
+- Editor steady-state memory < 500MB at 100k blocks.
+- Search < 200ms p95 for typical queries.
+
 Exit criteria
 - [ ] Local editor usable for daily notes
 - [ ] Search + backlinks functional
 - [ ] Plugins can load and register commands
+ - [ ] Phase 1 success metrics met
 
 ---
 
@@ -181,9 +208,14 @@ Test design
 - Contract: RPC request/response schema tests; version compatibility checks.
 - Plugin E2E: load a sample plugin that registers a command + panel and assert it renders.
 
+Success metrics (Phase 2)
+- Plugin load time < 200ms for a small plugin set.
+- Permission prompts block unauthorized access 100% of the time in tests.
+
 Exit criteria
 - [ ] Plugins can modify data and UI safely
 - [ ] Permissions audited and enforced
+ - [ ] Phase 2 success metrics met
 
 ---
 
@@ -211,9 +243,14 @@ Test design
 - Crypto: encrypt/decrypt with golden test vectors and tamper detection.
 - Integration: two local clients + one server syncing the same page.
 
+Success metrics (Phase 3)
+- Sync: < 2s end-to-end propagation on LAN for small edits.
+- Merge: 0 data loss in concurrent edit/move/delete test suite.
+
 Exit criteria
 - [ ] Two clients sync without conflicts
 - [ ] Server never sees plaintext
+ - [ ] Phase 3 success metrics met
 
 ---
 
@@ -235,8 +272,13 @@ Test design
 - Unit: review queue rules and recurrence logic.
 - Integration: capture -> sync -> desktop render.
 
+Success metrics (Phase 4)
+- Mobile app: < 3s cold start; capture < 1s to local write.
+- Background sync respects OS limits without data loss.
+
 Exit criteria
 - [ ] Mobile capture + read works reliably
+ - [ ] Phase 4 success metrics met
 
 ---
 
@@ -244,11 +286,44 @@ Exit criteria
 - Search < 200ms on 100k notes (FTS5)
 - Editor interaction < 16ms per operation
 - Shadow file write not blocking UI
+ - Startup < 1.5s on mid-tier hardware
+ - Steady-state memory < 500MB at 100k blocks
 
 ## Risks & Mitigations
 - **Out-of-sync** shadow files → rebuild from DB task
 - **CRDT complexity** → page-level ops only, keep scope small
 - **Plugin stability** → sandbox process + strict permissions
+
+## Security & Privacy (define before Phase 2)
+- Threat model: local adversary, malicious plugin, compromised sync server.
+- Key management: passphrase KDF parameters, key rotation, recovery policy.
+- Plugin isolation: process boundary + restricted APIs; deny-by-default FS/network.
+- Update safety: signed releases; plugin signature verification (future).
+
+## Sync Protocol Details (define before Phase 3)
+- Choose ops format (CRDT vs op-log) and ordering guarantees.
+- Vector clock / lamport strategy for conflict resolution.
+- Merge rules for move/edit/delete on the same block.
+- Device onboarding flow and key exchange.
+- Server API: auth, pagination, and rate limits.
+
+## Plugin API Surface (define before Phase 2)
+- Command registration: name, description, shortcut, args schema.
+- Event model: editor lifecycle, data-change, and sync events.
+- UI extension points: side panels, toolbar buttons, renderers.
+- Data access: read/write blocks, search, and transactional updates.
+- Permissions: manifest-defined, explicit prompts, stored grants.
+
+## Storage & Migration Policy
+- Schema versioning in SQLite with forward-only migrations.
+- Shadow Markdown versioning and upgrade strategy.
+- Migration tests run in CI (apply N -> N+1; rollback not required).
+
+## Testing & CI (define before Phase 1)
+- CI pipeline: lint + typecheck + tests on every PR.
+- Perf regression checks: p95 input-to-paint and search latency.
+- Golden files: shadow markdown and export formats.
+- Fuzz tests: op merge and serialization round-trips.
 
 ---
 
@@ -257,6 +332,8 @@ Exit criteria
 - Choose editor model implementation details
 - Decide exact CRDT library for sync (Yjs vs Automerge vs custom ops)
 - Confirm packaging strategy for Windows/macOS/Android
+ - Finalize block schema and sort key strategy
+ - Decide shadow Markdown syntax for plugin metadata
 
 ---
 
