@@ -93,9 +93,9 @@ Checklist
 - [x] DB & FTS spike: SQLite schema + FTS5
 - [x] DB & FTS spike: search latency at 100k notes
 - [x] DB & FTS spike: incremental updates on every block write
-- [ ] Shadow Markdown: deterministic page -> Markdown serialization
-- [ ] Shadow Markdown: inline block ID format (`^block-id`)
-- [ ] Shadow Markdown: batch writer (idle or N seconds)
+- [x] Shadow Markdown: deterministic page -> Markdown serialization
+- [x] Shadow Markdown: inline block ID format (`^block-id`)
+- [x] Shadow Markdown: batch writer (idle or N seconds)
 - [ ] Sync POC: block-level ops (add/move/edit/delete)
 - [ ] Sync POC: per-page op persistence in SQLite
 - [ ] Sync POC: encrypt ops client-side (passphrase-derived key)
