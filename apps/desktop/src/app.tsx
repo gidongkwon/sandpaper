@@ -3037,77 +3037,79 @@ function App() {
             </div>
           </aside>
 
-          <div class="panes">
-            <EditorPane title="Primary editor" meta={pageTitle()} />
-            <EditorPane title="Connection pane" meta="Split view" />
-          </div>
-          <Show when={activeBlock()}>
-            {(block) => (
-              <section class="backlinks">
-                <div class="backlinks__header">
-                  <div>
-                    <div class="backlinks__title">Backlinks</div>
-                    <div class="backlinks__meta">
-                      For block {block().id}
+          <main class="main-pane" role="main">
+            <div class="panes">
+              <EditorPane title="Primary editor" meta={pageTitle()} />
+              <EditorPane title="Connection pane" meta="Split view" />
+            </div>
+            <Show when={activeBlock()}>
+              {(block) => (
+                <section class="backlinks">
+                  <div class="backlinks__header">
+                    <div>
+                      <div class="backlinks__title">Backlinks</div>
+                      <div class="backlinks__meta">
+                        For block {block().id}
+                      </div>
+                    </div>
+                    <div class="backlinks__count">
+                      {activeBacklinks().length} linked
                     </div>
                   </div>
-                  <div class="backlinks__count">
-                    {activeBacklinks().length} linked
-                  </div>
-                </div>
-                <Show
-                  when={activeBacklinks().length > 0}
-                  fallback={
-                    <div class="backlinks__empty">
-                      No backlinks yet. Use <span>((block-id))</span> to link.
-                    </div>
-                  }
-                >
-                  <div class="backlinks__list">
-                    <For each={activeBacklinks()}>
-                      {(entry) => (
-                        <button
-                          class="backlink"
-                          onClick={() => {
-                            setActiveId(entry.id);
-                            setJumpToId(entry.id);
-                          }}
-                        >
-                          <div class="backlink__text">{entry.text}</div>
-                          <div class="backlink__meta">Block {entry.id}</div>
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </section>
-            )}
-          </Show>
-          <Show when={activePanel()}>
-            {(panel) => (
-              <section class="plugin-panel">
-                <div class="plugin-panel__header">
-                  <div>
-                    <div class="plugin-panel__title">Active panel</div>
-                    <div class="plugin-panel__meta">
-                      {panel().title} · {panel().id}
-                    </div>
-                  </div>
-                  <button
-                    class="plugin-panel__close"
-                    onClick={() => setActivePanel(null)}
+                  <Show
+                    when={activeBacklinks().length > 0}
+                    fallback={
+                      <div class="backlinks__empty">
+                        No backlinks yet. Use <span>((block-id))</span> to link.
+                      </div>
+                    }
                   >
-                    Close
-                  </button>
-                </div>
-                <div class="plugin-panel__body">
-                  <div class="plugin-panel__content">
-                    Sandboxed panel placeholder for {panel().plugin_id}.
+                    <div class="backlinks__list">
+                      <For each={activeBacklinks()}>
+                        {(entry) => (
+                          <button
+                            class="backlink"
+                            onClick={() => {
+                              setActiveId(entry.id);
+                              setJumpToId(entry.id);
+                            }}
+                          >
+                            <div class="backlink__text">{entry.text}</div>
+                            <div class="backlink__meta">Block {entry.id}</div>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </section>
+              )}
+            </Show>
+            <Show when={activePanel()}>
+              {(panel) => (
+                <section class="plugin-panel">
+                  <div class="plugin-panel__header">
+                    <div>
+                      <div class="plugin-panel__title">Active panel</div>
+                      <div class="plugin-panel__meta">
+                        {panel().title} · {panel().id}
+                      </div>
+                    </div>
+                    <button
+                      class="plugin-panel__close"
+                      onClick={() => setActivePanel(null)}
+                    >
+                      Close
+                    </button>
                   </div>
-                </div>
-              </section>
-            )}
-          </Show>
+                  <div class="plugin-panel__body">
+                    <div class="plugin-panel__content">
+                      Sandboxed panel placeholder for {panel().plugin_id}.
+                    </div>
+                  </div>
+                </section>
+              )}
+            </Show>
+          </main>
         </div>
       </Show>
 
