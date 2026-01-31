@@ -124,9 +124,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 5 — Data Integrity & Reliability
 
-- [ ] **Autosave status accuracy**
-  - [ ] Ensure “Saved” only shows after DB write completes
-  - [ ] Show “Save failed” message on write errors
+- [x] **Autosave status accuracy**
+  - [x] Ensure “Saved” only shows after DB write completes
+  - [x] Show “Save failed” message on write errors
   - **Done when:** autosave status is accurate and reliable
 
 - [ ] **Shadow writer robustness**

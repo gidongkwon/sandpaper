@@ -661,6 +661,7 @@ function App() {
     createSignal<PermissionPrompt | null>(null);
   const [autosaved, setAutosaved] = createSignal(false);
   const [autosaveStamp, setAutosaveStamp] = createSignal("");
+  const [autosaveError, setAutosaveError] = createSignal<string | null>(null);
   const [importText, setImportText] = createSignal("");
   const [importStatus, setImportStatus] = createSignal<{
     state: "success" | "error";
@@ -1594,18 +1595,31 @@ function App() {
   );
 
   let saveTimeout: number | undefined;
-  let autosaveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
   let previewCloseTimeout: number | undefined;
+  let saveRequestId = 0;
+  const markSaved = () => {
+    setAutosaveError(null);
+    setAutosaveStamp(stampNow());
+    setAutosaved(true);
+  };
+  const markSaving = () => {
+    setAutosaveError(null);
+    setAutosaved(false);
+  };
+  const markSaveFailed = () => {
+    setAutosaveError("Save failed");
+    setAutosaved(false);
+  };
   const persistBlocks = async (
     pageUid: string,
     payload: BlockPayload[],
     title: string,
     snapshot: Block[]
-  ) => {
+  ): Promise<boolean> => {
     if (!isTauri()) {
       saveLocalPageSnapshot(pageUid, title, snapshot);
-      return;
+      return true;
     }
     try {
       await invoke("save_page_blocks", {
@@ -1613,8 +1627,10 @@ function App() {
         page_uid: pageUid,
         blocks: payload
       });
+      return true;
     } catch (error) {
       console.error("Failed to save blocks", error);
+      return false;
     }
   };
 
@@ -1642,22 +1658,24 @@ function App() {
     const snapshot = untrack(() => snapshotBlocks(blocks));
     const payload = snapshot.map((block) => toPayload(block));
     const title = untrack(() => pageTitle());
+    saveRequestId += 1;
+    const requestId = saveRequestId;
     if (saveTimeout) {
       window.clearTimeout(saveTimeout);
     }
-    if (autosaveTimeout) {
-      window.clearTimeout(autosaveTimeout);
-    }
     saveTimeout = window.setTimeout(() => {
-      void persistBlocks(pageUid, payload, title, snapshot);
+      void (async () => {
+        const success = await persistBlocks(pageUid, payload, title, snapshot);
+        if (requestId !== saveRequestId) return;
+        if (success) {
+          markSaved();
+        } else {
+          markSaveFailed();
+        }
+      })();
     }, 400);
     scheduleShadowWrite(pageUid);
-    setAutosaved(false);
-    autosaveTimeout = window.setTimeout(() => {
-      const time = stampNow();
-      setAutosaveStamp(time);
-      setAutosaved(true);
-    }, 700);
+    markSaving();
   };
 
   const stampNow = () =>
@@ -1684,8 +1702,7 @@ function App() {
         setPageTitle(title);
         setRenameTitle(title);
         setActiveId(seeded[0]?.id ?? null);
-        setAutosaved(true);
-        setAutosaveStamp(stampNow());
+        markSaved();
         await loadPages();
         return;
       }
@@ -1694,8 +1711,7 @@ function App() {
       setPageTitle(localTitle);
       setRenameTitle(localTitle);
       setActiveId(local.blocks[0]?.id ?? null);
-      setAutosaved(true);
-      setAutosaveStamp(stampNow());
+      markSaved();
       return;
     }
 
@@ -1729,8 +1745,7 @@ function App() {
         });
         shadowWriter.scheduleWrite(resolvedUid, seedMarkdown);
         setActiveId(seeded[0]?.id ?? null);
-        setAutosaved(true);
-        setAutosaveStamp(stampNow());
+        markSaved();
         return;
       }
       setBlocks(loaded);
@@ -1745,15 +1760,13 @@ function App() {
         }))
       });
       shadowWriter.scheduleWrite(resolvedUid, loadedMarkdown);
-      setAutosaved(true);
-      setAutosaveStamp(stampNow());
+      markSaved();
     } catch (error) {
       console.error("Failed to load blocks", error);
       setBlocks(buildLocalDefaults());
       setPageTitle("Inbox");
       setRenameTitle("Inbox");
-      setAutosaved(true);
-      setAutosaveStamp(stampNow());
+      markSaved();
     }
   };
 
@@ -2183,8 +2196,7 @@ function App() {
       await loadPlugins();
     }
     setPermissionPrompt(null);
-    setAutosaved(true);
-    setAutosaveStamp(stampNow());
+    markSaved();
   };
 
   const dismissPermissionPrompt = () => {
@@ -2462,8 +2474,7 @@ function App() {
         state: "success",
         message: `Imported ${importedBlocks.length} blocks into ${scopeLabel}.${warningSuffix}`
       });
-      setAutosaved(true);
-      setAutosaveStamp(stampNow());
+      markSaved();
       shadowWriter.scheduleWrite(
         targetUid,
         serializePageToMarkdown({
@@ -2666,13 +2677,7 @@ function App() {
     setVaultFormOpen(false);
     setNewVaultName("");
     setNewVaultPath("");
-    setAutosaved(true);
-    setAutosaveStamp(
-      new Intl.DateTimeFormat(undefined, {
-        hour: "2-digit",
-        minute: "2-digit"
-      }).format(new Date())
-    );
+    markSaved();
   };
 
   const getFolderFromFile = (file: File) => {
@@ -2795,9 +2800,6 @@ function App() {
       scrollMeter.dispose();
       if (saveTimeout) {
         window.clearTimeout(saveTimeout);
-      }
-      if (autosaveTimeout) {
-        window.clearTimeout(autosaveTimeout);
       }
       if (highlightTimeout) {
         window.clearTimeout(highlightTimeout);
@@ -4039,8 +4041,13 @@ function App() {
             <span class="topbar__sync-dot" />
             <span class="topbar__sync-label">{syncStateLabel()}</span>
           </span>
-          <span class={`topbar__autosave ${autosaved() ? "is-saved" : ""}`}>
-            {autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving..."}
+          <span
+            class={`topbar__autosave ${
+              autosaveError() ? "is-error" : autosaved() ? "is-saved" : ""
+            }`}
+          >
+            {autosaveError() ??
+              (autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving...")}
           </span>
           <button
             class="topbar__settings"

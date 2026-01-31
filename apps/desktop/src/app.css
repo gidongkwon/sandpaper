@@ -376,6 +376,10 @@ button:disabled {
   color: var(--text-secondary);
 }
 
+.topbar__autosave.is-error {
+  color: var(--error);
+}
+
 .topbar__settings {
   width: 28px;
   height: 28px;
