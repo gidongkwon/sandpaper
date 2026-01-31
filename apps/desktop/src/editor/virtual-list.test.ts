@@ -63,4 +63,23 @@ describe("getVirtualRange", () => {
       totalHeight: 0
     });
   });
+
+  it("keeps the render window small for large lists", () => {
+    const rowHeight = 44;
+    const overscan = 6;
+    const viewportHeight = 720;
+    const range = getVirtualRange({
+      count: 50000,
+      rowHeight,
+      overscan,
+      scrollTop: 12000,
+      viewportHeight
+    });
+
+    const visibleRows = Math.ceil(viewportHeight / rowHeight);
+    expect(range.end - range.start).toBeLessThanOrEqual(
+      visibleRows + overscan * 2 + 1
+    );
+    expect(range.totalHeight).toBe(rowHeight * 50000);
+  });
 });

@@ -124,7 +124,7 @@ Success metrics (Phase 0)
 - DB writes: batch insert 100k blocks in < 10s; incremental updates < 10ms per edit.
 
 Exit criteria
-- [ ] Editor prototype smooth at 50k+ blocks
+- [x] Editor prototype smooth at 50k+ blocks
 - [ ] FTS update path works on all edits
 - [ ] Shadow files match DB deterministically
 - [x] CRDT ops prove viable for page-level merge
