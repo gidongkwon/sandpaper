@@ -39,7 +39,19 @@ rl.on("line", (line) => {
       title: `Open ${pluginId}`,
       description: `Open ${pluginId} panel`
     }));
-    respond({ id, result: { loaded, commands } });
+    const panels = loaded.map((pluginId) => ({
+      plugin_id: pluginId,
+      id: `${pluginId}.panel`,
+      title: `${pluginId} panel`,
+      location: "sidebar"
+    }));
+    const toolbar_actions = loaded.map((pluginId) => ({
+      plugin_id: pluginId,
+      id: `${pluginId}.toolbar`,
+      title: `Launch ${pluginId}`,
+      tooltip: `Launch ${pluginId}`
+    }));
+    respond({ id, result: { loaded, commands, panels, toolbar_actions } });
     rl.close();
     return;
   }

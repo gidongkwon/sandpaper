@@ -192,7 +192,7 @@ Checklist
 - [x] Permissions: store granted permissions
 - [x] Plugin API: commands + events
 - [x] Plugin API: data access (read/write blocks/pages)
-- [ ] Plugin API: UI panels + toolbar actions
+- [x] Plugin API: UI panels + toolbar actions
 - [ ] Plugin API: renderer extensions (code/diagrams)
 - [ ] Core plugin: code block renderer
 - [ ] Core plugin: diagram renderer

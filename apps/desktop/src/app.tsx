@@ -84,6 +84,8 @@ type PluginRuntimeStatus = {
   loaded: string[];
   blocked: PluginBlockInfo[];
   commands: PluginCommand[];
+  panels: PluginPanel[];
+  toolbar_actions: PluginToolbarAction[];
 };
 
 type PluginCommand = {
@@ -91,6 +93,20 @@ type PluginCommand = {
   id: string;
   title: string;
   description?: string | null;
+};
+
+type PluginPanel = {
+  plugin_id: string;
+  id: string;
+  title: string;
+  location?: string | null;
+};
+
+type PluginToolbarAction = {
+  plugin_id: string;
+  id: string;
+  title: string;
+  tooltip?: string | null;
 };
 
 type PermissionPrompt = {
@@ -218,6 +234,22 @@ function App() {
         id: "local-calendar.open",
         title: "Open local-calendar",
         description: "Open local-calendar panel"
+      }
+    ],
+    panels: [
+      {
+        plugin_id: "local-calendar",
+        id: "local-calendar.panel",
+        title: "Calendar panel",
+        location: "sidebar"
+      }
+    ],
+    toolbar_actions: [
+      {
+        plugin_id: "local-calendar",
+        id: "local-calendar.toolbar",
+        title: "Today focus",
+        tooltip: "Jump to today"
       }
     ]
   };
@@ -1011,19 +1043,68 @@ function App() {
                   <span>{pluginStatus()?.loaded.length ?? 0} loaded</span>
                   <span>{pluginStatus()?.blocked.length ?? 0} blocked</span>
                   <span>{pluginStatus()?.commands.length ?? 0} commands</span>
+                  <span>{pluginStatus()?.panels.length ?? 0} panels</span>
+                  <span>
+                    {pluginStatus()?.toolbar_actions.length ?? 0} toolbar actions
+                  </span>
                 </div>
-                <Show when={(pluginStatus()?.commands.length ?? 0) > 0}>
-                  <div class="plugin-commands">
-                    <For each={pluginStatus()?.commands ?? []}>
-                      {(command) => (
-                        <div class="plugin-command">
-                          <div class="plugin-command__title">{command.title}</div>
-                          <div class="plugin-command__meta">{command.id}</div>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
+                <div class="plugin-surfaces">
+                  <Show when={(pluginStatus()?.commands.length ?? 0) > 0}>
+                    <div class="plugin-surface">
+                      <div class="plugin-surface__title">Commands</div>
+                      <div class="plugin-surface__list">
+                        <For each={pluginStatus()?.commands ?? []}>
+                          {(command) => (
+                            <div class="plugin-surface__item">
+                              <div class="plugin-surface__name">{command.title}</div>
+                              <div class="plugin-surface__meta">{command.id}</div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={(pluginStatus()?.panels.length ?? 0) > 0}>
+                    <div class="plugin-surface">
+                      <div class="plugin-surface__title">Panels</div>
+                      <div class="plugin-surface__list">
+                        <For each={pluginStatus()?.panels ?? []}>
+                          {(panel) => (
+                            <div class="plugin-surface__item">
+                              <div class="plugin-surface__name">{panel.title}</div>
+                              <div class="plugin-surface__meta">
+                                {panel.id}
+                                <Show when={panel.location}>
+                                  {(location) => ` · ${location()}`}
+                                </Show>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={(pluginStatus()?.toolbar_actions.length ?? 0) > 0}>
+                    <div class="plugin-surface">
+                      <div class="plugin-surface__title">Toolbar actions</div>
+                      <div class="plugin-surface__list">
+                        <For each={pluginStatus()?.toolbar_actions ?? []}>
+                          {(action) => (
+                            <div class="plugin-surface__item">
+                              <div class="plugin-surface__name">{action.title}</div>
+                              <div class="plugin-surface__meta">
+                                {action.id}
+                                <Show when={action.tooltip}>
+                                  {(tooltip) => ` · ${tooltip()}`}
+                                </Show>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                </div>
               </Show>
             </div>
             <div class="sidebar__footer">

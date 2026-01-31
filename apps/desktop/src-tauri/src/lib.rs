@@ -11,7 +11,8 @@ use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
     discover_plugins, list_plugins, runtime_script_path, PluginCommand, PluginDescriptor,
-    PluginInfo, PluginRegistry, PluginRuntimeClient, PluginRuntimeLoadResult,
+    PluginInfo, PluginPanel, PluginRegistry, PluginRuntimeClient, PluginRuntimeLoadResult,
+    PluginToolbarAction,
 };
 
 #[derive(Debug, Serialize)]
@@ -46,6 +47,8 @@ struct PluginRuntimeStatus {
     loaded: Vec<String>,
     blocked: Vec<PluginBlockInfo>,
     commands: Vec<PluginCommand>,
+    panels: Vec<PluginPanel>,
+    toolbar_actions: Vec<PluginToolbarAction>,
 }
 
 #[tauri::command]
@@ -308,6 +311,8 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
         PluginRuntimeLoadResult {
             loaded: Vec::new(),
             commands: Vec::new(),
+            panels: Vec::new(),
+            toolbar_actions: Vec::new(),
         }
     } else {
         runtime
@@ -319,6 +324,8 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
         loaded: loaded.loaded,
         blocked,
         commands: loaded.commands,
+        panels: loaded.panels,
+        toolbar_actions: loaded.toolbar_actions,
     })
 }
 

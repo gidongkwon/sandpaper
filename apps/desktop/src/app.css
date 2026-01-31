@@ -340,6 +340,7 @@ body {
 
 .plugin-status {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   font-size: 11px;
   text-transform: uppercase;
@@ -347,24 +348,41 @@ body {
   color: var(--ink-soft);
 }
 
-.plugin-commands {
+.plugin-surfaces {
   display: grid;
   gap: 8px;
 }
 
-.plugin-command {
+.plugin-surface {
+  display: grid;
+  gap: 8px;
+}
+
+.plugin-surface__title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+}
+
+.plugin-surface__list {
+  display: grid;
+  gap: 8px;
+}
+
+.plugin-surface__item {
   border: 1px dashed rgba(90, 74, 62, 0.2);
   border-radius: 10px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.7);
 }
 
-.plugin-command__title {
+.plugin-surface__name {
   font-size: 13px;
   color: var(--ink);
 }
 
-.plugin-command__meta {
+.plugin-surface__meta {
   font-size: 11px;
   color: var(--ink-soft);
   text-transform: uppercase;

@@ -165,6 +165,10 @@ pub struct PluginRuntimeLoadResult {
     pub loaded: Vec<String>,
     #[serde(default)]
     pub commands: Vec<PluginCommand>,
+    #[serde(default)]
+    pub panels: Vec<PluginPanel>,
+    #[serde(default)]
+    pub toolbar_actions: Vec<PluginToolbarAction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -174,6 +178,24 @@ pub struct PluginCommand {
     pub title: String,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginPanel {
+    pub plugin_id: String,
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub location: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginToolbarAction {
+    pub plugin_id: String,
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub tooltip: Option<String>,
 }
 
 pub struct PluginRuntimeClient {
@@ -368,7 +390,19 @@ rl.on("line", (line) => {
       id: `${id}.open`,
       title: `Open ${id}`
     }));
-    respond({ id: msg.id, result: { loaded: ids, commands } });
+    const panels = ids.map((id) => ({
+      plugin_id: id,
+      id: `${id}.panel`,
+      title: `${id} panel`,
+      location: "sidebar"
+    }));
+    const toolbar_actions = ids.map((id) => ({
+      plugin_id: id,
+      id: `${id}.toolbar`,
+      title: `Launch ${id}`,
+      tooltip: `Launch ${id}`
+    }));
+    respond({ id: msg.id, result: { loaded: ids, commands, panels, toolbar_actions } });
     rl.close();
     return;
   }
@@ -429,6 +463,8 @@ rl.on("line", (line) => {
         assert_eq!(result.loaded, vec!["alpha".to_string(), "beta".to_string()]);
         assert_eq!(result.commands.len(), 2);
         assert_eq!(result.commands[0].plugin_id, "alpha");
+        assert_eq!(result.panels.len(), 2);
+        assert_eq!(result.toolbar_actions.len(), 2);
     }
 
     #[test]

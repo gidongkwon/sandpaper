@@ -27,4 +27,12 @@ describe("App", () => {
       "Grant permission"
     );
   });
+
+  it("shows plugin panels and toolbar actions", async () => {
+    render(() => <App />);
+    expect(await screen.findByText("Panels")).toBeInTheDocument();
+    expect(await screen.findByText("Toolbar actions")).toBeInTheDocument();
+    expect(await screen.findByText("Calendar panel")).toBeInTheDocument();
+    expect(await screen.findByText("Today focus")).toBeInTheDocument();
+  });
 });
