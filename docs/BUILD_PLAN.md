@@ -148,7 +148,7 @@ Checklist
 - [ ] Editor core: block refs + backlinks
 - [x] Editor core: multi-pane editor (2-3 panes)
 - [ ] Search: left panel (FTS + filters)
-- [ ] Navigation: open results in editor panes
+- [x] Navigation: open results in editor panes
 - [ ] Shadow Markdown: batched writer (idle or timer)
 - [ ] Shadow Markdown: read-only generated `.md` per page
 - [x] Attachments: content-addressed storage in `/assets/<hash>`

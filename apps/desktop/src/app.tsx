@@ -1,4 +1,12 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import {
   createFpsMeter,
@@ -41,6 +49,7 @@ function App() {
   const [mode, setMode] = createSignal<Mode>("editor");
   const [searchQuery, setSearchQuery] = createSignal("");
   const [captureText, setCaptureText] = createSignal("");
+  const [jumpToId, setJumpToId] = createSignal<string | null>(null);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -107,7 +116,7 @@ function App() {
     setActiveId(block.id);
   };
 
-  const EditorPane = (props: { title: string; meta: string }) => {
+    const EditorPane = (props: { title: string; meta: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
@@ -183,6 +192,13 @@ function App() {
         el.setSelectionRange(pos, pos);
       });
     };
+
+    createEffect(() => {
+      const targetId = jumpToId();
+      if (!targetId) return;
+      if (findIndexById(targetId) < 0) return;
+      focusBlock(targetId, "start");
+    });
 
     const insertBlockAfter = (index: number, indent: number) => {
       const block = createBlock("", indent);
@@ -425,7 +441,10 @@ function App() {
                   {(block) => (
                     <button
                       class="result"
-                      onClick={() => setActiveId(block.id)}
+                      onClick={() => {
+                        setActiveId(block.id);
+                        setJumpToId(block.id);
+                      }}
                     >
                       <div class="result__text">{block.text || "Untitled"}</div>
                       <div class="result__meta">Block {block.id}</div>
