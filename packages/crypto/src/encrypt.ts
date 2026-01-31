@@ -10,6 +10,20 @@ export type EncryptedPayload = {
   algo: "aes-256-gcm";
 };
 
+export type VaultKey = {
+  keyB64: string;
+  saltB64: string;
+  kdf: "pbkdf2-sha256";
+  iterations: number;
+  algo: "aes-256-gcm";
+};
+
+export type KeyEncryptedPayload = {
+  ciphertextB64: string;
+  ivB64: string;
+  algo: "aes-256-gcm";
+};
+
 export type EncryptOptions = {
   salt?: Uint8Array;
   iv?: Uint8Array;
@@ -85,6 +99,48 @@ const deriveKey = async (
   );
 };
 
+const deriveKeyBytes = async (
+  passphrase: string,
+  salt: Uint8Array,
+  iterations: number
+) => {
+  const crypto = getCrypto();
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      salt,
+      iterations
+    },
+    baseKey,
+    256
+  );
+
+  return new Uint8Array(bits);
+};
+
+const importAesKey = async (keyBytes: Uint8Array) => {
+  const crypto = getCrypto();
+  return crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    {
+      name: "AES-GCM",
+      length: 256
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+};
+
 export const encryptString = async (
   passphrase: string,
   plaintext: string,
@@ -113,6 +169,71 @@ export const encryptString = async (
     iterations,
     algo: "aes-256-gcm"
   };
+};
+
+export const deriveVaultKey = async (
+  passphrase: string,
+  options: EncryptOptions = {}
+): Promise<VaultKey> => {
+  const crypto = getCrypto();
+  const iterations = options.iterations ?? 210_000;
+  const salt = options.salt ?? crypto.getRandomValues(new Uint8Array(16));
+  const keyBytes = await deriveKeyBytes(passphrase, salt, iterations);
+
+  return {
+    keyB64: toBase64(keyBytes),
+    saltB64: toBase64(salt),
+    kdf: "pbkdf2-sha256",
+    iterations,
+    algo: "aes-256-gcm"
+  };
+};
+
+export const encryptStringWithKey = async (
+  keyB64: string,
+  plaintext: string,
+  options: EncryptOptions = {}
+): Promise<KeyEncryptedPayload> => {
+  const crypto = getCrypto();
+  const iv = options.iv ?? crypto.getRandomValues(new Uint8Array(12));
+  const keyBytes = fromBase64(keyB64);
+  const key = await importAesKey(keyBytes);
+  const ciphertext = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    key,
+    textEncoder.encode(plaintext)
+  );
+
+  return {
+    ciphertextB64: toBase64(new Uint8Array(ciphertext)),
+    ivB64: toBase64(iv),
+    algo: "aes-256-gcm"
+  };
+};
+
+export const decryptStringWithKey = async (
+  keyB64: string,
+  payload: KeyEncryptedPayload
+): Promise<string> => {
+  const crypto = getCrypto();
+  const iv = fromBase64(payload.ivB64);
+  const ciphertext = fromBase64(payload.ciphertextB64);
+  const keyBytes = fromBase64(keyB64);
+  const key = await importAesKey(keyBytes);
+
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv
+    },
+    key,
+    ciphertext
+  );
+
+  return textDecoder.decode(plaintext);
 };
 
 export const decryptString = async (
