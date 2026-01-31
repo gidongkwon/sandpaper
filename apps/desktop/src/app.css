@@ -508,6 +508,10 @@ body {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(251, 244, 235, 0.82));
 }
 
+.block-renderer--diagram {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(231, 242, 248, 0.9));
+}
+
 .block-renderer__title {
   font-size: 10px;
   text-transform: uppercase;
@@ -530,6 +534,33 @@ body {
   font: 12px/1.5 "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
   color: var(--ink);
   white-space: pre-wrap;
+}
+
+.block-renderer__diagram {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(50, 90, 140, 0.08);
+}
+
+.diagram-node {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(70, 110, 140, 0.3);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3a4a5c;
+}
+
+.diagram-edge {
+  font-size: 18px;
+  color: rgba(70, 110, 140, 0.7);
 }
 
 .block__bullet {

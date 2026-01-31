@@ -195,7 +195,7 @@ Checklist
 - [x] Plugin API: UI panels + toolbar actions
 - [x] Plugin API: renderer extensions (code/diagrams)
 - [x] Core plugin: code block renderer
-- [ ] Core plugin: diagram renderer
+- [x] Core plugin: diagram renderer
 - [ ] Core plugin: markdown export
 
 Implementation details

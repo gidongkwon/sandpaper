@@ -803,6 +803,17 @@ function App() {
       };
     };
 
+    const getDiagramPreview = (text: string) => {
+      const renderer = renderersByKind().get("diagram");
+      if (!renderer) return null;
+      const fence = parseInlineFence(text);
+      if (!fence || !DIAGRAM_LANGS.has(fence.lang)) return null;
+      return {
+        renderer,
+        ...fence
+      };
+    };
+
     return (
       <section class="editor-pane">
         <div class="editor-pane__header">
@@ -822,6 +833,7 @@ function App() {
                 {(block, index) => {
                   const blockIndex = () => range().start + index();
                   const codePreview = () => getCodePreview(block.text);
+                  const diagramPreview = () => getDiagramPreview(block.text);
                   return (
                     <div
                       class={`block ${activeId() === block.id ? "is-active" : ""}`}
@@ -853,6 +865,24 @@ function App() {
                               <div class="block-renderer__title">Code preview</div>
                               <div class="block-renderer__meta">
                                 {preview().renderer.title} · {preview().lang}
+                              </div>
+                              <pre class="block-renderer__content">
+                                <code>{preview().content}</code>
+                              </pre>
+                            </div>
+                          )}
+                        </Show>
+                        <Show when={diagramPreview()}>
+                          {(preview) => (
+                            <div class="block-renderer block-renderer--diagram">
+                              <div class="block-renderer__title">Diagram preview</div>
+                              <div class="block-renderer__meta">
+                                {preview().renderer.title} · {preview().lang}
+                              </div>
+                              <div class="block-renderer__diagram">
+                                <div class="diagram-node">A</div>
+                                <div class="diagram-edge">→</div>
+                                <div class="diagram-node">B</div>
                               </div>
                               <pre class="block-renderer__content">
                                 <code>{preview().content}</code>

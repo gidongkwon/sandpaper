@@ -49,4 +49,16 @@ describe("App", () => {
     const snippets = await screen.findAllByText("const x = 1;");
     expect(snippets.length).toBeGreaterThan(0);
   });
+
+  it("renders a diagram preview for fenced mermaid blocks", async () => {
+    render(() => <App />);
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    const firstInput = inputs[0];
+    await userEvent.clear(firstInput);
+    await userEvent.type(firstInput, "```mermaid graph TD A-->B;");
+    const previews = await screen.findAllByText("Diagram preview");
+    expect(previews.length).toBeGreaterThan(0);
+    const snippets = await screen.findAllByText("graph TD A-->B;");
+    expect(snippets.length).toBeGreaterThan(0);
+  });
 });
