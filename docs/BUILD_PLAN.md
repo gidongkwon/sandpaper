@@ -263,6 +263,34 @@ Exit criteria
 
 ---
 
+### Phase 3.5 — Interoperability (MVP)
+**Outcome:** import/export compatibility for shadow Markdown.
+
+Checklist
+- [x] Markdown import parser (shadow format)
+- [x] Import dedupes missing/duplicate block IDs
+- [x] Import UI (paste-based) with status feedback
+- [x] Import updates Inbox blocks and shadow writer
+- [x] Tests for parser + import UI
+
+Implementation details
+- Import parses `# Title ^page-id` header when present, but appends blocks to Inbox for v1.
+- Import warnings are surfaced in UI (ignored lines, missing IDs).
+
+Test design
+- Unit: parser handles headers, missing IDs, plugin metadata, and ignored lines.
+- UI: browser-mode import renders new blocks and status message.
+
+Success metrics (Phase 3.5)
+- Import 5k blocks in < 1s on mid-tier hardware.
+- Warnings displayed when input is malformed.
+
+Exit criteria
+- [x] Paste-based import works end-to-end
+- [x] Phase 3.5 success metrics met
+
+---
+
 ### Phase 4 — Review Mode + Android
 **Outcome:** read/quick-capture on mobile.
 
@@ -287,7 +315,7 @@ Success metrics (Phase 4)
 
 Exit criteria
 - [ ] Mobile capture + read works reliably
- - [ ] Phase 4 success metrics met
+- [ ] Phase 4 success metrics met
 
 ---
 
@@ -345,4 +373,4 @@ Exit criteria
 ---
 
 ## Suggested Next Step
-- Phase 4 (deferred) or interoperability import/export tooling.
+- Phase 4 (deferred) or file-based import + multi-page navigation.

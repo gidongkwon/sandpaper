@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   buildBacklinks,
   createShadowWriter,
+  parseMarkdownPage,
   serializePageToMarkdown
 } from "@sandpaper/core-model";
 import { deriveVaultKey } from "@sandpaper/crypto";
@@ -367,6 +368,12 @@ function App() {
     createSignal<PermissionPrompt | null>(null);
   const [autosaved, setAutosaved] = createSignal(false);
   const [autosaveStamp, setAutosaveStamp] = createSignal("");
+  const [importText, setImportText] = createSignal("");
+  const [importStatus, setImportStatus] = createSignal<{
+    state: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [importing, setImporting] = createSignal(false);
   const [exportStatus, setExportStatus] = createSignal<{
     state: "success" | "error";
     message: string;
@@ -1488,6 +1495,102 @@ function App() {
     }
   };
 
+  const importMarkdown = async () => {
+    if (importing()) return;
+    const raw = importText().trim();
+    if (!raw) {
+      setImportStatus({
+        state: "error",
+        message: "Paste Markdown before importing."
+      });
+      return;
+    }
+    setImporting(true);
+    setImportStatus(null);
+
+    try {
+      const parsed = parseMarkdownPage(raw, makeRandomId);
+      if (parsed.page.blocks.length === 0) {
+        setImportStatus({
+          state: "error",
+          message: "No list items found to import."
+        });
+        return;
+      }
+
+      const existingIds = new Set(blocks.map((block) => block.id));
+      const importedBlocks = parsed.page.blocks.map((block) => {
+        let nextId = block.id;
+        if (existingIds.has(nextId)) {
+          nextId = makeRandomId();
+        }
+        existingIds.add(nextId);
+        return { ...block, id: nextId };
+      });
+
+      const nextBlocks = [...blocks, ...importedBlocks];
+      setBlocks(nextBlocks);
+      if (importedBlocks[0]) {
+        setActiveId(importedBlocks[0].id);
+        setJumpToId(importedBlocks[0].id);
+      }
+      const nextTitle =
+        parsed.hasHeader && parsed.page.title.trim()
+          ? parsed.page.title.trim()
+          : pageTitle();
+      if (nextTitle !== pageTitle()) {
+        setPageTitle(nextTitle);
+      }
+
+      if (isTauri()) {
+        await invoke("save_page_blocks", {
+          pageUid: DEFAULT_PAGE_UID,
+          page_uid: DEFAULT_PAGE_UID,
+          blocks: nextBlocks.map((block) => toPayload(block))
+        });
+        if (parsed.hasHeader && nextTitle.trim()) {
+          await invoke("set_page_title", {
+            pageUid: DEFAULT_PAGE_UID,
+            page_uid: DEFAULT_PAGE_UID,
+            title: nextTitle.trim()
+          });
+        }
+      }
+
+      const warningSuffix =
+        parsed.warnings.length > 0
+          ? ` ${parsed.warnings.length} warnings.`
+          : "";
+      setImportStatus({
+        state: "success",
+        message: `Imported ${importedBlocks.length} blocks into Inbox.${warningSuffix}`
+      });
+      setAutosaved(true);
+      setAutosaveStamp(stampNow());
+      shadowWriter.scheduleWrite(
+        DEFAULT_PAGE_UID,
+        serializePageToMarkdown({
+          id: DEFAULT_PAGE_UID,
+          title: nextTitle,
+          blocks: nextBlocks.map((block) => ({
+            id: block.id,
+            text: block.text,
+            indent: block.indent
+          }))
+        })
+      );
+      setImportText("");
+    } catch (error) {
+      console.error("Import failed", error);
+      setImportStatus({
+        state: "error",
+        message: "Import failed. Check the logs for details."
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const exportMarkdown = async () => {
     if (exporting()) return;
     setExporting(true);
@@ -2511,12 +2614,51 @@ function App() {
                     </div>
                   </Show>
                 </div>
-                <Show when={commandStatus()}>
+              <Show when={commandStatus()}>
+                {(status) => (
+                  <div class="plugin-command-status">{status()}</div>
+                )}
+              </Show>
+            </Show>
+              <div class="import-card">
+                <div class="import-card__title">Markdown import</div>
+                <div class="import-card__desc">
+                  Paste shadow Markdown to append blocks into Inbox.
+                </div>
+                <textarea
+                  class="import-card__input"
+                  rows={4}
+                  placeholder="Paste markdown to import"
+                  value={importText()}
+                  onInput={(event) => setImportText(event.currentTarget.value)}
+                />
+                <div class="import-card__actions">
+                  <button
+                    class="import-button"
+                    onClick={importMarkdown}
+                    disabled={importing()}
+                  >
+                    {importing() ? "Importing..." : "Import Markdown"}
+                  </button>
+                  <button
+                    class="import-clear"
+                    onClick={() => {
+                      setImportText("");
+                      setImportStatus(null);
+                    }}
+                    disabled={importing()}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <Show when={importStatus()}>
                   {(status) => (
-                    <div class="plugin-command-status">{status()}</div>
+                    <div class={`import-status import-status--${status().state}`}>
+                      {status().message}
+                    </div>
                   )}
                 </Show>
-              </Show>
+              </div>
               <div class="export-card">
                 <div class="export-card__title">Markdown export</div>
                 <div class="export-card__desc">

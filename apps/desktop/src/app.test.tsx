@@ -147,6 +147,24 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("imports markdown in browser mode", async () => {
+    render(() => <App />);
+    const input = screen.getByPlaceholderText(/paste markdown to import/i);
+    await userEvent.type(
+      input,
+      `# Import
+- Imported line ^import-1`
+    );
+    const importButton = screen.getByRole("button", {
+      name: /import markdown/i
+    });
+    await userEvent.click(importButton);
+    expect(await screen.findByText(/imported 1 blocks?/i)).toBeInTheDocument();
+    const searchInput = screen.getByPlaceholderText("Search notes, tags, or IDs");
+    await userEvent.type(searchInput, "Imported line");
+    expect(await screen.findByText("Imported line")).toBeInTheDocument();
+  });
+
   it("opens a plugin panel from the list", async () => {
     render(() => <App />);
     const openButtons = await screen.findAllByRole("button", {

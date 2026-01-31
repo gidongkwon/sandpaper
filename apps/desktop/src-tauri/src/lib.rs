@@ -131,6 +131,13 @@ struct ReviewTemplatePayload {
     title: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageTitlePayload {
+    page_uid: String,
+    title: String,
+}
+
 #[derive(Debug, Clone)]
 struct BlockState {
     id: String,
@@ -1078,6 +1085,16 @@ fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), 
 }
 
 #[tauri::command]
+fn set_page_title(payload: PageTitlePayload) -> Result<(), String> {
+    let db = open_active_database()?;
+    let page_uid = sanitize_kebab(&payload.page_uid);
+    let page_id = ensure_page(&db, &page_uid, &payload.title)?;
+    db.update_page_title(page_id, &payload.title)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(())
+}
+
+#[tauri::command]
 fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, String> {
     let vault_path = resolve_active_vault_path()?;
     let path = write_shadow_markdown_to_vault(&vault_path, &page_uid, &content)?;
@@ -1272,6 +1289,7 @@ pub fn run() {
             search_blocks,
             load_page_blocks,
             save_page_blocks,
+            set_page_title,
             set_vault_key,
             vault_key_status,
             vault_key_fingerprint,
