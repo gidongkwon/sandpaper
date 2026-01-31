@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./sync-server";
 import { openSyncStore } from "./sync-store";
@@ -302,6 +303,41 @@ describe("sync server", () => {
     expect(stateA).toEqual(stateB);
     expect(stateA.get("b1")?.text).toBe("Beta edit");
     expect(stateA.get("b2")?.text).toBe("Second");
+  });
+
+  it("propagates small edits under target latency", async () => {
+    const app = createTestApp();
+    const vault = await registerVault(app);
+    const device = await registerDevice(app, vault.vaultId, "dev-latency");
+
+    const baseTime = Date.now();
+    const ops: SyncOp[] = Array.from({ length: 12 }, (_, index) => ({
+      opId: `latency-${index}`,
+      pageId: "page-1",
+      blockId: `b-${index}`,
+      deviceId: device.deviceId,
+      clock: index + 1,
+      timestamp: baseTime + index,
+      kind: "add",
+      text: `Block ${index}`,
+      sortKey: `${index}`.padStart(6, "0"),
+      indent: 0,
+      parentId: null
+    }));
+
+    const start = performance.now();
+    await pushOps(app, vault.vaultId, device.deviceId, ops);
+    const pullRes = await app.request(
+      `/v1/ops/pull?vaultId=${vault.vaultId}&since=0`
+    );
+    expect(pullRes.status).toBe(200);
+    const pullPayload = (await pullRes.json()) as {
+      ops: Array<{ opId: string; payload: string }>;
+    };
+    const elapsed = performance.now() - start;
+
+    expect(pullPayload.ops).toHaveLength(ops.length);
+    expect(elapsed).toBeLessThan(2000);
   });
 
   it("rejects device registration with the wrong fingerprint", async () => {

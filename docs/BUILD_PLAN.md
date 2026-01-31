@@ -261,7 +261,7 @@ Success metrics (Phase 3)
 Exit criteria
 - [x] Two clients sync without conflicts
 - [x] Server never sees plaintext
- - [ ] Phase 3 success metrics met
+- [x] Phase 3 success metrics met
 
 ---
 
