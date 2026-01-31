@@ -430,6 +430,11 @@ function App() {
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
+  const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [settingsTab, setSettingsTab] = createSignal<"general" | "vault" | "sync" | "plugins" | "import">("general");
+  const [sidebarOpen, setSidebarOpen] = createSignal(true);
+  const [backlinksOpen, setBacklinksOpen] = createSignal(false);
+  const [typeScale, setTypeScale] = createSignal(1);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -2046,7 +2051,22 @@ function App() {
     );
   };
 
+  // Apply typography scale to document
+  createEffect(() => {
+    document.documentElement.style.setProperty("--type-scale", String(typeScale()));
+    localStorage.setItem("sandpaper:type-scale", String(typeScale()));
+  });
+
   onMount(() => {
+    // Load typography scale from localStorage
+    const savedScale = localStorage.getItem("sandpaper:type-scale");
+    if (savedScale) {
+      const parsed = parseFloat(savedScale);
+      if (parsed >= 0.8 && parsed <= 1.4) {
+        setTypeScale(parsed);
+      }
+    }
+
     const perfFlag =
       new URLSearchParams(window.location.search).has("perf") ||
       localStorage.getItem("sandpaper:perf") === "1";
@@ -2091,7 +2111,7 @@ function App() {
     setActiveId(block.id);
   };
 
-  const EditorPane = (props: { title: string; meta: string }) => {
+  const EditorPane = (props: { title: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
@@ -2280,14 +2300,32 @@ function App() {
       };
     };
 
+    const requestRename = () => {
+      const currentTitle = renameTitle().trim() || props.title;
+      const nextTitle = prompt("Rename page", currentTitle);
+      if (nextTitle === null) return;
+      const trimmed = nextTitle.trim();
+      if (!trimmed || trimmed === currentTitle) return;
+      setRenameTitle(trimmed);
+      void renamePage();
+    };
+
     return (
       <section class="editor-pane">
         <div class="editor-pane__header">
-          <div>
+          <div class="editor-pane__title-group">
             <div class="editor-pane__title">{props.title}</div>
-            <div class="editor-pane__meta">{props.meta}</div>
+            <div class="editor-pane__count">{blocks.length} blocks</div>
           </div>
-          <div class="editor-pane__count">{blocks.length} blocks</div>
+          <div class="editor-pane__actions">
+            <button
+              class="editor-pane__action"
+              onClick={requestRename}
+              disabled={pageBusy()}
+            >
+              {pageBusy() ? "Renaming..." : "Rename"}
+            </button>
+          </div>
         </div>
         <div class="editor-pane__body" ref={editorRef}>
           <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
@@ -2308,6 +2346,16 @@ function App() {
                         "--i": `${blockIndex()}`
                       }}
                     >
+                      <button
+                        class="block__action-float"
+                        onClick={() => addReviewFromBlock(block)}
+                        title="Add to review"
+                        aria-label="Add to review"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      </button>
                       <span class="block__bullet" aria-hidden="true" />
                       <div class="block__body">
                         <textarea
@@ -2326,16 +2374,6 @@ function App() {
                           }}
                           onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                         />
-                        <Show when={activeId() === block.id}>
-                          <div class="block__actions">
-                            <button
-                              class="block__action"
-                              onClick={() => addReviewFromBlock(block)}
-                            >
-                              Add to review
-                            </button>
-                          </div>
-                        </Show>
                         <Show when={codePreview()}>
                           {(preview) => (
                             <div class="block-renderer block-renderer--code">
@@ -2401,27 +2439,24 @@ function App() {
 
       <header class="topbar">
         <div class="topbar__left">
-          <div class="topbar__title">Sandpaper</div>
-          <div class="topbar__subtitle">Local-first outline lab</div>
-          <div class="topbar__meta">
-            Enter: new block · Tab: indent · Shift+Tab: outdent · Backspace: delete empty
-          </div>
-        </div>
-        <div class="topbar__status">
-          <span
-            class={`topbar__autosave ${autosaved() ? "is-saved" : ""}`}
+          <button
+            class="topbar__sidebar-toggle"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-label={sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
           >
-            {autosaved()
-              ? `Saved ${autosaveStamp() || "just now"}`
-              : "Saving…"}
-          </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+            </svg>
+          </button>
         </div>
+
         <nav class="mode-switch">
           <button
             class={`mode-switch__button ${mode() === "quick-capture" ? "is-active" : ""}`}
             onClick={() => setMode("quick-capture")}
           >
-            Quick Capture
+            Capture
           </button>
           <button
             class={`mode-switch__button ${mode() === "editor" ? "is-active" : ""}`}
@@ -2436,6 +2471,26 @@ function App() {
             Review
           </button>
         </nav>
+
+        <div class="topbar__right">
+          <span class={`topbar__sync-indicator ${syncStatus().state}`} title={syncStateDetail()}>
+            <span class="topbar__sync-dot" />
+            <span class="topbar__sync-label">{syncStateLabel()}</span>
+          </span>
+          <span class={`topbar__autosave ${autosaved() ? "is-saved" : ""}`}>
+            {autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving..."}
+          </span>
+          <button
+            class="topbar__settings"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Open settings"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <Show
@@ -2469,621 +2524,221 @@ function App() {
           </section>
         }
       >
-        <div class="workspace">
-          <aside class="sidebar">
-            <div>
-              <div class="sidebar__title">Search</div>
-              <div class="sidebar__subtitle">Find blocks instantly</div>
-            </div>
-            <input
-              class="sidebar__input"
-              type="search"
-              placeholder="Search notes, tags, or IDs"
-              value={searchQuery()}
-              onInput={(event) => setSearchQuery(event.currentTarget.value)}
-            />
-            <div class="sidebar__filters">
-              <button
-                class={`chip ${searchFilter() === "all" ? "is-active" : ""}`}
-                onClick={() => setSearchFilter("all")}
-              >
-                All
-              </button>
-              <button
-                class={`chip ${searchFilter() === "links" ? "is-active" : ""}`}
-                onClick={() => setSearchFilter("links")}
-              >
-                Links
-              </button>
-              <button
-                class={`chip ${searchFilter() === "tasks" ? "is-active" : ""}`}
-                onClick={() => setSearchFilter("tasks")}
-              >
-                Tasks
-              </button>
-              <button
-                class={`chip ${searchFilter() === "pinned" ? "is-active" : ""}`}
-                onClick={() => setSearchFilter("pinned")}
-              >
-                Pinned
-              </button>
-            </div>
-            <div class="sidebar__results">
-              <Show
-                when={filteredSearchResults().length > 0}
-                fallback={<div class="sidebar__empty">No results yet.</div>}
-              >
-                <For each={filteredSearchResults()}>
-                  {(block) => (
-                    <button
-                      class="result"
-                      onClick={() => {
-                        setActiveId(block.id);
-                        setJumpToId(block.id);
-                      }}
-                    >
-                      <div class="result__text">{block.text || "Untitled"}</div>
-                      <div class="result__meta">Block {block.id}</div>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </div>
-            <div class="sidebar__pages">
-              <div class="sidebar__section-title">Pages</div>
-              <div class="page-actions">
+        <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
+          <aside class={`sidebar ${sidebarOpen() ? "is-open" : ""}`}>
+            <div class="sidebar__header">
+              <div class="sidebar__search">
+                <svg class="sidebar__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="21" y1="21" x2="16" y2="16" />
+                </svg>
                 <input
-                  class="page-input"
-                  type="text"
-                  placeholder="New page title"
-                  value={newPageTitle()}
-                  onInput={(event) => setNewPageTitle(event.currentTarget.value)}
+                  class="sidebar__input"
+                  type="search"
+                  placeholder="Search..."
+                  value={searchQuery()}
+                  onInput={(event) => setSearchQuery(event.currentTarget.value)}
                 />
+              </div>
+              <div class="sidebar__filters">
                 <button
-                  class="page-action is-primary"
-                  onClick={createPage}
-                  disabled={pageBusy()}
+                  class={`chip ${searchFilter() === "all" ? "is-active" : ""}`}
+                  onClick={() => setSearchFilter("all")}
                 >
-                  Create page
+                  All
                 </button>
-              </div>
-              <Show when={pageMessage()}>
-                {(message) => <div class="page-message">{message()}</div>}
-              </Show>
-              <div class="page-list">
-                <Show
-                  when={pages().length > 0}
-                  fallback={<div class="page-list__empty">No pages yet.</div>}
-                >
-                  <For each={pages()}>
-                    {(page) => (
-                      <button
-                        class={`page-item ${
-                          page.uid === resolvePageUid(activePageUid())
-                            ? "is-active"
-                            : ""
-                        }`}
-                        onClick={() => switchPage(page.uid)}
-                        aria-label={`Open ${page.title || "Untitled"}`}
-                      >
-                        <div class="page-item__title">
-                          {page.title || "Untitled"}
-                        </div>
-                        <div class="page-item__meta">{page.uid}</div>
-                      </button>
-                    )}
-                  </For>
-                </Show>
-              </div>
-              <div class="page-rename">
-                <input
-                  class="page-input"
-                  type="text"
-                  placeholder="Rename page"
-                  value={renameTitle()}
-                  onInput={(event) => setRenameTitle(event.currentTarget.value)}
-                />
                 <button
-                  class="page-action"
-                  onClick={renamePage}
-                  disabled={pageBusy()}
+                  class={`chip ${searchFilter() === "links" ? "is-active" : ""}`}
+                  onClick={() => setSearchFilter("links")}
                 >
-                  Rename page
+                  Links
+                </button>
+                <button
+                  class={`chip ${searchFilter() === "tasks" ? "is-active" : ""}`}
+                  onClick={() => setSearchFilter("tasks")}
+                >
+                  Tasks
                 </button>
               </div>
             </div>
-            <div class="sidebar__vaults">
-              <div class="sidebar__section-title">Vault</div>
-              <select
-                class="vault-select"
-                value={activeVault()?.id ?? ""}
-                onChange={(event) => applyActiveVault(event.currentTarget.value)}
-              >
-                <For each={vaults()}>
-                  {(vault) => <option value={vault.id}>{vault.name}</option>}
-                </For>
-              </select>
-              <button
-                class="vault-action"
-                onClick={() => setVaultFormOpen((prev) => !prev)}
-              >
-                {vaultFormOpen() ? "Close" : "New vault"}
-              </button>
-              <Show when={vaultFormOpen()}>
-                <div class="vault-form">
-                  <input
-                    class="vault-input"
-                    type="text"
-                    placeholder="Vault name"
-                    value={newVaultName()}
-                    onInput={(event) => setNewVaultName(event.currentTarget.value)}
-                  />
-                  <input
-                    class="vault-input"
-                    type="text"
-                    placeholder="Vault path"
-                    value={newVaultPath()}
-                    onInput={(event) => setNewVaultPath(event.currentTarget.value)}
-                  />
-                  <div class="vault-actions">
-                    <button class="vault-action is-primary" onClick={createVault}>
-                      Create
-                    </button>
-                    <button
-                      class="vault-action"
-                      onClick={() => setVaultFormOpen(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </Show>
-            </div>
-            <div class="sidebar__vault-key">
-              <div class="sidebar__section-title">Vault key</div>
-              <div class="vault-key__status">
-                <span>
-                  {vaultKeyStatus().configured ? "Configured" : "Not set"}
-                </span>
-                <span>
-                  {vaultKeyStatus().configured
-                    ? `${vaultKeyStatus().kdf ?? "pbkdf2-sha256"} · ${
-                        vaultKeyStatus().iterations ?? "--"
-                      } iter`
-                    : "Set a passphrase to enable E2E sync."}
-                </span>
-              </div>
-              <input
-                class="vault-input"
-                type="password"
-                placeholder="Passphrase"
-                value={vaultPassphrase()}
-                onInput={(event) => setVaultPassphrase(event.currentTarget.value)}
-              />
-              <div class="vault-actions">
-                <button
-                  class="vault-action is-primary"
-                  disabled={vaultKeyBusy() || vaultPassphrase().trim().length === 0}
-                  onClick={setVaultKey}
-                >
-                  {vaultKeyBusy() ? "Deriving..." : "Set passphrase"}
-                </button>
-                <button
-                  class="vault-action"
-                  onClick={() => setVaultPassphrase("")}
-                >
-                  Clear
-                </button>
-              </div>
-              <Show when={vaultKeyMessage()}>
-                <div class="vault-key__message">{vaultKeyMessage()}</div>
-              </Show>
-            </div>
-            <div class="sidebar__sync">
-              <div class="sidebar__section-title">Sync</div>
-              <div class="sync-card">
-                <div class="sync-card__header">
-                  <div>
-                    <div class="sync-card__title">Background sync</div>
-                    <div class="sync-card__meta">{syncStateDetail()}</div>
-                  </div>
-                  <div
-                    class={`sync-pill is-${syncStatus().state} ${
-                      syncConnected() ? "is-connected" : "is-disconnected"
-                    }`}
-                  >
-                    {syncStateLabel()}
-                  </div>
-                </div>
-                <div class="sync-card__stats">
-                  <div class="sync-stat">
-                    <span>Queue</span>
-                    <strong>{syncStatus().pending_ops}</strong>
-                  </div>
-                  <div class="sync-stat">
-                    <span>Push</span>
-                    <strong>{syncStatus().last_push_count}</strong>
-                  </div>
-                  <div class="sync-stat">
-                    <span>Pull</span>
-                    <strong>{syncStatus().last_pull_count}</strong>
-                  </div>
-                  <div class="sync-stat">
-                    <span>Apply</span>
-                    <strong>{syncStatus().last_apply_count}</strong>
-                  </div>
-                </div>
-                <div class="sync-card__fields">
-                  <input
-                    class="vault-input"
-                    type="text"
-                    placeholder="Sync server URL"
-                    value={syncServerUrl()}
-                    onInput={(event) => setSyncServerUrl(event.currentTarget.value)}
-                  />
-                  <input
-                    class="vault-input"
-                    type="text"
-                    placeholder="Vault ID (optional)"
-                    value={syncVaultIdInput()}
-                    onInput={(event) =>
-                      setSyncVaultIdInput(event.currentTarget.value)
-                    }
-                  />
-                  <input
-                    class="vault-input"
-                    type="text"
-                    placeholder="Device ID (optional)"
-                    value={syncDeviceIdInput()}
-                    onInput={(event) =>
-                      setSyncDeviceIdInput(event.currentTarget.value)
-                    }
-                  />
-                </div>
-                <div class="vault-actions">
-                  <button
-                    class="vault-action is-primary"
-                    disabled={
-                      !isTauri() ||
-                      syncBusy() ||
-                      !vaultKeyStatus().configured ||
-                      syncServerUrl().trim().length === 0
-                    }
-                    onClick={connectSync}
-                  >
-                    {syncBusy() ? "Connecting..." : "Connect sync"}
-                  </button>
-                  <button
-                    class="vault-action"
-                    disabled={!isTauri() || syncBusy() || !syncConnected()}
-                    onClick={syncNow}
-                  >
-                    Sync now
-                  </button>
-                </div>
-                <Show when={syncMessage()}>
-                  <div class="sync-card__message">{syncMessage()}</div>
-                </Show>
-                <Show when={syncConnected()}>
-                  <div class="sync-card__ids">
-                    <div class="sync-card__id">
-                      <span>Vault</span>
-                      <code>{syncConfig()?.vault_id}</code>
-                    </div>
-                    <div class="sync-card__id">
-                      <span>Device</span>
-                      <code>{syncConfig()?.device_id}</code>
-                    </div>
-                  </div>
-                </Show>
-              </div>
-            </div>
-            <div class="sidebar__plugins">
-              <div class="sidebar__section-title">Plugins</div>
-              <Show
-                when={plugins().length > 0}
-                fallback={<div class="sidebar__empty">No plugins installed.</div>}
-              >
-                <For each={plugins()}>
-                  {(plugin) => (
-                    <div class={`plugin-card ${plugin.enabled ? "" : "is-disabled"}`}>
-                      <div class="plugin-card__header">
-                        <div>
-                          <div class="plugin-card__name">{plugin.name}</div>
-                          <div class="plugin-card__meta">
-                            {plugin.version} ·{" "}
-                            {plugin.enabled ? "Enabled" : "Disabled"}
-                          </div>
-                        </div>
-                        <div
-                          class={`plugin-card__badge ${
-                            plugin.enabled ? "is-on" : "is-off"
-                          }`}
-                        >
-                          {plugin.enabled ? "On" : "Off"}
-                        </div>
-                      </div>
-                      <Show when={plugin.description}>
-                        <div class="plugin-card__desc">{plugin.description}</div>
-                      </Show>
-                      <Show
-                        when={plugin.missing_permissions.length > 0}
-                        fallback={
-                          <div class="plugin-card__status is-ok">
-                            All permissions granted
-                          </div>
-                        }
-                      >
-                        <div class="plugin-card__status">Needs permission</div>
-                        <div class="plugin-card__permissions">
-                          <For each={plugin.missing_permissions}>
-                            {(permission) => (
-                              <span class="chip chip--warn">{permission}</span>
-                            )}
-                          </For>
-                        </div>
-                        <div class="plugin-card__actions">
-                          <For each={plugin.missing_permissions}>
-                            {(permission) => (
-                              <button
-                                class="plugin-action"
-                                onClick={() =>
-                                  requestGrantPermission(plugin, permission)
-                                }
-                              >
-                                Grant {permission}
-                              </button>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </Show>
-              <div class="plugin-card__actions">
-                <button
-                  class="plugin-action is-primary"
-                  onClick={loadPluginRuntime}
-                  disabled={pluginBusy()}
-                >
-                  {pluginBusy() ? "Loading plugins..." : "Load plugins"}
-                </button>
-              </div>
-              <Show when={pluginStatus()}>
-                <div class="plugin-status">
-                  <span>{pluginStatus()?.loaded.length ?? 0} loaded</span>
-                  <span>{pluginStatus()?.blocked.length ?? 0} blocked</span>
-                  <span>{pluginStatus()?.commands.length ?? 0} commands</span>
-                  <span>{pluginStatus()?.panels.length ?? 0} panels</span>
-                  <span>
-                    {pluginStatus()?.toolbar_actions.length ?? 0} toolbar actions
-                  </span>
-                  <span>{pluginStatus()?.renderers.length ?? 0} renderers</span>
-                </div>
-                <div class="plugin-surfaces">
-                  <Show when={(pluginStatus()?.commands.length ?? 0) > 0}>
-                    <div class="plugin-surface">
-                      <div class="plugin-surface__title">Commands</div>
-                      <div class="plugin-surface__list">
-                        <For each={pluginStatus()?.commands ?? []}>
-                          {(command) => (
-                            <div class="plugin-surface__item">
-                              <div>
-                                <div class="plugin-surface__name">{command.title}</div>
-                                <div class="plugin-surface__meta">{command.id}</div>
-                              </div>
-                              <button
-                                class="plugin-surface__action"
-                                onClick={() => runPluginCommand(command)}
-                              >
-                                Run command
-                              </button>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                  <Show when={(pluginStatus()?.panels.length ?? 0) > 0}>
-                    <div class="plugin-surface">
-                      <div class="plugin-surface__title">Panels</div>
-                      <div class="plugin-surface__list">
-                        <For each={pluginStatus()?.panels ?? []}>
-                          {(panel) => (
-                            <div class="plugin-surface__item">
-                              <div>
-                                <div class="plugin-surface__name">{panel.title}</div>
-                                <div class="plugin-surface__meta">
-                                  {panel.id}
-                                  <Show when={panel.location}>
-                                    {(location) => ` · ${location()}`}
-                                  </Show>
-                                </div>
-                              </div>
-                              <button
-                                class="plugin-surface__action"
-                                onClick={() => openPanel(panel)}
-                              >
-                                Open panel
-                              </button>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                  <Show when={(pluginStatus()?.toolbar_actions.length ?? 0) > 0}>
-                    <div class="plugin-surface">
-                      <div class="plugin-surface__title">Toolbar actions</div>
-                      <div class="plugin-surface__list">
-                        <For each={pluginStatus()?.toolbar_actions ?? []}>
-                          {(action) => (
-                            <div class="plugin-surface__item">
-                              <div>
-                                <div class="plugin-surface__name">{action.title}</div>
-                                <div class="plugin-surface__meta">
-                                  {action.id}
-                                  <Show when={action.tooltip}>
-                                    {(tooltip) => ` · ${tooltip()}`}
-                                  </Show>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                  <Show when={(pluginStatus()?.renderers.length ?? 0) > 0}>
-                    <div class="plugin-surface">
-                      <div class="plugin-surface__title">Renderers</div>
-                      <div class="plugin-surface__list">
-                        <For each={pluginStatus()?.renderers ?? []}>
-                          {(renderer) => (
-                            <div class="plugin-surface__item">
-                              <div>
-                                <div class="plugin-surface__name">{renderer.title}</div>
-                                <div class="plugin-surface__meta">
-                                  {renderer.id} · {renderer.kind}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
-              <Show when={commandStatus()}>
-                {(status) => (
-                  <div class="plugin-command-status">{status()}</div>
-                )}
-              </Show>
-            </Show>
-              <div class="import-card">
-                <div class="import-card__title">Markdown import</div>
-                <div class="import-card__desc">
-                  Paste shadow Markdown to create or update a page.
-                </div>
-                <textarea
-                  class="import-card__input"
-                  rows={4}
-                  placeholder="Paste markdown to import"
-                  value={importText()}
-                  onInput={(event) => setImportText(event.currentTarget.value)}
-                />
-                <div class="import-card__actions">
-                  <button
-                    class="import-button"
-                    onClick={importMarkdown}
-                    disabled={importing()}
-                  >
-                    {importing() ? "Importing..." : "Import Markdown"}
-                  </button>
-                  <button
-                    class="import-clear"
-                    onClick={() => {
-                      setImportText("");
-                      setImportStatus(null);
-                    }}
-                    disabled={importing()}
-                  >
-                    Clear
-                  </button>
-                </div>
-                <Show when={importStatus()}>
-                  {(status) => (
-                    <div class={`import-status import-status--${status().state}`}>
-                      {status().message}
-                    </div>
-                  )}
-                </Show>
-              </div>
-              <div class="export-card">
-                <div class="export-card__title">Markdown export</div>
-                <div class="export-card__desc">
-                  Export every page as read-only Markdown with stable block IDs.
-                </div>
-                <button
-                  class="export-button"
-                  onClick={exportMarkdown}
-                  disabled={exporting()}
-                >
-                  {exporting() ? "Exporting..." : "Export Markdown"}
-                </button>
-                <Show when={exportStatus()}>
-                  {(status) => (
-                    <div class={`export-status export-status--${status().state}`}>
-                      {status().message}
-                    </div>
-                  )}
-                </Show>
-                <Show when={exportStatus()?.preview}>
-                  {(preview) => (
-                    <pre class="export-preview">
-                      <code>{preview()}</code>
-                    </pre>
-                  )}
-                </Show>
-              </div>
-            </div>
-            <div class="sidebar__footer">
-              <div>
-                Active: {activeVault()?.name ?? "None"} ·{" "}
-                {activeVault()?.path ?? "--"}
-              </div>
-              <div>{blocks.length} blocks indexed</div>
-            </div>
-          </aside>
 
-          <main class="main-pane" role="main">
-            <div class="panes">
-              <EditorPane title="Primary editor" meta={pageTitle()} />
-              <EditorPane title="Connection pane" meta="Split view" />
-            </div>
-            <Show when={activeBlock()}>
-              {(block) => (
-                <section class="backlinks">
-                  <div class="backlinks__header">
-                    <div>
-                      <div class="backlinks__title">Backlinks</div>
-                      <div class="backlinks__meta">
-                        For block {block().id}
-                      </div>
-                    </div>
-                    <div class="backlinks__count">
-                      {activeBacklinks().length} linked
-                    </div>
+            <div class="sidebar__content">
+              <Show when={searchQuery().trim().length > 0}>
+                <div class="sidebar__section">
+                  <div class="sidebar__section-header">
+                    <span class="sidebar__section-title">Results</span>
+                    <span class="sidebar__section-count">{filteredSearchResults().length}</span>
                   </div>
-                  <Show
-                    when={activeBacklinks().length > 0}
-                    fallback={
-                      <div class="backlinks__empty">
-                        No backlinks yet. Use <span>((block-id))</span> to link.
-                      </div>
-                    }
-                  >
-                    <div class="backlinks__list">
-                      <For each={activeBacklinks()}>
-                        {(entry) => (
+                  <div class="sidebar__results">
+                    <Show
+                      when={filteredSearchResults().length > 0}
+                      fallback={<div class="sidebar__empty">No matches found</div>}
+                    >
+                      <For each={filteredSearchResults()}>
+                        {(block) => (
                           <button
-                            class="backlink"
+                            class="result"
                             onClick={() => {
-                              setActiveId(entry.id);
-                              setJumpToId(entry.id);
+                              setActiveId(block.id);
+                              setJumpToId(block.id);
                             }}
                           >
-                            <div class="backlink__text">{entry.text}</div>
-                            <div class="backlink__meta">Block {entry.id}</div>
+                            <div class="result__text">{block.text || "Untitled"}</div>
                           </button>
                         )}
                       </For>
-                    </div>
+                    </Show>
+                  </div>
+                </div>
+              </Show>
+
+              <div class="sidebar__section">
+                <div class="sidebar__section-header">
+                  <span class="sidebar__section-title">Pages</span>
+                  <button
+                    class="sidebar__section-action"
+                    onClick={() => {
+                      const title = prompt("New page title:");
+                      if (title?.trim()) {
+                        setNewPageTitle(title.trim());
+                        void createPage();
+                      }
+                    }}
+                    aria-label="Create new page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </button>
+                </div>
+                <Show when={pageMessage()}>
+                  {(message) => <div class="page-message">{message()}</div>}
+                </Show>
+                <div class="page-list">
+                  <Show
+                    when={pages().length > 0}
+                    fallback={<div class="page-list__empty">No pages yet</div>}
+                  >
+                    <For each={pages()}>
+                      {(page) => (
+                        <button
+                          class={`page-item ${
+                            page.uid === resolvePageUid(activePageUid())
+                              ? "is-active"
+                              : ""
+                          }`}
+                          onClick={() => switchPage(page.uid)}
+                          aria-label={`Open ${page.title || "Untitled"}`}
+                        >
+                          <svg class="page-item__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14,2 14,8 20,8" />
+                          </svg>
+                          <div class="page-item__content">
+                            <div class="page-item__title">
+                              {page.title || "Untitled"}
+                            </div>
+                          </div>
+                        </button>
+                      )}
+                    </For>
                   </Show>
-                </section>
-              )}
-            </Show>
+                </div>
+              </div>
+            </div>
+
+            <div class="sidebar__footer">
+              <span>{activeVault()?.name ?? "Default"}</span>
+            </div>
+          </aside>
+
+          <main class={`main-pane ${backlinksOpen() ? "has-panel" : ""}`} role="main">
+            <div class="main-pane__editor">
+              <EditorPane title={pageTitle()} />
+            </div>
+
+            {/* Backlinks toggle button */}
+            <button
+              class={`backlinks-toggle ${backlinksOpen() ? "is-active" : ""} ${activeBacklinks().length > 0 ? "has-links" : ""}`}
+              onClick={() => setBacklinksOpen(prev => !prev)}
+              aria-label={backlinksOpen() ? "Hide backlinks" : "Show backlinks"}
+              title={`${activeBacklinks().length} backlinks`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <Show when={activeBacklinks().length > 0}>
+                <span class="backlinks-toggle__badge">{activeBacklinks().length}</span>
+              </Show>
+            </button>
+
+            {/* Backlinks side panel */}
+            <aside class={`backlinks-panel ${backlinksOpen() ? "is-open" : ""}`}>
+              <div class="backlinks-panel__header">
+                <div class="backlinks-panel__title">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                  Backlinks
+                </div>
+                <button class="backlinks-panel__close" onClick={() => setBacklinksOpen(false)} aria-label="Close backlinks">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <div class="backlinks-panel__body">
+                <Show when={activeBlock()}>
+                  {(block) => (
+                    <>
+                      <div class="backlinks-panel__context">
+                        Linked to <strong>{block().text.slice(0, 40) || "this block"}{block().text.length > 40 ? "..." : ""}</strong>
+                      </div>
+                      <Show
+                        when={activeBacklinks().length > 0}
+                        fallback={
+                          <div class="backlinks-panel__empty">
+                            <div class="backlinks-panel__empty-icon">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                              </svg>
+                            </div>
+                            <p>No backlinks yet</p>
+                            <span>Use <code>((block-id))</code> to create links</span>
+                          </div>
+                        }
+                      >
+                        <div class="backlinks-panel__list">
+                          <For each={activeBacklinks()}>
+                            {(entry) => (
+                              <button
+                                class="backlink-item"
+                                onClick={() => {
+                                  setActiveId(entry.id);
+                                  setJumpToId(entry.id);
+                                }}
+                              >
+                                <div class="backlink-item__text">{entry.text || "Untitled"}</div>
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </>
+                  )}
+                </Show>
+                <Show when={!activeBlock()}>
+                  <div class="backlinks-panel__empty">
+                    <p>Select a block to see backlinks</p>
+                  </div>
+                </Show>
+              </div>
+            </aside>
             <Show when={activePanel()}>
               {(panel) => (
                 <section class="plugin-panel">
@@ -3113,21 +2768,265 @@ function App() {
         </div>
       </Show>
 
+      {/* Settings Modal */}
+      <Show when={settingsOpen()}>
+        <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
+          <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <div class="settings-modal__header">
+              <h2 id="settings-title">Settings</h2>
+              <button class="settings-modal__close" onClick={() => setSettingsOpen(false)} aria-label="Close settings">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div class="settings-modal__body">
+              <nav class="settings-nav">
+                <button class={`settings-nav__item ${settingsTab() === "general" ? "is-active" : ""}`} onClick={() => setSettingsTab("general")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+                  General
+                </button>
+                <button class={`settings-nav__item ${settingsTab() === "vault" ? "is-active" : ""}`} onClick={() => setSettingsTab("vault")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                  Vault
+                </button>
+                <button class={`settings-nav__item ${settingsTab() === "sync" ? "is-active" : ""}`} onClick={() => setSettingsTab("sync")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+                  Sync
+                </button>
+                <button class={`settings-nav__item ${settingsTab() === "plugins" ? "is-active" : ""}`} onClick={() => setSettingsTab("plugins")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>
+                  Plugins
+                </button>
+                <button class={`settings-nav__item ${settingsTab() === "import" ? "is-active" : ""}`} onClick={() => setSettingsTab("import")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  Import
+                </button>
+              </nav>
+              <div class="settings-content">
+                <Show when={settingsTab() === "general"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Typography</h3>
+                    <p class="settings-section__desc">Adjust the text size across the interface.</p>
+                    <div class="settings-slider">
+                      <div class="settings-slider__header">
+                        <label class="settings-label">Text size</label>
+                        <span class="settings-value">{Math.round(typeScale() * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        class="settings-slider__input"
+                        min="0.8"
+                        max="1.4"
+                        step="0.05"
+                        value={typeScale()}
+                        onInput={(e) => setTypeScale(parseFloat(e.currentTarget.value))}
+                      />
+                      <div class="settings-slider__labels">
+                        <span>Compact</span>
+                        <span>Default</span>
+                        <span>Large</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Appearance</h3>
+                    <p class="settings-section__desc">Sandpaper follows your system color scheme.</p>
+                    <div class="settings-row">
+                      <label class="settings-label">Current vault</label>
+                      <span class="settings-value">{activeVault()?.name ?? "Default"}</span>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={settingsTab() === "vault"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Active Vault</h3>
+                    <select class="settings-select" value={activeVault()?.id ?? ""} onChange={(e) => applyActiveVault(e.currentTarget.value)}>
+                      <For each={vaults()}>{(vault) => <option value={vault.id}>{vault.name}</option>}</For>
+                    </select>
+                    <button class="settings-action" onClick={() => setVaultFormOpen((p) => !p)}>
+                      {vaultFormOpen() ? "Cancel" : "New vault"}
+                    </button>
+                    <Show when={vaultFormOpen()}>
+                      <div class="settings-form">
+                        <input class="settings-input" type="text" placeholder="Vault name" value={newVaultName()} onInput={(e) => setNewVaultName(e.currentTarget.value)} />
+                        <input class="settings-input" type="text" placeholder="Vault path" value={newVaultPath()} onInput={(e) => setNewVaultPath(e.currentTarget.value)} />
+                        <button class="settings-action is-primary" onClick={createVault}>Create vault</button>
+                      </div>
+                    </Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Encryption Key</h3>
+                    <p class="settings-section__desc">{vaultKeyStatus().configured ? `Configured (${vaultKeyStatus().kdf ?? "pbkdf2-sha256"})` : "Set a passphrase to enable E2E encryption."}</p>
+                    <input class="settings-input" type="password" placeholder="Passphrase" value={vaultPassphrase()} onInput={(e) => setVaultPassphrase(e.currentTarget.value)} />
+                    <div class="settings-actions">
+                      <button class="settings-action is-primary" disabled={vaultKeyBusy() || !vaultPassphrase().trim()} onClick={setVaultKey}>
+                        {vaultKeyBusy() ? "Deriving..." : "Set passphrase"}
+                      </button>
+                      <button class="settings-action" onClick={() => setVaultPassphrase("")}>Clear</button>
+                    </div>
+                    <Show when={vaultKeyMessage()}><div class="settings-message">{vaultKeyMessage()}</div></Show>
+                  </div>
+                </Show>
+                <Show when={settingsTab() === "sync"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Connection</h3>
+                    <div class="settings-status">
+                      <span class={`settings-status__dot ${syncStatus().state}`} />
+                      <span class="settings-status__label">{syncStateLabel()}</span>
+                    </div>
+                    <p class="settings-section__desc">{syncStateDetail()}</p>
+                    <input class="settings-input" type="text" placeholder="Sync server URL" value={syncServerUrl()} onInput={(e) => setSyncServerUrl(e.currentTarget.value)} />
+                    <input class="settings-input" type="text" placeholder="Vault ID (optional)" value={syncVaultIdInput()} onInput={(e) => setSyncVaultIdInput(e.currentTarget.value)} />
+                    <input class="settings-input" type="text" placeholder="Device ID (optional)" value={syncDeviceIdInput()} onInput={(e) => setSyncDeviceIdInput(e.currentTarget.value)} />
+                    <div class="settings-actions">
+                      <button class="settings-action is-primary" disabled={!isTauri() || syncBusy() || !vaultKeyStatus().configured || !syncServerUrl().trim()} onClick={connectSync}>
+                        {syncBusy() ? "Connecting..." : "Connect"}
+                      </button>
+                      <button class="settings-action" disabled={!isTauri() || syncBusy() || !syncConnected()} onClick={syncNow}>Sync now</button>
+                    </div>
+                    <Show when={syncMessage()}><div class="settings-message">{syncMessage()}</div></Show>
+                  </div>
+                  <Show when={syncConnected()}>
+                    <div class="settings-section">
+                      <h3 class="settings-section__title">Statistics</h3>
+                      <div class="settings-stats">
+                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().pending_ops}</span><span class="settings-stat__label">Queue</span></div>
+                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_push_count}</span><span class="settings-stat__label">Pushed</span></div>
+                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_pull_count}</span><span class="settings-stat__label">Pulled</span></div>
+                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_apply_count}</span><span class="settings-stat__label">Applied</span></div>
+                      </div>
+                      <div class="settings-row"><label class="settings-label">Vault ID</label><code class="settings-code">{syncConfig()?.vault_id}</code></div>
+                      <div class="settings-row"><label class="settings-label">Device ID</label><code class="settings-code">{syncConfig()?.device_id}</code></div>
+                    </div>
+                  </Show>
+                </Show>
+                <Show when={settingsTab() === "plugins"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Installed Plugins</h3>
+                    <Show when={plugins().length > 0} fallback={<p class="settings-section__desc">No plugins installed.</p>}>
+                      <For each={plugins()}>{(plugin) => (
+                        <div class={`settings-plugin ${plugin.enabled ? "" : "is-disabled"}`}>
+                          <div class="settings-plugin__info">
+                            <span class="settings-plugin__name">{plugin.name}</span>
+                            <span class="settings-plugin__version">{plugin.version}</span>
+                          </div>
+                          <Show when={plugin.description}><p class="settings-plugin__desc">{plugin.description}</p></Show>
+                          <Show when={plugin.missing_permissions.length > 0}>
+                            <div class="settings-plugin__permissions">
+                              <For each={plugin.missing_permissions}>{(perm) => (
+                                <button class="settings-action" onClick={() => requestGrantPermission(plugin, perm)}>Grant {perm}</button>
+                              )}</For>
+                            </div>
+                          </Show>
+                        </div>
+                      )}</For>
+                    </Show>
+                    <button class="settings-action is-primary" onClick={loadPluginRuntime} disabled={pluginBusy()}>
+                      {pluginBusy() ? "Loading..." : "Reload plugins"}
+                    </button>
+                    <Show when={commandStatus()}><div class="settings-message is-success">{commandStatus()}</div></Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Plugin Commands</h3>
+                    <Show
+                      when={(pluginStatus()?.commands ?? []).length > 0}
+                      fallback={<p class="settings-section__desc">No plugin commands available.</p>}
+                    >
+                      <For each={pluginStatus()?.commands ?? []}>
+                        {(command) => (
+                          <div class="settings-row">
+                            <div>
+                              <div class="settings-value">{command.title}</div>
+                              <Show when={command.description}>
+                                <div class="settings-label">{command.description}</div>
+                              </Show>
+                            </div>
+                            <button
+                              class="settings-action"
+                              onClick={() => runPluginCommand(command)}
+                              disabled={pluginBusy()}
+                            >
+                              Run
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Plugin Panels</h3>
+                    <Show
+                      when={(pluginStatus()?.panels ?? []).length > 0}
+                      fallback={<p class="settings-section__desc">No plugin panels available.</p>}
+                    >
+                      <For each={pluginStatus()?.panels ?? []}>
+                        {(panel) => (
+                          <div class="settings-row">
+                            <div>
+                              <div class="settings-value">{panel.title}</div>
+                              <Show when={panel.location}>
+                                <div class="settings-label">{panel.location}</div>
+                              </Show>
+                            </div>
+                            <button
+                              class="settings-action"
+                              onClick={() => openPanel(panel)}
+                              disabled={pluginBusy()}
+                            >
+                              Open
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                </Show>
+                <Show when={settingsTab() === "import"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Import Markdown</h3>
+                    <p class="settings-section__desc">Paste shadow Markdown to create or update a page.</p>
+                    <textarea class="settings-textarea" rows={5} placeholder="Paste markdown here..." value={importText()} onInput={(e) => setImportText(e.currentTarget.value)} />
+                    <div class="settings-actions">
+                      <button class="settings-action is-primary" onClick={importMarkdown} disabled={importing()}>{importing() ? "Importing..." : "Import"}</button>
+                      <button class="settings-action" onClick={() => { setImportText(""); setImportStatus(null); }}>Clear</button>
+                    </div>
+                    <Show when={importStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Export Markdown</h3>
+                    <p class="settings-section__desc">Export all pages as read-only Markdown with stable block IDs.</p>
+                    <button class="settings-action is-primary" onClick={exportMarkdown} disabled={exporting()}>{exporting() ? "Exporting..." : "Export all pages"}</button>
+                    <Show when={exportStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
+                    <Show when={exportStatus()?.preview}>{(preview) => <pre class="settings-preview"><code>{preview()}</code></pre>}</Show>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
       <Show when={permissionPrompt()}>
         {(prompt) => (
           <div class="modal-backdrop" role="presentation">
             <div class="modal" role="dialog" aria-modal="true">
-              <h3>Grant permission</h3>
-              <p>
-                Allow <strong>{prompt().pluginName}</strong> to use{" "}
-                <strong>{prompt().permission}</strong>?
-              </p>
+              <div class="modal__header">
+                <h3>Grant permission</h3>
+              </div>
+              <div class="modal__body">
+                <p>
+                  Allow <strong>{prompt().pluginName}</strong> to use{" "}
+                  <strong>{prompt().permission}</strong>?
+                </p>
+              </div>
               <div class="modal__actions">
-                <button class="modal__button is-primary" onClick={grantPermission}>
-                  Allow
-                </button>
                 <button class="modal__button" onClick={dismissPermissionPrompt}>
                   Deny
+                </button>
+                <button class="modal__button is-primary" onClick={grantPermission}>
+                  Allow
                 </button>
               </div>
             </div>
