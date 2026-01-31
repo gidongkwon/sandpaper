@@ -147,7 +147,7 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("imports markdown in browser mode", async () => {
+  it("imports markdown into a new page in browser mode", async () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText(/paste markdown to import/i);
     await userEvent.type(
@@ -160,6 +160,14 @@ describe("App", () => {
     });
     await userEvent.click(importButton);
     expect(await screen.findByText(/imported 1 blocks?/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Import", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+    const pageButton = screen.getByRole("button", { name: "Open Import" });
+    await userEvent.click(pageButton);
+    expect(
+      await screen.findByText("Import", { selector: ".editor-pane__meta" })
+    ).toBeInTheDocument();
     const searchInput = screen.getByPlaceholderText("Search notes, tags, or IDs");
     await userEvent.type(searchInput, "Imported line");
     expect(await screen.findByText("Imported line")).toBeInTheDocument();

@@ -40,6 +40,17 @@ type VaultRecord = {
   path: string;
 };
 
+type PageSummary = {
+  uid: string;
+  title: string;
+};
+
+type LocalPageRecord = {
+  uid: string;
+  title: string;
+  blocks: Block[];
+};
+
 type VaultConfig = {
   active_id?: string | null;
   vaults: VaultRecord[];
@@ -228,6 +239,22 @@ const DEFAULT_PAGE_UID = "inbox";
 const makeLocalId = () => `b${nextId++}`;
 const makeRandomId = () => globalThis.crypto?.randomUUID?.() ?? makeLocalId();
 
+const normalizePageUid = (value: string) => {
+  let output = "";
+  let wasDash = false;
+  for (const ch of value) {
+    if (/^[A-Za-z0-9]$/.test(ch)) {
+      output += ch.toLowerCase();
+      wasDash = false;
+    } else if (!wasDash) {
+      output += "-";
+      wasDash = true;
+    }
+  }
+  const trimmed = output.replace(/^-+|-+$/g, "");
+  return trimmed || "page";
+};
+
 const makeBlock = (id: string, text = "", indent = 0): Block => ({
   id,
   text,
@@ -296,6 +323,10 @@ const buildDefaultBlocks = (idFactory: () => string): Block[] => {
   );
 };
 
+const buildEmptyBlocks = (idFactory: () => string): Block[] => [
+  makeBlock(idFactory(), "", 0)
+];
+
 const buildLocalDefaults = () => buildDefaultBlocks(makeLocalId);
 const defaultBlocks = buildLocalDefaults();
 const resolveInitialBlocks = () => {
@@ -308,9 +339,21 @@ const resolveInitialBlocks = () => {
 
 function App() {
   const initialBlocks = resolveInitialBlocks();
+  const initialBlockSnapshot = initialBlocks.map((block) => ({ ...block }));
   const [blocks, setBlocks] = createStore<Block[]>([
     ...initialBlocks
   ]);
+  const [pages, setPages] = createSignal<PageSummary[]>([]);
+  const [activePageUid, setActivePageUid] = createSignal(DEFAULT_PAGE_UID);
+  const [localPages, setLocalPages] = createStore<
+    Record<string, LocalPageRecord>
+  >({
+    [DEFAULT_PAGE_UID]: {
+      uid: DEFAULT_PAGE_UID,
+      title: "Inbox",
+      blocks: initialBlockSnapshot
+    }
+  });
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [mode, setMode] = createSignal<Mode>("editor");
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -662,6 +705,60 @@ function App() {
     }
   });
 
+  const resolvePageUid = (value: string) =>
+    normalizePageUid(value || DEFAULT_PAGE_UID);
+
+  const snapshotBlocks = (source: Block[]) =>
+    source.map((block) => ({ ...block }));
+
+  const saveLocalPageSnapshot = (pageUid: string, title: string, items: Block[]) => {
+    setLocalPages(resolvePageUid(pageUid), {
+      uid: resolvePageUid(pageUid),
+      title,
+      blocks: snapshotBlocks(items)
+    });
+  };
+
+  const loadPages = async () => {
+    if (!isTauri()) {
+      const entries = Object.values(localPages)
+        .map((page) => ({ uid: page.uid, title: page.title }))
+        .sort((left, right) => left.title.localeCompare(right.title));
+      setPages(entries);
+      if (
+        entries.length > 0 &&
+        !entries.find((page) => page.uid === resolvePageUid(activePageUid()))
+      ) {
+        setActivePageUid(entries[0]?.uid ?? DEFAULT_PAGE_UID);
+      }
+      return;
+    }
+
+    try {
+      const remote = (await invoke("list_pages")) as PageSummary[];
+      setPages(remote);
+      if (
+        remote.length > 0 &&
+        !remote.find((page) => page.uid === resolvePageUid(activePageUid()))
+      ) {
+        setActivePageUid(remote[0]?.uid ?? DEFAULT_PAGE_UID);
+      }
+    } catch (error) {
+      console.error("Failed to load pages", error);
+    }
+  };
+
+  const switchPage = async (pageUid: string) => {
+    const nextUid = resolvePageUid(pageUid);
+    if (nextUid === resolvePageUid(activePageUid())) return;
+
+    if (!isTauri()) {
+      saveLocalPageSnapshot(activePageUid(), pageTitle(), blocks);
+    }
+
+    await loadBlocks(nextUid);
+  };
+
   const createNewBlock = (text = "", indent = 0) =>
     makeBlock(isTauri() ? makeRandomId() : makeLocalId(), text, indent);
 
@@ -717,7 +814,7 @@ function App() {
       setReviewMessage("Review queue is only available in the desktop app.");
       return;
     }
-    const pageUid = DEFAULT_PAGE_UID;
+    const pageUid = resolvePageUid(activePageUid());
     setReviewMessage(null);
     try {
       await invoke("add_review_queue_item", {
@@ -794,6 +891,7 @@ function App() {
         title: `${template.title} · ${today}`
       });
       setReviewMessage(`${template.title} template queued for review.`);
+      await loadPages();
       await loadReviewSummary();
       await loadReviewQueue();
     } catch (error) {
@@ -922,13 +1020,20 @@ function App() {
 
   let saveTimeout: number | undefined;
   let autosaveTimeout: number | undefined;
-  const persistBlocks = async () => {
-    if (!isTauri()) return;
-    const payload = untrack(() => blocks.map((block) => toPayload(block)));
+  const persistBlocks = async (
+    pageUid: string,
+    payload: BlockPayload[],
+    title: string,
+    snapshot: Block[]
+  ) => {
+    if (!isTauri()) {
+      saveLocalPageSnapshot(pageUid, title, snapshot);
+      return;
+    }
     try {
       await invoke("save_page_blocks", {
-        pageUid: DEFAULT_PAGE_UID,
-        page_uid: DEFAULT_PAGE_UID,
+        pageUid,
+        page_uid: pageUid,
         blocks: payload
       });
     } catch (error) {
@@ -936,8 +1041,9 @@ function App() {
     }
   };
 
-  const scheduleShadowWrite = () => {
+  const scheduleShadowWrite = (pageUid = activePageUid()) => {
     if (!isTauri()) return;
+    const resolvedUid = resolvePageUid(pageUid);
     const snapshot = untrack(() =>
       blocks.map((block) => ({
         id: block.id,
@@ -947,15 +1053,18 @@ function App() {
     );
     const title = untrack(() => pageTitle());
     const content = serializePageToMarkdown({
-      id: DEFAULT_PAGE_UID,
+      id: resolvedUid,
       title,
       blocks: snapshot
     });
-    shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, content);
+    shadowWriter.scheduleWrite(resolvedUid, content);
   };
 
   const scheduleSave = () => {
-    if (!isTauri()) return;
+    const pageUid = resolvePageUid(activePageUid());
+    const snapshot = untrack(() => snapshotBlocks(blocks));
+    const payload = snapshot.map((block) => toPayload(block));
+    const title = untrack(() => pageTitle());
     if (saveTimeout) {
       window.clearTimeout(saveTimeout);
     }
@@ -963,9 +1072,9 @@ function App() {
       window.clearTimeout(autosaveTimeout);
     }
     saveTimeout = window.setTimeout(() => {
-      void persistBlocks();
+      void persistBlocks(pageUid, payload, title, snapshot);
     }, 400);
-    scheduleShadowWrite();
+    scheduleShadowWrite(pageUid);
     setAutosaved(false);
     autosaveTimeout = window.setTimeout(() => {
       const time = stampNow();
@@ -980,14 +1089,30 @@ function App() {
       minute: "2-digit"
     }).format(new Date());
 
-  const loadBlocks = async () => {
+  const loadBlocks = async (pageUid = activePageUid()) => {
+    const resolvedUid = resolvePageUid(pageUid);
+    setActivePageUid(resolvedUid);
+
     if (!isTauri()) {
-      const seedCount = getSeedCount();
-      const seeded = seedCount
-        ? buildSeedBlocks(makeLocalId, seedCount)
-        : buildLocalDefaults();
-      setBlocks(seeded);
-      setPageTitle("Inbox");
+      const local = localPages[resolvedUid];
+      if (!local) {
+        const seeded =
+          resolvedUid === DEFAULT_PAGE_UID
+            ? buildLocalDefaults()
+            : buildEmptyBlocks(makeLocalId);
+        const title = resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled";
+        saveLocalPageSnapshot(resolvedUid, title, seeded);
+        setBlocks(seeded);
+        setPageTitle(title);
+        setActiveId(seeded[0]?.id ?? null);
+        setAutosaved(true);
+        setAutosaveStamp(stampNow());
+        await loadPages();
+        return;
+      }
+      setBlocks(snapshotBlocks(local.blocks));
+      setPageTitle(local.title || "Untitled");
+      setActiveId(local.blocks[0]?.id ?? null);
       setAutosaved(true);
       setAutosaveStamp(stampNow());
       return;
@@ -995,31 +1120,32 @@ function App() {
 
     try {
       const response = (await invoke("load_page_blocks", {
-        pageUid: DEFAULT_PAGE_UID,
-        page_uid: DEFAULT_PAGE_UID
+        pageUid: resolvedUid,
+        page_uid: resolvedUid
       })) as PageBlocksResponse;
       const loaded = response.blocks.map((block) =>
         makeBlock(block.uid, block.text, block.indent)
       );
-      setPageTitle(response.title || "Inbox");
+      const title = response.title || (resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled");
+      setPageTitle(title);
       if (loaded.length === 0) {
         const seeded = buildDefaultBlocks(makeRandomId);
         setBlocks(seeded);
         await invoke("save_page_blocks", {
-          pageUid: DEFAULT_PAGE_UID,
-          page_uid: DEFAULT_PAGE_UID,
+          pageUid: resolvedUid,
+          page_uid: resolvedUid,
           blocks: seeded.map((block) => toPayload(block))
         });
         const seedMarkdown = serializePageToMarkdown({
-          id: DEFAULT_PAGE_UID,
-          title: response.title || "Inbox",
+          id: resolvedUid,
+          title,
           blocks: seeded.map((block) => ({
             id: block.id,
             text: block.text,
             indent: block.indent
           }))
         });
-        shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, seedMarkdown);
+        shadowWriter.scheduleWrite(resolvedUid, seedMarkdown);
         setActiveId(seeded[0]?.id ?? null);
         setAutosaved(true);
         setAutosaveStamp(stampNow());
@@ -1028,15 +1154,15 @@ function App() {
       setBlocks(loaded);
       setActiveId(loaded[0]?.id ?? null);
       const loadedMarkdown = serializePageToMarkdown({
-        id: DEFAULT_PAGE_UID,
-        title: response.title || "Inbox",
+        id: resolvedUid,
+        title,
         blocks: loaded.map((block) => ({
           id: block.id,
           text: block.text,
           indent: block.indent
         }))
       });
-      shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, loadedMarkdown);
+      shadowWriter.scheduleWrite(resolvedUid, loadedMarkdown);
       setAutosaved(true);
       setAutosaveStamp(stampNow());
     } catch (error) {
@@ -1292,8 +1418,11 @@ function App() {
   const applySyncInbox = async () => {
     if (!isTauri()) return { pages: [], applied: 0 };
     const result = (await invoke("apply_sync_inbox")) as SyncApplyResult;
-    if (result.applied > 0 && result.pages.includes(DEFAULT_PAGE_UID)) {
-      await loadBlocks();
+    if (
+      result.applied > 0 &&
+      result.pages.includes(resolvePageUid(activePageUid()))
+    ) {
+      await loadBlocks(activePageUid());
     }
     updateSyncStatus({
       pending_ops: 0,
@@ -1518,7 +1647,16 @@ function App() {
         return;
       }
 
-      const existingIds = new Set(blocks.map((block) => block.id));
+      const targetUid = parsed.hasHeader
+        ? resolvePageUid(parsed.page.id)
+        : resolvePageUid(activePageUid());
+      const targetTitle =
+        parsed.hasHeader && parsed.page.title.trim()
+          ? parsed.page.title.trim()
+          : pageTitle();
+      const replacePage = parsed.hasHeader;
+      const baseBlocks = replacePage ? [] : blocks;
+      const existingIds = new Set(baseBlocks.map((block) => block.id));
       const importedBlocks = parsed.page.blocks.map((block) => {
         let nextId = block.id;
         if (existingIds.has(nextId)) {
@@ -1528,50 +1666,54 @@ function App() {
         return { ...block, id: nextId };
       });
 
-      const nextBlocks = [...blocks, ...importedBlocks];
+      const nextBlocks = replacePage
+        ? importedBlocks
+        : [...baseBlocks, ...importedBlocks];
       setBlocks(nextBlocks);
+      setActivePageUid(targetUid);
       if (importedBlocks[0]) {
         setActiveId(importedBlocks[0].id);
         setJumpToId(importedBlocks[0].id);
       }
-      const nextTitle =
-        parsed.hasHeader && parsed.page.title.trim()
-          ? parsed.page.title.trim()
-          : pageTitle();
-      if (nextTitle !== pageTitle()) {
-        setPageTitle(nextTitle);
+      if (targetTitle !== pageTitle()) {
+        setPageTitle(targetTitle);
       }
 
       if (isTauri()) {
-        await invoke("save_page_blocks", {
-          pageUid: DEFAULT_PAGE_UID,
-          page_uid: DEFAULT_PAGE_UID,
-          blocks: nextBlocks.map((block) => toPayload(block))
-        });
-        if (parsed.hasHeader && nextTitle.trim()) {
+        if (targetTitle.trim()) {
           await invoke("set_page_title", {
-            pageUid: DEFAULT_PAGE_UID,
-            page_uid: DEFAULT_PAGE_UID,
-            title: nextTitle.trim()
+            pageUid: targetUid,
+            page_uid: targetUid,
+            title: targetTitle.trim()
           });
         }
+        await invoke("save_page_blocks", {
+          pageUid: targetUid,
+          page_uid: targetUid,
+          blocks: nextBlocks.map((block) => toPayload(block))
+        });
+        await loadPages();
+      } else {
+        saveLocalPageSnapshot(targetUid, targetTitle, nextBlocks);
+        await loadPages();
       }
 
       const warningSuffix =
         parsed.warnings.length > 0
           ? ` ${parsed.warnings.length} warnings.`
           : "";
+      const scopeLabel = replacePage ? targetTitle : pageTitle();
       setImportStatus({
         state: "success",
-        message: `Imported ${importedBlocks.length} blocks into Inbox.${warningSuffix}`
+        message: `Imported ${importedBlocks.length} blocks into ${scopeLabel}.${warningSuffix}`
       });
       setAutosaved(true);
       setAutosaveStamp(stampNow());
       shadowWriter.scheduleWrite(
-        DEFAULT_PAGE_UID,
+        targetUid,
         serializePageToMarkdown({
-          id: DEFAULT_PAGE_UID,
-          title: nextTitle,
+          id: targetUid,
+          title: targetTitle,
           blocks: nextBlocks.map((block) => ({
             id: block.id,
             text: block.text,
@@ -1597,8 +1739,9 @@ function App() {
     setExportStatus(null);
 
     if (!isTauri()) {
+      const pageUid = resolvePageUid(activePageUid());
       const markdown = serializePageToMarkdown({
-        id: DEFAULT_PAGE_UID,
+        id: pageUid,
         title: pageTitle(),
         blocks: blocks.map((block) => ({
           id: block.id,
@@ -1662,11 +1805,12 @@ function App() {
     if (!isTauri()) return;
 
     try {
+      const pageUid = resolvePageUid(activePageUid());
       await invoke("plugin_write_page", {
         pluginId: command.plugin_id,
         plugin_id: command.plugin_id,
-        pageUid: DEFAULT_PAGE_UID,
-        page_uid: DEFAULT_PAGE_UID,
+        pageUid,
+        page_uid: pageUid,
         blocks: nextBlocks.map((block) => ({
           uid: block.id,
           text: block.text,
@@ -1687,7 +1831,8 @@ function App() {
       };
       setVaults([fallback]);
       setActiveVault(fallback);
-      await loadBlocks();
+      await loadBlocks(activePageUid());
+      await loadPages();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
@@ -1705,7 +1850,8 @@ function App() {
         entries[0] ??
         null;
       setActiveVault(active);
-      await loadBlocks();
+      await loadBlocks(activePageUid());
+      await loadPages();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
@@ -1727,7 +1873,8 @@ function App() {
     setExportStatus(null);
     setActivePanel(null);
     setCommandStatus(null);
-    await loadBlocks();
+    await loadBlocks(activePageUid());
+    await loadPages();
     await loadPlugins();
     await loadVaultKeyStatus();
     await loadSyncConfig();
@@ -1748,7 +1895,8 @@ function App() {
       const record = { id, name, path };
       setVaults((prev) => [...prev, record]);
       setActiveVault(record);
-      await loadBlocks();
+      await loadBlocks(activePageUid());
+      await loadPages();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
@@ -2251,6 +2399,34 @@ function App() {
                 </For>
               </Show>
             </div>
+            <div class="sidebar__pages">
+              <div class="sidebar__section-title">Pages</div>
+              <div class="page-list">
+                <Show
+                  when={pages().length > 0}
+                  fallback={<div class="page-list__empty">No pages yet.</div>}
+                >
+                  <For each={pages()}>
+                    {(page) => (
+                      <button
+                        class={`page-item ${
+                          page.uid === resolvePageUid(activePageUid())
+                            ? "is-active"
+                            : ""
+                        }`}
+                        onClick={() => switchPage(page.uid)}
+                        aria-label={`Open ${page.title || "Untitled"}`}
+                      >
+                        <div class="page-item__title">
+                          {page.title || "Untitled"}
+                        </div>
+                        <div class="page-item__meta">{page.uid}</div>
+                      </button>
+                    )}
+                  </For>
+                </Show>
+              </div>
+            </div>
             <div class="sidebar__vaults">
               <div class="sidebar__section-title">Vault</div>
               <select
@@ -2623,7 +2799,7 @@ function App() {
               <div class="import-card">
                 <div class="import-card__title">Markdown import</div>
                 <div class="import-card__desc">
-                  Paste shadow Markdown to append blocks into Inbox.
+                  Paste shadow Markdown to create or update a page.
                 </div>
                 <textarea
                   class="import-card__input"

@@ -28,6 +28,12 @@ struct PageBlocksResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct PageSummary {
+    uid: String,
+    title: String,
+}
+
+#[derive(Debug, Serialize)]
 struct PluginPermissionInfo {
     id: String,
     name: String,
@@ -1028,6 +1034,21 @@ fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> 
 }
 
 #[tauri::command]
+fn list_pages() -> Result<Vec<PageSummary>, String> {
+    let db = open_active_database()?;
+    let pages = db
+        .list_pages()
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(pages
+        .into_iter()
+        .map(|page| PageSummary {
+            uid: page.uid,
+            title: page.title,
+        })
+        .collect())
+}
+
+#[tauri::command]
 fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
     let db = open_active_database()?;
     db.search_block_summaries(&query, 50)
@@ -1286,6 +1307,7 @@ pub fn run() {
             list_vaults,
             create_vault,
             set_active_vault,
+            list_pages,
             search_blocks,
             load_page_blocks,
             save_page_blocks,

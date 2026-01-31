@@ -154,6 +154,7 @@ Checklist
 - [x] Editor core: multi-pane editor (2-3 panes)
 - [x] Search: left panel (FTS + filters)
 - [x] Navigation: open results in editor panes
+- [x] Navigation: page list + page switching
 - [x] Shadow Markdown: batched writer (idle or timer)
 - [x] Shadow Markdown: read-only generated `.md` per page
 - [x] Attachments: content-addressed storage in `/assets/<hash>`
@@ -274,7 +275,7 @@ Checklist
 - [x] Tests for parser + import UI
 
 Implementation details
-- Import parses `# Title ^page-id` header when present, but appends blocks to Inbox for v1.
+- Import parses `# Title ^page-id` header and creates/overwrites that page; missing header falls back to appending in the active page.
 - Import warnings are surfaced in UI (ignored lines, missing IDs).
 
 Test design
