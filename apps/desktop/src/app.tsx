@@ -603,6 +603,8 @@ function App() {
     } catch (error) {
       console.error("Failed to load plugins", error);
     }
+
+    await loadPluginRuntime();
   };
 
   const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {

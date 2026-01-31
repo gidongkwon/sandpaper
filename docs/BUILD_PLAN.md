@@ -184,7 +184,7 @@ Success metrics (Phase 1)
 Exit criteria
 - [x] Local editor usable for daily notes
 - [x] Search + backlinks functional
-- [ ] Plugins can load and register commands
+- [x] Plugins can load and register commands
  - [ ] Phase 1 success metrics met
 
 ---
