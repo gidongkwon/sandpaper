@@ -937,6 +937,12 @@ button:disabled {
   overflow: hidden;
 }
 
+.backlink-item__meta {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
 /* ============================================
    EDITOR PANE - Clean, focused writing
    ============================================ */
@@ -1042,25 +1048,43 @@ button:disabled {
   padding-left: 24px;
 }
 
-.block__action-float {
+.block__actions {
   position: absolute;
   left: 0;
-  top: 4px;
+  top: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  color: var(--text-quaternary);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.block:hover .block__actions {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--text-tertiary);
+}
+
+.block__action {
   width: 20px;
   height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: transparent;
   border-radius: var(--radius-sm);
-  color: var(--text-quaternary);
-  opacity: 0;
+  background: transparent;
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.block:hover .block__action-float {
-  opacity: 1;
-  color: var(--text-tertiary);
+.block__action:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.block__action:active {
+  transform: scale(0.96);
 }
 
 .block__action-float:hover {
@@ -1119,6 +1143,51 @@ button:disabled {
 
 .block.is-active .block__input {
   background: var(--accent-soft);
+}
+
+.block__display {
+  width: 100%;
+  padding: var(--space-0-5) var(--space-1);
+  font-size: var(--text-md);
+  line-height: 1.6;
+  color: var(--text-primary);
+  border-radius: var(--radius-xs);
+  min-height: 26px;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+.block__display:hover {
+  background: var(--bg-hover);
+}
+
+.block__display code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--bg-tertiary);
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+}
+
+.block__placeholder {
+  color: var(--text-tertiary);
+}
+
+.wikilink {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wikilink:hover {
+  color: var(--accent-hover);
+}
+
+.wikilink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
 }
 
 

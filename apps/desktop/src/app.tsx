@@ -7,7 +7,8 @@ import {
   createSignal,
   onCleanup,
   onMount,
-  untrack
+  untrack,
+  type JSX
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
@@ -159,6 +160,15 @@ type PageBlocksResponse = {
 type BacklinkEntry = {
   id: string;
   text: string;
+  pageUid?: string;
+  pageTitle?: string;
+};
+
+type PageLinkBlock = {
+  id: string;
+  text: string;
+  pageUid: string;
+  pageTitle: string;
 };
 
 type MarkdownExportStatus = {
@@ -286,6 +296,21 @@ const parseInlineFence = (text: string): CodeFence | null => {
   };
 };
 
+const INLINE_MARKDOWN_PATTERN =
+  /(\[\[[^\]]+?\]\]|`[^`]+`|\*\*[^*]+?\*\*|~~[^~]+?~~|\*[^*]+?\*)/g;
+
+const parseWikilinkToken = (token: string) => {
+  if (!token.startsWith("[[") || !token.endsWith("]]")) return null;
+  const raw = token.slice(2, -2).trim();
+  if (!raw) return null;
+  const [beforeAlias, alias] = raw.split("|");
+  const [beforeHeading] = beforeAlias.split("#");
+  const target = beforeHeading.trim();
+  if (!target) return null;
+  const label = (alias ?? beforeAlias).trim() || target;
+  return { target, label };
+};
+
 const MAX_SEED_BLOCKS = 200_000;
 
 const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
@@ -365,6 +390,7 @@ function App() {
     }
   });
   const [activeId, setActiveId] = createSignal<string | null>(null);
+  const [focusedId, setFocusedId] = createSignal<string | null>(null);
   const [mode, setMode] = createSignal<Mode>("editor");
   const [searchQuery, setSearchQuery] = createSignal("");
   const [searchFilter, setSearchFilter] = createSignal<
@@ -642,14 +668,47 @@ function App() {
     )
   );
 
-  const pageBacklinksMap = createMemo(() =>
-    buildWikilinkBacklinks(
-      blocks.map((block) => ({
+  const pageLinkBlocks = createMemo<PageLinkBlock[]>(() => {
+    if (!isTauri()) {
+      const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
+      const currentTitle = pageTitle();
+      const currentBlocks = blocks.map((block) => ({
         id: block.id,
-        text: block.text
-      })),
-      normalizePageUid
-    )
+        text: block.text,
+        pageUid: currentUid,
+        pageTitle: currentTitle
+      }));
+      const otherBlocks = Object.values(localPages).flatMap((page) => {
+        if (page.uid === currentUid) return [];
+        return page.blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          pageUid: page.uid,
+          pageTitle: page.title
+        }));
+      });
+      return [...currentBlocks, ...otherBlocks];
+    }
+    const activeUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
+    const activeTitle = pageTitle();
+    return blocks.map((block) => ({
+      id: block.id,
+      text: block.text,
+      pageUid: activeUid,
+      pageTitle: activeTitle
+    }));
+  });
+
+  const pageLinkBlocksById = createMemo(() => {
+    const map = new Map<string, PageLinkBlock>();
+    pageLinkBlocks().forEach((block) => {
+      map.set(block.id, block);
+    });
+    return map;
+  });
+
+  const pageBacklinksMap = createMemo(() =>
+    buildWikilinkBacklinks(pageLinkBlocks(), normalizePageUid)
   );
 
   const activeBlock = createMemo(
@@ -669,15 +728,40 @@ function App() {
   const activePageBacklinks = createMemo<BacklinkEntry[]>(() => {
     const pageUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
     const linked = pageBacklinksMap()[pageUid] ?? [];
+    const lookup = pageLinkBlocksById();
     return linked
-      .map((id) => blocks.find((block) => block.id === id))
-      .filter((block): block is Block => Boolean(block))
-      .map((block) => ({ id: block.id, text: block.text || "Untitled" }));
+      .map((id) => lookup.get(id))
+      .filter((block): block is PageLinkBlock => Boolean(block))
+      .map((block) => ({
+        id: block.id,
+        text: block.text || "Untitled",
+        pageUid: block.pageUid,
+        pageTitle: block.pageTitle
+      }));
   });
 
   const totalBacklinks = createMemo(
     () => activeBacklinks().length + activePageBacklinks().length
   );
+
+  const getPageBacklinkSource = (entry: BacklinkEntry) => {
+    const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
+    const sourceUid = normalizePageUid(entry.pageUid || currentUid);
+    if (sourceUid === currentUid) return "This page";
+    return entry.pageTitle || "Untitled page";
+  };
+
+  const openPageBacklink = async (entry: BacklinkEntry) => {
+    const targetPage = entry.pageUid ?? activePageUid();
+    if (!targetPage) return;
+    const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
+    const targetUid = normalizePageUid(targetPage);
+    if (targetUid !== currentUid) {
+      await switchPage(targetPage);
+    }
+    setActiveId(entry.id);
+    setJumpToId(entry.id);
+  };
 
   const filteredSearchResults = createMemo<SearchResult[]>(() => {
     const results = searchResults();
@@ -1176,6 +1260,7 @@ function App() {
   const loadBlocks = async (pageUid = activePageUid()) => {
     const resolvedUid = resolvePageUid(pageUid);
     setActivePageUid(resolvedUid);
+    setFocusedId(null);
 
     if (!isTauri()) {
       const local = localPages[resolvedUid];
@@ -2217,6 +2302,7 @@ function App() {
       const index = findIndexById(id);
       if (index >= 0) scrollToIndex(index);
       setActiveId(id);
+      setFocusedId(id);
       requestAnimationFrame(() => {
         const el = inputRefs.get(id);
         if (!el) return;
@@ -2268,6 +2354,48 @@ function App() {
     const addReviewFromBlock = (block: Block) => {
       if (!block.id) return;
       void addReviewItem(block.id);
+    };
+
+    const findPageByTitle = (title: string) => {
+      const normalized = normalizePageUid(title);
+      return (
+        pages().find((page) => normalizePageUid(page.uid) === normalized) ??
+        pages().find(
+          (page) => page.title.toLowerCase() === title.toLowerCase()
+        ) ??
+        null
+      );
+    };
+
+    const openPageByTitle = async (title: string) => {
+      const existing = findPageByTitle(title);
+      if (existing) {
+        await switchPage(existing.uid);
+        return;
+      }
+      setNewPageTitle(title);
+      await createPage();
+    };
+
+    const linkToPageFromBlock = async (block: Block, index: number) => {
+      const response = prompt("Link to page", "");
+      if (response === null) return;
+      const title = response.trim();
+      if (!title) return;
+      const link = `[[${title}]]`;
+      const separator = block.text.trim().length ? " " : "";
+      const nextText = `${block.text}${separator}${link}`;
+      setBlocks(index, "text", nextText);
+      if (!isTauri()) {
+        const snapshot = snapshotBlocks(blocks);
+        if (snapshot[index]) {
+          snapshot[index].text = nextText;
+        }
+        saveLocalPageSnapshot(activePageUid(), pageTitle(), snapshot);
+      }
+      scheduleSave();
+
+      await openPageByTitle(title);
     };
 
     const handleKeyDown = (block: Block, index: number, event: KeyboardEvent) => {
@@ -2335,6 +2463,53 @@ function App() {
       };
     };
 
+    const renderInlineMarkdown = (text: string): Array<string | JSX.Element> => {
+      const nodes: Array<string | JSX.Element> = [];
+      let cursor = 0;
+      for (const match of text.matchAll(INLINE_MARKDOWN_PATTERN)) {
+        const index = match.index ?? 0;
+        if (index > cursor) {
+          nodes.push(text.slice(cursor, index));
+        }
+        const token = match[0];
+        if (token.startsWith("[[")) {
+          const parsed = parseWikilinkToken(token);
+          if (parsed) {
+            nodes.push(
+              <button
+                type="button"
+                class="wikilink"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void openPageByTitle(parsed.target);
+                }}
+              >
+                {parsed.label}
+              </button>
+            );
+          } else {
+            nodes.push(token);
+          }
+        } else if (token.startsWith("`")) {
+          nodes.push(<code>{token.slice(1, -1)}</code>);
+        } else if (token.startsWith("**")) {
+          nodes.push(<strong>{token.slice(2, -2)}</strong>);
+        } else if (token.startsWith("~~")) {
+          nodes.push(<del>{token.slice(2, -2)}</del>);
+        } else if (token.startsWith("*")) {
+          nodes.push(<em>{token.slice(1, -1)}</em>);
+        } else {
+          nodes.push(token);
+        }
+        cursor = index + token.length;
+      }
+      if (cursor < text.length) {
+        nodes.push(text.slice(cursor));
+      }
+      return nodes;
+    };
+
     const requestRename = () => {
       const currentTitle = renameTitle().trim() || props.title;
       const nextTitle = prompt("Rename page", currentTitle);
@@ -2373,6 +2548,49 @@ function App() {
                   const blockIndex = () => range().start + index();
                   const codePreview = () => getCodePreview(block.text);
                   const diagramPreview = () => getDiagramPreview(block.text);
+                  const isEditing = () => focusedId() === block.id;
+                  const displayContent = () => {
+                    const code = codePreview();
+                    if (code) {
+                      return (
+                        <div class="block-renderer block-renderer--code">
+                          <div class="block-renderer__title">Code preview</div>
+                          <div class="block-renderer__meta">
+                            {code.renderer.title} · {code.lang}
+                          </div>
+                          <pre class="block-renderer__content">
+                            <code>{code.content}</code>
+                          </pre>
+                        </div>
+                      );
+                    }
+                    const diagram = diagramPreview();
+                    if (diagram) {
+                      return (
+                        <div class="block-renderer block-renderer--diagram">
+                          <div class="block-renderer__title">Diagram preview</div>
+                          <div class="block-renderer__meta">
+                            {diagram.renderer.title} · {diagram.lang}
+                          </div>
+                          <div class="block-renderer__diagram">
+                            <div class="diagram-node">A</div>
+                            <div class="diagram-edge">→</div>
+                            <div class="diagram-node">B</div>
+                          </div>
+                          <pre class="block-renderer__content">
+                            <code>{diagram.content}</code>
+                          </pre>
+                        </div>
+                      );
+                    }
+                    const trimmed = block.text.trim();
+                    if (!trimmed) {
+                      return (
+                        <span class="block__placeholder">Write something...</span>
+                      );
+                    }
+                    return <span>{renderInlineMarkdown(block.text)}</span>;
+                  };
                   return (
                     <div
                       class={`block ${activeId() === block.id ? "is-active" : ""}`}
@@ -2381,16 +2599,29 @@ function App() {
                         "--i": `${blockIndex()}`
                       }}
                     >
-                      <button
-                        class="block__action-float"
-                        onClick={() => addReviewFromBlock(block)}
-                        title="Add to review"
-                        aria-label="Add to review"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      </button>
+                      <div class="block__actions">
+                        <button
+                          class="block__action"
+                          onClick={() => addReviewFromBlock(block)}
+                          title="Add to review"
+                          aria-label="Add to review"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
+                        <button
+                          class="block__action"
+                          onClick={() => linkToPageFromBlock(block, blockIndex())}
+                          title="Link to page"
+                          aria-label="Link to page"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                          </svg>
+                        </button>
+                      </div>
                       <span class="block__bullet" aria-hidden="true" />
                       <div class="block__body">
                         <textarea
@@ -2401,7 +2632,13 @@ function App() {
                           value={block.text}
                           placeholder="Write something..."
                           spellcheck={true}
-                          onFocus={() => setActiveId(block.id)}
+                          style={{ display: isEditing() ? "block" : "none" }}
+                          aria-hidden={!isEditing()}
+                          onFocus={() => {
+                            setActiveId(block.id);
+                            setFocusedId(block.id);
+                          }}
+                          onBlur={() => setFocusedId(null)}
                           onInput={(event) => {
                             recordLatency("input");
                             setBlocks(blockIndex(), "text", event.currentTarget.value);
@@ -2409,7 +2646,14 @@ function App() {
                           }}
                           onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                         />
-                        <Show when={codePreview()}>
+                        <div
+                          class="block__display"
+                          style={{ display: isEditing() ? "none" : "block" }}
+                          onClick={() => focusBlock(block.id)}
+                        >
+                          {displayContent()}
+                        </div>
+                        <Show when={isEditing() && codePreview()}>
                           {(preview) => (
                             <div class="block-renderer block-renderer--code">
                               <div class="block-renderer__title">Code preview</div>
@@ -2422,7 +2666,7 @@ function App() {
                             </div>
                           )}
                         </Show>
-                        <Show when={diagramPreview()}>
+                        <Show when={isEditing() && diagramPreview()}>
                           {(preview) => (
                             <div class="block-renderer block-renderer--diagram">
                               <div class="block-renderer__title">Diagram preview</div>
@@ -2756,12 +3000,10 @@ function App() {
                           {(entry) => (
                             <button
                               class="backlink-item"
-                              onClick={() => {
-                                setActiveId(entry.id);
-                                setJumpToId(entry.id);
-                              }}
+                              onClick={() => void openPageBacklink(entry)}
                             >
                               <div class="backlink-item__text">{entry.text || "Untitled"}</div>
+                              <div class="backlink-item__meta">{getPageBacklinkSource(entry)}</div>
                             </button>
                           )}
                         </For>

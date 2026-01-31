@@ -45,17 +45,23 @@ describe("App", () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
-    expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Draft line 1", { selector: ".result__text" })
+    ).toBeInTheDocument();
   });
 
   it("filters search results by links", async () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
-    expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Draft line 1", { selector: ".result__text" })
+    ).toBeInTheDocument();
     const linksButton = screen.getByRole("button", { name: "Links" });
     await userEvent.click(linksButton);
-    expect(screen.queryByText("Draft line 1")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Draft line 1", { selector: ".result__text" })
+    ).not.toBeInTheDocument();
   });
 
   it("prompts for plugin permission grants", async () => {
@@ -191,6 +197,103 @@ describe("App", () => {
       selector: ".backlink-item__text"
     });
     expect(backlinks.length).toBeGreaterThan(0);
+  });
+
+  it("shows page backlinks from other pages", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const promptSpy = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("Project Atlas");
+    const createButton = screen.getByRole("button", { name: /create new page/i });
+    await userEvent.click(createButton);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    fireEvent.input(inputs[0], { target: { value: "See [[Inbox]]" } });
+    const inboxButton = screen.getByRole("button", { name: "Open Inbox" });
+    await userEvent.click(inboxButton);
+    expect(
+      await screen.findByText("Inbox", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /show backlinks/i })
+    );
+    const backlinks = await screen.findAllByText("See [[Inbox]]", {
+      selector: ".backlink-item__text"
+    });
+    expect(backlinks.length).toBeGreaterThan(0);
+    expect(
+      await screen.findByText("Project Atlas", {
+        selector: ".backlink-item__meta"
+      })
+    ).toBeInTheDocument();
+    await userEvent.click(backlinks[0]);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    promptSpy.mockRestore();
+  });
+
+  it("renders markdown display with wikilinks and opens the linked page", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const promptSpy = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("Project Atlas");
+    const createButton = screen.getByRole("button", { name: /create new page/i });
+    await userEvent.click(createButton);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    const inboxButton = screen.getByRole("button", { name: "Open Inbox" });
+    await userEvent.click(inboxButton);
+    expect(
+      await screen.findByText("Inbox", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    fireEvent.input(inputs[0], {
+      target: { value: "See [[Project Atlas]] and **bold**" }
+    });
+    const wikilink = await screen.findByRole("button", { name: "Project Atlas" });
+    expect(wikilink).toBeInTheDocument();
+    const bold = screen.getByText("bold");
+    expect(bold.tagName).toBe("STRONG");
+    await userEvent.click(wikilink);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    promptSpy.mockRestore();
+  });
+
+  it("creates and opens a linked page from the editor", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const promptSpy = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("Project Atlas");
+    const linkButtons = await screen.findAllByRole("button", {
+      name: /link to page/i
+    });
+    await userEvent.click(linkButtons[0]);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Project Atlas", {
+        selector: ".editor-pane__title"
+      })
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /show backlinks/i })
+    );
+    expect(await screen.findByText("Page backlinks")).toBeInTheDocument();
+    const backlinks = await screen.findAllByText(/\[\[Project Atlas\]\]/, {
+      selector: ".backlink-item__text"
+    });
+    expect(backlinks.length).toBeGreaterThan(0);
+    promptSpy.mockRestore();
   });
 
   it("exports markdown in browser mode", async () => {
