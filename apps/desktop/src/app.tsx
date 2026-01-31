@@ -524,7 +524,6 @@ function App() {
   let syncBackoffMs = SYNC_INTERVAL_MS;
   let syncRunning = false;
   let syncLoopEnabled = false;
-  let loadBlocksToken = 0;
 
   const isTauri = () =>
     typeof window !== "undefined" &&
@@ -1266,7 +1265,6 @@ function App() {
 
   const loadBlocks = async (pageUid = activePageUid()) => {
     const resolvedUid = resolvePageUid(pageUid);
-    const token = ++loadBlocksToken;
     setActivePageUid(resolvedUid);
     setFocusedId(null);
 
@@ -1303,7 +1301,6 @@ function App() {
         pageUid: resolvedUid,
         page_uid: resolvedUid
       })) as PageBlocksResponse;
-      if (token !== loadBlocksToken) return;
       const loaded = response.blocks.map((block) =>
         makeBlock(block.uid, block.text, block.indent)
       );
@@ -1318,7 +1315,6 @@ function App() {
           page_uid: resolvedUid,
           blocks: seeded.map((block) => toPayload(block))
         });
-        if (token !== loadBlocksToken) return;
         const seedMarkdown = serializePageToMarkdown({
           id: resolvedUid,
           title,
@@ -1335,7 +1331,6 @@ function App() {
         return;
       }
       setBlocks(loaded);
-      if (token !== loadBlocksToken) return;
       setActiveId(loaded[0]?.id ?? null);
       const loadedMarkdown = serializePageToMarkdown({
         id: resolvedUid,
