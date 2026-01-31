@@ -11,7 +11,11 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
-import { createShadowWriter, serializePageToMarkdown } from "@sandpaper/core-model";
+import {
+  buildBacklinks,
+  createShadowWriter,
+  serializePageToMarkdown
+} from "@sandpaper/core-model";
 import {
   createFpsMeter,
   createPerfTracker,
@@ -60,6 +64,11 @@ type PageBlocksResponse = {
   page_uid: string;
   title: string;
   blocks: BlockPayload[];
+};
+
+type BacklinkEntry = {
+  id: string;
+  text: string;
 };
 
 type MarkdownExportStatus = {
@@ -189,6 +198,9 @@ function App() {
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [mode, setMode] = createSignal<Mode>("editor");
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [searchFilter, setSearchFilter] = createSignal<
+    "all" | "links" | "tasks" | "pinned"
+  >("all");
   const [captureText, setCaptureText] = createSignal("");
   const [jumpToId, setJumpToId] = createSignal<string | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
@@ -394,6 +406,44 @@ function App() {
   const searchResults = createMemo<SearchResult[]>(() =>
     isTauri() ? remoteResults() : localResults()
   );
+
+  const backlinksMap = createMemo(() =>
+    buildBacklinks(
+      blocks.map((block) => ({
+        id: block.id,
+        text: block.text
+      }))
+    )
+  );
+
+  const activeBlock = createMemo(
+    () => blocks.find((block) => block.id === activeId()) ?? null
+  );
+
+  const activeBacklinks = createMemo<BacklinkEntry[]>(() => {
+    const active = activeId();
+    if (!active) return [];
+    const linked = backlinksMap()[active] ?? [];
+    return linked
+      .map((id) => blocks.find((block) => block.id === id))
+      .filter((block): block is Block => Boolean(block))
+      .map((block) => ({ id: block.id, text: block.text || "Untitled" }));
+  });
+
+  const filteredSearchResults = createMemo<SearchResult[]>(() => {
+    const results = searchResults();
+    if (searchFilter() === "all") return results;
+    if (searchFilter() === "links") {
+      return results.filter((result) => result.text.includes("(("));
+    }
+    if (searchFilter() === "tasks") {
+      return results.filter((result) => /\[\s?[xX ]\s?\]/.test(result.text));
+    }
+    if (searchFilter() === "pinned") {
+      return results.filter((result) => result.text.toLowerCase().includes("#pin"));
+    }
+    return results;
+  });
 
   const shadowWriter = createShadowWriter({
     resolvePath: (pageId) => pageId,
@@ -1021,6 +1071,7 @@ function App() {
                           ref={(el) => inputRefs.set(block.id, el)}
                           class="block__input"
                           rows={1}
+                          data-block-id={block.id}
                           value={block.text}
                           placeholder="Write something..."
                           spellcheck={true}
@@ -1187,17 +1238,37 @@ function App() {
               onInput={(event) => setSearchQuery(event.currentTarget.value)}
             />
             <div class="sidebar__filters">
-              <button class="chip">All</button>
-              <button class="chip">Links</button>
-              <button class="chip">Tasks</button>
-              <button class="chip">Pinned</button>
+              <button
+                class={`chip ${searchFilter() === "all" ? "is-active" : ""}`}
+                onClick={() => setSearchFilter("all")}
+              >
+                All
+              </button>
+              <button
+                class={`chip ${searchFilter() === "links" ? "is-active" : ""}`}
+                onClick={() => setSearchFilter("links")}
+              >
+                Links
+              </button>
+              <button
+                class={`chip ${searchFilter() === "tasks" ? "is-active" : ""}`}
+                onClick={() => setSearchFilter("tasks")}
+              >
+                Tasks
+              </button>
+              <button
+                class={`chip ${searchFilter() === "pinned" ? "is-active" : ""}`}
+                onClick={() => setSearchFilter("pinned")}
+              >
+                Pinned
+              </button>
             </div>
             <div class="sidebar__results">
               <Show
-                when={searchResults().length > 0}
+                when={filteredSearchResults().length > 0}
                 fallback={<div class="sidebar__empty">No results yet.</div>}
               >
-                <For each={searchResults()}>
+                <For each={filteredSearchResults()}>
                   {(block) => (
                     <button
                       class="result"
@@ -1484,6 +1555,48 @@ function App() {
             <EditorPane title="Primary editor" meta={pageTitle()} />
             <EditorPane title="Connection pane" meta="Split view" />
           </div>
+          <Show when={activeBlock()}>
+            {(block) => (
+              <section class="backlinks">
+                <div class="backlinks__header">
+                  <div>
+                    <div class="backlinks__title">Backlinks</div>
+                    <div class="backlinks__meta">
+                      For block {block().id}
+                    </div>
+                  </div>
+                  <div class="backlinks__count">
+                    {activeBacklinks().length} linked
+                  </div>
+                </div>
+                <Show
+                  when={activeBacklinks().length > 0}
+                  fallback={
+                    <div class="backlinks__empty">
+                      No backlinks yet. Use <span>((block-id))</span> to link.
+                    </div>
+                  }
+                >
+                  <div class="backlinks__list">
+                    <For each={activeBacklinks()}>
+                      {(entry) => (
+                        <button
+                          class="backlink"
+                          onClick={() => {
+                            setActiveId(entry.id);
+                            setJumpToId(entry.id);
+                          }}
+                        >
+                          <div class="backlink__text">{entry.text}</div>
+                          <div class="backlink__meta">Block {entry.id}</div>
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </section>
+            )}
+          </Show>
           <Show when={activePanel()}>
             {(panel) => (
               <section class="plugin-panel">

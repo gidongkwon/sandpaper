@@ -22,6 +22,16 @@ describe("App", () => {
     expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
   });
 
+  it("filters search results by links", async () => {
+    render(() => <App />);
+    const input = screen.getByPlaceholderText("Search notes, tags, or IDs");
+    await userEvent.type(input, "Draft line 1");
+    expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
+    const linksButton = screen.getByRole("button", { name: "Links" });
+    await userEvent.click(linksButton);
+    expect(screen.queryByText("Draft line 1")).not.toBeInTheDocument();
+  });
+
   it("prompts for plugin permission grants", async () => {
     render(() => <App />);
     const grantButton = await screen.findByRole("button", {
@@ -65,6 +75,23 @@ describe("App", () => {
     expect(previews.length).toBeGreaterThan(0);
     const snippets = await screen.findAllByText("graph TD A-->B;");
     expect(snippets.length).toBeGreaterThan(0);
+  });
+
+  it("shows backlinks for referenced blocks", async () => {
+    render(() => <App />);
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    const firstInput = inputs[0];
+    const secondInput = inputs[1];
+    const targetId = firstInput.getAttribute("data-block-id");
+    expect(targetId).toBeTruthy();
+    await userEvent.clear(secondInput);
+    await userEvent.type(secondInput, `See ((${targetId}))`);
+    await userEvent.click(firstInput);
+    expect(await screen.findByText("Backlinks")).toBeInTheDocument();
+    const backlinks = await screen.findAllByText(/see/i, {
+      selector: ".backlink__text"
+    });
+    expect(backlinks.length).toBeGreaterThan(0);
   });
 
   it("exports markdown in browser mode", async () => {

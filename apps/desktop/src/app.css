@@ -129,6 +129,12 @@ body {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
+.chip.is-active {
+  background: var(--ink);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -618,6 +624,88 @@ body {
 .plugin-panel__content {
   font-size: 13px;
   color: var(--ink);
+}
+
+.backlinks {
+  margin-top: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(90, 74, 62, 0.18);
+  background: rgba(255, 255, 255, 0.86);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+
+.backlinks__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.backlinks__title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+}
+
+.backlinks__meta {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.backlinks__count {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.backlinks__empty {
+  font-size: 13px;
+  color: var(--ink-soft);
+  border-radius: 12px;
+  border: 1px dashed rgba(90, 74, 62, 0.2);
+  padding: 12px 14px;
+  background: rgba(250, 245, 238, 0.7);
+}
+
+.backlinks__empty span {
+  font-family: "Fraunces", "Georgia", serif;
+}
+
+.backlinks__list {
+  display: grid;
+  gap: 8px;
+}
+
+.backlink {
+  text-align: left;
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.backlink:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px rgba(110, 80, 60, 0.16);
+}
+
+.backlink__text {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.backlink__meta {
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 
 .editor-pane {
