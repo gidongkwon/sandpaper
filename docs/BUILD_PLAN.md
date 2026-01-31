@@ -138,8 +138,8 @@ Exit criteria
 Checklist
 - [ ] App shell: Tauri v2 desktop app
 - [x] Mode switcher: Quick Capture / Editor / Review
-- [ ] Vault management: create/select vault
-- [ ] Vault management: multi-vault, no cross-vault links
+- [x] Vault management: create/select vault
+- [x] Vault management: multi-vault, no cross-vault links
 - [x] Vault management: config stored in local app data
 - [x] SQLite core: schema + migrations
 - [x] SQLite core: CRUD for pages/blocks/tags/edges

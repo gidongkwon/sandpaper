@@ -212,6 +212,59 @@ body {
   gap: 4px;
 }
 
+.sidebar__vaults {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(90, 74, 62, 0.25);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.sidebar__section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-soft);
+}
+
+.vault-select,
+.vault-input {
+  width: 100%;
+  border: 1px solid rgba(90, 74, 62, 0.25);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.vault-action {
+  border: 1px solid rgba(90, 74, 62, 0.25);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.vault-action.is-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.vault-form {
+  display: grid;
+  gap: 8px;
+}
+
+.vault-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .panes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

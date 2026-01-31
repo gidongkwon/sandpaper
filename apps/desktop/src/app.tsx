@@ -8,6 +8,7 @@ import {
   onMount
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { invoke } from "@tauri-apps/api/core";
 import {
   createFpsMeter,
   createPerfTracker,
@@ -23,6 +24,17 @@ type Block = {
 };
 
 type Mode = "quick-capture" | "editor" | "review";
+
+type VaultRecord = {
+  id: string;
+  name: string;
+  path: string;
+};
+
+type VaultConfig = {
+  active_id?: string | null;
+  vaults: VaultRecord[];
+};
 
 let nextId = 1;
 const ROW_HEIGHT = 44;
@@ -50,6 +62,11 @@ function App() {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [captureText, setCaptureText] = createSignal("");
   const [jumpToId, setJumpToId] = createSignal<string | null>(null);
+  const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
+  const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
+  const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
+  const [newVaultName, setNewVaultName] = createSignal("");
+  const [newVaultPath, setNewVaultPath] = createSignal("");
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -83,6 +100,66 @@ function App() {
       .slice(0, 12);
   });
 
+  const isTauri = () =>
+    typeof window !== "undefined" &&
+    Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+
+  const loadVaults = async () => {
+    if (!isTauri()) {
+      const fallback = {
+        id: "local",
+        name: "Sandpaper",
+        path: "/vaults/sandpaper"
+      };
+      setVaults([fallback]);
+      setActiveVault(fallback);
+      return;
+    }
+
+    try {
+      const config = (await invoke("list_vaults")) as VaultConfig;
+      const entries = config.vaults ?? [];
+      setVaults(entries);
+      const active =
+        entries.find((vault) => vault.id === config.active_id) ??
+        entries[0] ??
+        null;
+      setActiveVault(active);
+    } catch (error) {
+      console.error("Failed to load vaults", error);
+    }
+  };
+
+  const applyActiveVault = async (vaultId: string) => {
+    const nextVault = vaults().find((vault) => vault.id === vaultId) ?? null;
+    setActiveVault(nextVault);
+    if (!isTauri()) return;
+    await invoke("set_active_vault", {
+      vaultId,
+      vault_id: vaultId
+    });
+  };
+
+  const createVault = async () => {
+    const name = newVaultName().trim();
+    const path = newVaultPath().trim();
+    if (!name || !path) return;
+
+    if (isTauri()) {
+      await invoke("create_vault", { name, path });
+      await loadVaults();
+    } else {
+      const id = globalThis.crypto?.randomUUID?.() ?? `local-${Date.now()}`;
+      const record = { id, name, path };
+      setVaults((prev) => [...prev, record]);
+      setActiveVault(record);
+    }
+
+    setVaultFormOpen(false);
+    setNewVaultName("");
+    setNewVaultPath("");
+  };
+
   onMount(() => {
     const perfFlag =
       new URLSearchParams(window.location.search).has("perf") ||
@@ -91,6 +168,8 @@ function App() {
     if (perfFlag) {
       setPerfStats(perfTracker.getStats());
     }
+
+    void loadVaults();
 
     onCleanup(() => {
       scrollMeter.dispose();
@@ -453,8 +532,58 @@ function App() {
                 </For>
               </Show>
             </div>
+            <div class="sidebar__vaults">
+              <div class="sidebar__section-title">Vault</div>
+              <select
+                class="vault-select"
+                value={activeVault()?.id ?? ""}
+                onChange={(event) => applyActiveVault(event.currentTarget.value)}
+              >
+                <For each={vaults()}>
+                  {(vault) => <option value={vault.id}>{vault.name}</option>}
+                </For>
+              </select>
+              <button
+                class="vault-action"
+                onClick={() => setVaultFormOpen((prev) => !prev)}
+              >
+                {vaultFormOpen() ? "Close" : "New vault"}
+              </button>
+              <Show when={vaultFormOpen()}>
+                <div class="vault-form">
+                  <input
+                    class="vault-input"
+                    type="text"
+                    placeholder="Vault name"
+                    value={newVaultName()}
+                    onInput={(event) => setNewVaultName(event.currentTarget.value)}
+                  />
+                  <input
+                    class="vault-input"
+                    type="text"
+                    placeholder="Vault path"
+                    value={newVaultPath()}
+                    onInput={(event) => setNewVaultPath(event.currentTarget.value)}
+                  />
+                  <div class="vault-actions">
+                    <button class="vault-action is-primary" onClick={createVault}>
+                      Create
+                    </button>
+                    <button
+                      class="vault-action"
+                      onClick={() => setVaultFormOpen(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </Show>
+            </div>
             <div class="sidebar__footer">
-              <div>Vault: Sandpaper</div>
+              <div>
+                Active: {activeVault()?.name ?? "None"} ·{" "}
+                {activeVault()?.path ?? "--"}
+              </div>
               <div>{blocks.length} blocks indexed</div>
             </div>
           </aside>
