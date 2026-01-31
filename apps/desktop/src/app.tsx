@@ -12,6 +12,7 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   buildBacklinks,
   buildWikilinkBacklinks,
@@ -2194,11 +2195,42 @@ function App() {
     });
   };
 
-  const openVaultFolderPicker = () => {
+  const openVaultFolderPicker = async () => {
+    if (isTauri()) {
+      const selection = await openDialog({
+        directory: true,
+        multiple: false
+      });
+      if (typeof selection === "string") {
+        setNewVaultPath(selection);
+      }
+      return;
+    }
     vaultFolderPickerRef?.click();
   };
 
-  const openMarkdownFilePicker = () => {
+  const openMarkdownFilePicker = async () => {
+    if (isTauri()) {
+      const selection = await openDialog({
+        multiple: false,
+        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }]
+      });
+      const picked =
+        typeof selection === "string" ? selection : selection?.[0] ?? null;
+      if (!picked) return;
+      try {
+        const text = (await invoke("read_text_file", { path: picked })) as string;
+        setImportText(text);
+        setImportStatus(null);
+      } catch (error) {
+        console.error("Failed to read import file", error);
+        setImportStatus({
+          state: "error",
+          message: "Failed to read the selected file."
+        });
+      }
+      return;
+    }
     markdownFilePickerRef?.click();
   };
 

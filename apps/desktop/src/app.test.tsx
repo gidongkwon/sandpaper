@@ -1,14 +1,33 @@
 import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn()
+}));
+
+vi.mock("@tauri-apps/api/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tauri-apps/api/core")>();
+  return {
+    ...actual,
+    invoke: vi.fn()
+  };
+});
+
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import App from "./app";
 
 describe("App", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(openDialog).mockReset();
+    vi.mocked(invoke).mockReset();
   });
 
   afterEach(() => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
+      .__TAURI_INTERNALS__;
     vi.restoreAllMocks();
   });
 
@@ -113,6 +132,26 @@ describe("App", () => {
     });
     fireEvent.change(picker, { target: { files: [file] } });
     expect(pathInput.value).toBe("MyVault");
+  });
+
+  it("uses the native dialog to pick a vault folder when available", async () => {
+    render(() => <App />);
+    vi.mocked(openDialog).mockResolvedValueOnce("/Users/demo/Vault");
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    await userEvent.click(screen.getByRole("button", { name: /new vault/i }));
+    (window as typeof window & { __TAURI_INTERNALS__: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+    const browseButton = screen.getByRole("button", { name: "Browse" });
+    await userEvent.click(browseButton);
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith(
+      expect.objectContaining({ directory: true, multiple: false })
+    );
+    expect(
+      await screen.findByDisplayValue("/Users/demo/Vault")
+    ).toBeInTheDocument();
   });
 
   it("renders the sync section in browser mode", async () => {
@@ -375,6 +414,32 @@ describe("App", () => {
       type: "text/markdown"
     });
     fireEvent.change(picker, { target: { files: [file] } });
+    expect(
+      await screen.findByDisplayValue(/# Import/)
+    ).toBeInTheDocument();
+  });
+
+  it("uses the native dialog to import markdown when available", async () => {
+    render(() => <App />);
+    vi.mocked(openDialog).mockResolvedValueOnce("/Users/demo/note.md");
+    vi.mocked(invoke).mockResolvedValueOnce("# Import\n- Item");
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    (window as typeof window & { __TAURI_INTERNALS__: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+    const pickButton = screen.getByRole("button", { name: "Choose file" });
+    await userEvent.click(pickButton);
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        multiple: false,
+        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }]
+      })
+    );
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("read_text_file", {
+      path: "/Users/demo/note.md"
+    });
     expect(
       await screen.findByDisplayValue(/# Import/)
     ).toBeInTheDocument();

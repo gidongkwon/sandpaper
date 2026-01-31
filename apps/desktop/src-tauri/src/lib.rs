@@ -1390,11 +1390,17 @@ fn emit_plugin_event(
     state.with_runtime(|runtime| runtime.emit_event(&plugin_id, &event, payload))
 }
 
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(path).map_err(|err| format!("{:?}", err))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(RuntimeState::new(runtime_script_path()))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             list_vaults,
@@ -1431,7 +1437,8 @@ pub fn run() {
             revoke_plugin_permission,
             plugin_read_page,
             plugin_write_page,
-            emit_plugin_event
+            emit_plugin_event,
+            read_text_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
