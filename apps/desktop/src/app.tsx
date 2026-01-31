@@ -108,9 +108,16 @@ type ReviewQueueItem = {
   block_uid: string;
   added_at: number;
   due_at: number;
+  template?: string | null;
   status: string;
   last_reviewed_at: number | null;
   text: string;
+};
+
+type ReviewTemplate = {
+  id: string;
+  title: string;
+  description: string;
 };
 
 type SearchResult = {
@@ -334,6 +341,8 @@ function App() {
   const [reviewItems, setReviewItems] = createSignal<ReviewQueueItem[]>([]);
   const [reviewBusy, setReviewBusy] = createSignal(false);
   const [reviewMessage, setReviewMessage] = createSignal<string | null>(null);
+  const [selectedReviewTemplate, setSelectedReviewTemplate] =
+    createSignal("daily-brief");
   const [syncConfig, setSyncConfig] = createSignal<SyncConfig | null>(null);
   const [syncServerUrl, setSyncServerUrl] = createSignal("");
   const [syncVaultIdInput, setSyncVaultIdInput] = createSignal("");
@@ -736,6 +745,58 @@ function App() {
     }
   };
 
+  const reviewTemplates: ReviewTemplate[] = [
+    {
+      id: "daily-brief",
+      title: "Daily Brief",
+      description: "Summaries, loose threads, and next steps."
+    },
+    {
+      id: "deep-work",
+      title: "Deep Work",
+      description: "Focus recap and momentum check."
+    },
+    {
+      id: "connections",
+      title: "Connections",
+      description: "Linking notes and open loops."
+    }
+  ];
+
+  const createReviewTemplate = async () => {
+    if (!isTauri()) {
+      setReviewMessage("Templates require the desktop app.");
+      return;
+    }
+    const template = reviewTemplates.find(
+      (entry) => entry.id === selectedReviewTemplate()
+    );
+    if (!template) return;
+    setReviewBusy(true);
+    try {
+      const today = new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date());
+      const pageUid = `review-${today}`;
+      await invoke("create_review_template", {
+        pageUid,
+        page_uid: pageUid,
+        template: template.id,
+        title: `${template.title} · ${today}`
+      });
+      setReviewMessage(`${template.title} template queued for review.`);
+      await loadReviewSummary();
+      await loadReviewQueue();
+    } catch (error) {
+      console.error("Failed to create review template", error);
+      setReviewMessage("Unable to create review template.");
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
   const ReviewPane = () => (
     <div class="review">
       <div class="review__header">
@@ -804,6 +865,36 @@ function App() {
       <Show when={reviewMessage()}>
         <div class="review__message">{reviewMessage()}</div>
       </Show>
+      <div class="review__templates">
+        <div class="review__template-header">
+          <div>
+            <div class="review__eyebrow">Templates</div>
+            <div class="review__subtitle">Seed a daily review page</div>
+          </div>
+          <button
+            class="review__button is-secondary"
+            disabled={reviewBusy() || !isTauri()}
+            onClick={createReviewTemplate}
+          >
+            Create template
+          </button>
+        </div>
+        <div class="review__template-grid">
+          <For each={reviewTemplates}>
+            {(template) => (
+              <button
+                class={`review-template ${
+                  selectedReviewTemplate() === template.id ? "is-active" : ""
+                }`}
+                onClick={() => setSelectedReviewTemplate(template.id)}
+              >
+                <div class="review-template__title">{template.title}</div>
+                <div class="review-template__desc">{template.description}</div>
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
       <div class="review__actions">
         <button
           class="review__button"

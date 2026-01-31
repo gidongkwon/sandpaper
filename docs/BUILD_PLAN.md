@@ -270,7 +270,7 @@ Exit criteria
 
 Checklist
 - [x] Review mode: daily notes + review queue
-- [ ] Review mode: templates/hooks for spaced review
+- [x] Review mode: templates/hooks for spaced review
 - [ ] Android app: read-only browsing
 - [ ] Android app: quick capture to inbox
 - [ ] Android app: background sync

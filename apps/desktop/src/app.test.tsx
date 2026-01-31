@@ -88,6 +88,13 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows review templates in review mode", async () => {
+    render(() => <App />);
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(await screen.findByText("Templates")).toBeInTheDocument();
+    expect(await screen.findByText("Daily Brief")).toBeInTheDocument();
+  });
+
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
     const inputs = await screen.findAllByPlaceholderText("Write something...");

@@ -87,6 +87,7 @@ const MIGRATIONS: &[Migration] = &[
             block_uid TEXT NOT NULL,
             added_at INTEGER DEFAULT (strftime('%s','now')),
             due_at INTEGER NOT NULL,
+            template TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
             last_reviewed_at INTEGER,
             UNIQUE(page_uid, block_uid)
@@ -264,6 +265,7 @@ pub struct ReviewQueueItem {
     pub block_uid: String,
     pub added_at: i64,
     pub due_at: i64,
+    pub template: Option<String>,
     pub status: String,
     pub last_reviewed_at: Option<i64>,
 }
@@ -818,21 +820,26 @@ impl Database {
         page_uid: &str,
         block_uid: &str,
         due_at: i64,
+        template: Option<&str>,
     ) -> rusqlite::Result<i64> {
         let now = chrono::Utc::now().timestamp_millis();
         self.conn.execute(
-            "INSERT INTO review_queue (page_uid, block_uid, added_at, due_at, status)
-             VALUES (?1, ?2, ?3, ?4, 'pending')
+            "INSERT INTO review_queue (page_uid, block_uid, added_at, due_at, template, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending')
              ON CONFLICT(page_uid, block_uid)
-             DO UPDATE SET due_at = excluded.due_at",
-            params![page_uid, block_uid, now, due_at],
+             DO UPDATE SET due_at = excluded.due_at, template = excluded.template",
+            params![page_uid, block_uid, now, due_at, template],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn list_review_queue_due(&self, now: i64, limit: i64) -> rusqlite::Result<Vec<ReviewQueueItem>> {
+    pub fn list_review_queue_due(
+        &self,
+        now: i64,
+        limit: i64,
+    ) -> rusqlite::Result<Vec<ReviewQueueItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, page_uid, block_uid, added_at, due_at, status, last_reviewed_at
+            "SELECT id, page_uid, block_uid, added_at, due_at, template, status, last_reviewed_at
              FROM review_queue
              WHERE status = 'pending' AND due_at <= ?1
              ORDER BY due_at ASC, id ASC
@@ -845,8 +852,9 @@ impl Database {
                 block_uid: row.get(2)?,
                 added_at: row.get(3)?,
                 due_at: row.get(4)?,
-                status: row.get(5)?,
-                last_reviewed_at: row.get(6)?,
+                template: row.get(5)?,
+                status: row.get(6)?,
+                last_reviewed_at: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -1291,15 +1299,16 @@ mod tests {
 
         let due_at = chrono::Utc::now().timestamp_millis() - 1000;
         let due_future = chrono::Utc::now().timestamp_millis() + 5000;
-        db.upsert_review_queue_item("page-1", "b1", due_at)
+        db.upsert_review_queue_item("page-1", "b1", due_at, None)
             .expect("insert review item");
-        db.upsert_review_queue_item("page-1", "b1", due_future)
+        db.upsert_review_queue_item("page-1", "b1", due_future, Some("later"))
             .expect("upsert review item");
 
         let results = db.list_review_queue_due(due_future, 10).expect("list due");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].page_uid, "page-1");
         assert_eq!(results[0].block_uid, "b1");
+        assert_eq!(results[0].template.as_deref(), Some("later"));
     }
 
     #[test]
@@ -1308,7 +1317,7 @@ mod tests {
         db.run_migrations().expect("migrations");
 
         let due_at = chrono::Utc::now().timestamp_millis() - 1000;
-        db.upsert_review_queue_item("page-1", "b1", due_at)
+        db.upsert_review_queue_item("page-1", "b1", due_at, None)
             .expect("insert review item");
 
         let item = db

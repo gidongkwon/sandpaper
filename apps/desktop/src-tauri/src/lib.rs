@@ -110,6 +110,7 @@ struct ReviewQueueItemResponse {
     block_uid: String,
     added_at: i64,
     due_at: i64,
+    template: Option<String>,
     status: String,
     last_reviewed_at: Option<i64>,
     text: String,
@@ -120,6 +121,14 @@ struct ReviewQueueItemResponse {
 struct ReviewActionPayload {
     id: i64,
     action: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewTemplatePayload {
+    page_uid: String,
+    template: String,
+    title: String,
 }
 
 #[derive(Debug, Clone)]
@@ -922,7 +931,7 @@ fn review_queue_summary() -> Result<ReviewQueueSummary, String> {
 fn add_review_queue_item(page_uid: String, block_uid: String, due_at: Option<i64>) -> Result<(), String> {
     let db = open_active_database()?;
     let due = due_at.unwrap_or_else(|| next_review_due(1));
-    db.upsert_review_queue_item(&page_uid, &block_uid, due)
+    db.upsert_review_queue_item(&page_uid, &block_uid, due, None)
         .map_err(|err| format!("{:?}", err))?;
     Ok(())
 }
@@ -951,6 +960,7 @@ fn list_review_queue_due(limit: i64) -> Result<Vec<ReviewQueueItemResponse>, Str
             block_uid: item.block_uid,
             added_at: item.added_at,
             due_at: item.due_at,
+            template: item.template,
             status: item.status,
             last_reviewed_at: item.last_reviewed_at,
             text,
@@ -971,6 +981,41 @@ fn update_review_queue_item(payload: ReviewActionPayload) -> Result<(), String> 
     };
     let status = if payload.action == "done" { "done" } else { "pending" };
     db.mark_review_queue_item(payload.id, status, now, next_due)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> {
+    let mut db = open_active_database()?;
+    let page_uid = sanitize_kebab(&payload.page_uid);
+    let page_id = ensure_page(&db, &page_uid, &payload.title)?;
+    let blocks = vec![
+        BlockSnapshot {
+            uid: uuid::Uuid::new_v4().to_string(),
+            text: "Summary".to_string(),
+            indent: 0,
+        },
+        BlockSnapshot {
+            uid: uuid::Uuid::new_v4().to_string(),
+            text: "What moved forward?".to_string(),
+            indent: 1,
+        },
+        BlockSnapshot {
+            uid: uuid::Uuid::new_v4().to_string(),
+            text: "Loose threads".to_string(),
+            indent: 1,
+        },
+        BlockSnapshot {
+            uid: uuid::Uuid::new_v4().to_string(),
+            text: "Next steps".to_string(),
+            indent: 1,
+        },
+    ];
+    db.replace_blocks_for_page(page_id, &blocks)
+        .map_err(|err| format!("{:?}", err))?;
+    let due_at = next_review_due(1);
+    db.upsert_review_queue_item(&page_uid, &blocks[0].uid, due_at, Some(&payload.template))
         .map_err(|err| format!("{:?}", err))?;
     Ok(())
 }
@@ -1240,6 +1285,7 @@ pub fn run() {
             add_review_queue_item,
             list_review_queue_due,
             update_review_queue_item,
+            create_review_template,
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
@@ -1259,7 +1305,8 @@ mod tests {
     use super::{
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, encrypt_sync_payload, ensure_plugin_permission,
-        list_permissions_for_plugins, load_sync_config, resolve_review_interval,
+        list_permissions_for_plugins, load_sync_config, next_review_due,
+        resolve_review_interval,
         sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
         Database, PageBlocksResponse, PluginInfo, SyncOpPayload,
     };
@@ -1543,6 +1590,13 @@ mod tests {
         assert_eq!(resolve_review_interval("later", 2), 4);
         assert_eq!(resolve_review_interval("later", 10), 14);
         assert_eq!(resolve_review_interval("done", 3), 30);
+    }
+
+    #[test]
+    fn next_review_due_returns_future_timestamp() {
+        let now = chrono::Utc::now().timestamp_millis();
+        let due = next_review_due(1);
+        assert!(due > now);
     }
 
     #[test]
