@@ -6,6 +6,9 @@ pub mod vaults;
 
 use serde::Serialize;
 use serde_json::Value;
+use aes_gcm::aead::{Aead, KeyInit};
+use base64::Engine;
+use rand_core::RngCore;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
@@ -41,6 +44,14 @@ struct PluginBlockInfo {
     id: String,
     reason: String,
     missing_permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct VaultKeyStatus {
+    configured: bool,
+    kdf: Option<String>,
+    iterations: Option<i64>,
+    salt_b64: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -411,6 +422,74 @@ fn build_sync_ops(
     Ok((ops, clock))
 }
 
+fn get_vault_key_b64(db: &Database) -> Result<Option<String>, String> {
+    db.get_kv("vault.key.b64")
+        .map_err(|err| format!("{:?}", err))
+}
+
+fn encrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
+    let key_bytes = base64::engine::general_purpose::STANDARD
+        .decode(key_b64)
+        .map_err(|err| format!("{:?}", err))?;
+    let key = aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key_bytes);
+    let cipher = aes_gcm::Aes256Gcm::new(key);
+    let mut iv = [0u8; 12];
+    rand_core::OsRng.fill_bytes(&mut iv);
+    let nonce = aes_gcm::Nonce::from_slice(&iv);
+    let ciphertext = cipher
+        .encrypt(nonce, payload)
+        .map_err(|err| format!("{:?}", err))?;
+
+    let envelope = serde_json::json!({
+        "version": 1,
+        "algo": "aes-256-gcm",
+        "ivB64": base64::engine::general_purpose::STANDARD.encode(iv),
+        "ciphertextB64": base64::engine::general_purpose::STANDARD.encode(ciphertext)
+    });
+
+    serde_json::to_vec(&envelope).map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn set_vault_key(key_b64: String, salt_b64: String, iterations: i64) -> Result<(), String> {
+    let db = open_active_database()?;
+    db.set_kv("vault.key.b64", &key_b64)
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("vault.key.salt", &salt_b64)
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("vault.key.iterations", &iterations.to_string())
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("vault.key.kdf", "pbkdf2-sha256")
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn vault_key_status() -> Result<VaultKeyStatus, String> {
+    let db = open_active_database()?;
+    let key = db.get_kv("vault.key.b64").map_err(|err| format!("{:?}", err))?;
+    if key.is_none() {
+        return Ok(VaultKeyStatus {
+            configured: false,
+            kdf: None,
+            iterations: None,
+            salt_b64: None,
+        });
+    }
+    let kdf = db.get_kv("vault.key.kdf").map_err(|err| format!("{:?}", err))?;
+    let iterations = db
+        .get_kv("vault.key.iterations")
+        .map_err(|err| format!("{:?}", err))?
+        .and_then(|raw| raw.parse::<i64>().ok());
+    let salt_b64 = db.get_kv("vault.key.salt").map_err(|err| format!("{:?}", err))?;
+    Ok(VaultKeyStatus {
+        configured: true,
+        kdf,
+        iterations,
+        salt_b64,
+    })
+}
+
 #[tauri::command]
 fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
     let db = open_active_database()?;
@@ -446,14 +525,21 @@ fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), 
     let device_id = get_or_create_device_id(&db)?;
     let clock = load_device_clock(&db)?;
     let (ops, next_clock) = build_sync_ops(&page_uid, &device_id, &previous, &blocks, clock)?;
+    let vault_key = get_vault_key_b64(&db)?;
 
     db.replace_blocks_for_page(page_id, &blocks)
         .map_err(|err| format!("{:?}", err))?;
 
     if !ops.is_empty() {
         for op in ops {
-            db.insert_sync_op(page_id, &op.op_id, &device_id, &op.op_type, &op.payload)
-                .map_err(|err| format!("{:?}", err))?;
+            if let Some(ref key) = vault_key {
+                let encrypted = encrypt_sync_payload(key, &op.payload)?;
+                db.insert_sync_op(page_id, &op.op_id, "sealed", "sealed", &encrypted)
+                    .map_err(|err| format!("{:?}", err))?;
+            } else {
+                db.insert_sync_op(page_id, &op.op_id, &device_id, &op.op_type, &op.payload)
+                    .map_err(|err| format!("{:?}", err))?;
+            }
         }
         store_device_clock(&db, next_clock)?;
     }
@@ -656,6 +742,8 @@ pub fn run() {
             search_blocks,
             load_page_blocks,
             save_page_blocks,
+            set_vault_key,
+            vault_key_status,
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
@@ -673,10 +761,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_missing_permissions, ensure_plugin_permission, list_permissions_for_plugins,
-        build_markdown_export, sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
+        build_markdown_export, build_sync_ops, compute_missing_permissions,
+        encrypt_sync_payload, ensure_plugin_permission, list_permissions_for_plugins,
+        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
         BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
     };
+    use aes_gcm::aead::KeyInit;
+    use aes_gcm::aead::Aead;
+    use base64::Engine;
+    use serde_json::Value;
     use tempfile::tempdir;
 
     #[test]
@@ -911,5 +1004,32 @@ mod tests {
         assert!(kinds.contains("delete"));
         assert_eq!(blocks_by_kind.get("add").map(String::as_str), Some("b3"));
         assert_eq!(blocks_by_kind.get("delete").map(String::as_str), Some("b2"));
+    }
+
+    #[test]
+    fn encrypt_sync_payload_roundtrips() {
+        let key_bytes = [7u8; 32];
+        let key_b64 = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+        let payload = br#"{"kind":"edit","text":"hello"}"#;
+
+        let encrypted = encrypt_sync_payload(&key_b64, payload).expect("encrypt");
+        let envelope: Value = serde_json::from_slice(&encrypted).expect("envelope");
+        assert_eq!(envelope["algo"], "aes-256-gcm");
+
+        let iv_b64 = envelope["ivB64"].as_str().expect("iv");
+        let ct_b64 = envelope["ciphertextB64"].as_str().expect("ciphertext");
+        let iv = base64::engine::general_purpose::STANDARD
+            .decode(iv_b64)
+            .expect("decode iv");
+        let ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(ct_b64)
+            .expect("decode ciphertext");
+        let key = aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key_bytes);
+        let cipher = aes_gcm::Aes256Gcm::new(key);
+        let nonce = aes_gcm::Nonce::from_slice(&iv);
+        let decrypted = cipher
+            .decrypt(nonce, ciphertext.as_ref())
+            .expect("decrypt");
+        assert_eq!(decrypted, payload);
     }
 }

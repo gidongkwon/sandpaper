@@ -53,6 +53,13 @@ describe("App", () => {
     expect(await screen.findByText("Code block renderer")).toBeInTheDocument();
   });
 
+  it("renders the vault key section", async () => {
+    render(() => <App />);
+    expect(await screen.findByText("Vault key")).toBeInTheDocument();
+    const setButton = screen.getByRole("button", { name: /set passphrase/i });
+    expect(setButton).toBeDisabled();
+  });
+
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
     const inputs = await screen.findAllByPlaceholderText("Write something...");

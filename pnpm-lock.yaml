@@ -13,6 +13,9 @@ importers:
       '@sandpaper/core-model':
         specifier: workspace:*
         version: link:../../packages/core-model
+      '@sandpaper/crypto':
+        specifier: workspace:*
+        version: link:../../packages/crypto
       '@tauri-apps/api':
         specifier: ^2
         version: 2.9.1

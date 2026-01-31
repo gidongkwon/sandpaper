@@ -16,6 +16,7 @@ import {
   createShadowWriter,
   serializePageToMarkdown
 } from "@sandpaper/core-model";
+import { deriveVaultKey } from "@sandpaper/crypto";
 import {
   createFpsMeter,
   createPerfTracker,
@@ -41,6 +42,13 @@ type VaultRecord = {
 type VaultConfig = {
   active_id?: string | null;
   vaults: VaultRecord[];
+};
+
+type VaultKeyStatus = {
+  configured: boolean;
+  kdf: string | null;
+  iterations: number | null;
+  salt_b64: string | null;
 };
 
 type SearchResult = {
@@ -246,6 +254,17 @@ function App() {
   const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
   const [newVaultName, setNewVaultName] = createSignal("");
   const [newVaultPath, setNewVaultPath] = createSignal("");
+  const [vaultPassphrase, setVaultPassphrase] = createSignal("");
+  const [vaultKeyStatus, setVaultKeyStatus] = createSignal<VaultKeyStatus>({
+    configured: false,
+    kdf: null,
+    iterations: null,
+    salt_b64: null
+  });
+  const [vaultKeyBusy, setVaultKeyBusy] = createSignal(false);
+  const [vaultKeyMessage, setVaultKeyMessage] = createSignal<string | null>(
+    null
+  );
   const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
@@ -649,6 +668,90 @@ function App() {
     await loadPluginRuntime();
   };
 
+  const loadVaultKeyStatus = async () => {
+    if (!isTauri()) {
+      const stored = localStorage.getItem("sandpaper:vault-key");
+      if (stored) {
+        const parsed = JSON.parse(stored) as {
+          kdf?: string;
+          iterations?: number;
+          salt_b64?: string;
+        };
+        setVaultKeyStatus({
+          configured: true,
+          kdf: parsed.kdf ?? "pbkdf2-sha256",
+          iterations: parsed.iterations ?? null,
+          salt_b64: parsed.salt_b64 ?? null
+        });
+        return;
+      }
+      setVaultKeyStatus({
+        configured: false,
+        kdf: null,
+        iterations: null,
+        salt_b64: null
+      });
+      return;
+    }
+
+    try {
+      const status = (await invoke("vault_key_status")) as VaultKeyStatus;
+      setVaultKeyStatus({
+        configured: status.configured,
+        kdf: status.kdf ?? null,
+        iterations: status.iterations ?? null,
+        salt_b64: status.salt_b64 ?? null
+      });
+    } catch (error) {
+      console.error("Failed to load vault key status", error);
+      setVaultKeyStatus({
+        configured: false,
+        kdf: null,
+        iterations: null,
+        salt_b64: null
+      });
+    }
+  };
+
+  const setVaultKey = async () => {
+    const passphrase = vaultPassphrase().trim();
+    if (!passphrase) return;
+    setVaultKeyBusy(true);
+    setVaultKeyMessage(null);
+    try {
+      const vaultKey = await deriveVaultKey(passphrase);
+      if (isTauri()) {
+        await invoke("set_vault_key", {
+          keyB64: vaultKey.keyB64,
+          saltB64: vaultKey.saltB64,
+          iterations: vaultKey.iterations
+        });
+      } else {
+        localStorage.setItem(
+          "sandpaper:vault-key",
+          JSON.stringify({
+            kdf: vaultKey.kdf,
+            iterations: vaultKey.iterations,
+            salt_b64: vaultKey.saltB64
+          })
+        );
+      }
+      setVaultKeyStatus({
+        configured: true,
+        kdf: vaultKey.kdf,
+        iterations: vaultKey.iterations,
+        salt_b64: vaultKey.saltB64
+      });
+      setVaultKeyMessage("Vault key derived and stored.");
+      setVaultPassphrase("");
+    } catch (error) {
+      console.error("Failed to derive vault key", error);
+      setVaultKeyMessage("Failed to derive vault key.");
+    } finally {
+      setVaultKeyBusy(false);
+    }
+  };
+
   const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {
     setPermissionPrompt({
       pluginId: plugin.id,
@@ -790,6 +893,7 @@ function App() {
       setActiveVault(fallback);
       await loadBlocks();
       await loadPlugins();
+      await loadVaultKeyStatus();
       return;
     }
 
@@ -804,6 +908,7 @@ function App() {
       setActiveVault(active);
       await loadBlocks();
       await loadPlugins();
+      await loadVaultKeyStatus();
     } catch (error) {
       console.error("Failed to load vaults", error);
     }
@@ -822,6 +927,7 @@ function App() {
     setCommandStatus(null);
     await loadBlocks();
     await loadPlugins();
+    await loadVaultKeyStatus();
   };
 
   const createVault = async () => {
@@ -839,6 +945,7 @@ function App() {
       setActiveVault(record);
       await loadBlocks();
       await loadPlugins();
+      await loadVaultKeyStatus();
     }
 
     setVaultFormOpen(false);
@@ -1373,6 +1480,46 @@ function App() {
                     </button>
                   </div>
                 </div>
+              </Show>
+            </div>
+            <div class="sidebar__vault-key">
+              <div class="sidebar__section-title">Vault key</div>
+              <div class="vault-key__status">
+                <span>
+                  {vaultKeyStatus().configured ? "Configured" : "Not set"}
+                </span>
+                <span>
+                  {vaultKeyStatus().configured
+                    ? `${vaultKeyStatus().kdf ?? "pbkdf2-sha256"} · ${
+                        vaultKeyStatus().iterations ?? "--"
+                      } iter`
+                    : "Set a passphrase to enable E2E sync."}
+                </span>
+              </div>
+              <input
+                class="vault-input"
+                type="password"
+                placeholder="Passphrase"
+                value={vaultPassphrase()}
+                onInput={(event) => setVaultPassphrase(event.currentTarget.value)}
+              />
+              <div class="vault-actions">
+                <button
+                  class="vault-action is-primary"
+                  disabled={vaultKeyBusy() || vaultPassphrase().trim().length === 0}
+                  onClick={setVaultKey}
+                >
+                  {vaultKeyBusy() ? "Deriving..." : "Set passphrase"}
+                </button>
+                <button
+                  class="vault-action"
+                  onClick={() => setVaultPassphrase("")}
+                >
+                  Clear
+                </button>
+              </div>
+              <Show when={vaultKeyMessage()}>
+                <div class="vault-key__message">{vaultKeyMessage()}</div>
               </Show>
             </div>
             <div class="sidebar__plugins">
