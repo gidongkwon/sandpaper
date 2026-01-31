@@ -259,8 +259,8 @@ Success metrics (Phase 3)
 - Merge: 0 data loss in concurrent edit/move/delete test suite.
 
 Exit criteria
-- [ ] Two clients sync without conflicts
-- [ ] Server never sees plaintext
+- [x] Two clients sync without conflicts
+- [x] Server never sees plaintext
  - [ ] Phase 3 success metrics met
 
 ---
