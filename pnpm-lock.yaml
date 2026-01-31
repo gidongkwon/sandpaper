@@ -10,6 +10,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@sandpaper/core-model':
+        specifier: workspace:*
+        version: link:../../packages/core-model
       '@tauri-apps/api':
         specifier: ^2
         version: 2.9.1

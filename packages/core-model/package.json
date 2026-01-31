@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "./src/core-model.ts",
+  "module": "./src/core-model.ts",
+  "types": "./src/core-model.ts",
+  "exports": {
+    ".": "./src/core-model.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

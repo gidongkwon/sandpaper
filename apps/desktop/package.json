@@ -19,6 +19,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "@sandpaper/core-model": "workspace:*",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {

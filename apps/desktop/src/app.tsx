@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
+import { createShadowWriter, serializePageToMarkdown } from "@sandpaper/core-model";
 import {
   createFpsMeter,
   createPerfTracker,
@@ -181,6 +182,18 @@ function App() {
     isTauri() ? remoteResults() : localResults()
   );
 
+  const shadowWriter = createShadowWriter({
+    resolvePath: (pageId) => pageId,
+    writeFile: async (pageId, content) => {
+      if (!isTauri()) return;
+      await invoke("write_shadow_markdown", {
+        pageUid: pageId,
+        page_uid: pageId,
+        content
+      });
+    }
+  });
+
   const createNewBlock = (text = "", indent = 0) =>
     makeBlock(isTauri() ? makeRandomId() : makeLocalId(), text, indent);
 
@@ -205,6 +218,24 @@ function App() {
     }
   };
 
+  const scheduleShadowWrite = () => {
+    if (!isTauri()) return;
+    const snapshot = untrack(() =>
+      blocks.map((block) => ({
+        id: block.id,
+        text: block.text,
+        indent: block.indent
+      }))
+    );
+    const title = untrack(() => pageTitle());
+    const content = serializePageToMarkdown({
+      id: DEFAULT_PAGE_UID,
+      title,
+      blocks: snapshot
+    });
+    shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, content);
+  };
+
   const scheduleSave = () => {
     if (!isTauri()) return;
     if (saveTimeout) {
@@ -213,6 +244,7 @@ function App() {
     saveTimeout = window.setTimeout(() => {
       void persistBlocks();
     }, 400);
+    scheduleShadowWrite();
   };
 
   const loadBlocks = async () => {
@@ -239,11 +271,31 @@ function App() {
           page_uid: DEFAULT_PAGE_UID,
           blocks: seeded.map((block) => toPayload(block))
         });
+        const seedMarkdown = serializePageToMarkdown({
+          id: DEFAULT_PAGE_UID,
+          title: response.title || "Inbox",
+          blocks: seeded.map((block) => ({
+            id: block.id,
+            text: block.text,
+            indent: block.indent
+          }))
+        });
+        shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, seedMarkdown);
         setActiveId(seeded[0]?.id ?? null);
         return;
       }
       setBlocks(loaded);
       setActiveId(loaded[0]?.id ?? null);
+      const loadedMarkdown = serializePageToMarkdown({
+        id: DEFAULT_PAGE_UID,
+        title: response.title || "Inbox",
+        blocks: loaded.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent
+        }))
+      });
+      shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, loadedMarkdown);
     } catch (error) {
       console.error("Failed to load blocks", error);
       setBlocks(buildLocalDefaults());
@@ -327,6 +379,8 @@ function App() {
       if (saveTimeout) {
         window.clearTimeout(saveTimeout);
       }
+      void shadowWriter.flush();
+      shadowWriter.dispose();
     });
   });
 

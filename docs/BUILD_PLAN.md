@@ -149,8 +149,8 @@ Checklist
 - [x] Editor core: multi-pane editor (2-3 panes)
 - [x] Search: left panel (FTS + filters)
 - [x] Navigation: open results in editor panes
-- [ ] Shadow Markdown: batched writer (idle or timer)
-- [ ] Shadow Markdown: read-only generated `.md` per page
+- [x] Shadow Markdown: batched writer (idle or timer)
+- [x] Shadow Markdown: read-only generated `.md` per page
 - [x] Attachments: content-addressed storage in `/assets/<hash>`
 - [x] Attachments: DB mapping for friendly names
 - [x] Plugin loader v1: plugin discovery in `/plugins/<name>/`

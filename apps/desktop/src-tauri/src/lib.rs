@@ -64,6 +64,63 @@ fn open_active_database() -> Result<Database, String> {
     Ok(db)
 }
 
+fn sanitize_kebab(input: &str) -> String {
+    let mut output = String::new();
+    let mut was_dash = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            output.push(ch.to_ascii_lowercase());
+            was_dash = false;
+        } else if !was_dash {
+            output.push('-');
+            was_dash = true;
+        }
+    }
+    let trimmed = output.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "page".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn shadow_markdown_path(vault_path: &std::path::Path, page_uid: &str) -> PathBuf {
+    let safe_name = sanitize_kebab(page_uid);
+    vault_path.join("pages").join(format!("{}.md", safe_name))
+}
+
+fn write_shadow_markdown_to_vault(
+    vault_path: &std::path::Path,
+    page_uid: &str,
+    content: &str,
+) -> Result<PathBuf, String> {
+    let path = shadow_markdown_path(vault_path, page_uid);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if path.exists() {
+            let permissions = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&path, permissions)
+                .map_err(|err| format!("{:?}", err))?;
+        }
+    }
+
+    std::fs::write(&path, content).map_err(|err| format!("{:?}", err))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let permissions = std::fs::Permissions::from_mode(0o444);
+        std::fs::set_permissions(&path, permissions).map_err(|err| format!("{:?}", err))?;
+    }
+
+    Ok(path)
+}
+
 fn ensure_page(db: &Database, page_uid: &str, title: &str) -> Result<i64, String> {
     if let Some(page) = db
         .get_page_by_uid(page_uid)
@@ -109,6 +166,13 @@ fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), 
         .map_err(|err| format!("{:?}", err))
 }
 
+#[tauri::command]
+fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let path = write_shadow_markdown_to_vault(&vault_path, &page_uid, &content)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -120,8 +184,50 @@ pub fn run() {
             set_active_vault,
             search_blocks,
             load_page_blocks,
-            save_page_blocks
+            save_page_blocks,
+            write_shadow_markdown
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault};
+    use tempfile::tempdir;
+
+    #[test]
+    fn sanitize_kebab_strips_unsafe_chars() {
+        assert_eq!(sanitize_kebab("Daily Notes"), "daily-notes");
+        assert_eq!(sanitize_kebab("  ### "), "page");
+        assert_eq!(sanitize_kebab("multi__part--name"), "multi-part-name");
+    }
+
+    #[test]
+    fn shadow_markdown_path_uses_pages_dir() {
+        let dir = tempdir().expect("tempdir");
+        let path = shadow_markdown_path(dir.path(), "Daily Notes");
+        assert!(path.ends_with(std::path::Path::new("pages/daily-notes.md")));
+    }
+
+    #[test]
+    fn write_shadow_markdown_creates_file() {
+        let dir = tempdir().expect("tempdir");
+        let content = "# Inbox\n- hello ^block";
+        let path =
+            write_shadow_markdown_to_vault(dir.path(), "Inbox", content).expect("write");
+        let saved = std::fs::read_to_string(&path).expect("read");
+        assert_eq!(saved, content);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o444);
+        }
+    }
 }

@@ -1,0 +1,4 @@
+export type { Block, Page } from "./block-model";
+export { extractBlockRefs, buildBacklinks } from "./block-refs";
+export { serializeBlocksToMarkdown, serializePageToMarkdown } from "./markdown-serializer";
+export { createShadowWriter } from "./shadow-writer";
