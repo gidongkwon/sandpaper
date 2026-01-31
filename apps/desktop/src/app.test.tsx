@@ -98,6 +98,23 @@ describe("App", () => {
     expect(setButton).toBeDisabled();
   });
 
+  it("fills the vault path from a picked folder", async () => {
+    render(() => <App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    await userEvent.click(screen.getByRole("button", { name: /new vault/i }));
+    const pathInput = screen.getByPlaceholderText("Vault path") as HTMLInputElement;
+    const picker = screen.getByTestId("vault-folder-picker") as HTMLInputElement;
+    const file = new File(["hello"], "note.md", { type: "text/markdown" });
+    Object.defineProperty(file, "webkitRelativePath", {
+      value: "MyVault/note.md"
+    });
+    fireEvent.change(picker, { target: { files: [file] } });
+    expect(pathInput.value).toBe("MyVault");
+  });
+
   it("renders the sync section in browser mode", async () => {
     render(() => <App />);
     await userEvent.click(
@@ -345,6 +362,22 @@ describe("App", () => {
       selector: ".result__text"
     });
     expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("loads markdown import text from a picked file", async () => {
+    render(() => <App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    const picker = screen.getByTestId("markdown-file-picker") as HTMLInputElement;
+    const file = new File(["# Import\n- Line"], "note.md", {
+      type: "text/markdown"
+    });
+    fireEvent.change(picker, { target: { files: [file] } });
+    expect(
+      await screen.findByDisplayValue(/# Import/)
+    ).toBeInTheDocument();
   });
 
   it("creates a new page and switches to it", async () => {

@@ -479,6 +479,8 @@ function App() {
     p95: null
   });
   const [scrollFps, setScrollFps] = createSignal(0);
+  let vaultFolderPickerRef: HTMLInputElement | undefined;
+  let markdownFilePickerRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
     const map = new Map<string, PluginRenderer>();
@@ -2171,6 +2173,65 @@ function App() {
     );
   };
 
+  const getFolderFromFile = (file: File) => {
+    const withPath = file as File & { path?: string; webkitRelativePath?: string };
+    if (withPath.path) return withPath.path;
+    if (withPath.webkitRelativePath) {
+      return withPath.webkitRelativePath.split("/")[0] || "";
+    }
+    return file.name.replace(/\.[^/.]+$/, "");
+  };
+
+  const readTextFile = async (file: File) => {
+    if (typeof file.text === "function") {
+      return file.text();
+    }
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error ?? new Error("read-failed"));
+      reader.readAsText(file);
+    });
+  };
+
+  const openVaultFolderPicker = () => {
+    vaultFolderPickerRef?.click();
+  };
+
+  const openMarkdownFilePicker = () => {
+    markdownFilePickerRef?.click();
+  };
+
+  const handleVaultFolderPick = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const nextPath = getFolderFromFile(file);
+    if (nextPath) {
+      setNewVaultPath(nextPath);
+    }
+    input.value = "";
+  };
+
+  const handleMarkdownFilePick = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await readTextFile(file);
+      setImportText(text);
+      setImportStatus(null);
+    } catch (error) {
+      console.error("Failed to read import file", error);
+      setImportStatus({
+        state: "error",
+        message: "Failed to read the selected file."
+      });
+    } finally {
+      input.value = "";
+    }
+  };
+
   // Apply typography scale to document
   createEffect(() => {
     document.documentElement.style.setProperty("--type-scale", String(typeScale()));
@@ -3155,7 +3216,23 @@ function App() {
                     <Show when={vaultFormOpen()}>
                       <div class="settings-form">
                         <input class="settings-input" type="text" placeholder="Vault name" value={newVaultName()} onInput={(e) => setNewVaultName(e.currentTarget.value)} />
-                        <input class="settings-input" type="text" placeholder="Vault path" value={newVaultPath()} onInput={(e) => setNewVaultPath(e.currentTarget.value)} />
+                        <div class="settings-file-row">
+                          <input class="settings-input" type="text" placeholder="Vault path" value={newVaultPath()} onInput={(e) => setNewVaultPath(e.currentTarget.value)} />
+                          <button class="settings-action" type="button" onClick={openVaultFolderPicker}>
+                            Browse
+                          </button>
+                        </div>
+                        <input
+                          ref={(el) => {
+                            vaultFolderPickerRef = el;
+                            el.setAttribute("webkitdirectory", "");
+                            el.setAttribute("directory", "");
+                          }}
+                          data-testid="vault-folder-picker"
+                          class="settings-file-input"
+                          type="file"
+                          onChange={handleVaultFolderPick}
+                        />
                         <button class="settings-action is-primary" onClick={createVault}>Create vault</button>
                       </div>
                     </Show>
@@ -3293,9 +3370,22 @@ function App() {
                     <p class="settings-section__desc">Paste shadow Markdown to create or update a page.</p>
                     <textarea class="settings-textarea" rows={5} placeholder="Paste markdown here..." value={importText()} onInput={(e) => setImportText(e.currentTarget.value)} />
                     <div class="settings-actions">
+                      <button class="settings-action" type="button" onClick={openMarkdownFilePicker}>
+                        Choose file
+                      </button>
                       <button class="settings-action is-primary" onClick={importMarkdown} disabled={importing()}>{importing() ? "Importing..." : "Import"}</button>
                       <button class="settings-action" onClick={() => { setImportText(""); setImportStatus(null); }}>Clear</button>
                     </div>
+                    <input
+                      ref={(el) => {
+                        markdownFilePickerRef = el;
+                      }}
+                      data-testid="markdown-file-picker"
+                      class="settings-file-input"
+                      type="file"
+                      accept=".md,text/markdown"
+                      onChange={(event) => void handleMarkdownFilePick(event)}
+                    />
                     <Show when={importStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
                   </div>
                   <div class="settings-section">
