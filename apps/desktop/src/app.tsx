@@ -51,6 +51,46 @@ type VaultKeyStatus = {
   salt_b64: string | null;
 };
 
+type SyncConfig = {
+  server_url: string | null;
+  vault_id: string | null;
+  device_id: string | null;
+  key_fingerprint: string | null;
+  last_push_cursor: number;
+  last_pull_cursor: number;
+};
+
+type SyncStatus = {
+  state: "idle" | "syncing" | "offline" | "error";
+  pending_ops: number;
+  last_synced_at: string | null;
+  last_error: string | null;
+  last_push_count: number;
+  last_pull_count: number;
+};
+
+type SyncOpEnvelope = {
+  cursor: number;
+  op_id: string;
+  payload: string;
+};
+
+type SyncServerPushResponse = {
+  accepted: number;
+  cursor: number | null;
+};
+
+type SyncServerPullResponse = {
+  ops: {
+    cursor: number;
+    opId: string;
+    payload: string;
+    deviceId: string;
+    createdAt: number;
+  }[];
+  nextCursor: number;
+};
+
 type SearchResult = {
   id: string;
   text: string;
@@ -265,6 +305,20 @@ function App() {
   const [vaultKeyMessage, setVaultKeyMessage] = createSignal<string | null>(
     null
   );
+  const [syncConfig, setSyncConfig] = createSignal<SyncConfig | null>(null);
+  const [syncServerUrl, setSyncServerUrl] = createSignal("");
+  const [syncVaultIdInput, setSyncVaultIdInput] = createSignal("");
+  const [syncDeviceIdInput, setSyncDeviceIdInput] = createSignal("");
+  const [syncStatus, setSyncStatus] = createSignal<SyncStatus>({
+    state: "idle",
+    pending_ops: 0,
+    last_synced_at: null,
+    last_error: null,
+    last_push_count: 0,
+    last_pull_count: 0
+  });
+  const [syncMessage, setSyncMessage] = createSignal<string | null>(null);
+  const [syncBusy, setSyncBusy] = createSignal(false);
   const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
@@ -326,6 +380,13 @@ function App() {
       }
     }
   });
+  const SYNC_BATCH_LIMIT = 200;
+  const SYNC_INTERVAL_MS = 8000;
+  const SYNC_MAX_BACKOFF_MS = 60000;
+  let syncTimeout: number | undefined;
+  let syncBackoffMs = SYNC_INTERVAL_MS;
+  let syncRunning = false;
+  let syncLoopEnabled = false;
 
   const isTauri = () =>
     typeof window !== "undefined" &&
@@ -500,6 +561,47 @@ function App() {
       return results.filter((result) => result.text.toLowerCase().includes("#pin"));
     }
     return results;
+  });
+
+  const syncConnected = createMemo(() => {
+    const config = syncConfig();
+    return Boolean(config?.server_url && config?.vault_id && config?.device_id);
+  });
+
+  const syncStateLabel = createMemo(() => {
+    if (!isTauri()) return "Desktop only";
+    if (!syncConnected()) return "Not connected";
+    switch (syncStatus().state) {
+      case "syncing":
+        return "Syncing";
+      case "offline":
+        return "Offline";
+      case "error":
+        return "Error";
+      default:
+        return "Ready";
+    }
+  });
+
+  const syncStateDetail = createMemo(() => {
+    if (!isTauri()) {
+      return "Desktop app required for background sync.";
+    }
+    if (!syncConnected()) {
+      return "Connect a server to sync across devices.";
+    }
+    if (syncStatus().state === "offline") {
+      return "Offline. Edits stay queued until you reconnect.";
+    }
+    if (syncStatus().state === "error") {
+      return syncStatus().last_error ?? "Sync error.";
+    }
+    if (syncStatus().state === "syncing") {
+      return "Syncing in the background.";
+    }
+    return syncStatus().last_synced_at
+      ? `Last sync ${syncStatus().last_synced_at}`
+      : "Ready to sync.";
   });
 
   const shadowWriter = createShadowWriter({
@@ -752,6 +854,292 @@ function App() {
     }
   };
 
+  const normalizeServerUrl = (value: string) =>
+    value.trim().replace(/\/+$/, "");
+
+  const updateSyncStatus = (next: Partial<SyncStatus>) => {
+    setSyncStatus((prev) => ({
+      ...prev,
+      ...next
+    }));
+  };
+
+  const loadSyncConfig = async () => {
+    if (!isTauri()) {
+      setSyncConfig(null);
+      setSyncServerUrl("");
+      setSyncVaultIdInput("");
+      setSyncDeviceIdInput("");
+      updateSyncStatus({
+        state: "idle",
+        last_error: null
+      });
+      stopSyncLoop();
+      return;
+    }
+
+    try {
+      const config = (await invoke("get_sync_config")) as SyncConfig;
+      setSyncConfig(config);
+      setSyncServerUrl(config.server_url ?? "");
+      setSyncVaultIdInput(config.vault_id ?? "");
+      setSyncDeviceIdInput(config.device_id ?? "");
+      if (config.server_url && config.vault_id && config.device_id) {
+        startSyncLoop();
+      } else {
+        stopSyncLoop();
+      }
+    } catch (error) {
+      console.error("Failed to load sync config", error);
+      setSyncConfig(null);
+      stopSyncLoop();
+    }
+  };
+
+  const setSyncConfigState = (config: SyncConfig) => {
+    setSyncConfig(config);
+    setSyncServerUrl(config.server_url ?? "");
+    setSyncVaultIdInput(config.vault_id ?? "");
+    setSyncDeviceIdInput(config.device_id ?? "");
+  };
+
+  const pushSyncOps = async (config: SyncConfig) => {
+    let cursor = config.last_push_cursor;
+    let pushed = 0;
+    let iterations = 0;
+    const serverUrl = normalizeServerUrl(config.server_url ?? "");
+    if (!serverUrl) return { pushed, cursor };
+
+    while (iterations < 3) {
+      const ops = (await invoke("list_sync_ops_since", {
+        cursor,
+        limit: SYNC_BATCH_LIMIT
+      })) as SyncOpEnvelope[];
+      updateSyncStatus({
+        pending_ops: ops.length
+      });
+      if (ops.length === 0) break;
+
+      const response = await fetch(`${serverUrl}/v1/ops/push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          vaultId: config.vault_id,
+          deviceId: config.device_id,
+          ops: ops.map((op) => ({
+            opId: op.op_id,
+            payload: op.payload
+          }))
+        })
+      });
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "push-failed");
+        throw new Error(text || "push-failed");
+      }
+
+      const result = (await response.json()) as SyncServerPushResponse;
+      const lastCursor = ops[ops.length - 1]?.cursor ?? cursor;
+      cursor = lastCursor;
+      pushed += result.accepted ?? ops.length;
+      const nextConfig = (await invoke("set_sync_cursors", {
+        lastPushCursor: cursor,
+        last_push_cursor: cursor
+      })) as SyncConfig;
+      setSyncConfig(nextConfig);
+
+      if (ops.length < SYNC_BATCH_LIMIT) break;
+      iterations += 1;
+    }
+
+    return { pushed, cursor };
+  };
+
+  const pullSyncOps = async (config: SyncConfig) => {
+    const serverUrl = normalizeServerUrl(config.server_url ?? "");
+    if (!serverUrl || !config.vault_id) return { pulled: 0, cursor: config.last_pull_cursor };
+    const response = await fetch(
+      `${serverUrl}/v1/ops/pull?vaultId=${encodeURIComponent(
+        config.vault_id
+      )}&since=${config.last_pull_cursor}&limit=${SYNC_BATCH_LIMIT}`,
+      {
+        method: "GET"
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "pull-failed");
+      throw new Error(text || "pull-failed");
+    }
+
+    const payload = (await response.json()) as SyncServerPullResponse;
+    const remoteOps = payload.ops
+      .filter((op) => op.deviceId !== config.device_id)
+      .map((op) => ({
+        cursor: op.cursor,
+        op_id: op.opId,
+        payload: op.payload
+      }));
+    if (remoteOps.length > 0) {
+      await invoke("store_sync_inbox_ops", { ops: remoteOps });
+    }
+    const nextCursor = payload.nextCursor ?? config.last_pull_cursor;
+    const nextConfig = (await invoke("set_sync_cursors", {
+      lastPullCursor: nextCursor,
+      last_pull_cursor: nextCursor
+    })) as SyncConfig;
+    setSyncConfig(nextConfig);
+    return { pulled: remoteOps.length, cursor: nextCursor };
+  };
+
+  const startSyncLoop = () => {
+    if (!isTauri()) return;
+    syncLoopEnabled = true;
+    scheduleSync(1200);
+  };
+
+  const stopSyncLoop = () => {
+    syncLoopEnabled = false;
+    if (syncTimeout) {
+      window.clearTimeout(syncTimeout);
+      syncTimeout = undefined;
+    }
+  };
+
+  const scheduleSync = (delay: number) => {
+    if (!syncLoopEnabled) return;
+    if (syncTimeout) {
+      window.clearTimeout(syncTimeout);
+    }
+    syncTimeout = window.setTimeout(() => {
+      void runSyncCycle();
+    }, delay);
+  };
+
+  const runSyncCycle = async () => {
+    if (!syncLoopEnabled || syncRunning) return;
+    const config = syncConfig();
+    if (!config || !config.server_url || !config.vault_id || !config.device_id) {
+      updateSyncStatus({ state: "idle" });
+      return;
+    }
+
+    syncRunning = true;
+    updateSyncStatus({
+      state: "syncing",
+      last_error: null
+    });
+
+    try {
+      const pushResult = await pushSyncOps(config);
+      const nextConfig = syncConfig() ?? config;
+      const pullResult = await pullSyncOps(nextConfig);
+      updateSyncStatus({
+        state: "idle",
+        last_synced_at: stampNow(),
+        last_push_count: pushResult.pushed,
+        last_pull_count: pullResult.pulled,
+        last_error: null
+      });
+      syncBackoffMs = SYNC_INTERVAL_MS;
+      scheduleSync(SYNC_INTERVAL_MS);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "sync-unavailable";
+      const offline =
+        error instanceof TypeError || message.includes("network");
+      updateSyncStatus({
+        state: offline ? "offline" : "error",
+        last_error: message
+      });
+      syncBackoffMs = Math.min(SYNC_MAX_BACKOFF_MS, syncBackoffMs * 2);
+      scheduleSync(syncBackoffMs);
+    } finally {
+      syncRunning = false;
+    }
+  };
+
+  const connectSync = async () => {
+    if (!isTauri()) return;
+    const serverUrl = normalizeServerUrl(syncServerUrl());
+    if (!serverUrl) {
+      setSyncMessage("Add a sync server URL.");
+      return;
+    }
+    if (!vaultKeyStatus().configured) {
+      setSyncMessage("Set a vault passphrase first.");
+      return;
+    }
+
+    setSyncBusy(true);
+    setSyncMessage(null);
+    try {
+      const keyFingerprint = (await invoke("vault_key_fingerprint")) as string;
+      const requestedVaultId = syncVaultIdInput().trim() || undefined;
+      const vaultResponse = await fetch(`${serverUrl}/v1/vaults`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          keyFingerprint,
+          vaultId: requestedVaultId
+        })
+      });
+      if (!vaultResponse.ok) {
+        const text = await vaultResponse.text().catch(() => "vault-failed");
+        throw new Error(text || "vault-failed");
+      }
+      const { vaultId } = (await vaultResponse.json()) as { vaultId: string };
+      const deviceResponse = await fetch(`${serverUrl}/v1/devices`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          vaultId,
+          keyFingerprint,
+          deviceId: syncDeviceIdInput().trim() || undefined
+        })
+      });
+      if (!deviceResponse.ok) {
+        const text = await deviceResponse.text().catch(() => "device-failed");
+        throw new Error(text || "device-failed");
+      }
+      const { deviceId } = (await deviceResponse.json()) as { deviceId: string };
+      const config = (await invoke("set_sync_config", {
+        serverUrl,
+        server_url: serverUrl,
+        vaultId,
+        vault_id: vaultId,
+        deviceId,
+        device_id: deviceId,
+        keyFingerprint,
+        key_fingerprint: keyFingerprint
+      })) as SyncConfig;
+      setSyncConfigState(config);
+      setSyncMessage("Sync connected. Background sync is running.");
+      startSyncLoop();
+      void runSyncCycle();
+    } catch (error) {
+      console.error("Failed to connect sync", error);
+      setSyncMessage("Sync connection failed.");
+      updateSyncStatus({
+        state: "error",
+        last_error: error instanceof Error ? error.message : "sync-failed"
+      });
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const syncNow = async () => {
+    if (!isTauri() || syncBusy()) return;
+    await runSyncCycle();
+  };
+
   const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {
     setPermissionPrompt({
       pluginId: plugin.id,
@@ -894,6 +1282,7 @@ function App() {
       await loadBlocks();
       await loadPlugins();
       await loadVaultKeyStatus();
+      await loadSyncConfig();
       return;
     }
 
@@ -909,6 +1298,7 @@ function App() {
       await loadBlocks();
       await loadPlugins();
       await loadVaultKeyStatus();
+      await loadSyncConfig();
     } catch (error) {
       console.error("Failed to load vaults", error);
     }
@@ -928,6 +1318,7 @@ function App() {
     await loadBlocks();
     await loadPlugins();
     await loadVaultKeyStatus();
+    await loadSyncConfig();
   };
 
   const createVault = async () => {
@@ -946,6 +1337,7 @@ function App() {
       await loadBlocks();
       await loadPlugins();
       await loadVaultKeyStatus();
+      await loadSyncConfig();
     }
 
     setVaultFormOpen(false);
@@ -981,6 +1373,7 @@ function App() {
       }
       void shadowWriter.flush();
       shadowWriter.dispose();
+      stopSyncLoop();
     });
   });
 
@@ -1521,6 +1914,101 @@ function App() {
               <Show when={vaultKeyMessage()}>
                 <div class="vault-key__message">{vaultKeyMessage()}</div>
               </Show>
+            </div>
+            <div class="sidebar__sync">
+              <div class="sidebar__section-title">Sync</div>
+              <div class="sync-card">
+                <div class="sync-card__header">
+                  <div>
+                    <div class="sync-card__title">Background sync</div>
+                    <div class="sync-card__meta">{syncStateDetail()}</div>
+                  </div>
+                  <div
+                    class={`sync-pill is-${syncStatus().state} ${
+                      syncConnected() ? "is-connected" : "is-disconnected"
+                    }`}
+                  >
+                    {syncStateLabel()}
+                  </div>
+                </div>
+                <div class="sync-card__stats">
+                  <div class="sync-stat">
+                    <span>Queue</span>
+                    <strong>{syncStatus().pending_ops}</strong>
+                  </div>
+                  <div class="sync-stat">
+                    <span>Push</span>
+                    <strong>{syncStatus().last_push_count}</strong>
+                  </div>
+                  <div class="sync-stat">
+                    <span>Pull</span>
+                    <strong>{syncStatus().last_pull_count}</strong>
+                  </div>
+                </div>
+                <div class="sync-card__fields">
+                  <input
+                    class="vault-input"
+                    type="text"
+                    placeholder="Sync server URL"
+                    value={syncServerUrl()}
+                    onInput={(event) => setSyncServerUrl(event.currentTarget.value)}
+                  />
+                  <input
+                    class="vault-input"
+                    type="text"
+                    placeholder="Vault ID (optional)"
+                    value={syncVaultIdInput()}
+                    onInput={(event) =>
+                      setSyncVaultIdInput(event.currentTarget.value)
+                    }
+                  />
+                  <input
+                    class="vault-input"
+                    type="text"
+                    placeholder="Device ID (optional)"
+                    value={syncDeviceIdInput()}
+                    onInput={(event) =>
+                      setSyncDeviceIdInput(event.currentTarget.value)
+                    }
+                  />
+                </div>
+                <div class="vault-actions">
+                  <button
+                    class="vault-action is-primary"
+                    disabled={
+                      !isTauri() ||
+                      syncBusy() ||
+                      !vaultKeyStatus().configured ||
+                      syncServerUrl().trim().length === 0
+                    }
+                    onClick={connectSync}
+                  >
+                    {syncBusy() ? "Connecting..." : "Connect sync"}
+                  </button>
+                  <button
+                    class="vault-action"
+                    disabled={!isTauri() || syncBusy() || !syncConnected()}
+                    onClick={syncNow}
+                  >
+                    Sync now
+                  </button>
+                </div>
+                <Show when={syncMessage()}>
+                  <div class="sync-card__message">{syncMessage()}</div>
+                </Show>
+                <Show when={syncConnected()}>
+                  <div class="sync-card__ids">
+                    <div class="sync-card__id">
+                      <span>Vault</span>
+                      <code>{syncConfig()?.vault_id}</code>
+                    </div>
+                    <div class="sync-card__id">
+                      <span>Device</span>
+                      <code>{syncConfig()?.device_id}</code>
+                    </div>
+                  </div>
+                </Show>
+              </div>
             </div>
             <div class="sidebar__plugins">
               <div class="sidebar__section-title">Plugins</div>

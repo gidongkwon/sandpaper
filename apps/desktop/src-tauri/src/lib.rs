@@ -4,11 +4,12 @@ pub mod db;
 pub mod plugins;
 pub mod vaults;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use aes_gcm::aead::{Aead, KeyInit};
 use base64::Engine;
 use rand_core::RngCore;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
@@ -44,6 +45,23 @@ struct PluginBlockInfo {
     id: String,
     reason: String,
     missing_permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncConfig {
+    server_url: Option<String>,
+    vault_id: Option<String>,
+    device_id: Option<String>,
+    key_fingerprint: Option<String>,
+    last_push_cursor: i64,
+    last_pull_cursor: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SyncOpEnvelope {
+    cursor: i64,
+    op_id: String,
+    payload: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -450,6 +468,33 @@ fn encrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String
     serde_json::to_vec(&envelope).map_err(|err| format!("{:?}", err))
 }
 
+fn load_sync_config(db: &Database) -> Result<SyncConfig, String> {
+    let server_url = db.get_kv("sync.server_url").map_err(|err| format!("{:?}", err))?;
+    let vault_id = db.get_kv("sync.vault_id").map_err(|err| format!("{:?}", err))?;
+    let device_id = db.get_kv("sync.device_id").map_err(|err| format!("{:?}", err))?;
+    let key_fingerprint =
+        db.get_kv("sync.key_fingerprint").map_err(|err| format!("{:?}", err))?;
+    let last_push_cursor = db
+        .get_kv("sync.last_push_cursor")
+        .map_err(|err| format!("{:?}", err))?
+        .and_then(|raw| raw.parse::<i64>().ok())
+        .unwrap_or(0);
+    let last_pull_cursor = db
+        .get_kv("sync.last_pull_cursor")
+        .map_err(|err| format!("{:?}", err))?
+        .and_then(|raw| raw.parse::<i64>().ok())
+        .unwrap_or(0);
+
+    Ok(SyncConfig {
+        server_url,
+        vault_id,
+        device_id,
+        key_fingerprint,
+        last_push_cursor,
+        last_pull_cursor,
+    })
+}
+
 #[tauri::command]
 fn set_vault_key(key_b64: String, salt_b64: String, iterations: i64) -> Result<(), String> {
     let db = open_active_database()?;
@@ -488,6 +533,93 @@ fn vault_key_status() -> Result<VaultKeyStatus, String> {
         iterations,
         salt_b64,
     })
+}
+
+#[tauri::command]
+fn vault_key_fingerprint() -> Result<String, String> {
+    let db = open_active_database()?;
+    let key = db
+        .get_kv("vault.key.b64")
+        .map_err(|err| format!("{:?}", err))?
+        .ok_or_else(|| "vault-key-missing".to_string())?;
+    let key_bytes = base64::engine::general_purpose::STANDARD
+        .decode(key)
+        .map_err(|err| format!("{:?}", err))?;
+    let mut hasher = Sha256::new();
+    hasher.update(key_bytes);
+    let digest = hasher.finalize();
+    Ok(hex::encode(digest))
+}
+
+#[tauri::command]
+fn get_sync_config() -> Result<SyncConfig, String> {
+    let db = open_active_database()?;
+    load_sync_config(&db)
+}
+
+#[tauri::command]
+fn set_sync_config(
+    server_url: String,
+    vault_id: String,
+    device_id: String,
+    key_fingerprint: String,
+) -> Result<SyncConfig, String> {
+    let db = open_active_database()?;
+    db.set_kv("sync.server_url", &server_url)
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("sync.vault_id", &vault_id)
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("sync.device_id", &device_id)
+        .map_err(|err| format!("{:?}", err))?;
+    db.set_kv("sync.key_fingerprint", &key_fingerprint)
+        .map_err(|err| format!("{:?}", err))?;
+    load_sync_config(&db)
+}
+
+#[tauri::command]
+fn set_sync_cursors(
+    last_push_cursor: Option<i64>,
+    last_pull_cursor: Option<i64>,
+) -> Result<SyncConfig, String> {
+    let db = open_active_database()?;
+    if let Some(cursor) = last_push_cursor {
+        db.set_kv("sync.last_push_cursor", &cursor.to_string())
+            .map_err(|err| format!("{:?}", err))?;
+    }
+    if let Some(cursor) = last_pull_cursor {
+        db.set_kv("sync.last_pull_cursor", &cursor.to_string())
+            .map_err(|err| format!("{:?}", err))?;
+    }
+    load_sync_config(&db)
+}
+
+#[tauri::command]
+fn list_sync_ops_since(cursor: i64, limit: i64) -> Result<Vec<SyncOpEnvelope>, String> {
+    let db = open_active_database()?;
+    let ops = db
+        .list_sync_ops_since(cursor, limit)
+        .map_err(|err| format!("{:?}", err))?;
+    ops.into_iter()
+        .map(|op| {
+            let payload = String::from_utf8(op.payload)
+                .map_err(|_| "sync-op-payload-invalid".to_string())?;
+            Ok(SyncOpEnvelope {
+                cursor: op.id,
+                op_id: op.op_id,
+                payload,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn store_sync_inbox_ops(ops: Vec<SyncOpEnvelope>) -> Result<(), String> {
+    let db = open_active_database()?;
+    for op in ops {
+        db.insert_sync_inbox_op(op.cursor, &op.op_id, op.payload.as_bytes())
+            .map_err(|err| format!("{:?}", err))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -744,6 +876,12 @@ pub fn run() {
             save_page_blocks,
             set_vault_key,
             vault_key_status,
+            vault_key_fingerprint,
+            get_sync_config,
+            set_sync_config,
+            set_sync_cursors,
+            list_sync_ops_since,
+            store_sync_inbox_ops,
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
@@ -763,7 +901,7 @@ mod tests {
     use super::{
         build_markdown_export, build_sync_ops, compute_missing_permissions,
         encrypt_sync_payload, ensure_plugin_permission, list_permissions_for_plugins,
-        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
+        load_sync_config, sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
         BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
     };
     use aes_gcm::aead::KeyInit;
@@ -949,6 +1087,17 @@ mod tests {
         assert!(markdown.contains("# Inbox ^page-1"));
         assert!(markdown.contains("- First ^b1"));
         assert!(markdown.contains("  - Child ^b2"));
+    }
+
+    #[test]
+    fn load_sync_config_defaults_to_zero() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let config = load_sync_config(&db).expect("sync config");
+        assert_eq!(config.last_push_cursor, 0);
+        assert_eq!(config.last_pull_cursor, 0);
+        assert!(config.server_url.is_none());
     }
 
     #[test]

@@ -589,6 +589,131 @@ body {
   padding: 6px 8px;
 }
 
+.sidebar__sync {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-card {
+  border-radius: 18px;
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.92), rgba(240, 229, 214, 0.78)),
+    radial-gradient(circle at top right, rgba(195, 116, 47, 0.18), transparent 62%);
+  box-shadow: var(--shadow-soft);
+  padding: 12px 12px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.sync-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sync-card__title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--ink-soft);
+}
+
+.sync-card__meta {
+  font-size: 12px;
+  color: var(--ink-soft);
+  max-width: 200px;
+}
+
+.sync-pill {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  border-radius: 999px;
+  padding: 6px 10px;
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink-soft);
+}
+
+.sync-pill.is-syncing {
+  color: #6d3f18;
+  background: rgba(224, 191, 154, 0.65);
+  border-color: rgba(195, 116, 47, 0.45);
+}
+
+.sync-pill.is-offline {
+  color: #5d2e2e;
+  background: rgba(226, 198, 187, 0.7);
+  border-color: rgba(170, 94, 87, 0.5);
+}
+
+.sync-pill.is-error {
+  color: #4b1c1c;
+  background: rgba(232, 181, 181, 0.7);
+  border-color: rgba(172, 60, 60, 0.55);
+}
+
+.sync-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+
+.sync-stat {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.sync-stat strong {
+  font-size: 15px;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+}
+
+.sync-card__fields {
+  display: grid;
+  gap: 8px;
+}
+
+.sync-card__message {
+  font-size: 12px;
+  color: #6d3f18;
+  border: 1px solid rgba(214, 180, 132, 0.4);
+  background: rgba(214, 180, 132, 0.2);
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+
+.sync-card__ids {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.sync-card__id {
+  display: grid;
+  gap: 4px;
+}
+
+.sync-card__id code {
+  font-family: "Instrument Sans", "Avenir Next", sans-serif;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  color: var(--ink);
+  word-break: break-all;
+}
+
 .panes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

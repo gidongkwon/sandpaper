@@ -237,8 +237,8 @@ Checklist
 - [x] Node sync server: store encrypted ops
 - [x] Node sync server: multi-client fan-out
 - [x] Node sync server: device onboarding via passphrase
-- [ ] Background sync: queue + retries
-- [ ] Background sync: offline-first
+- [x] Background sync: queue + retries
+- [x] Background sync: offline-first
 
 Implementation details
 - Per-page op logs stored locally; server only relays encrypted ops.
@@ -251,6 +251,7 @@ Test design
 - Unit: op merge tests (concurrent edit/move/delete).
 - Crypto: encrypt/decrypt with golden test vectors and tamper detection.
 - Integration: two local clients + one server syncing the same page.
+- Integration: background sync queues ops while offline and retries with backoff.
 
 Success metrics (Phase 3)
 - Sync: < 2s end-to-end propagation on LAN for small edits.

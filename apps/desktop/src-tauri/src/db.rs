@@ -92,6 +92,14 @@ const MIGRATIONS: &[Migration] = &[
             FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS sync_inbox (
+            id INTEGER PRIMARY KEY,
+            cursor INTEGER NOT NULL,
+            op_id TEXT NOT NULL UNIQUE,
+            payload BLOB NOT NULL,
+            received_at INTEGER DEFAULT (strftime('%s','now'))
+        );
+
         CREATE INDEX IF NOT EXISTS blocks_page_sort
           ON blocks(page_id, sort_key);
         CREATE INDEX IF NOT EXISTS blocks_parent_sort
@@ -104,6 +112,8 @@ const MIGRATIONS: &[Migration] = &[
           ON block_tags(tag_id);
         CREATE INDEX IF NOT EXISTS sync_ops_page_created_at
           ON sync_ops(page_id, created_at);
+        CREATE INDEX IF NOT EXISTS sync_inbox_cursor
+          ON sync_inbox(cursor);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
             text,
@@ -223,6 +233,15 @@ pub struct SyncOp {
     pub op_type: String,
     pub payload: Vec<u8>,
     pub created_at: i64,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SyncInboxOp {
+    pub id: i64,
+    pub cursor: i64,
+    pub op_id: String,
+    pub payload: Vec<u8>,
+    pub received_at: i64,
 }
 
 impl Database {
@@ -707,6 +726,44 @@ impl Database {
 
         rows.collect()
     }
+
+    pub fn list_sync_ops_since(&self, cursor: i64, limit: i64) -> rusqlite::Result<Vec<SyncOp>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, op_id, page_id, device_id, op_type, payload, created_at
+             FROM sync_ops
+             WHERE id > ?1
+             ORDER BY id ASC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![cursor, limit], |row| {
+            Ok(SyncOp {
+                id: row.get(0)?,
+                op_id: row.get(1)?,
+                page_id: row.get(2)?,
+                device_id: row.get(3)?,
+                op_type: row.get(4)?,
+                payload: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+
+        rows.collect()
+    }
+
+    pub fn insert_sync_inbox_op(
+        &self,
+        cursor: i64,
+        op_id: &str,
+        payload: &[u8],
+    ) -> rusqlite::Result<i64> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO sync_inbox (cursor, op_id, payload)
+             VALUES (?1, ?2, ?3)",
+            params![cursor, op_id, payload],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
 }
 
 fn parse_indent(props: &str) -> i64 {
@@ -737,7 +794,7 @@ mod tests {
     fn table_columns(db: &Database, name: &str) -> Vec<String> {
         let allowed = match name {
             "blocks" | "pages" | "edges" | "tags" | "block_tags" | "assets" | "kv"
-            | "plugin_perms" | "sync_ops" => name,
+            | "plugin_perms" | "sync_ops" | "sync_inbox" => name,
             _ => panic!("unsupported table name"),
         };
         let query = format!("PRAGMA table_info({})", allowed);
@@ -764,6 +821,7 @@ mod tests {
             "kv",
             "plugin_perms",
             "sync_ops",
+            "sync_inbox",
             "blocks_fts",
             "pages_fts",
         ];
@@ -1041,5 +1099,41 @@ mod tests {
         let result = db.insert_sync_op(page_id, "op-1", "device-1", "edit", payload);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_sync_ops_since_respects_cursor() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-1", "Sync page").expect("insert page");
+        let payload = br#"{\"kind\":\"add\"}"#;
+        let first_id = db
+            .insert_sync_op(page_id, "op-1", "device-1", "add", payload)
+            .expect("insert op");
+        db.insert_sync_op(page_id, "op-2", "device-1", "edit", payload)
+            .expect("insert op");
+
+        let ops = db.list_sync_ops_since(first_id, 10).expect("list ops");
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].op_id, "op-2");
+    }
+
+    #[test]
+    fn sync_inbox_dedupes_ops() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let payload = br#"{\"ciphertextB64\":\"abc\"}"#;
+        db.insert_sync_inbox_op(10, "op-1", payload)
+            .expect("insert inbox");
+        db.insert_sync_inbox_op(11, "op-1", payload)
+            .expect("insert duplicate");
+
+        let count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM sync_inbox", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 1);
     }
 }

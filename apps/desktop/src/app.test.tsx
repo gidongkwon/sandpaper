@@ -60,6 +60,16 @@ describe("App", () => {
     expect(setButton).toBeDisabled();
   });
 
+  it("renders the sync section in browser mode", async () => {
+    render(() => <App />);
+    expect(await screen.findByText("Sync")).toBeInTheDocument();
+    const connectButton = screen.getByRole("button", { name: /connect sync/i });
+    expect(connectButton).toBeDisabled();
+    expect(
+      await screen.findByText(/desktop app required/i)
+    ).toBeInTheDocument();
+  });
+
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
     const inputs = await screen.findAllByPlaceholderText("Write something...");
