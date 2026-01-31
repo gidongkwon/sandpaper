@@ -142,7 +142,7 @@ Exit criteria
 **Outcome:** usable local app with core editing, search, and plugin loader.
 
 Checklist
-- [ ] App shell: Tauri v2 desktop app
+ - [x] App shell: Tauri v2 desktop app
 - [x] Mode switcher: Quick Capture / Editor / Review
 - [x] Vault management: create/select vault
 - [x] Vault management: multi-vault, no cross-vault links
