@@ -182,7 +182,7 @@ Success metrics (Phase 1)
 - Search < 200ms p95 for typical queries.
 
 Exit criteria
-- [ ] Local editor usable for daily notes
+- [x] Local editor usable for daily notes
 - [ ] Search + backlinks functional
 - [ ] Plugins can load and register commands
  - [ ] Phase 1 success metrics met

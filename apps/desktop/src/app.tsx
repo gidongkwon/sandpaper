@@ -203,6 +203,8 @@ function App() {
   );
   const [permissionPrompt, setPermissionPrompt] =
     createSignal<PermissionPrompt | null>(null);
+  const [autosaved, setAutosaved] = createSignal(false);
+  const [autosaveStamp, setAutosaveStamp] = createSignal("");
   const [exportStatus, setExportStatus] = createSignal<{
     state: "success" | "error";
     message: string;
@@ -415,6 +417,7 @@ function App() {
   });
 
   let saveTimeout: number | undefined;
+  let autosaveTimeout: number | undefined;
   const persistBlocks = async () => {
     if (!isTauri()) return;
     const payload = untrack(() => blocks.map((block) => toPayload(block)));
@@ -452,16 +455,33 @@ function App() {
     if (saveTimeout) {
       window.clearTimeout(saveTimeout);
     }
+    if (autosaveTimeout) {
+      window.clearTimeout(autosaveTimeout);
+    }
     saveTimeout = window.setTimeout(() => {
       void persistBlocks();
     }, 400);
     scheduleShadowWrite();
+    setAutosaved(false);
+    autosaveTimeout = window.setTimeout(() => {
+      const time = stampNow();
+      setAutosaveStamp(time);
+      setAutosaved(true);
+    }, 700);
   };
+
+  const stampNow = () =>
+    new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date());
 
   const loadBlocks = async () => {
     if (!isTauri()) {
       setBlocks(buildLocalDefaults());
       setPageTitle("Inbox");
+      setAutosaved(true);
+      setAutosaveStamp(stampNow());
       return;
     }
 
@@ -493,6 +513,8 @@ function App() {
         });
         shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, seedMarkdown);
         setActiveId(seeded[0]?.id ?? null);
+        setAutosaved(true);
+        setAutosaveStamp(stampNow());
         return;
       }
       setBlocks(loaded);
@@ -507,10 +529,14 @@ function App() {
         }))
       });
       shadowWriter.scheduleWrite(DEFAULT_PAGE_UID, loadedMarkdown);
+      setAutosaved(true);
+      setAutosaveStamp(stampNow());
     } catch (error) {
       console.error("Failed to load blocks", error);
       setBlocks(buildLocalDefaults());
       setPageTitle("Inbox");
+      setAutosaved(true);
+      setAutosaveStamp(stampNow());
     }
   };
 
@@ -548,6 +574,8 @@ function App() {
       await loadPlugins();
     }
     setPermissionPrompt(null);
+    setAutosaved(true);
+    setAutosaveStamp(stampNow());
   };
 
   const dismissPermissionPrompt = () => {
@@ -722,6 +750,13 @@ function App() {
     setVaultFormOpen(false);
     setNewVaultName("");
     setNewVaultPath("");
+    setAutosaved(true);
+    setAutosaveStamp(
+      new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date())
+    );
   };
 
   onMount(() => {
@@ -739,6 +774,9 @@ function App() {
       scrollMeter.dispose();
       if (saveTimeout) {
         window.clearTimeout(saveTimeout);
+      }
+      if (autosaveTimeout) {
+        window.clearTimeout(autosaveTimeout);
       }
       void shadowWriter.flush();
       shadowWriter.dispose();
@@ -1064,6 +1102,15 @@ function App() {
           <div class="topbar__meta">
             Enter: new block · Tab: indent · Shift+Tab: outdent · Backspace: delete empty
           </div>
+        </div>
+        <div class="topbar__status">
+          <span
+            class={`topbar__autosave ${autosaved() ? "is-saved" : ""}`}
+          >
+            {autosaved()
+              ? `Saved ${autosaveStamp() || "just now"}`
+              : "Saving…"}
+          </span>
         </div>
         <nav class="mode-switch">
           <button

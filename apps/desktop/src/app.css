@@ -75,6 +75,31 @@ body {
   color: var(--ink-soft);
 }
 
+.topbar__status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.topbar__autosave {
+  border-radius: 999px;
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  padding: 6px 14px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.topbar__autosave.is-saved {
+  color: #4f2c14;
+  border-color: rgba(195, 116, 47, 0.4);
+  background: rgba(232, 199, 167, 0.6);
+}
+
 .mode-switch {
   display: flex;
   gap: 6px;
@@ -942,6 +967,10 @@ body {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .topbar__status {
+    margin-left: 0;
   }
 
   .mode-switch {

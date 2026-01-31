@@ -10,6 +10,11 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows autosave status after load", async () => {
+    render(() => <App />);
+    expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
   it("shows search results for matching blocks", async () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search notes, tags, or IDs");
