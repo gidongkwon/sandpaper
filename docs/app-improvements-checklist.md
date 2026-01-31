@@ -200,10 +200,10 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 10 — Packaging & Release
 
-- [ ] **Release checklist**
-  - [ ] Confirm `pnpm lint` and `pnpm typecheck` pass
-  - [ ] Update `docs/BUILD_PLAN.md` checkboxes
-  - [ ] Generate release notes
+- [x] **Release checklist**
+  - [x] Confirm `pnpm lint` and `pnpm typecheck` pass
+  - [x] Update `docs/BUILD_PLAN.md` checkboxes
+  - [x] Generate release notes
   - **Done when:** release checklist is complete
 
 ---
@@ -219,10 +219,10 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Testing Guidance (use throughout)
 
-- [ ] Add tests for every UI feature you touch
-- [ ] Prefer `apps/desktop/src/*.test.tsx` for UI behavior
-- [ ] Add unit tests for pure helpers in `packages/*`
-- [ ] Run `pnpm test` after each feature
+- [x] Add tests for every UI feature you touch
+- [x] Prefer `apps/desktop/src/*.test.tsx` for UI behavior
+- [x] Add unit tests for pure helpers in `packages/*`
+- [x] Run `pnpm test` after each feature
 
 ---
 
