@@ -38,6 +38,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Editor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Viewer" })).toBeInTheDocument();
   });
 
   it("shows autosave status after load", async () => {

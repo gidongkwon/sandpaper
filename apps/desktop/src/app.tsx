@@ -39,7 +39,13 @@ type Block = {
 
 type Mode = "quick-capture" | "editor" | "review" | "viewer";
 
-type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
+type SectionId =
+  | "sidebar"
+  | "editor"
+  | "backlinks"
+  | "capture"
+  | "review"
+  | "viewer";
 
 type CommandPaletteItem = {
   id: string;
@@ -613,6 +619,7 @@ function App() {
   const [searchFilter, setSearchFilter] = createSignal<
     "all" | "links" | "tasks" | "pinned"
   >("all");
+  const [viewerQuery, setViewerQuery] = createSignal("");
   const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal("");
@@ -757,6 +764,7 @@ function App() {
   let markdownFilePickerRef: HTMLInputElement | undefined;
   let offlineArchivePickerRef: HTMLInputElement | undefined;
   let paletteInputRef: HTMLInputElement | undefined;
+  let viewerSearchRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
     const map = new Map<string, PluginRenderer>();
@@ -988,6 +996,25 @@ function App() {
   const pageBacklinksMap = createMemo(() =>
     buildWikilinkBacklinks(pageLinkBlocks(), normalizePageUid)
   );
+
+  const viewerAllPages = createMemo<PageSummary[]>(() =>
+    pages().length > 0
+      ? pages()
+      : Object.values(localPages).map((page) => ({
+          uid: page.uid,
+          title: page.title
+        }))
+  );
+
+  const viewerPages = createMemo<PageSummary[]>(() => {
+    const query = viewerQuery().trim().toLowerCase();
+    if (!query) return viewerAllPages();
+    return viewerAllPages().filter((page) => {
+      const title = page.title.toLowerCase();
+      const uid = page.uid.toLowerCase();
+      return title.includes(query) || uid.includes(query);
+    });
+  });
 
   const [remotePageBacklinks] = createResource(
     activePageUid,
@@ -1659,6 +1686,199 @@ function App() {
       </div>
     </div>
   );
+
+  const ViewerPane = () => {
+    const pageCount = () => viewerAllPages().length;
+    const activeViewerUid = () =>
+      resolvePageUid(activePageUid() || DEFAULT_PAGE_UID);
+
+    const findViewerPage = (title: string) => {
+      const normalized = normalizePageUid(title);
+      return (
+        viewerAllPages().find(
+          (page) => normalizePageUid(page.uid) === normalized
+        ) ??
+        viewerAllPages().find(
+          (page) => page.title.toLowerCase() === title.toLowerCase()
+        ) ??
+        null
+      );
+    };
+
+    const openViewerPage = async (title: string) => {
+      const existing = findViewerPage(title);
+      if (!existing) return;
+      await switchPage(existing.uid);
+    };
+
+    const renderViewerInlineMarkdown = (
+      text: string
+    ): Array<string | JSX.Element> => {
+      const nodes: Array<string | JSX.Element> = [];
+      let cursor = 0;
+      for (const match of text.matchAll(INLINE_MARKDOWN_PATTERN)) {
+        const index = match.index ?? 0;
+        if (index > cursor) {
+          nodes.push(text.slice(cursor, index));
+        }
+        const token = match[0];
+        if (token.startsWith("[[")) {
+          const parsed = parseWikilinkToken(token);
+          if (parsed) {
+            nodes.push(
+              <button
+                type="button"
+                class="wikilink"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void openViewerPage(parsed.target);
+                }}
+              >
+                {parsed.label}
+              </button>
+            );
+          } else {
+            nodes.push(token);
+          }
+        } else if (token.startsWith("[")) {
+          const parsed = parseInlineLinkToken(token);
+          if (parsed) {
+            nodes.push(
+              <a
+                href={parsed.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-link"
+              >
+                {parsed.label}
+              </a>
+            );
+          } else {
+            nodes.push(token);
+          }
+        } else if (token.startsWith("`")) {
+          nodes.push(<code>{token.slice(1, -1)}</code>);
+        } else if (token.startsWith("**")) {
+          nodes.push(<strong>{token.slice(2, -2)}</strong>);
+        } else if (token.startsWith("~~")) {
+          nodes.push(<del>{token.slice(2, -2)}</del>);
+        } else if (token.startsWith("*")) {
+          nodes.push(<em>{token.slice(1, -1)}</em>);
+        } else {
+          nodes.push(token);
+        }
+        cursor = index + token.length;
+      }
+      if (cursor < text.length) {
+        nodes.push(text.slice(cursor));
+      }
+      return nodes;
+    };
+
+    const renderViewerDisplay = (text: string): JSX.Element => {
+      const list = parseMarkdownList(text);
+      if (list) {
+        const items = (
+          <For each={list.items}>
+            {(item) => <li>{renderViewerInlineMarkdown(item)}</li>}
+          </For>
+        );
+        if (list.type === "ol") {
+          return <ol class="markdown-list">{items}</ol>;
+        }
+        return <ul class="markdown-list">{items}</ul>;
+      }
+      return <span>{renderViewerInlineMarkdown(text)}</span>;
+    };
+
+    return (
+      <section class="viewer">
+        <SectionJump id="viewer" label="Viewer" />
+        <div class="viewer__header">
+          <div>
+            <div class="viewer__eyebrow">Read-only viewer</div>
+            <h2 class="viewer__title">{pageTitle()}</h2>
+            <div class="viewer__meta">
+              {pageCount()} pages · {blocks.length} blocks
+            </div>
+          </div>
+          <button class="viewer__button" onClick={() => setMode("editor")}>
+            Open in editor
+          </button>
+        </div>
+        <div class="viewer__controls">
+          <input
+            ref={(el) => {
+              viewerSearchRef = el;
+            }}
+            class="viewer__search"
+            type="search"
+            placeholder="Find a page..."
+            value={viewerQuery()}
+            onInput={(event) => setViewerQuery(event.currentTarget.value)}
+          />
+        </div>
+        <div class="viewer__page-list">
+          <Show
+            when={viewerPages().length > 0}
+            fallback={<div class="viewer__empty">No pages found.</div>}
+          >
+            <For each={viewerPages()}>
+              {(page) => (
+                <button
+                  class={`viewer-page ${
+                    resolvePageUid(page.uid) === activeViewerUid()
+                      ? "is-active"
+                      : ""
+                  }`}
+                  onClick={() => void switchPage(page.uid)}
+                >
+                  <div class="viewer-page__title">
+                    {page.title || page.uid}
+                  </div>
+                  <div class="viewer-page__meta">{page.uid}</div>
+                </button>
+              )}
+            </For>
+          </Show>
+        </div>
+        <div class="viewer__content">
+          <div class="viewer__content-title">{pageTitle()}</div>
+          <Show
+            when={blocks.length > 0}
+            fallback={<div class="viewer__empty">No blocks yet.</div>}
+          >
+            <For each={blocks}>
+              {(block) => {
+                const trimmed = () => block.text.trim();
+                return (
+                  <div
+                    class="viewer-block"
+                    style={{ "margin-left": `${block.indent * 18}px` }}
+                  >
+                    <span class="viewer-block__bullet">•</span>
+                    <div class="viewer-block__text">
+                      <Show
+                        when={trimmed().length > 0}
+                        fallback={
+                          <span class="viewer-block__placeholder">
+                            Empty block
+                          </span>
+                        }
+                      >
+                        {renderViewerDisplay(block.text)}
+                      </Show>
+                    </div>
+                  </div>
+                );
+              }}
+            </For>
+          </Show>
+        </div>
+      </section>
+    );
+  };
 
   let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
@@ -3197,6 +3417,15 @@ function App() {
         }
       });
     }
+    if (mode() !== "viewer") {
+      items.push({
+        id: "switch-viewer",
+        label: "Switch to viewer",
+        action: () => {
+          setMode("viewer");
+        }
+      });
+    }
 
     if (mode() === "editor") {
       items.push(
@@ -3642,7 +3871,10 @@ function App() {
     if (mode() === "quick-capture") {
       return ["capture"];
     }
-    return ["review"];
+    if (mode() === "review") {
+      return ["review"];
+    }
+    return ["viewer"];
   });
 
   const focusSectionJump = (id: SectionId) => {
@@ -3721,6 +3953,12 @@ function App() {
           ".review-card__button, .review__button, .review-template"
         );
         target?.focus();
+      });
+      return;
+    }
+    if (id === "viewer") {
+      requestAnimationFrame(() => {
+        viewerSearchRef?.focus();
       });
     }
   };
@@ -4982,6 +5220,12 @@ function App() {
           >
             Review
           </button>
+          <button
+            class={`mode-switch__button ${mode() === "viewer" ? "is-active" : ""}`}
+            onClick={() => setMode("viewer")}
+          >
+            Viewer
+          </button>
         </nav>
 
         <div class="topbar__right">
@@ -5013,36 +5257,40 @@ function App() {
       <Show
         when={mode() === "editor"}
         fallback={
-          <section class="focus-panel">
-            <SectionJump
-              id={mode() === "quick-capture" ? "capture" : "review"}
-              label={mode() === "quick-capture" ? "Capture" : "Review"}
-            />
-            <Show
-              when={mode() === "quick-capture"}
-              fallback={
-                <ReviewPane />
-              }
-            >
-              <div class="capture">
-                <h2>Quick capture</h2>
-                <p>Drop a thought and send it straight to your inbox.</p>
-                <textarea
-                  class="capture__input"
-                  rows={4}
-                  placeholder="Capture a thought, link, or task..."
-                  value={captureText()}
-                  onInput={(event) => setCaptureText(event.currentTarget.value)}
-                />
-                <div class="capture__actions">
-                  <button class="capture__button" onClick={addCapture}>
-                    Add to Inbox
-                  </button>
-                  <span class="capture__hint">Shift+Enter for newline</span>
+          <Show when={mode() === "viewer"} fallback={
+            <section class="focus-panel">
+              <SectionJump
+                id={mode() === "quick-capture" ? "capture" : "review"}
+                label={mode() === "quick-capture" ? "Capture" : "Review"}
+              />
+              <Show
+                when={mode() === "quick-capture"}
+                fallback={
+                  <ReviewPane />
+                }
+              >
+                <div class="capture">
+                  <h2>Quick capture</h2>
+                  <p>Drop a thought and send it straight to your inbox.</p>
+                  <textarea
+                    class="capture__input"
+                    rows={4}
+                    placeholder="Capture a thought, link, or task..."
+                    value={captureText()}
+                    onInput={(event) => setCaptureText(event.currentTarget.value)}
+                  />
+                  <div class="capture__actions">
+                    <button class="capture__button" onClick={addCapture}>
+                      Add to Inbox
+                    </button>
+                    <span class="capture__hint">Shift+Enter for newline</span>
+                  </div>
                 </div>
-              </div>
-            </Show>
-          </section>
+              </Show>
+            </section>
+          }>
+            <ViewerPane />
+          </Show>
         }
       >
         <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
