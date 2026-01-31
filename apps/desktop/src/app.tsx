@@ -209,6 +209,8 @@ function App() {
     preview?: string;
   } | null>(null);
   const [exporting, setExporting] = createSignal(false);
+  const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
+  const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
@@ -228,6 +230,15 @@ function App() {
     }
     return map;
   });
+
+  const findPlugin = (pluginId: string) =>
+    plugins().find((plugin) => plugin.id === pluginId) ?? null;
+
+  const hasPermission = (pluginId: string, permission: string) => {
+    const plugin = findPlugin(pluginId);
+    if (!plugin) return false;
+    return plugin.granted_permissions.includes(permission);
+  };
 
   const perfTracker = createPerfTracker({
     maxSamples: 160,
@@ -255,10 +266,10 @@ function App() {
       name: "Local Calendar",
       version: "0.1.0",
       description: "Daily agenda panel",
-      permissions: ["fs", "network"],
+      permissions: ["fs", "network", "data.write", "ui"],
       enabled: true,
       path: "/plugins/local-calendar",
-      granted_permissions: ["fs"],
+      granted_permissions: ["fs", "data.write", "ui"],
       missing_permissions: ["network"]
     },
     {
@@ -267,15 +278,26 @@ function App() {
       version: "0.2.0",
       description: "Minimal editor layout",
       permissions: ["ui"],
-      enabled: false,
+      enabled: true,
       path: "/plugins/focus-mode",
       granted_permissions: [],
       missing_permissions: ["ui"]
+    },
+    {
+      id: "insight-lens",
+      name: "Insight Lens",
+      version: "0.1.0",
+      description: "Context-aware capture helper",
+      permissions: ["data.write"],
+      enabled: true,
+      path: "/plugins/insight-lens",
+      granted_permissions: [],
+      missing_permissions: ["data.write"]
     }
   ];
 
   const fallbackPluginStatus: PluginRuntimeStatus = {
-    loaded: ["local-calendar"],
+    loaded: ["local-calendar", "focus-mode", "insight-lens"],
     blocked: [],
     commands: [
       {
@@ -283,6 +305,12 @@ function App() {
         id: "local-calendar.open",
         title: "Open local-calendar",
         description: "Open local-calendar panel"
+      },
+      {
+        plugin_id: "insight-lens",
+        id: "insight-lens.capture",
+        title: "Capture highlight",
+        description: "Append a capture block"
       }
     ],
     panels: [
@@ -290,6 +318,12 @@ function App() {
         plugin_id: "local-calendar",
         id: "local-calendar.panel",
         title: "Calendar panel",
+        location: "sidebar"
+      },
+      {
+        plugin_id: "focus-mode",
+        id: "focus-mode.panel",
+        title: "Focus panel",
         location: "sidebar"
       }
     ],
@@ -577,6 +611,52 @@ function App() {
     }
   };
 
+  const openPanel = (panel: PluginPanel) => {
+    if (!hasPermission(panel.plugin_id, "ui")) {
+      const plugin = findPlugin(panel.plugin_id);
+      if (plugin) requestGrantPermission(plugin, "ui");
+      return;
+    }
+    setActivePanel(panel);
+  };
+
+  const runPluginCommand = async (command: PluginCommand) => {
+    if (!hasPermission(command.plugin_id, "data.write")) {
+      const plugin = findPlugin(command.plugin_id);
+      if (plugin) requestGrantPermission(plugin, "data.write");
+      return;
+    }
+
+    const text = `Plugin action: ${command.title}`;
+    const newBlock = makeBlock(makeRandomId(), text, 0);
+    const nextBlocks = [newBlock, ...blocks];
+    setBlocks(
+      produce((draft) => {
+        draft.unshift(newBlock);
+      })
+    );
+    scheduleSave();
+    setCommandStatus(`Ran ${command.id}`);
+
+    if (!isTauri()) return;
+
+    try {
+      await invoke("plugin_write_page", {
+        pluginId: command.plugin_id,
+        plugin_id: command.plugin_id,
+        pageUid: DEFAULT_PAGE_UID,
+        page_uid: DEFAULT_PAGE_UID,
+        blocks: nextBlocks.map((block) => ({
+          uid: block.id,
+          text: block.text,
+          indent: block.indent
+        }))
+      });
+    } catch (error) {
+      console.error("Plugin command failed", error);
+    }
+  };
+
   const loadVaults = async () => {
     if (!isTauri()) {
       const fallback = {
@@ -616,6 +696,8 @@ function App() {
       vault_id: vaultId
     });
     setExportStatus(null);
+    setActivePanel(null);
+    setCommandStatus(null);
     await loadBlocks();
     await loadPlugins();
   };
@@ -1222,8 +1304,16 @@ function App() {
                         <For each={pluginStatus()?.commands ?? []}>
                           {(command) => (
                             <div class="plugin-surface__item">
-                              <div class="plugin-surface__name">{command.title}</div>
-                              <div class="plugin-surface__meta">{command.id}</div>
+                              <div>
+                                <div class="plugin-surface__name">{command.title}</div>
+                                <div class="plugin-surface__meta">{command.id}</div>
+                              </div>
+                              <button
+                                class="plugin-surface__action"
+                                onClick={() => runPluginCommand(command)}
+                              >
+                                Run command
+                              </button>
                             </div>
                           )}
                         </For>
@@ -1237,13 +1327,21 @@ function App() {
                         <For each={pluginStatus()?.panels ?? []}>
                           {(panel) => (
                             <div class="plugin-surface__item">
-                              <div class="plugin-surface__name">{panel.title}</div>
-                              <div class="plugin-surface__meta">
-                                {panel.id}
-                                <Show when={panel.location}>
-                                  {(location) => ` · ${location()}`}
-                                </Show>
+                              <div>
+                                <div class="plugin-surface__name">{panel.title}</div>
+                                <div class="plugin-surface__meta">
+                                  {panel.id}
+                                  <Show when={panel.location}>
+                                    {(location) => ` · ${location()}`}
+                                  </Show>
+                                </div>
                               </div>
+                              <button
+                                class="plugin-surface__action"
+                                onClick={() => openPanel(panel)}
+                              >
+                                Open panel
+                              </button>
                             </div>
                           )}
                         </For>
@@ -1257,12 +1355,14 @@ function App() {
                         <For each={pluginStatus()?.toolbar_actions ?? []}>
                           {(action) => (
                             <div class="plugin-surface__item">
-                              <div class="plugin-surface__name">{action.title}</div>
-                              <div class="plugin-surface__meta">
-                                {action.id}
-                                <Show when={action.tooltip}>
-                                  {(tooltip) => ` · ${tooltip()}`}
-                                </Show>
+                              <div>
+                                <div class="plugin-surface__name">{action.title}</div>
+                                <div class="plugin-surface__meta">
+                                  {action.id}
+                                  <Show when={action.tooltip}>
+                                    {(tooltip) => ` · ${tooltip()}`}
+                                  </Show>
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1277,9 +1377,11 @@ function App() {
                         <For each={pluginStatus()?.renderers ?? []}>
                           {(renderer) => (
                             <div class="plugin-surface__item">
-                              <div class="plugin-surface__name">{renderer.title}</div>
-                              <div class="plugin-surface__meta">
-                                {renderer.id} · {renderer.kind}
+                              <div>
+                                <div class="plugin-surface__name">{renderer.title}</div>
+                                <div class="plugin-surface__meta">
+                                  {renderer.id} · {renderer.kind}
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1288,6 +1390,11 @@ function App() {
                     </div>
                   </Show>
                 </div>
+                <Show when={commandStatus()}>
+                  {(status) => (
+                    <div class="plugin-command-status">{status()}</div>
+                  )}
+                </Show>
               </Show>
               <div class="export-card">
                 <div class="export-card__title">Markdown export</div>
@@ -1330,6 +1437,31 @@ function App() {
             <EditorPane title="Primary editor" meta={pageTitle()} />
             <EditorPane title="Connection pane" meta="Split view" />
           </div>
+          <Show when={activePanel()}>
+            {(panel) => (
+              <section class="plugin-panel">
+                <div class="plugin-panel__header">
+                  <div>
+                    <div class="plugin-panel__title">Active panel</div>
+                    <div class="plugin-panel__meta">
+                      {panel().title} · {panel().id}
+                    </div>
+                  </div>
+                  <button
+                    class="plugin-panel__close"
+                    onClick={() => setActivePanel(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div class="plugin-panel__body">
+                  <div class="plugin-panel__content">
+                    Sandboxed panel placeholder for {panel().plugin_id}.
+                  </div>
+                </div>
+              </section>
+            )}
+          </Show>
         </div>
       </Show>
 

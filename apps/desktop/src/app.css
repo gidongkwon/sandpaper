@@ -449,6 +449,10 @@ body {
   border-radius: 10px;
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .plugin-surface__name {
@@ -461,6 +465,32 @@ body {
   color: var(--ink-soft);
   text-transform: uppercase;
   letter-spacing: 0.12em;
+}
+
+.plugin-surface__action {
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.plugin-surface__action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(110, 80, 60, 0.12);
+}
+
+.plugin-command-status {
+  font-size: 12px;
+  color: #6d3f18;
+  border: 1px solid rgba(214, 180, 132, 0.4);
+  background: rgba(214, 180, 132, 0.2);
+  border-radius: 10px;
+  padding: 8px 10px;
 }
 
 .sidebar__section-title {
@@ -511,6 +541,58 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.plugin-panel {
+  margin-top: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(90, 74, 62, 0.18);
+  background: rgba(255, 255, 255, 0.8);
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+
+.plugin-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.plugin-panel__title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+}
+
+.plugin-panel__meta {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.plugin-panel__close {
+  border: 1px solid rgba(90, 74, 62, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+}
+
+.plugin-panel__body {
+  border-radius: 14px;
+  background: rgba(250, 245, 238, 0.8);
+  padding: 16px;
+}
+
+.plugin-panel__content {
+  font-size: 13px;
+  color: var(--ink);
 }
 
 .editor-pane {

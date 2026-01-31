@@ -72,4 +72,45 @@ describe("App", () => {
       await screen.findByText(/preview generated in browser/i)
     ).toBeInTheDocument();
   });
+
+  it("opens a plugin panel from the list", async () => {
+    render(() => <App />);
+    const openButtons = await screen.findAllByRole("button", {
+      name: /open panel/i
+    });
+    await userEvent.click(openButtons[0]);
+    expect(await screen.findByText(/active panel/i)).toBeInTheDocument();
+  });
+
+  it("blocks panel open when permission is missing", async () => {
+    render(() => <App />);
+    const openButtons = await screen.findAllByRole("button", {
+      name: /open panel/i
+    });
+    await userEvent.click(openButtons[1]);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Grant permission"
+    );
+  });
+
+  it("runs a plugin command to append a block", async () => {
+    render(() => <App />);
+    const runButtons = await screen.findAllByRole("button", {
+      name: /run command/i
+    });
+    await userEvent.click(runButtons[0]);
+    const matches = await screen.findAllByDisplayValue(/plugin action/i);
+    expect(matches.length).toBeGreaterThan(0);
+  });
+
+  it("blocks command run when permission is missing", async () => {
+    render(() => <App />);
+    const runButtons = await screen.findAllByRole("button", {
+      name: /run command/i
+    });
+    await userEvent.click(runButtons[1]);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Grant permission"
+    );
+  });
 });

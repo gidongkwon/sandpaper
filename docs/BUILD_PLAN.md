@@ -213,9 +213,9 @@ Success metrics (Phase 2)
 - Permission prompts block unauthorized access 100% of the time in tests.
 
 Exit criteria
-- [ ] Plugins can modify data and UI safely
+- [x] Plugins can modify data and UI safely
 - [x] Permissions audited and enforced
- - [ ] Phase 2 success metrics met
+- [x] Phase 2 success metrics met
 
 ---
 

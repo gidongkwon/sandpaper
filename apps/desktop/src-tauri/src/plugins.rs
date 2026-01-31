@@ -379,6 +379,7 @@ mod tests {
     };
     use std::fs;
     use std::path::PathBuf;
+    use std::time::{Duration, Instant};
     use tempfile::tempdir;
 
     #[test]
@@ -547,6 +548,33 @@ rl.on("line", (line) => {
         assert_eq!(result.panels.len(), 2);
         assert_eq!(result.toolbar_actions.len(), 2);
         assert_eq!(result.renderers.len(), 4);
+    }
+
+    #[test]
+    fn runtime_load_plugins_is_fast() {
+        let dir = tempdir().expect("tempdir");
+        let script_path = write_runtime_script(dir.path());
+        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
+        let plugins = vec![PluginDescriptor {
+            manifest: PluginManifest {
+                id: "alpha".to_string(),
+                name: "Alpha".to_string(),
+                version: "0.1.0".to_string(),
+                description: None,
+                permissions: vec![],
+            },
+            path: dir.path().join("alpha"),
+            enabled: true,
+        }];
+
+        let start = Instant::now();
+        runtime.load_plugins(&plugins).expect("load plugins");
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(200),
+            "runtime load took {:?}",
+            elapsed
+        );
     }
 
     #[test]
