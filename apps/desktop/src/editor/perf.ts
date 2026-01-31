@@ -78,14 +78,12 @@ export const createPerfTracker = (
   const mark = (label: string) => {
     const start = now();
     raf(() => {
-      raf(() => {
-        const end = now();
-        recordSample({
-          label,
-          start,
-          end,
-          duration: end - start
-        });
+      const end = now();
+      recordSample({
+        label,
+        start,
+        end,
+        duration: end - start
       });
     });
   };

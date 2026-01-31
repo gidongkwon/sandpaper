@@ -13,7 +13,7 @@ describe("getPercentile", () => {
 });
 
 describe("createPerfTracker", () => {
-  it("records a sample after two animation frames", () => {
+  it("records a sample after one animation frame", () => {
     let now = 0;
     const rafQueue: FrameRequestCallback[] = [];
     const raf = (cb: FrameRequestCallback) => {
@@ -39,11 +39,10 @@ describe("createPerfTracker", () => {
     };
 
     runFrame(8);
-    runFrame(8);
 
     const samples = tracker.getSamples();
     expect(samples).toHaveLength(1);
-    expect(samples[0].duration).toBe(16);
+    expect(samples[0].duration).toBe(8);
     expect(samples[0].label).toBe("input");
   });
 
@@ -72,12 +71,9 @@ describe("createPerfTracker", () => {
 
     tracker.mark("first");
     runFrame();
-    runFrame();
     tracker.mark("second");
     runFrame();
-    runFrame();
     tracker.mark("third");
-    runFrame();
     runFrame();
 
     const samples = tracker.getSamples();
