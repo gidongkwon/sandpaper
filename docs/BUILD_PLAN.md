@@ -234,9 +234,9 @@ Checklist
 - [x] CRDT ops: conflict resolution policies
 - [x] E2E: passphrase-derived vault key
 - [x] E2E: encrypt ops + metadata
-- [ ] Node sync server: store encrypted ops
-- [ ] Node sync server: multi-client fan-out
-- [ ] Node sync server: device onboarding via passphrase
+- [x] Node sync server: store encrypted ops
+- [x] Node sync server: multi-client fan-out
+- [x] Node sync server: device onboarding via passphrase
 - [ ] Background sync: queue + retries
 - [ ] Background sync: offline-first
 
@@ -245,7 +245,7 @@ Implementation details
 - Conflict resolution: delete creates a tombstone that blocks later edits/moves; add can resurrect a deleted block (clock-ordered).
 - Vault key derived from passphrase with PBKDF2-SHA256 (AES-GCM key material stored with salt + iterations).
 - Sync ops are sealed with AES-256-GCM; op/device metadata stored inside encrypted envelope.
-- Sync server in `apps/sync-server` with simple REST/WebSocket endpoints.
+- Sync server in `apps/sync-server` with simple REST endpoints: `/v1/vaults`, `/v1/devices`, `/v1/ops/push`, `/v1/ops/pull`.
 
 Test design
 - Unit: op merge tests (concurrent edit/move/delete).
