@@ -1,0 +1,232 @@
+# Sandpaper App — Detailed Improvement Checklist (Junior-Friendly)
+
+This checklist is ordered so you can implement it top‑to‑bottom. Each item includes concrete steps and acceptance criteria. Check items off as you finish them.
+
+---
+
+## Phase 0 — Setup, Safety, and Baseline
+
+- [ ] **Confirm local dev workflow works**
+  - [ ] Run `pnpm install`
+  - [ ] Run `pnpm dev:desktop` and open the app
+  - [ ] Run `pnpm test`, `pnpm lint`, `pnpm typecheck`
+  - [ ] Note current test count and any known failures
+  - **Done when:** app runs locally and tests/lint/typecheck pass
+
+- [ ] **Add a basic bug report template (internal)**
+  - [ ] Create `docs/BUG_REPORT.md` with: steps, expected, actual, logs, screenshots
+  - [ ] Link it from `README.md` (if there is a “Contributing” section)
+  - **Done when:** there’s a simple bug template that teammates can follow
+
+- [ ] **Add a performance baseline note**
+  - [ ] Record current baseline from `docs/BUILD_PLAN.md`
+  - [ ] Add a short “Perf Baseline” section to `docs/BUILD_PLAN.md` (if missing)
+  - **Done when:** perf baseline is written in docs
+
+---
+
+## Phase 1 — Editor UX Foundations
+
+- [ ] **Focus behavior polish**
+  - [ ] Ensure clicking a block display focuses the textarea at the end
+  - [ ] Preserve caret position when toggling display → edit
+  - [ ] Keyboard: `Esc` exits edit mode (blur) but keeps selection
+  - **Done when:** edit mode feels predictable and caret doesn’t jump
+  - **Suggested tests:** add UI test for focus switch + caret location
+
+- [ ] **Inline slash command menu (basic)**
+  - [ ] When user types `/`, show a small menu near caret
+  - [ ] Start with 3 commands: “Link to page”, “Insert date”, “Convert to task”
+  - [ ] Selecting a command should insert text and close menu
+  - **Done when:** slash menu works in the editor and does not break typing
+  - **Suggested tests:** open menu, select each command, verify block text
+
+- [ ] **Block action toolbar improvements**
+  - [ ] Move hover actions to a consistent row (no jumping)
+  - [ ] Add tooltip text for each action
+  - [ ] Add a “Duplicate block” action
+  - **Done when:** toolbar is stable and new action works
+
+- [ ] **Quick Capture → Editor handoff**
+  - [ ] After capture, focus the created block
+  - [ ] Highlight the captured block briefly (1–2s) for visibility
+  - **Done when:** capture feels obvious and points to the new block
+
+---
+
+## Phase 2 — Linking & Navigation
+
+- [ ] **Wikilink autocomplete**
+  - [ ] On `[[`, show page title suggestions
+  - [ ] Allow creating a new page from the list
+  - [ ] Support alias (`[[Page|Alias]]`) in the UI
+  - **Done when:** selecting a suggestion inserts the correct link
+  - **Suggested tests:** type `[[`, pick suggestion, assert link text
+
+- [ ] **Backlink improvements**
+  - [ ] Group backlinks by source page (use headings)
+  - [ ] Show a snippet of the linking block
+  - [ ] Add “open in new pane” option (if multi-pane exists)
+  - **Done when:** backlinks panel shows context and page source
+
+- [ ] **Rename page updates backlinks**
+  - [ ] When renaming a page, rewrite matching `[[Old]]` links
+  - [ ] Update alias links if `[[Old|Alias]]`
+  - [ ] Leave unrelated text untouched
+  - **Done when:** renaming a page updates all wikilinks
+  - **Suggested tests:** rename page and verify text update
+
+- [ ] **Link preview (hover)**
+  - [ ] Hover a wikilink shows a small preview with top 2 blocks
+  - [ ] Preview has “Open” action
+  - **Done when:** hover preview appears and is usable
+
+---
+
+## Phase 3 — Search & Discovery
+
+- [ ] **Search highlighting**
+  - [ ] Highlight matching terms in results
+  - [ ] Keep result text readable (do not break layout)
+  - **Done when:** matches are visually obvious
+
+- [ ] **Search history / saved searches**
+  - [ ] Save last 5 search terms per vault
+  - [ ] Allow clicking a past search to re-run
+  - **Done when:** quick history works and persists
+
+- [ ] **Unlinked references panel**
+  - [ ] Scan for plain text matches to page titles
+  - [ ] Show “Link it” action to convert to `[[Page]]`
+  - **Done when:** can quickly convert references to links
+
+---
+
+## Phase 4 — Markdown & Rendering
+
+- [ ] **Improve markdown display**
+  - [ ] Add support for inline links and basic lists in display mode
+  - [ ] Ensure display mode matches export formatting (no surprises)
+  - **Done when:** display looks like expected markdown
+
+- [ ] **Code block UX**
+  - [ ] Add “Copy” button for code preview
+  - [ ] Add language badge
+  - **Done when:** code blocks can be copied easily
+
+- [ ] **Diagram preview enhancements**
+  - [ ] Replace placeholder diagram with real plugin rendering
+  - [ ] Add fallback error message on render failure
+  - **Done when:** diagrams render or show a clear error
+
+---
+
+## Phase 5 — Data Integrity & Reliability
+
+- [ ] **Autosave status accuracy**
+  - [ ] Ensure “Saved” only shows after DB write completes
+  - [ ] Show “Save failed” message on write errors
+  - **Done when:** autosave status is accurate and reliable
+
+- [ ] **Shadow writer robustness**
+  - [ ] Add retry on failed writes
+  - [ ] Add a small queue indicator in settings
+  - **Done when:** shadow writes recover from transient errors
+
+- [ ] **Crash-safe backups**
+  - [ ] Before migration, copy the DB to a backup file
+  - [ ] Keep last 3 backups per vault
+  - **Done when:** backups exist and rotate correctly
+
+---
+
+## Phase 6 — Plugin System Improvements
+
+- [ ] **Permission audit view**
+  - [ ] Add a settings tab showing all plugin permissions
+  - [ ] Highlight unused permissions and missing grants
+  - **Done when:** there is a clear audit list
+
+- [ ] **Plugin error surface**
+  - [ ] If a plugin errors, show a banner in settings
+  - [ ] Provide “Reload plugin” action
+  - **Done when:** plugin failures are visible and recoverable
+
+---
+
+## Phase 7 — Sync UX (Desktop)
+
+- [ ] **Sync activity log**
+  - [ ] Show last 10 sync actions (push/pull)
+  - [ ] Provide a “Copy log” button
+  - **Done when:** sync history is visible
+
+- [ ] **Sync conflict UI**
+  - [ ] If conflict detected, show a diff view for blocks
+  - [ ] Let users pick left/right or merge
+  - **Done when:** conflicts are surfaced and resolvable
+
+---
+
+## Phase 8 — Performance & Scaling
+
+- [ ] **Large note performance checks**
+  - [ ] Add a perf test for 100k blocks (existing perf HUD ok)
+  - [ ] Record p50/p95 input times in docs
+  - **Done when:** perf numbers are recorded and tracked
+
+- [ ] **Virtual list improvements**
+  - [ ] Support variable block heights
+  - [ ] Ensure scroll position is stable after edits
+  - **Done when:** no jumpiness during edits
+
+---
+
+## Phase 9 — Accessibility & UI Polish
+
+- [ ] **Keyboard navigation**
+  - [ ] `Tab` to move between UI sections
+  - [ ] `Cmd/Ctrl+K` to open command palette
+  - [ ] Ensure focus ring is visible everywhere
+  - **Done when:** app is fully usable without a mouse
+
+- [ ] **Color contrast audit**
+  - [ ] Check text vs background in both themes
+  - [ ] Fix any failing contrast (WCAG AA)
+  - **Done when:** all core UI text passes contrast
+
+---
+
+## Phase 10 — Packaging & Release
+
+- [ ] **Release checklist**
+  - [ ] Confirm `pnpm lint` and `pnpm typecheck` pass
+  - [ ] Update `docs/BUILD_PLAN.md` checkboxes
+  - [ ] Generate release notes
+  - **Done when:** release checklist is complete
+
+---
+
+## Optional Stretch Goals
+
+- [ ] **Offline export + import** (zip with assets)
+- [ ] **Mobile read‑only viewer**
+- [ ] **Graph view for wikilinks**
+- [ ] **Daily note auto‑create**
+
+---
+
+## Testing Guidance (use throughout)
+
+- [ ] Add tests for every UI feature you touch
+- [ ] Prefer `apps/desktop/src/*.test.tsx` for UI behavior
+- [ ] Add unit tests for pure helpers in `packages/*`
+- [ ] Run `pnpm test` after each feature
+
+---
+
+## Notes for Juniors
+
+- Keep changes small and focused. One feature = one commit.
+- When in doubt, write a test first.
+- Ask for review if you’re unsure about UX or data changes.
