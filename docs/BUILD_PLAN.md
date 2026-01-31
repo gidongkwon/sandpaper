@@ -230,7 +230,7 @@ Exit criteria
 **Outcome:** self-hosted sync with automatic merge.
 
 Checklist
-- [ ] CRDT ops: per-page op log
+- [x] CRDT ops: per-page op log
 - [ ] CRDT ops: conflict resolution policies
 - [ ] E2E: passphrase-derived vault key
 - [ ] E2E: encrypt ops + metadata

@@ -263,6 +263,154 @@ fn ensure_page(db: &Database, page_uid: &str, title: &str) -> Result<i64, String
         .map_err(|err| format!("{:?}", err))
 }
 
+struct PendingSyncOp {
+    op_id: String,
+    op_type: String,
+    payload: Vec<u8>,
+}
+
+fn get_or_create_device_id(db: &Database) -> Result<String, String> {
+    if let Some(existing) = db
+        .get_kv("device.id")
+        .map_err(|err| format!("{:?}", err))?
+    {
+        return Ok(existing);
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    db.set_kv("device.id", &id)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(id)
+}
+
+fn load_device_clock(db: &Database) -> Result<i64, String> {
+    let value = db
+        .get_kv("device.clock")
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(value
+        .as_deref()
+        .and_then(|raw| raw.parse::<i64>().ok())
+        .unwrap_or(0))
+}
+
+fn store_device_clock(db: &Database, clock: i64) -> Result<(), String> {
+    db.set_kv("device.clock", &clock.to_string())
+        .map_err(|err| format!("{:?}", err))
+}
+
+fn build_sync_ops(
+    page_uid: &str,
+    device_id: &str,
+    previous: &[BlockSnapshot],
+    next: &[BlockSnapshot],
+    mut clock: i64,
+) -> Result<(Vec<PendingSyncOp>, i64), String> {
+    let mut ops = Vec::new();
+    let mut previous_by_id = std::collections::HashMap::new();
+    for (index, block) in previous.iter().enumerate() {
+        previous_by_id.insert(block.uid.clone(), (block, index));
+    }
+    let mut next_ids = std::collections::HashSet::new();
+
+    for (index, block) in next.iter().enumerate() {
+        next_ids.insert(block.uid.as_str());
+        let sort_key = format!("{:06}", index);
+        let timestamp = chrono::Utc::now().timestamp_millis();
+
+        if let Some((prev, prev_index)) = previous_by_id.get(&block.uid) {
+            if block.text != prev.text {
+                clock += 1;
+                let op_id = uuid::Uuid::new_v4().to_string();
+                let payload = serde_json::json!({
+                    "opId": op_id,
+                    "pageId": page_uid,
+                    "blockId": block.uid,
+                    "deviceId": device_id,
+                    "clock": clock,
+                    "timestamp": timestamp,
+                    "kind": "edit",
+                    "text": block.text
+                });
+                ops.push(PendingSyncOp {
+                    op_id,
+                    op_type: "edit".to_string(),
+                    payload: serde_json::to_vec(&payload)
+                        .map_err(|err| format!("{:?}", err))?,
+                });
+            }
+
+            if block.indent != prev.indent || *prev_index != index {
+                clock += 1;
+                let op_id = uuid::Uuid::new_v4().to_string();
+                let payload = serde_json::json!({
+                    "opId": op_id,
+                    "pageId": page_uid,
+                    "blockId": block.uid,
+                    "deviceId": device_id,
+                    "clock": clock,
+                    "timestamp": timestamp,
+                    "kind": "move",
+                    "parentId": serde_json::Value::Null,
+                    "sortKey": sort_key,
+                    "indent": block.indent
+                });
+                ops.push(PendingSyncOp {
+                    op_id,
+                    op_type: "move".to_string(),
+                    payload: serde_json::to_vec(&payload)
+                        .map_err(|err| format!("{:?}", err))?,
+                });
+            }
+        } else {
+            clock += 1;
+            let op_id = uuid::Uuid::new_v4().to_string();
+            let payload = serde_json::json!({
+                "opId": op_id,
+                "pageId": page_uid,
+                "blockId": block.uid,
+                "deviceId": device_id,
+                "clock": clock,
+                "timestamp": timestamp,
+                "kind": "add",
+                "parentId": serde_json::Value::Null,
+                "sortKey": sort_key,
+                "indent": block.indent,
+                "text": block.text
+            });
+            ops.push(PendingSyncOp {
+                op_id,
+                op_type: "add".to_string(),
+                payload: serde_json::to_vec(&payload)
+                    .map_err(|err| format!("{:?}", err))?,
+            });
+        }
+    }
+
+    for (uid, _) in previous_by_id.iter() {
+        if next_ids.contains(uid.as_str()) {
+            continue;
+        }
+        clock += 1;
+        let op_id = uuid::Uuid::new_v4().to_string();
+        let payload = serde_json::json!({
+            "opId": op_id,
+            "pageId": page_uid,
+            "blockId": uid,
+            "deviceId": device_id,
+            "clock": clock,
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+            "kind": "delete"
+        });
+        ops.push(PendingSyncOp {
+            op_id,
+            op_type: "delete".to_string(),
+            payload: serde_json::to_vec(&payload)
+                .map_err(|err| format!("{:?}", err))?,
+        });
+    }
+
+    Ok((ops, clock))
+}
+
 #[tauri::command]
 fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
     let db = open_active_database()?;
@@ -292,8 +440,25 @@ fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
 fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), String> {
     let mut db = open_active_database()?;
     let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let previous = db
+        .load_blocks_for_page(page_id)
+        .map_err(|err| format!("{:?}", err))?;
+    let device_id = get_or_create_device_id(&db)?;
+    let clock = load_device_clock(&db)?;
+    let (ops, next_clock) = build_sync_ops(&page_uid, &device_id, &previous, &blocks, clock)?;
+
     db.replace_blocks_for_page(page_id, &blocks)
-        .map_err(|err| format!("{:?}", err))
+        .map_err(|err| format!("{:?}", err))?;
+
+    if !ops.is_empty() {
+        for op in ops {
+            db.insert_sync_op(page_id, &op.op_id, &device_id, &op.op_type, &op.payload)
+                .map_err(|err| format!("{:?}", err))?;
+        }
+        store_device_clock(&db, next_clock)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -691,5 +856,60 @@ mod tests {
         assert!(markdown.contains("# Inbox ^page-1"));
         assert!(markdown.contains("- First ^b1"));
         assert!(markdown.contains("  - Child ^b2"));
+    }
+
+    #[test]
+    fn build_sync_ops_emits_add_edit_move_delete() {
+        let previous = vec![
+            BlockSnapshot {
+                uid: "b1".to_string(),
+                text: "First".to_string(),
+                indent: 0,
+            },
+            BlockSnapshot {
+                uid: "b2".to_string(),
+                text: "Second".to_string(),
+                indent: 0,
+            },
+        ];
+        let next = vec![
+            BlockSnapshot {
+                uid: "b1".to_string(),
+                text: "First updated".to_string(),
+                indent: 1,
+            },
+            BlockSnapshot {
+                uid: "b3".to_string(),
+                text: "Third".to_string(),
+                indent: 0,
+            },
+        ];
+
+        let (ops, next_clock) =
+            build_sync_ops("page-1", "device-1", &previous, &next, 10)
+                .expect("build ops");
+        assert_eq!(ops.len(), 4);
+        assert_eq!(next_clock, 14);
+
+        let mut kinds = std::collections::HashSet::new();
+        let mut blocks_by_kind = std::collections::HashMap::new();
+        for op in ops {
+            kinds.insert(op.op_type.clone());
+            let payload: Value =
+                serde_json::from_slice(&op.payload).expect("payload json");
+            assert_eq!(payload["pageId"], "page-1");
+            assert_eq!(payload["deviceId"], "device-1");
+            let kind = payload["kind"].as_str().expect("kind");
+            let block_id = payload["blockId"].as_str().expect("block id");
+            blocks_by_kind.insert(kind.to_string(), block_id.to_string());
+            assert!(payload["clock"].as_i64().unwrap_or(0) > 10);
+        }
+
+        assert!(kinds.contains("add"));
+        assert!(kinds.contains("edit"));
+        assert!(kinds.contains("move"));
+        assert!(kinds.contains("delete"));
+        assert_eq!(blocks_by_kind.get("add").map(String::as_str), Some("b3"));
+        assert_eq!(blocks_by_kind.get("delete").map(String::as_str), Some("b2"));
     }
 }
