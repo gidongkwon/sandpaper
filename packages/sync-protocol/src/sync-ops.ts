@@ -126,3 +126,15 @@ export const sortOpsByClock = (ops: SyncOp[]): SyncOp[] => {
     return a.opId.localeCompare(b.opId);
   });
 };
+
+export const mergeOps = (opSets: SyncOp[][]): SyncOp[] => {
+  const byId = new Map<string, SyncOp>();
+  for (const ops of opSets) {
+    for (const op of ops) {
+      if (!byId.has(op.opId)) {
+        byId.set(op.opId, op);
+      }
+    }
+  }
+  return sortOpsByClock([...byId.values()]);
+};

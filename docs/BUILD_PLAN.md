@@ -127,7 +127,7 @@ Exit criteria
 - [ ] Editor prototype smooth at 50k+ blocks
 - [ ] FTS update path works on all edits
 - [ ] Shadow files match DB deterministically
-- [ ] CRDT ops prove viable for page-level merge
+- [x] CRDT ops prove viable for page-level merge
  - [ ] Phase 0 success metrics met and documented
 
 ---
