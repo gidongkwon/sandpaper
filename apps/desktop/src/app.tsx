@@ -1008,8 +1008,10 @@ function App() {
     setReviewBusy(true);
     try {
       await invoke("update_review_queue_item", {
-        id: item.id,
-        action
+        payload: {
+          id: item.id,
+          action
+        }
       });
       await loadReviewSummary();
       await loadReviewQueue();
@@ -1056,10 +1058,11 @@ function App() {
       }).format(new Date());
       const pageUid = `review-${today}`;
       await invoke("create_review_template", {
-        pageUid,
-        page_uid: pageUid,
-        template: template.id,
-        title: `${template.title} · ${today}`
+        payload: {
+          page_uid: pageUid,
+          template: template.id,
+          title: `${template.title} · ${today}`
+        }
       });
       setReviewMessage(`${template.title} template queued for review.`);
       await loadPages();
@@ -1823,7 +1826,9 @@ function App() {
     try {
       let created: PageSummary;
       if (isTauri()) {
-        created = (await invoke("create_page", { title })) as PageSummary;
+        created = (await invoke("create_page", {
+          payload: { title }
+        })) as PageSummary;
         await loadPages();
       } else {
         const uid = resolveUniqueLocalPageUid(title);
@@ -1856,9 +1861,10 @@ function App() {
     try {
       if (isTauri()) {
         const updated = (await invoke("rename_page", {
-          pageUid,
-          page_uid: pageUid,
-          title
+          payload: {
+            page_uid: pageUid,
+            title
+          }
         })) as PageSummary;
         setPageTitle(updated.title);
         await loadPages();
@@ -1936,9 +1942,10 @@ function App() {
       if (isTauri()) {
         if (targetTitle.trim()) {
           await invoke("set_page_title", {
-            pageUid: targetUid,
-            page_uid: targetUid,
-            title: targetTitle.trim()
+            payload: {
+              page_uid: targetUid,
+              title: targetTitle.trim()
+            }
           });
         }
         await invoke("save_page_blocks", {
