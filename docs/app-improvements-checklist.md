@@ -212,7 +212,7 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 - [x] **Offline export + import** (zip with assets)
 - [x] **Mobile read‑only viewer**
-- [ ] **Graph view for wikilinks**
+- [x] **Graph view for wikilinks**
 - [ ] **Daily note auto‑create**
 
 ---

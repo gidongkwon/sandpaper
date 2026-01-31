@@ -19,6 +19,7 @@ import {
   buildBacklinks,
   buildWikilinkBacklinks,
   createShadowWriter,
+  extractWikiLinks,
   parseMarkdownPage,
   serializePageToMarkdown
 } from "@sandpaper/core-model";
@@ -531,6 +532,9 @@ const replaceWikilinksInText = (
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const escapeMermaidLabel = (value: string) =>
+  value.replace(/"/g, "\\\"").replace(/\r?\n/g, " ");
+
 const MAX_SEED_BLOCKS = 200_000;
 
 const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
@@ -743,6 +747,11 @@ function App() {
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [graphOpen, setGraphOpen] = createSignal(false);
+  const [graphSvg, setGraphSvg] = createSignal<string | null>(null);
+  const [graphError, setGraphError] = createSignal<string | null>(null);
+  const [graphLoading, setGraphLoading] = createSignal(false);
+  const [graphEmpty, setGraphEmpty] = createSignal(false);
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [paletteQuery, setPaletteQuery] = createSignal("");
   const [paletteIndex, setPaletteIndex] = createSignal(0);
@@ -1877,6 +1886,121 @@ function App() {
           </Show>
         </div>
       </section>
+    );
+  };
+
+  const GraphModal = () => {
+    let containerRef: HTMLDivElement | undefined;
+    let renderToken = 0;
+
+    const refreshGraph = async () => {
+      const token = (renderToken += 1);
+      setGraphLoading(true);
+      setGraphError(null);
+      setGraphSvg(null);
+      setGraphEmpty(false);
+
+      try {
+        const pagesToGraph = await collectOfflineExportPages();
+        const { diagram, hasEdges } = buildWikilinkGraph(pagesToGraph);
+        if (token !== renderToken) return;
+        setGraphEmpty(!hasEdges);
+        const engine = ensureMermaid();
+        const result = await engine.render(
+          `mermaid-graph-${makeRandomId()}`,
+          diagram
+        );
+        if (token !== renderToken) return;
+        setGraphSvg(result.svg ?? "");
+        if (result.bindFunctions && containerRef) {
+          Promise.resolve().then(() => {
+            if (token !== renderToken) return;
+            result.bindFunctions?.(containerRef);
+          });
+        }
+      } catch (error) {
+        if (token !== renderToken) return;
+        console.error("Graph render failed", error);
+        setGraphError("Unable to render graph.");
+      } finally {
+        if (token === renderToken) {
+          setGraphLoading(false);
+        }
+      }
+    };
+
+    onMount(() => {
+      void refreshGraph();
+    });
+
+    return (
+      <div
+        class="modal-backdrop"
+        onClick={(event) =>
+          event.target === event.currentTarget && closeGraph()
+        }
+      >
+        <div
+          class="graph-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="graph-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div class="graph-modal__header">
+            <div>
+              <div class="graph-modal__eyebrow">Wikilink graph</div>
+              <h3 id="graph-title" class="graph-modal__title">
+                Connection map
+              </h3>
+              <div class="graph-modal__subtitle">
+                Explore how your pages link together.
+              </div>
+            </div>
+            <div class="graph-modal__actions">
+              <button
+                class="graph-modal__button"
+                onClick={() => void refreshGraph()}
+                disabled={graphLoading()}
+              >
+                {graphLoading() ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                class="graph-modal__button is-primary"
+                onClick={closeGraph}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          <div class="graph-modal__body">
+            <Show
+              when={graphSvg()}
+              fallback={
+                <div class="graph-modal__status">
+                  {graphError() ??
+                    (graphLoading()
+                      ? "Building graph..."
+                      : "Graph unavailable.")}
+                </div>
+              }
+            >
+              {(value) => (
+                <div
+                  ref={containerRef}
+                  class="graph-modal__canvas"
+                  innerHTML={value() ?? ""}
+                />
+              )}
+            </Show>
+            <Show when={graphEmpty()}>
+              <div class="graph-modal__empty">
+                No wikilinks yet. Add [[Page]] links to connect your notes.
+              </div>
+            </Show>
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -3110,6 +3234,15 @@ function App() {
       }
     };
 
+    const activeUid = resolvePageUid(activePageUid() || DEFAULT_PAGE_UID);
+    if (activeUid) {
+      upsert({
+        uid: activeUid,
+        title: pageTitle() || activeUid,
+        blocks: snapshotBlocks(blocks)
+      });
+    }
+
     Object.values(localPages).forEach((page) => upsert(page));
     const summaries =
       pages().length > 0
@@ -3141,6 +3274,73 @@ function App() {
     }
 
     return Array.from(result.values());
+  };
+
+  const buildWikilinkGraph = (pagesToGraph: LocalPageRecord[]) => {
+    const knownUids = new Set<string>();
+    const titleByUid = new Map<string, string>();
+    const edges = new Set<string>();
+    const missingUids = new Set<string>();
+
+    pagesToGraph.forEach((page) => {
+      const uid = resolvePageUid(page.uid);
+      if (!uid) return;
+      knownUids.add(uid);
+      titleByUid.set(uid, page.title || uid);
+    });
+
+    pagesToGraph.forEach((page) => {
+      const sourceUid = resolvePageUid(page.uid);
+      if (!sourceUid) return;
+      page.blocks.forEach((block) => {
+        const links = extractWikiLinks(block.text);
+        links.forEach((link) => {
+          const targetUid = resolvePageUid(link);
+          if (!targetUid) return;
+          edges.add(`${sourceUid}=>${targetUid}`);
+          if (!titleByUid.has(targetUid)) {
+            titleByUid.set(targetUid, link);
+          }
+          if (!knownUids.has(targetUid)) {
+            missingUids.add(targetUid);
+          }
+        });
+      });
+    });
+
+    const entries = Array.from(titleByUid.entries()).sort((a, b) =>
+      a[1].localeCompare(b[1])
+    );
+    const nodeIds = new Map<string, string>();
+    entries.forEach(([uid], index) => {
+      nodeIds.set(uid, `P${index}`);
+    });
+
+    const lines = ["graph LR"];
+    entries.forEach(([uid, title]) => {
+      const id = nodeIds.get(uid);
+      if (!id) return;
+      const label = escapeMermaidLabel(title || uid);
+      const classSuffix = missingUids.has(uid) ? ":::missing" : "";
+      lines.push(`  ${id}["${label}"]${classSuffix}`);
+    });
+    edges.forEach((edge) => {
+      const [from, to] = edge.split("=>");
+      const fromId = nodeIds.get(from);
+      const toId = nodeIds.get(to);
+      if (!fromId || !toId) return;
+      lines.push(`  ${fromId} --> ${toId}`);
+    });
+    if (missingUids.size > 0) {
+      lines.push(
+        "  classDef missing fill:#FFF5E9,stroke:#F59E0B,stroke-dasharray: 4 2,color:#6B4C1A;"
+      );
+    }
+
+    return {
+      diagram: lines.join("\n"),
+      hasEdges: edges.size > 0
+    };
   };
 
   const buildOfflineArchive = async () => {
@@ -3373,6 +3573,14 @@ function App() {
     setPaletteIndex(0);
   };
 
+  const openGraph = () => {
+    setGraphOpen(true);
+  };
+
+  const closeGraph = () => {
+    setGraphOpen(false);
+  };
+
   const closeCommandPalette = () => {
     setPaletteOpen(false);
     setPaletteQuery("");
@@ -3386,6 +3594,13 @@ function App() {
         label: "Open settings",
         action: () => {
           setSettingsOpen(true);
+        }
+      },
+      {
+        id: "open-graph",
+        label: "Open graph view",
+        action: () => {
+          openGraph();
         }
       }
     ];
@@ -5242,6 +5457,20 @@ function App() {
               (autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving...")}
           </span>
           <button
+            class="topbar__graph"
+            onClick={openGraph}
+            aria-label="Open graph"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="5" cy="12" r="3" />
+              <circle cx="19" cy="5" r="3" />
+              <circle cx="19" cy="19" r="3" />
+              <line x1="7.5" y1="10.5" x2="16.5" y2="6.5" />
+              <line x1="7.5" y1="13.5" x2="16.5" y2="17.5" />
+            </svg>
+            <span>Graph</span>
+          </button>
+          <button
             class="topbar__settings"
             onClick={() => setSettingsOpen(true)}
             aria-label="Open settings"
@@ -5739,6 +5968,11 @@ function App() {
             </div>
           </div>
         </div>
+      </Show>
+
+      {/* Graph View */}
+      <Show when={graphOpen()}>
+        <GraphModal />
       </Show>
 
       {/* Settings Modal */}
