@@ -32,7 +32,9 @@ describe("App", () => {
     render(() => <App />);
     expect(await screen.findByText("Panels")).toBeInTheDocument();
     expect(await screen.findByText("Toolbar actions")).toBeInTheDocument();
+    expect(await screen.findByText("Renderers")).toBeInTheDocument();
     expect(await screen.findByText("Calendar panel")).toBeInTheDocument();
     expect(await screen.findByText("Today focus")).toBeInTheDocument();
+    expect(await screen.findByText("Code block renderer")).toBeInTheDocument();
   });
 });

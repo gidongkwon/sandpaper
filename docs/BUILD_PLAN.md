@@ -193,7 +193,7 @@ Checklist
 - [x] Plugin API: commands + events
 - [x] Plugin API: data access (read/write blocks/pages)
 - [x] Plugin API: UI panels + toolbar actions
-- [ ] Plugin API: renderer extensions (code/diagrams)
+- [x] Plugin API: renderer extensions (code/diagrams)
 - [ ] Core plugin: code block renderer
 - [ ] Core plugin: diagram renderer
 - [ ] Core plugin: markdown export

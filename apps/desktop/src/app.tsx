@@ -86,6 +86,7 @@ type PluginRuntimeStatus = {
   commands: PluginCommand[];
   panels: PluginPanel[];
   toolbar_actions: PluginToolbarAction[];
+  renderers: PluginRenderer[];
 };
 
 type PluginCommand = {
@@ -107,6 +108,13 @@ type PluginToolbarAction = {
   id: string;
   title: string;
   tooltip?: string | null;
+};
+
+type PluginRenderer = {
+  plugin_id: string;
+  id: string;
+  title: string;
+  kind: string;
 };
 
 type PermissionPrompt = {
@@ -250,6 +258,20 @@ function App() {
         id: "local-calendar.toolbar",
         title: "Today focus",
         tooltip: "Jump to today"
+      }
+    ],
+    renderers: [
+      {
+        plugin_id: "local-calendar",
+        id: "local-calendar.renderer.code",
+        title: "Code block renderer",
+        kind: "code"
+      },
+      {
+        plugin_id: "local-calendar",
+        id: "local-calendar.renderer.diagram",
+        title: "Diagram renderer",
+        kind: "diagram"
       }
     ]
   };
@@ -1047,6 +1069,7 @@ function App() {
                   <span>
                     {pluginStatus()?.toolbar_actions.length ?? 0} toolbar actions
                   </span>
+                  <span>{pluginStatus()?.renderers.length ?? 0} renderers</span>
                 </div>
                 <div class="plugin-surfaces">
                   <Show when={(pluginStatus()?.commands.length ?? 0) > 0}>
@@ -1097,6 +1120,23 @@ function App() {
                                 <Show when={action.tooltip}>
                                   {(tooltip) => ` · ${tooltip()}`}
                                 </Show>
+                              </div>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={(pluginStatus()?.renderers.length ?? 0) > 0}>
+                    <div class="plugin-surface">
+                      <div class="plugin-surface__title">Renderers</div>
+                      <div class="plugin-surface__list">
+                        <For each={pluginStatus()?.renderers ?? []}>
+                          {(renderer) => (
+                            <div class="plugin-surface__item">
+                              <div class="plugin-surface__name">{renderer.title}</div>
+                              <div class="plugin-surface__meta">
+                                {renderer.id} · {renderer.kind}
                               </div>
                             </div>
                           )}

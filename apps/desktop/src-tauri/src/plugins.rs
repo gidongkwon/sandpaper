@@ -169,6 +169,8 @@ pub struct PluginRuntimeLoadResult {
     pub panels: Vec<PluginPanel>,
     #[serde(default)]
     pub toolbar_actions: Vec<PluginToolbarAction>,
+    #[serde(default)]
+    pub renderers: Vec<PluginRenderer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -196,6 +198,14 @@ pub struct PluginToolbarAction {
     pub title: String,
     #[serde(default)]
     pub tooltip: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginRenderer {
+    pub plugin_id: String,
+    pub id: String,
+    pub title: String,
+    pub kind: String,
 }
 
 pub struct PluginRuntimeClient {
@@ -402,7 +412,21 @@ rl.on("line", (line) => {
       title: `Launch ${id}`,
       tooltip: `Launch ${id}`
     }));
-    respond({ id: msg.id, result: { loaded: ids, commands, panels, toolbar_actions } });
+    const renderers = ids.flatMap((id) => ([
+      {
+        plugin_id: id,
+        id: `${id}.renderer.code`,
+        title: "Code block renderer",
+        kind: "code"
+      },
+      {
+        plugin_id: id,
+        id: `${id}.renderer.diagram`,
+        title: "Diagram renderer",
+        kind: "diagram"
+      }
+    ]));
+    respond({ id: msg.id, result: { loaded: ids, commands, panels, toolbar_actions, renderers } });
     rl.close();
     return;
   }
@@ -465,6 +489,7 @@ rl.on("line", (line) => {
         assert_eq!(result.commands[0].plugin_id, "alpha");
         assert_eq!(result.panels.len(), 2);
         assert_eq!(result.toolbar_actions.len(), 2);
+        assert_eq!(result.renderers.len(), 4);
     }
 
     #[test]

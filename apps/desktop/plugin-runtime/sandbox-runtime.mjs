@@ -51,7 +51,21 @@ rl.on("line", (line) => {
       title: `Launch ${pluginId}`,
       tooltip: `Launch ${pluginId}`
     }));
-    respond({ id, result: { loaded, commands, panels, toolbar_actions } });
+    const renderers = loaded.flatMap((pluginId) => ([
+      {
+        plugin_id: pluginId,
+        id: `${pluginId}.renderer.code`,
+        title: "Code block renderer",
+        kind: "code"
+      },
+      {
+        plugin_id: pluginId,
+        id: `${pluginId}.renderer.diagram`,
+        title: "Diagram renderer",
+        kind: "diagram"
+      }
+    ]));
+    respond({ id, result: { loaded, commands, panels, toolbar_actions, renderers } });
     rl.close();
     return;
   }
