@@ -118,7 +118,8 @@ Benchmarks (latest)
 - 2026-01-30: FTS search on 100k blocks (in-memory, Rust/rusqlite): ~29ms search, ~5.5s inserts.
   - Reproduce: `cd apps/desktop/src-tauri && cargo run --bin fts-bench`
 - 2026-01-31: FTS search on 100k blocks (in-memory, Rust/rusqlite): 28ms search, 7925ms inserts, 0.063ms avg updates (1k updates).
-  - Reproduce: `cd apps/desktop/src-tauri && cargo run --bin fts-bench`
+- 2026-01-31: Phase 1 smoke metrics (dev, browser seed=100000): DCL 1069ms, load 1077ms, JS heap ~122MB, FTS search 28ms.
+  - Reproduce: `pnpm dev:desktop` then open `http://localhost:1420/?seed=100000&perf=1` and run `cd apps/desktop/src-tauri && cargo run --bin fts-bench`.
 
 Phase 0 evidence (2026-01-31)
 - Editor perf HUD (production build, headless Chromium via Playwright): p50 6.2ms, p95 7.8ms on 240 input events (max samples 160).
@@ -185,7 +186,7 @@ Exit criteria
 - [x] Local editor usable for daily notes
 - [x] Search + backlinks functional
 - [x] Plugins can load and register commands
- - [ ] Phase 1 success metrics met
+- [x] Phase 1 success metrics met
 
 ---
 
