@@ -153,8 +153,8 @@ Checklist
 - [ ] Shadow Markdown: read-only generated `.md` per page
 - [x] Attachments: content-addressed storage in `/assets/<hash>`
 - [x] Attachments: DB mapping for friendly names
-- [ ] Plugin loader v1: plugin discovery in `/plugins/<name>/`
-- [ ] Plugin loader v1: manifest parse + enable/disable
+- [x] Plugin loader v1: plugin discovery in `/plugins/<name>/`
+- [x] Plugin loader v1: manifest parse + enable/disable
 - [ ] Plugin loader v1: RPC bridge to sandbox runtime
 
 Implementation details

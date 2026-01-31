@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 pub mod assets;
 pub mod db;
+pub mod plugins;
 pub mod vaults;
 
 use std::path::PathBuf;
