@@ -657,6 +657,7 @@ function App() {
   const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
     null
   );
+  const [pluginError, setPluginError] = createSignal<string | null>(null);
   const [permissionPrompt, setPermissionPrompt] =
     createSignal<PermissionPrompt | null>(null);
   const [autosaved, setAutosaved] = createSignal(false);
@@ -1781,11 +1782,15 @@ function App() {
       return;
     }
 
+    setPluginError(null);
     try {
       const remote = (await invoke("list_plugins_command")) as PluginPermissionInfo[];
       setPlugins(remote);
     } catch (error) {
       console.error("Failed to load plugins", error);
+      setPluginError(
+        error instanceof Error ? error.message : "Failed to load plugins."
+      );
     }
 
     await loadPluginRuntime();
@@ -2212,12 +2217,16 @@ function App() {
       setPluginStatus(fallbackPluginStatus);
       return;
     }
+    setPluginError(null);
     setPluginBusy(true);
     try {
       const status = (await invoke("load_plugins_command")) as PluginRuntimeStatus;
       setPluginStatus(status);
     } catch (error) {
       console.error("Failed to load plugins", error);
+      setPluginError(
+        error instanceof Error ? error.message : "Plugin runtime failed."
+      );
     } finally {
       setPluginBusy(false);
     }
@@ -2589,6 +2598,9 @@ function App() {
       });
     } catch (error) {
       console.error("Plugin command failed", error);
+      setPluginError(
+        error instanceof Error ? error.message : "Plugin command failed."
+      );
     }
   };
 
@@ -4622,6 +4634,21 @@ function App() {
                   </Show>
                 </Show>
                 <Show when={settingsTab() === "plugins"}>
+                  <Show when={pluginError()}>
+                    <div class="settings-banner is-error">
+                      <div>
+                        <div class="settings-banner__title">Plugin error</div>
+                        <div class="settings-banner__message">{pluginError()}</div>
+                      </div>
+                      <button
+                        class="settings-action"
+                        onClick={loadPluginRuntime}
+                        disabled={pluginBusy()}
+                      >
+                        {pluginBusy() ? "Reloading..." : "Reload plugins"}
+                      </button>
+                    </div>
+                  </Show>
                   <div class="settings-section">
                     <h3 class="settings-section__title">Installed Plugins</h3>
                     <Show when={plugins().length > 0} fallback={<p class="settings-section__desc">No plugins installed.</p>}>

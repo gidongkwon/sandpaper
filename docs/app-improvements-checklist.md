@@ -148,9 +148,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Highlight unused permissions and missing grants
   - **Done when:** there is a clear audit list
 
-- [ ] **Plugin error surface**
-  - [ ] If a plugin errors, show a banner in settings
-  - [ ] Provide “Reload plugin” action
+- [x] **Plugin error surface**
+  - [x] If a plugin errors, show a banner in settings
+  - [x] Provide “Reload plugin” action
   - **Done when:** plugin failures are visible and recoverable
 
 ---
