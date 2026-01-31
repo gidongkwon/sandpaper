@@ -115,9 +115,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Add language badge
   - **Done when:** code blocks can be copied easily
 
-- [ ] **Diagram preview enhancements**
-  - [ ] Replace placeholder diagram with real plugin rendering
-  - [ ] Add fallback error message on render failure
+- [x] **Diagram preview enhancements**
+  - [x] Replace placeholder diagram with real plugin rendering
+  - [x] Add fallback error message on render failure
   - **Done when:** diagrams render or show a clear error
 
 ---

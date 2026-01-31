@@ -1599,6 +1599,48 @@ button:disabled {
   white-space: pre-wrap;
 }
 
+.block-renderer__diagram {
+  padding: var(--space-2);
+  background: var(--bg-primary);
+  border-radius: var(--radius-xs);
+  border: 1px dashed var(--border-light);
+  margin-bottom: var(--space-2);
+}
+
+.diagram-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.diagram-flow__edge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.diagram-node {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.diagram-edge {
+  color: var(--text-tertiary);
+}
+
+.diagram-error {
+  padding: 6px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--error-soft);
+  color: var(--error);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 /* ============================================
    FOCUS PANEL (Capture / Review modes)
    ============================================ */

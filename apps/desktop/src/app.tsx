@@ -337,6 +337,16 @@ type MarkdownList = {
   items: string[];
 };
 
+type DiagramEdge = {
+  from: string;
+  to: string;
+};
+
+type DiagramGraph = {
+  edges: DiagramEdge[];
+  nodes: string[];
+};
+
 const parseInlineFence = (text: string): CodeFence | null => {
   const trimmed = text.trim();
   if (!trimmed.startsWith("```")) return null;
@@ -355,6 +365,8 @@ const INLINE_MARKDOWN_PATTERN =
 
 const ORDERED_LIST_PATTERN = /^\s*\d+\.\s+(.+)$/;
 const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
+const DIAGRAM_EDGE_PATTERN =
+  /([A-Za-z0-9_]+)(?:\[[^\]]+\])?\s*-+>\s*([A-Za-z0-9_]+)(?:\[[^\]]+\])?/g;
 
 const SLASH_COMMANDS = [
   { id: "link", label: "Link to page" },
@@ -445,6 +457,21 @@ const parseMarkdownList = (text: string): MarkdownList | null => {
     type: isOrdered ? "ol" : "ul",
     items
   };
+};
+
+const parseDiagramGraph = (content: string): DiagramGraph | null => {
+  const edges: DiagramEdge[] = [];
+  for (const match of content.matchAll(DIAGRAM_EDGE_PATTERN)) {
+    const from = match[1]?.trim() ?? "";
+    const to = match[2]?.trim() ?? "";
+    if (!from || !to) continue;
+    edges.push({ from, to });
+  }
+  if (edges.length === 0) return null;
+  const nodes = Array.from(
+    new Set(edges.flatMap((edge) => [edge.from, edge.to]))
+  );
+  return { edges, nodes };
 };
 
 const replaceWikilinksInText = (
@@ -3527,6 +3554,38 @@ function App() {
       </div>
     );
 
+    const renderDiagramPreview = (diagram: CodeFence & { renderer: PluginRenderer }) => {
+      const graph = parseDiagramGraph(diagram.content);
+      return (
+        <div class="block-renderer block-renderer--diagram">
+          <div class="block-renderer__title">Diagram preview</div>
+          <div class="block-renderer__meta">
+            {diagram.renderer.title} · {diagram.lang}
+          </div>
+          <div class="block-renderer__diagram">
+            {graph ? (
+              <div class="diagram-flow">
+                <For each={graph.edges}>
+                  {(edge) => (
+                    <div class="diagram-flow__edge">
+                      <span class="diagram-node">{edge.from}</span>
+                      <span class="diagram-edge">→</span>
+                      <span class="diagram-node">{edge.to}</span>
+                    </div>
+                  )}
+                </For>
+              </div>
+            ) : (
+              <div class="diagram-error">Unable to render diagram preview.</div>
+            )}
+          </div>
+          <pre class="block-renderer__content">
+            <code>{diagram.content}</code>
+          </pre>
+        </div>
+      );
+    };
+
     const renderMarkdownDisplay = (text: string): JSX.Element => {
       const list = parseMarkdownList(text);
       if (list) {
@@ -3589,22 +3648,7 @@ function App() {
                     }
                     const diagram = diagramPreview();
                     if (diagram) {
-                      return (
-                        <div class="block-renderer block-renderer--diagram">
-                          <div class="block-renderer__title">Diagram preview</div>
-                          <div class="block-renderer__meta">
-                            {diagram.renderer.title} · {diagram.lang}
-                          </div>
-                          <div class="block-renderer__diagram">
-                            <div class="diagram-node">A</div>
-                            <div class="diagram-edge">→</div>
-                            <div class="diagram-node">B</div>
-                          </div>
-                          <pre class="block-renderer__content">
-                            <code>{diagram.content}</code>
-                          </pre>
-                        </div>
-                      );
+                      return renderDiagramPreview(diagram);
                     }
                     const trimmed = block.text.trim();
                     if (!trimmed) {
@@ -3753,22 +3797,7 @@ function App() {
                           {(preview) => renderCodePreview(preview(), block.id)}
                         </Show>
                         <Show when={isEditing() && diagramPreview()}>
-                          {(preview) => (
-                            <div class="block-renderer block-renderer--diagram">
-                              <div class="block-renderer__title">Diagram preview</div>
-                              <div class="block-renderer__meta">
-                                {preview().renderer.title} · {preview().lang}
-                              </div>
-                              <div class="block-renderer__diagram">
-                                <div class="diagram-node">A</div>
-                                <div class="diagram-edge">→</div>
-                                <div class="diagram-node">B</div>
-                              </div>
-                              <pre class="block-renderer__content">
-                                <code>{preview().content}</code>
-                              </pre>
-                            </div>
-                          )}
+                          {(preview) => renderDiagramPreview(preview())}
                         </Show>
                       </div>
                     </div>
