@@ -53,19 +53,29 @@ const contrastRatio = (foreground: string, background: string) => {
 };
 
 describe("App color contrast", () => {
+  const getCwd = () => {
+    const runtime = globalThis as {
+      process?: {
+        cwd?: () => string;
+      };
+    };
+    return runtime.process?.cwd?.() ?? "";
+  };
+
   const css = (() => {
     if (appCssRaw.includes(":root")) return appCssRaw;
-    try {
-      return readFileSync(
-        new URL(`file://${process.cwd()}/src/app.css`),
-        "utf8"
-      );
-    } catch {
-      return readFileSync(
-        new URL(`file://${process.cwd()}/apps/desktop/src/app.css`),
-        "utf8"
-      );
+    const cwd = getCwd();
+    if (cwd) {
+      try {
+        return readFileSync(new URL(`file://${cwd}/src/app.css`), "utf8");
+      } catch {
+        return readFileSync(
+          new URL(`file://${cwd}/apps/desktop/src/app.css`),
+          "utf8"
+        );
+      }
     }
+    return readFileSync(new URL("./app.css", import.meta.url), "utf8");
   })();
   const lightVars = extractVars(findRootBlock(css));
   const darkVars = extractVars(findDarkRootBlock(css));

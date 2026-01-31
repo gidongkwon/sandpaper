@@ -25,6 +25,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.5.3
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.2
       mermaid:
         specifier: ^10.9.0
         version: 10.9.5

@@ -14,6 +14,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import mermaid from "mermaid";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
   buildBacklinks,
   buildWikilinkBacklinks,
@@ -36,7 +37,7 @@ type Block = {
   indent: number;
 };
 
-type Mode = "quick-capture" | "editor" | "review";
+type Mode = "quick-capture" | "editor" | "review" | "viewer";
 
 type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
 
@@ -62,6 +63,15 @@ type LocalPageRecord = {
   uid: string;
   title: string;
   blocks: Block[];
+};
+
+type OfflineExportManifest = {
+  version: number;
+  exported_at: string;
+  page_count: number;
+  asset_count: number;
+  vault_name?: string;
+  pages: Array<{ uid: string; title: string; file: string }>;
 };
 
 type VaultConfig = {
@@ -709,6 +719,19 @@ function App() {
     preview?: string;
   } | null>(null);
   const [exporting, setExporting] = createSignal(false);
+  const [offlineExportStatus, setOfflineExportStatus] = createSignal<{
+    state: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [offlineExporting, setOfflineExporting] = createSignal(false);
+  const [offlineImportStatus, setOfflineImportStatus] = createSignal<{
+    state: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [offlineImporting, setOfflineImporting] = createSignal(false);
+  const [offlineImportFile, setOfflineImportFile] = createSignal<File | null>(
+    null
+  );
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
@@ -732,6 +755,7 @@ function App() {
   const [scrollFps, setScrollFps] = createSignal(0);
   let vaultFolderPickerRef: HTMLInputElement | undefined;
   let markdownFilePickerRef: HTMLInputElement | undefined;
+  let offlineArchivePickerRef: HTMLInputElement | undefined;
   let paletteInputRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
@@ -2853,6 +2877,226 @@ function App() {
     }
   };
 
+  const collectOfflineExportPages = async (): Promise<LocalPageRecord[]> => {
+    const result = new Map<string, LocalPageRecord>();
+    const upsert = (page: LocalPageRecord) => {
+      const uid = resolvePageUid(page.uid);
+      if (!result.has(uid)) {
+        result.set(uid, {
+          uid,
+          title: page.title,
+          blocks: snapshotBlocks(page.blocks)
+        });
+      }
+    };
+
+    Object.values(localPages).forEach((page) => upsert(page));
+    const summaries =
+      pages().length > 0
+        ? pages()
+        : Object.values(localPages).map((page) => ({
+            uid: page.uid,
+            title: page.title
+          }));
+
+    for (const summary of summaries) {
+      const uid = resolvePageUid(summary.uid);
+      if (result.has(uid)) continue;
+      if (!isTauri()) continue;
+      try {
+        const response = (await invoke("load_page_blocks", {
+          pageUid: uid,
+          page_uid: uid
+        })) as PageBlocksResponse;
+        upsert({
+          uid,
+          title: summary.title || uid,
+          blocks: response.blocks.map((block) =>
+            makeBlock(block.uid, block.text, block.indent)
+          )
+        });
+      } catch (error) {
+        console.error("Failed to load page for export", error);
+      }
+    }
+
+    return Array.from(result.values());
+  };
+
+  const buildOfflineArchive = async () => {
+    const pagesToExport = await collectOfflineExportPages();
+    if (pagesToExport.length === 0) {
+      throw new Error("no-pages");
+    }
+    const exportedAt = new Date().toISOString();
+    const manifest: OfflineExportManifest = {
+      version: 1,
+      exported_at: exportedAt,
+      page_count: pagesToExport.length,
+      asset_count: 0,
+      vault_name: activeVault()?.name ?? "Default",
+      pages: pagesToExport.map((page) => ({
+        uid: resolvePageUid(page.uid),
+        title: page.title,
+        file: `pages/${resolvePageUid(page.uid)}.md`
+      }))
+    };
+
+    const files: Record<string, Uint8Array> = {
+      "manifest.json": strToU8(JSON.stringify(manifest, null, 2)),
+      "assets/README.txt": strToU8("Drop assets here when exporting attachments.")
+    };
+
+    pagesToExport.forEach((page) => {
+      const uid = resolvePageUid(page.uid);
+      const markdown = serializePageToMarkdown({
+        id: uid,
+        title: page.title,
+        blocks: page.blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent
+        }))
+      });
+      files[`pages/${uid}.md`] = strToU8(markdown);
+    });
+
+    return zipSync(files, { level: 6 });
+  };
+
+  const exportOfflineArchive = async () => {
+    if (offlineExporting()) return;
+    setOfflineExporting(true);
+    setOfflineExportStatus(null);
+
+    try {
+      const archive = await buildOfflineArchive();
+      const dateStamp = new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date());
+      const blob = new Blob([archive], { type: "application/zip" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `sandpaper-offline-${dateStamp}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setOfflineExportStatus({
+        state: "success",
+        message: "Offline export ready."
+      });
+    } catch (error) {
+      console.error("Offline export failed", error);
+      setOfflineExportStatus({
+        state: "error",
+        message: "Offline export failed. Check the logs for details."
+      });
+    } finally {
+      setOfflineExporting(false);
+    }
+  };
+
+  const importOfflineArchive = async () => {
+    if (offlineImporting()) return;
+    const file = offlineImportFile();
+    if (!file) {
+      setOfflineImportStatus({
+        state: "error",
+        message: "Choose a zip archive before importing."
+      });
+      return;
+    }
+    setOfflineImporting(true);
+    setOfflineImportStatus(null);
+
+    try {
+      const bytes = await readBinaryFile(file);
+      const entries = unzipSync(bytes);
+      const manifestEntry = entries["manifest.json"];
+      const manifest = manifestEntry
+        ? (JSON.parse(strFromU8(manifestEntry)) as OfflineExportManifest)
+        : null;
+      const pageFiles =
+        manifest?.pages
+          ?.map((page) => page.file)
+          .filter((fileName) => entries[fileName]) ??
+        Object.keys(entries).filter(
+          (name) => name.startsWith("pages/") && name.endsWith(".md")
+        );
+
+      if (pageFiles.length === 0) {
+        setOfflineImportStatus({
+          state: "error",
+          message: "No pages found in the archive."
+        });
+        return;
+      }
+
+      let imported = 0;
+      let firstPageUid: string | null = null;
+      for (const fileName of pageFiles) {
+        const content = entries[fileName];
+        if (!content) continue;
+        const text = strFromU8(content);
+        const parsed = parseMarkdownPage(text, makeRandomId);
+        if (parsed.page.blocks.length === 0) continue;
+        const uid = resolvePageUid(parsed.page.id);
+        const title = parsed.page.title.trim() || "Untitled";
+        const snapshot = parsed.page.blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent
+        }));
+        if (!firstPageUid) firstPageUid = uid;
+
+        if (isTauri()) {
+          try {
+            await invoke("create_page", {
+              payload: { uid, title }
+            });
+          } catch {
+            // ignore duplicate errors
+          }
+          if (title.trim()) {
+            await invoke("set_page_title", {
+              payload: { page_uid: uid, title }
+            });
+          }
+          await invoke("save_page_blocks", {
+            pageUid: uid,
+            page_uid: uid,
+            blocks: snapshot.map((block) => toPayload(block))
+          });
+        } else {
+          saveLocalPageSnapshot(uid, title, snapshot);
+        }
+
+        imported += 1;
+      }
+
+      await loadPages();
+      if (firstPageUid) {
+        await switchPage(firstPageUid);
+      }
+      setOfflineImportStatus({
+        state: "success",
+        message: `Imported ${imported} page${imported === 1 ? "" : "s"}.`
+      });
+      setOfflineImportFile(null);
+      if (offlineArchivePickerRef) offlineArchivePickerRef.value = "";
+    } catch (error) {
+      console.error("Offline import failed", error);
+      setOfflineImportStatus({
+        state: "error",
+        message: "Offline import failed. Check the logs for details."
+      });
+    } finally {
+      setOfflineImporting(false);
+    }
+  };
+
   const openPanel = (panel: PluginPanel) => {
     if (!hasPermission(panel.plugin_id, "ui")) {
       const plugin = findPlugin(panel.plugin_id);
@@ -3191,6 +3435,31 @@ function App() {
     });
   };
 
+  const readBinaryFile = async (file: File) => {
+    if (typeof file.arrayBuffer === "function") {
+      try {
+        const buffer = await file.arrayBuffer();
+        if (buffer.byteLength > 0 || file.size === 0) {
+          return new Uint8Array(buffer);
+        }
+      } catch {
+        // fall through to FileReader
+      }
+    }
+    return await new Promise<Uint8Array>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (!reader.result) {
+          reject(new Error("read-failed"));
+          return;
+        }
+        resolve(new Uint8Array(reader.result as ArrayBuffer));
+      };
+      reader.onerror = () => reject(reader.error ?? new Error("read-failed"));
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
   const openVaultFolderPicker = async () => {
     if (isTauri()) {
       const selection = await openDialog({
@@ -3230,6 +3499,10 @@ function App() {
     markdownFilePickerRef?.click();
   };
 
+  const openOfflineArchivePicker = () => {
+    offlineArchivePickerRef?.click();
+  };
+
   const handleVaultFolderPick = (event: Event) => {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -3258,6 +3531,13 @@ function App() {
     } finally {
       input.value = "";
     }
+  };
+
+  const handleOfflineArchivePick = (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    setOfflineImportFile(file);
+    setOfflineImportStatus(null);
   };
 
   // Apply typography scale to document
@@ -5765,6 +6045,72 @@ function App() {
                     <button class="settings-action is-primary" onClick={exportMarkdown} disabled={exporting()}>{exporting() ? "Exporting..." : "Export all pages"}</button>
                     <Show when={exportStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
                     <Show when={exportStatus()?.preview}>{(preview) => <pre class="settings-preview"><code>{preview()}</code></pre>}</Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Offline backup</h3>
+                    <p class="settings-section__desc">Export a zip archive with pages and assets for offline restore.</p>
+                    <button
+                      class="settings-action is-primary"
+                      onClick={exportOfflineArchive}
+                      disabled={offlineExporting()}
+                    >
+                      {offlineExporting() ? "Exporting..." : "Export offline archive"}
+                    </button>
+                    <Show when={offlineExportStatus()}>
+                      {(s) => (
+                        <div
+                          class={`settings-message ${
+                            s().state === "success" ? "is-success" : "is-error"
+                          }`}
+                        >
+                          {s().message}
+                        </div>
+                      )}
+                    </Show>
+                  </div>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Offline restore</h3>
+                    <p class="settings-section__desc">Import a zip archive to restore pages and assets.</p>
+                    <div class="settings-actions">
+                      <button class="settings-action" type="button" onClick={openOfflineArchivePicker}>
+                        Choose archive
+                      </button>
+                      <button
+                        class="settings-action is-primary"
+                        onClick={importOfflineArchive}
+                        disabled={offlineImporting()}
+                      >
+                        {offlineImporting() ? "Importing..." : "Import archive"}
+                      </button>
+                      <Show when={offlineImportFile()}>
+                        {(file) => (
+                          <span class="settings-value">
+                            {file().name}
+                          </span>
+                        )}
+                      </Show>
+                    </div>
+                    <input
+                      ref={(el) => {
+                        offlineArchivePickerRef = el;
+                      }}
+                      data-testid="offline-archive-picker"
+                      class="settings-file-input"
+                      type="file"
+                      accept=".zip,application/zip"
+                      onChange={(event) => handleOfflineArchivePick(event)}
+                    />
+                    <Show when={offlineImportStatus()}>
+                      {(s) => (
+                        <div
+                          class={`settings-message ${
+                            s().state === "success" ? "is-success" : "is-error"
+                          }`}
+                        >
+                          {s().message}
+                        </div>
+                      )}
+                    </Show>
                   </div>
                 </Show>
               </div>
