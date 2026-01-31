@@ -117,6 +117,11 @@ type PluginRenderer = {
   kind: string;
 };
 
+type CodeFence = {
+  lang: string;
+  content: string;
+};
+
 type PermissionPrompt = {
   pluginId: string;
   pluginName: string;
@@ -136,6 +141,21 @@ const makeBlock = (id: string, text = "", indent = 0): Block => ({
   text,
   indent
 });
+
+const DIAGRAM_LANGS = new Set(["mermaid", "diagram"]);
+
+const parseInlineFence = (text: string): CodeFence | null => {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return null;
+  const rest = trimmed.slice(3).trim();
+  if (!rest) return null;
+  const [lang, ...codeParts] = rest.split(/\s+/);
+  if (!lang || codeParts.length === 0) return null;
+  return {
+    lang: lang.toLowerCase(),
+    content: codeParts.join(" ")
+  };
+};
 
 const buildDefaultBlocks = (idFactory: () => string): Block[] => {
   const core = [
@@ -187,6 +207,16 @@ function App() {
     p95: null
   });
   const [scrollFps, setScrollFps] = createSignal(0);
+
+  const renderersByKind = createMemo(() => {
+    const map = new Map<string, PluginRenderer>();
+    for (const renderer of pluginStatus()?.renderers ?? []) {
+      if (!map.has(renderer.kind)) {
+        map.set(renderer.kind, renderer);
+      }
+    }
+    return map;
+  });
 
   const perfTracker = createPerfTracker({
     maxSamples: 160,
@@ -605,6 +635,9 @@ function App() {
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
     let editorRef: HTMLDivElement | undefined;
+    const effectiveViewport = createMemo(() =>
+      viewportHeight() === 0 ? 560 : viewportHeight()
+    );
 
     const range = createMemo(() =>
       getVirtualRange({
@@ -612,7 +645,7 @@ function App() {
         rowHeight: ROW_HEIGHT,
         overscan: OVERSCAN,
         scrollTop: scrollTop(),
-        viewportHeight: viewportHeight()
+        viewportHeight: effectiveViewport()
       })
     );
 
@@ -759,6 +792,17 @@ function App() {
       }
     };
 
+    const getCodePreview = (text: string) => {
+      const renderer = renderersByKind().get("code");
+      if (!renderer) return null;
+      const fence = parseInlineFence(text);
+      if (!fence || DIAGRAM_LANGS.has(fence.lang)) return null;
+      return {
+        renderer,
+        ...fence
+      };
+    };
+
     return (
       <section class="editor-pane">
         <div class="editor-pane__header">
@@ -777,6 +821,7 @@ function App() {
               <For each={visibleBlocks()}>
                 {(block, index) => {
                   const blockIndex = () => range().start + index();
+                  const codePreview = () => getCodePreview(block.text);
                   return (
                     <div
                       class={`block ${activeId() === block.id ? "is-active" : ""}`}
@@ -786,21 +831,36 @@ function App() {
                       }}
                     >
                       <span class="block__bullet" aria-hidden="true" />
-                      <textarea
-                        ref={(el) => inputRefs.set(block.id, el)}
-                        class="block__input"
-                        rows={1}
-                        value={block.text}
-                        placeholder="Write something..."
-                        spellcheck={true}
-                        onFocus={() => setActiveId(block.id)}
-                        onInput={(event) => {
-                          recordLatency("input");
-                          setBlocks(blockIndex(), "text", event.currentTarget.value);
-                          scheduleSave();
-                        }}
-                        onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
-                      />
+                      <div class="block__body">
+                        <textarea
+                          ref={(el) => inputRefs.set(block.id, el)}
+                          class="block__input"
+                          rows={1}
+                          value={block.text}
+                          placeholder="Write something..."
+                          spellcheck={true}
+                          onFocus={() => setActiveId(block.id)}
+                          onInput={(event) => {
+                            recordLatency("input");
+                            setBlocks(blockIndex(), "text", event.currentTarget.value);
+                            scheduleSave();
+                          }}
+                          onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
+                        />
+                        <Show when={codePreview()}>
+                          {(preview) => (
+                            <div class="block-renderer block-renderer--code">
+                              <div class="block-renderer__title">Code preview</div>
+                              <div class="block-renderer__meta">
+                                {preview().renderer.title} · {preview().lang}
+                              </div>
+                              <pre class="block-renderer__content">
+                                <code>{preview().content}</code>
+                              </pre>
+                            </div>
+                          )}
+                        </Show>
+                      </div>
                     </div>
                   );
                 }}

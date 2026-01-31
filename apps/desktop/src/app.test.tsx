@@ -37,4 +37,16 @@ describe("App", () => {
     expect(await screen.findByText("Today focus")).toBeInTheDocument();
     expect(await screen.findByText("Code block renderer")).toBeInTheDocument();
   });
+
+  it("renders a code preview for fenced blocks", async () => {
+    render(() => <App />);
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    const firstInput = inputs[0];
+    await userEvent.clear(firstInput);
+    await userEvent.type(firstInput, "```ts const x = 1;");
+    const previews = await screen.findAllByText("Code preview");
+    expect(previews.length).toBeGreaterThan(0);
+    const snippets = await screen.findAllByText("const x = 1;");
+    expect(snippets.length).toBeGreaterThan(0);
+  });
 });

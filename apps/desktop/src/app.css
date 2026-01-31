@@ -488,6 +488,50 @@ body {
   animation-delay: calc(var(--i) * 18ms);
 }
 
+.block__body {
+  flex: 1;
+  display: grid;
+  gap: 6px;
+}
+
+.block-renderer {
+  border: 1px dashed rgba(90, 74, 62, 0.2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  display: grid;
+  gap: 8px;
+  box-shadow: 0 10px 24px rgba(60, 40, 20, 0.08);
+}
+
+.block-renderer--code {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(251, 244, 235, 0.82));
+}
+
+.block-renderer__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-soft);
+}
+
+.block-renderer__meta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+}
+
+.block-renderer__content {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(33, 24, 18, 0.08);
+  font: 12px/1.5 "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
 .block__bullet {
   width: 8px;
   height: 8px;
