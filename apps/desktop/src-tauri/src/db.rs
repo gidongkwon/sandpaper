@@ -338,6 +338,28 @@ impl Database {
         Ok(())
     }
 
+    pub fn current_schema_version(&self) -> rusqlite::Result<i64> {
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );",
+        )?;
+        self.conn.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )
+    }
+
+    pub fn latest_migration_version() -> i64 {
+        MIGRATIONS
+            .last()
+            .map(|migration| migration.version)
+            .unwrap_or(0)
+    }
+
     pub fn insert_page(&self, uid: &str, title: &str) -> rusqlite::Result<i64> {
         self.conn.execute(
             "INSERT INTO pages (uid, title) VALUES (?1, ?2)",

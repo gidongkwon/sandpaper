@@ -134,9 +134,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Add a small queue indicator in settings
   - **Done when:** shadow writes recover from transient errors
 
-- [ ] **Crash-safe backups**
-  - [ ] Before migration, copy the DB to a backup file
-  - [ ] Keep last 3 backups per vault
+- [x] **Crash-safe backups**
+  - [x] Before migration, copy the DB to a backup file
+  - [x] Keep last 3 backups per vault
   - **Done when:** backups exist and rotate correctly
 
 ---
