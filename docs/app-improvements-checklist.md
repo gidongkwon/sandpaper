@@ -28,29 +28,29 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 1 — Editor UX Foundations
 
-- [ ] **Focus behavior polish**
-  - [ ] Ensure clicking a block display focuses the textarea at the end
-  - [ ] Preserve caret position when toggling display → edit
-  - [ ] Keyboard: `Esc` exits edit mode (blur) but keeps selection
+- [x] **Focus behavior polish**
+  - [x] Ensure clicking a block display focuses the textarea at the end
+  - [x] Preserve caret position when toggling display → edit
+  - [x] Keyboard: `Esc` exits edit mode (blur) but keeps selection
   - **Done when:** edit mode feels predictable and caret doesn’t jump
   - **Suggested tests:** add UI test for focus switch + caret location
 
-- [ ] **Inline slash command menu (basic)**
-  - [ ] When user types `/`, show a small menu near caret
-  - [ ] Start with 3 commands: “Link to page”, “Insert date”, “Convert to task”
-  - [ ] Selecting a command should insert text and close menu
+- [x] **Inline slash command menu (basic)**
+  - [x] When user types `/`, show a small menu near caret
+  - [x] Start with 3 commands: “Link to page”, “Insert date”, “Convert to task”
+  - [x] Selecting a command should insert text and close menu
   - **Done when:** slash menu works in the editor and does not break typing
   - **Suggested tests:** open menu, select each command, verify block text
 
-- [ ] **Block action toolbar improvements**
-  - [ ] Move hover actions to a consistent row (no jumping)
-  - [ ] Add tooltip text for each action
-  - [ ] Add a “Duplicate block” action
+- [x] **Block action toolbar improvements**
+  - [x] Move hover actions to a consistent row (no jumping)
+  - [x] Add tooltip text for each action
+  - [x] Add a “Duplicate block” action
   - **Done when:** toolbar is stable and new action works
 
-- [ ] **Quick Capture → Editor handoff**
-  - [ ] After capture, focus the created block
-  - [ ] Highlight the captured block briefly (1–2s) for visibility
+- [x] **Quick Capture → Editor handoff**
+  - [x] After capture, focus the created block
+  - [x] Highlight the captured block briefly (1–2s) for visibility
   - **Done when:** capture feels obvious and points to the new block
 
 ---

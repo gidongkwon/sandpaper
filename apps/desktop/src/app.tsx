@@ -250,6 +250,19 @@ type PermissionPrompt = {
   permission: string;
 };
 
+type SlashMenuPosition = {
+  x: number;
+  y: number;
+};
+
+type SlashMenuState = {
+  open: boolean;
+  blockId: string | null;
+  blockIndex: number;
+  slashIndex: number;
+  position: SlashMenuPosition | null;
+};
+
 let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
@@ -306,6 +319,56 @@ const parseInlineFence = (text: string): CodeFence | null => {
 
 const INLINE_MARKDOWN_PATTERN =
   /(\[\[[^\]]+?\]\]|`[^`]+`|\*\*[^*]+?\*\*|~~[^~]+?~~|\*[^*]+?\*)/g;
+
+const SLASH_COMMANDS = [
+  { id: "link", label: "Link to page" },
+  { id: "date", label: "Insert date" },
+  { id: "task", label: "Convert to task" }
+] as const;
+
+const getCaretPosition = (
+  textarea: HTMLTextAreaElement,
+  position: number
+): SlashMenuPosition => {
+  const style = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordBreak = "break-word";
+  mirror.style.left = "-9999px";
+  mirror.style.top = "0";
+  mirror.style.padding = style.padding;
+  mirror.style.border = style.border;
+  mirror.style.boxSizing = style.boxSizing;
+  mirror.style.fontFamily = style.fontFamily;
+  mirror.style.fontSize = style.fontSize;
+  mirror.style.fontWeight = style.fontWeight;
+  mirror.style.letterSpacing = style.letterSpacing;
+  mirror.style.lineHeight = style.lineHeight;
+  mirror.style.width = `${textarea.clientWidth}px`;
+  mirror.textContent = textarea.value.slice(0, Math.max(0, position));
+
+  const marker = document.createElement("span");
+  marker.textContent = textarea.value.slice(position) || ".";
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  const markerRect = marker.getBoundingClientRect();
+  const mirrorRect = mirror.getBoundingClientRect();
+  document.body.removeChild(mirror);
+
+  const textareaRect = textarea.getBoundingClientRect();
+  const rawLineHeight = parseFloat(style.lineHeight || "");
+  const lineHeight = Number.isFinite(rawLineHeight) ? rawLineHeight : 16;
+  const offsetX = markerRect.left - mirrorRect.left;
+  const offsetY = markerRect.top - mirrorRect.top;
+
+  return {
+    x: textareaRect.left + offsetX - textarea.scrollLeft,
+    y: textareaRect.top + offsetY - textarea.scrollTop + lineHeight
+  };
+};
 
 const parseWikilinkToken = (token: string) => {
   if (!token.startsWith("[[") || !token.endsWith("]]")) return null;
@@ -399,6 +462,9 @@ function App() {
   });
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [focusedId, setFocusedId] = createSignal<string | null>(null);
+  const [highlightedBlockId, setHighlightedBlockId] = createSignal<string | null>(
+    null
+  );
   const [mode, setMode] = createSignal<Mode>("editor");
   const [searchQuery, setSearchQuery] = createSignal("");
   const [searchFilter, setSearchFilter] = createSignal<
@@ -409,7 +475,17 @@ function App() {
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
   const [pageBusy, setPageBusy] = createSignal(false);
   const [captureText, setCaptureText] = createSignal("");
-  const [jumpToId, setJumpToId] = createSignal<string | null>(null);
+  const [jumpTarget, setJumpTarget] = createSignal<{
+    id: string;
+    caret: "start" | "end" | "preserve";
+  } | null>(null);
+  const [slashMenu, setSlashMenu] = createSignal<SlashMenuState>({
+    open: false,
+    blockId: null,
+    blockIndex: -1,
+    slashIndex: -1,
+    position: null
+  });
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
   const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
@@ -796,7 +872,7 @@ function App() {
       await switchPage(targetPage);
     }
     setActiveId(entry.id);
-    setJumpToId(entry.id);
+    setJumpTarget({ id: entry.id, caret: "start" });
   };
 
   const filteredSearchResults = createMemo<SearchResult[]>(() => {
@@ -1227,6 +1303,7 @@ function App() {
 
   let saveTimeout: number | undefined;
   let autosaveTimeout: number | undefined;
+  let highlightTimeout: number | undefined;
   const persistBlocks = async (
     pageUid: string,
     payload: BlockPayload[],
@@ -1966,7 +2043,7 @@ function App() {
       await persistActivePage(targetUid);
       if (importedBlocks[0]) {
         setActiveId(importedBlocks[0].id);
-        setJumpToId(importedBlocks[0].id);
+        setJumpTarget({ id: importedBlocks[0].id, caret: "start" });
       }
       if (targetTitle !== pageTitle()) {
         setPageTitle(targetTitle);
@@ -2338,6 +2415,9 @@ function App() {
       if (autosaveTimeout) {
         window.clearTimeout(autosaveTimeout);
       }
+      if (highlightTimeout) {
+        window.clearTimeout(highlightTimeout);
+      }
       void shadowWriter.flush();
       shadowWriter.dispose();
       stopSyncLoop();
@@ -2362,12 +2442,21 @@ function App() {
     setCaptureText("");
     setMode("editor");
     setActiveId(block.id);
+    setJumpTarget({ id: block.id, caret: "end" });
+    setHighlightedBlockId(block.id);
+    if (highlightTimeout) {
+      window.clearTimeout(highlightTimeout);
+    }
+    highlightTimeout = window.setTimeout(() => {
+      setHighlightedBlockId(null);
+    }, 1500);
   };
 
   const EditorPane = (props: { title: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
+    const caretPositions = new Map<string, { start: number; end: number }>();
     let editorRef: HTMLDivElement | undefined;
     const effectiveViewport = createMemo(() =>
       viewportHeight() === 0 ? 560 : viewportHeight()
@@ -2431,7 +2520,24 @@ function App() {
     const findIndexById = (id: string) =>
       blocks.findIndex((block) => block.id === id);
 
-    const focusBlock = (id: string, caret: "start" | "end" = "end") => {
+    const storeSelection = (
+      id: string,
+      el: HTMLTextAreaElement | null | undefined,
+      force = false
+    ) => {
+      if (!el) return;
+      const isFocused = document.activeElement === el || focusedId() === id;
+      if (!force && !isFocused) return;
+      caretPositions.set(id, {
+        start: el.selectionStart ?? 0,
+        end: el.selectionEnd ?? 0
+      });
+    };
+
+    const focusBlock = (
+      id: string,
+      caret: "start" | "end" | "preserve" = "end"
+    ) => {
       const index = findIndexById(id);
       if (index >= 0) scrollToIndex(index);
       setActiveId(id);
@@ -2440,16 +2546,31 @@ function App() {
         const el = inputRefs.get(id);
         if (!el) return;
         el.focus();
-        const pos = caret === "start" ? 0 : el.value.length;
+        if (caret === "start") {
+          el.setSelectionRange(0, 0);
+          return;
+        }
+        if (caret === "end") {
+          const pos = el.value.length;
+          el.setSelectionRange(pos, pos);
+          return;
+        }
+        const stored = caretPositions.get(id);
+        if (stored) {
+          el.setSelectionRange(stored.start, stored.end);
+          return;
+        }
+        const pos = el.value.length;
         el.setSelectionRange(pos, pos);
       });
     };
 
     createEffect(() => {
-      const targetId = jumpToId();
-      if (!targetId) return;
-      if (findIndexById(targetId) < 0) return;
-      focusBlock(targetId, "start");
+      const target = jumpTarget();
+      if (!target) return;
+      if (findIndexById(target.id) < 0) return;
+      focusBlock(target.id, target.caret);
+      setJumpTarget(null);
     });
 
     const insertBlockAfter = (index: number, indent: number) => {
@@ -2463,15 +2584,32 @@ function App() {
       focusBlock(block.id, "start");
     };
 
+    const duplicateBlockAt = (index: number) => {
+      const source = blocks[index];
+      if (!source) return;
+      const clone = createNewBlock(source.text, source.indent);
+      setBlocks(
+        produce((draft) => {
+          draft.splice(index + 1, 0, clone);
+        })
+      );
+      scheduleSave();
+      focusBlock(clone.id, "end");
+    };
+
     const removeBlockAt = (index: number) => {
       if (blocks.length === 1) return;
       const prev = blocks[index - 1];
       const next = blocks[index + 1];
+      const removed = blocks[index];
       setBlocks(
         produce((draft) => {
           draft.splice(index, 1);
         })
       );
+      if (removed) {
+        caretPositions.delete(removed.id);
+      }
       scheduleSave();
       const target = next ?? prev;
       if (target) focusBlock(target.id);
@@ -2487,6 +2625,85 @@ function App() {
     const addReviewFromBlock = (block: Block) => {
       if (!block.id) return;
       void addReviewItem(block.id);
+    };
+
+    const closeSlashMenu = () => {
+      setSlashMenu((prev) =>
+        prev.open ? { ...prev, open: false, position: null } : prev
+      );
+    };
+
+    const openSlashMenu = (
+      block: Block,
+      index: number,
+      target: HTMLTextAreaElement,
+      slashIndex: number
+    ) => {
+      if (slashIndex < 0) return;
+      const caret = Math.min(target.value.length, slashIndex + 1);
+      let position: SlashMenuPosition;
+      try {
+        position = getCaretPosition(target, caret);
+      } catch {
+        position = { x: 0, y: 0 };
+      }
+      setSlashMenu({
+        open: true,
+        blockId: block.id,
+        blockIndex: index,
+        slashIndex,
+        position
+      });
+    };
+
+    const applySlashCommand = (commandId: string) => {
+      const state = slashMenu();
+      if (!state.blockId || state.blockIndex < 0 || state.slashIndex < 0) {
+        return;
+      }
+      const index = state.blockIndex;
+      const block = blocks[index];
+      if (!block || block.id !== state.blockId) {
+        closeSlashMenu();
+        return;
+      }
+      const text = block.text;
+      const before = text.slice(0, state.slashIndex);
+      const after = text.slice(state.slashIndex + 1);
+      let nextText = text;
+      let nextCaret = before.length;
+
+      if (commandId === "link") {
+        const insertText = "[[Page]]";
+        nextText = `${before}${insertText}${after}`;
+        nextCaret = before.length + insertText.length;
+      }
+
+      if (commandId === "date") {
+        const insertText = new Date().toISOString().slice(0, 10);
+        nextText = `${before}${insertText}${after}`;
+        nextCaret = before.length + insertText.length;
+      }
+
+      if (commandId === "task") {
+        const cleaned = `${before}${after}`.trimStart();
+        const prefix = cleaned.startsWith("- [ ] ") || cleaned.startsWith("- [x] ")
+          ? ""
+          : "- [ ] ";
+        nextText = `${prefix}${cleaned}`;
+        nextCaret = nextText.length;
+      }
+
+      setBlocks(index, "text", nextText);
+      scheduleSave();
+      closeSlashMenu();
+      requestAnimationFrame(() => {
+        const input = inputRefs.get(block.id);
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(nextCaret, nextCaret);
+        storeSelection(block.id, input, true);
+      });
     };
 
     const findPageByTitle = (title: string) => {
@@ -2537,6 +2754,24 @@ function App() {
       const atEnd =
         target.selectionStart === target.value.length &&
         target.selectionEnd === target.value.length;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        storeSelection(block.id, target, true);
+        target.blur();
+        return;
+      }
+
+      if (event.key === "/") {
+        requestAnimationFrame(() => {
+          const value = target.value;
+          const slashIndex = value.lastIndexOf("/");
+          const isSlash = slashIndex === value.length - 1;
+          if (isSlash) {
+            openSlashMenu(block, index, target, slashIndex);
+          }
+        });
+      }
 
       if (event.key === "Enter") {
         event.preventDefault();
@@ -2726,7 +2961,9 @@ function App() {
                   };
                   return (
                     <div
-                      class={`block ${activeId() === block.id ? "is-active" : ""}`}
+                      class={`block ${activeId() === block.id ? "is-active" : ""} ${
+                        highlightedBlockId() === block.id ? "is-highlighted" : ""
+                      }`}
                       style={{
                         "margin-left": `${block.indent * 24}px`,
                         "--i": `${blockIndex()}`
@@ -2754,6 +2991,17 @@ function App() {
                             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                           </svg>
                         </button>
+                        <button
+                          class="block__action"
+                          onClick={() => duplicateBlockAt(blockIndex())}
+                          title="Duplicate block"
+                          aria-label="Duplicate block"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" />
+                            <rect x="2" y="2" width="13" height="13" rx="2" />
+                          </svg>
+                        </button>
                       </div>
                       <span class="block__bullet" aria-hidden="true" />
                       <div class="block__body">
@@ -2771,18 +3019,65 @@ function App() {
                             setActiveId(block.id);
                             setFocusedId(block.id);
                           }}
-                          onBlur={() => setFocusedId(null)}
+                          onBlur={(event) => {
+                            storeSelection(block.id, event.currentTarget, true);
+                            setFocusedId(null);
+                            if (slashMenu().open && slashMenu().blockId === block.id) {
+                              window.setTimeout(() => {
+                                closeSlashMenu();
+                              }, 0);
+                            }
+                          }}
                           onInput={(event) => {
                             recordLatency("input");
                             setBlocks(blockIndex(), "text", event.currentTarget.value);
                             scheduleSave();
+                            storeSelection(block.id, event.currentTarget);
+                            const value = event.currentTarget.value;
+                            const slashIndex = value.lastIndexOf("/");
+                            const isSlash = slashIndex === value.length - 1;
+                            if (isSlash) {
+                              openSlashMenu(
+                                block,
+                                blockIndex(),
+                                event.currentTarget,
+                                slashIndex
+                              );
+                            } else if (
+                              slashMenu().open &&
+                              slashMenu().blockId === block.id
+                            ) {
+                              closeSlashMenu();
+                            }
                           }}
                           onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
+                          onKeyUp={(event) => {
+                            storeSelection(block.id, event.currentTarget);
+                            if (event.key === "/") {
+                              const value = event.currentTarget.value;
+                              const slashIndex = value.lastIndexOf("/");
+                              const isSlash = slashIndex === value.length - 1;
+                              if (isSlash) {
+                                openSlashMenu(
+                                  block,
+                                  blockIndex(),
+                                  event.currentTarget,
+                                  slashIndex
+                                );
+                              }
+                            }
+                          }}
+                          onSelect={(event) => storeSelection(block.id, event.currentTarget)}
                         />
                         <div
                           class="block__display"
                           style={{ display: isEditing() ? "none" : "block" }}
-                          onClick={() => focusBlock(block.id)}
+                          onClick={() => {
+                            const preserve =
+                              activeId() === block.id &&
+                              caretPositions.has(block.id);
+                            focusBlock(block.id, preserve ? "preserve" : "end");
+                          }}
                         >
                           {displayContent()}
                         </div>
@@ -2824,6 +3119,32 @@ function App() {
               </For>
             </div>
           </div>
+          <Show when={slashMenu().open && slashMenu().position}>
+            {(position) => (
+              <div
+                class="slash-menu"
+                style={{
+                  left: `${position().x}px`,
+                  top: `${position().y}px`
+                }}
+              >
+                <div class="slash-menu__title">Commands</div>
+                <div class="slash-menu__list">
+                  <For each={SLASH_COMMANDS}>
+                    {(command) => (
+                      <button
+                        class="slash-menu__item"
+                        onClick={() => applySlashCommand(command.id)}
+                        type="button"
+                      >
+                        {command.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            )}
+          </Show>
         </div>
       </section>
     );
@@ -2992,7 +3313,7 @@ function App() {
                             class="result"
                             onClick={() => {
                               setActiveId(block.id);
-                              setJumpToId(block.id);
+                              setJumpTarget({ id: block.id, caret: "start" });
                             }}
                           >
                             <div class="result__text">{block.text || "Untitled"}</div>
@@ -3158,7 +3479,7 @@ function App() {
                                   class="backlink-item"
                                   onClick={() => {
                                     setActiveId(entry.id);
-                                    setJumpToId(entry.id);
+                                    setJumpTarget({ id: entry.id, caret: "start" });
                                   }}
                                 >
                                   <div class="backlink-item__text">{entry.text || "Untitled"}</div>
