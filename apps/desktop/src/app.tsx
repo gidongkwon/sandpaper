@@ -62,6 +62,35 @@ type PageBlocksResponse = {
   blocks: BlockPayload[];
 };
 
+type PluginPermissionInfo = {
+  id: string;
+  name: string;
+  version: string;
+  description?: string | null;
+  permissions: string[];
+  enabled: boolean;
+  path: string;
+  granted_permissions: string[];
+  missing_permissions: string[];
+};
+
+type PluginBlockInfo = {
+  id: string;
+  reason: string;
+  missing_permissions: string[];
+};
+
+type PluginRuntimeStatus = {
+  loaded: string[];
+  blocked: PluginBlockInfo[];
+};
+
+type PermissionPrompt = {
+  pluginId: string;
+  pluginName: string;
+  permission: string;
+};
+
 let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
@@ -111,6 +140,13 @@ function App() {
   const [newVaultName, setNewVaultName] = createSignal("");
   const [newVaultPath, setNewVaultPath] = createSignal("");
   const [pageTitle, setPageTitle] = createSignal("Inbox");
+  const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
+  const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
+    null
+  );
+  const [permissionPrompt, setPermissionPrompt] =
+    createSignal<PermissionPrompt | null>(null);
+  const [pluginBusy, setPluginBusy] = createSignal(false);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -139,6 +175,36 @@ function App() {
   const isTauri = () =>
     typeof window !== "undefined" &&
     Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+
+  const fallbackPlugins: PluginPermissionInfo[] = [
+    {
+      id: "local-calendar",
+      name: "Local Calendar",
+      version: "0.1.0",
+      description: "Daily agenda panel",
+      permissions: ["fs", "network"],
+      enabled: true,
+      path: "/plugins/local-calendar",
+      granted_permissions: ["fs"],
+      missing_permissions: ["network"]
+    },
+    {
+      id: "focus-mode",
+      name: "Focus Mode",
+      version: "0.2.0",
+      description: "Minimal editor layout",
+      permissions: ["ui"],
+      enabled: false,
+      path: "/plugins/focus-mode",
+      granted_permissions: [],
+      missing_permissions: ["ui"]
+    }
+  ];
+
+  const fallbackPluginStatus: PluginRuntimeStatus = {
+    loaded: [],
+    blocked: []
+  };
 
   const localSearch = (query: string): SearchResult[] => {
     const normalized = query.trim().toLowerCase();
@@ -303,6 +369,62 @@ function App() {
     }
   };
 
+  const loadPlugins = async () => {
+    if (!isTauri()) {
+      setPlugins(fallbackPlugins);
+      setPluginStatus(fallbackPluginStatus);
+      return;
+    }
+
+    try {
+      const remote = (await invoke("list_plugins_command")) as PluginPermissionInfo[];
+      setPlugins(remote);
+    } catch (error) {
+      console.error("Failed to load plugins", error);
+    }
+  };
+
+  const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {
+    setPermissionPrompt({
+      pluginId: plugin.id,
+      pluginName: plugin.name,
+      permission
+    });
+  };
+
+  const grantPermission = async () => {
+    const prompt = permissionPrompt();
+    if (!prompt) return;
+    if (isTauri()) {
+      await invoke("grant_plugin_permission", {
+        pluginId: prompt.pluginId,
+        permission: prompt.permission
+      });
+      await loadPlugins();
+    }
+    setPermissionPrompt(null);
+  };
+
+  const dismissPermissionPrompt = () => {
+    setPermissionPrompt(null);
+  };
+
+  const loadPluginRuntime = async () => {
+    if (!isTauri()) {
+      setPluginStatus(fallbackPluginStatus);
+      return;
+    }
+    setPluginBusy(true);
+    try {
+      const status = (await invoke("load_plugins_command")) as PluginRuntimeStatus;
+      setPluginStatus(status);
+    } catch (error) {
+      console.error("Failed to load plugins", error);
+    } finally {
+      setPluginBusy(false);
+    }
+  };
+
   const loadVaults = async () => {
     if (!isTauri()) {
       const fallback = {
@@ -313,6 +435,7 @@ function App() {
       setVaults([fallback]);
       setActiveVault(fallback);
       await loadBlocks();
+      await loadPlugins();
       return;
     }
 
@@ -326,6 +449,7 @@ function App() {
         null;
       setActiveVault(active);
       await loadBlocks();
+      await loadPlugins();
     } catch (error) {
       console.error("Failed to load vaults", error);
     }
@@ -340,6 +464,7 @@ function App() {
       vault_id: vaultId
     });
     await loadBlocks();
+    await loadPlugins();
   };
 
   const createVault = async () => {
@@ -356,6 +481,7 @@ function App() {
       setVaults((prev) => [...prev, record]);
       setActiveVault(record);
       await loadBlocks();
+      await loadPlugins();
     }
 
     setVaultFormOpen(false);
@@ -792,6 +918,85 @@ function App() {
                 </div>
               </Show>
             </div>
+            <div class="sidebar__plugins">
+              <div class="sidebar__section-title">Plugins</div>
+              <Show
+                when={plugins().length > 0}
+                fallback={<div class="sidebar__empty">No plugins installed.</div>}
+              >
+                <For each={plugins()}>
+                  {(plugin) => (
+                    <div class={`plugin-card ${plugin.enabled ? "" : "is-disabled"}`}>
+                      <div class="plugin-card__header">
+                        <div>
+                          <div class="plugin-card__name">{plugin.name}</div>
+                          <div class="plugin-card__meta">
+                            {plugin.version} ·{" "}
+                            {plugin.enabled ? "Enabled" : "Disabled"}
+                          </div>
+                        </div>
+                        <div
+                          class={`plugin-card__badge ${
+                            plugin.enabled ? "is-on" : "is-off"
+                          }`}
+                        >
+                          {plugin.enabled ? "On" : "Off"}
+                        </div>
+                      </div>
+                      <Show when={plugin.description}>
+                        <div class="plugin-card__desc">{plugin.description}</div>
+                      </Show>
+                      <Show
+                        when={plugin.missing_permissions.length > 0}
+                        fallback={
+                          <div class="plugin-card__status is-ok">
+                            All permissions granted
+                          </div>
+                        }
+                      >
+                        <div class="plugin-card__status">Needs permission</div>
+                        <div class="plugin-card__permissions">
+                          <For each={plugin.missing_permissions}>
+                            {(permission) => (
+                              <span class="chip chip--warn">{permission}</span>
+                            )}
+                          </For>
+                        </div>
+                        <div class="plugin-card__actions">
+                          <For each={plugin.missing_permissions}>
+                            {(permission) => (
+                              <button
+                                class="plugin-action"
+                                onClick={() =>
+                                  requestGrantPermission(plugin, permission)
+                                }
+                              >
+                                Grant {permission}
+                              </button>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </Show>
+              <div class="plugin-card__actions">
+                <button
+                  class="plugin-action is-primary"
+                  onClick={loadPluginRuntime}
+                  disabled={pluginBusy()}
+                >
+                  {pluginBusy() ? "Loading plugins..." : "Load plugins"}
+                </button>
+              </div>
+              <Show when={pluginStatus()}>
+                <div class="plugin-status">
+                  <span>{pluginStatus()?.loaded.length ?? 0} loaded</span>
+                  <span>{pluginStatus()?.blocked.length ?? 0} blocked</span>
+                </div>
+              </Show>
+            </div>
             <div class="sidebar__footer">
               <div>
                 Active: {activeVault()?.name ?? "None"} ·{" "}
@@ -806,6 +1011,28 @@ function App() {
             <EditorPane title="Connection pane" meta="Split view" />
           </div>
         </div>
+      </Show>
+
+      <Show when={permissionPrompt()}>
+        {(prompt) => (
+          <div class="modal-backdrop" role="presentation">
+            <div class="modal" role="dialog" aria-modal="true">
+              <h3>Grant permission</h3>
+              <p>
+                Allow <strong>{prompt().pluginName}</strong> to use{" "}
+                <strong>{prompt().permission}</strong>?
+              </p>
+              <div class="modal__actions">
+                <button class="modal__button is-primary" onClick={grantPermission}>
+                  Allow
+                </button>
+                <button class="modal__button" onClick={dismissPermissionPrompt}>
+                  Deny
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Show>
     </div>
   );

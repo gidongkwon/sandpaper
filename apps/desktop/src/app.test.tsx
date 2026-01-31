@@ -16,4 +16,15 @@ describe("App", () => {
     await userEvent.type(input, "Draft line 1");
     expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
   });
+
+  it("prompts for plugin permission grants", async () => {
+    render(() => <App />);
+    const grantButton = await screen.findByRole("button", {
+      name: /grant network/i
+    });
+    await userEvent.click(grantButton);
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Grant permission"
+    );
+  });
 });
