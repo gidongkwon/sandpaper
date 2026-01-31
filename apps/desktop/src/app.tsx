@@ -172,6 +172,13 @@ type PageLinkBlock = {
   pageTitle: string;
 };
 
+type PageBacklinkRecord = {
+  block_uid: string;
+  text: string;
+  page_uid: string;
+  page_title: string;
+};
+
 type MarkdownExportStatus = {
   path: string;
   pages: number;
@@ -714,6 +721,24 @@ function App() {
     buildWikilinkBacklinks(pageLinkBlocks(), normalizePageUid)
   );
 
+  const [remotePageBacklinks] = createResource(
+    activePageUid,
+    async (pageUid) => {
+      if (!isTauri()) return [];
+      const resolved = normalizePageUid(pageUid || DEFAULT_PAGE_UID);
+      try {
+        return (await invoke("list_page_wikilink_backlinks", {
+          pageUid: resolved,
+          page_uid: resolved
+        })) as PageBacklinkRecord[];
+      } catch (error) {
+        console.error("Failed to load page backlinks", error);
+        return [];
+      }
+    },
+    { initialValue: [] }
+  );
+
   const activeBlock = createMemo(
     () => blocks.find((block) => block.id === activeId()) ?? null
   );
@@ -729,6 +754,14 @@ function App() {
   });
 
   const activePageBacklinks = createMemo<BacklinkEntry[]>(() => {
+    if (isTauri()) {
+      return remotePageBacklinks().map((entry) => ({
+        id: entry.block_uid,
+        text: entry.text || "Untitled",
+        pageUid: entry.page_uid,
+        pageTitle: entry.page_title
+      }));
+    }
     const pageUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
     const linked = pageBacklinksMap()[pageUid] ?? [];
     const lookup = pageLinkBlocksById();

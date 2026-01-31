@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
-use db::{BlockSearchResult, BlockSnapshot, Database};
+use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
     discover_plugins, list_plugins, runtime_script_path, PluginCommand, PluginDescriptor,
     PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeLoadResult,
@@ -25,6 +25,14 @@ struct PageBlocksResponse {
     page_uid: String,
     title: String,
     blocks: Vec<BlockSnapshot>,
+}
+
+#[derive(Debug, Serialize)]
+struct PageBacklinkEntry {
+    block_uid: String,
+    text: String,
+    page_uid: String,
+    page_title: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -343,6 +351,42 @@ fn sanitize_kebab(input: &str) -> String {
     } else {
         trimmed
     }
+}
+
+fn normalize_wiki_target(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let before_alias = trimmed.split('|').next().unwrap_or(trimmed);
+    let before_heading = before_alias.split('#').next().unwrap_or(before_alias);
+    let title = before_heading.trim();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title.to_string())
+    }
+}
+
+fn extract_wikilinks(text: &str) -> Vec<String> {
+    let mut links = Vec::new();
+    let mut index = 0;
+    while let Some(open) = text[index..].find("[[") {
+        let start = index + open + 2;
+        let remainder = &text[start..];
+        let close = match remainder.find("]]") {
+            Some(value) => value,
+            None => break,
+        };
+        let raw = &remainder[..close];
+        if let Some(target) = normalize_wiki_target(raw) {
+            if !links.contains(&target) {
+                links.push(target);
+            }
+        }
+        index = start + close + 2;
+    }
+    links
 }
 
 fn fallback_page_title(page_uid: &str) -> &str {
@@ -1164,6 +1208,36 @@ fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
 }
 
 #[tauri::command]
+fn list_page_wikilink_backlinks(page_uid: String) -> Result<Vec<PageBacklinkEntry>, String> {
+    let db = open_active_database()?;
+    let target_uid = sanitize_kebab(&page_uid);
+    let records = db
+        .list_blocks_with_wikilinks()
+        .map_err(|err| format!("{:?}", err))?;
+    let mut results = Vec::new();
+    for record in records {
+        if link_matches_target(&record, &target_uid) {
+            results.push(PageBacklinkEntry {
+                block_uid: record.block_uid,
+                text: record.text,
+                page_uid: record.page_uid,
+                page_title: record.page_title,
+            });
+        }
+    }
+    Ok(results)
+}
+
+fn link_matches_target(record: &BlockPageRecord, target_uid: &str) -> bool {
+    for link in extract_wikilinks(&record.text) {
+        if sanitize_kebab(&link) == target_uid {
+            return true;
+        }
+    }
+    false
+}
+
+#[tauri::command]
 fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), String> {
     let mut db = open_active_database()?;
     let title = fallback_page_title(&page_uid);
@@ -1413,6 +1487,7 @@ pub fn run() {
             list_pages,
             search_blocks,
             load_page_blocks,
+            list_page_wikilink_backlinks,
             save_page_blocks,
             set_page_title,
             set_vault_key,

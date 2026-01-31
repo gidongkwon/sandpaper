@@ -215,6 +215,14 @@ pub struct BlockSnapshot {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct BlockPageRecord {
+    pub block_uid: String,
+    pub text: String,
+    pub page_uid: String,
+    pub page_title: String,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct TagRecord {
     pub id: i64,
     pub name: String,
@@ -703,6 +711,24 @@ impl Database {
                 from_block_id: row.get(1)?,
                 to_block_uid: row.get(2)?,
                 kind: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn list_blocks_with_wikilinks(&self) -> rusqlite::Result<Vec<BlockPageRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT blocks.uid, blocks.text, pages.uid, pages.title
+             FROM blocks
+             JOIN pages ON blocks.page_id = pages.id
+             WHERE blocks.text LIKE '%[[%'",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(BlockPageRecord {
+                block_uid: row.get(0)?,
+                text: row.get(1)?,
+                page_uid: row.get(2)?,
+                page_title: row.get(3)?,
             })
         })?;
         rows.collect()
