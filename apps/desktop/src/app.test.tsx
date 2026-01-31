@@ -1,8 +1,12 @@
-import { render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import App from "./app";
 
 describe("App", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("renders the outline header", () => {
     render(() => <App />);
     expect(
@@ -97,10 +101,10 @@ describe("App", () => {
 
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
+    await screen.findByText("Panels");
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
-    await userEvent.clear(firstInput);
-    await userEvent.type(firstInput, "```ts const x = 1;");
+    fireEvent.input(firstInput, { target: { value: "```ts const x = 1;" } });
     const previews = await screen.findAllByText("Code preview");
     expect(previews.length).toBeGreaterThan(0);
     const snippets = await screen.findAllByText("const x = 1;");
@@ -109,10 +113,12 @@ describe("App", () => {
 
   it("renders a diagram preview for fenced mermaid blocks", async () => {
     render(() => <App />);
+    await screen.findByText("Panels");
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
-    await userEvent.clear(firstInput);
-    await userEvent.type(firstInput, "```mermaid graph TD A-->B;");
+    fireEvent.input(firstInput, {
+      target: { value: "```mermaid graph TD A-->B;" }
+    });
     const previews = await screen.findAllByText("Diagram preview");
     expect(previews.length).toBeGreaterThan(0);
     const snippets = await screen.findAllByText("graph TD A-->B;");
@@ -121,14 +127,14 @@ describe("App", () => {
 
   it("shows backlinks for referenced blocks", async () => {
     render(() => <App />);
+    await screen.findByText("Panels");
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     const secondInput = inputs[1];
     const targetId = firstInput.getAttribute("data-block-id");
     expect(targetId).toBeTruthy();
-    await userEvent.clear(secondInput);
-    await userEvent.type(secondInput, `See ((${targetId}))`);
-    await userEvent.click(firstInput);
+    fireEvent.input(secondInput, { target: { value: `See ((${targetId}))` } });
+    fireEvent.focus(firstInput);
     expect(await screen.findByText("Backlinks")).toBeInTheDocument();
     const backlinks = await screen.findAllByText(/see/i, {
       selector: ".backlink__text"
@@ -171,6 +177,35 @@ describe("App", () => {
     const searchInput = screen.getByPlaceholderText("Search notes, tags, or IDs");
     await userEvent.type(searchInput, "Imported line");
     expect(await screen.findByText("Imported line")).toBeInTheDocument();
+  });
+
+  it("creates a new page and switches to it", async () => {
+    render(() => <App />);
+    const input = screen.getByPlaceholderText(/new page title/i);
+    await userEvent.type(input, "Project Atlas");
+    const createButton = screen.getByRole("button", { name: /create page/i });
+    await userEvent.click(createButton);
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__meta" })
+    ).toBeInTheDocument();
+  });
+
+  it("renames the active page", async () => {
+    render(() => <App />);
+    await screen.findByText("Panels");
+    const renameInput = screen.getByPlaceholderText(/rename page/i);
+    fireEvent.input(renameInput, { target: { value: "Inbox Zero" } });
+    const renameButton = screen.getByRole("button", { name: /rename page/i });
+    await userEvent.click(renameButton);
+    expect(
+      await screen.findByText("Inbox Zero", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Inbox Zero", { selector: ".editor-pane__meta" })
+    ).toBeInTheDocument();
   });
 
   it("opens a plugin panel from the list", async () => {

@@ -155,6 +155,7 @@ Checklist
 - [x] Search: left panel (FTS + filters)
 - [x] Navigation: open results in editor panes
 - [x] Navigation: page list + page switching
+- [x] Navigation: create/rename pages + persist active page per vault
 - [x] Shadow Markdown: batched writer (idle or timer)
 - [x] Shadow Markdown: read-only generated `.md` per page
 - [x] Attachments: content-addressed storage in `/assets/<hash>`

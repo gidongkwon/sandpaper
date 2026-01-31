@@ -139,6 +139,19 @@ struct ReviewTemplatePayload {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CreatePagePayload {
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenamePagePayload {
+    page_uid: String,
+    title: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PageTitlePayload {
     page_uid: String,
     title: String,
@@ -330,6 +343,29 @@ fn sanitize_kebab(input: &str) -> String {
     } else {
         trimmed
     }
+}
+
+fn fallback_page_title(page_uid: &str) -> &str {
+    if page_uid == "inbox" {
+        "Inbox"
+    } else {
+        "Untitled"
+    }
+}
+
+fn resolve_unique_page_uid(db: &Database, base_uid: &str) -> Result<String, String> {
+    let base = sanitize_kebab(base_uid);
+    let mut candidate = base.clone();
+    let mut counter = 2;
+    while db
+        .get_page_by_uid(&candidate)
+        .map_err(|err| format!("{:?}", err))?
+        .is_some()
+    {
+        candidate = format!("{}-{}", base, counter);
+        counter += 1;
+    }
+    Ok(candidate)
 }
 
 fn shadow_markdown_path(vault_path: &std::path::Path, page_uid: &str) -> PathBuf {
@@ -1034,6 +1070,59 @@ fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> 
 }
 
 #[tauri::command]
+fn get_active_page() -> Result<Option<String>, String> {
+    let db = open_active_database()?;
+    db.get_kv("active.page")
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn set_active_page(page_uid: String) -> Result<(), String> {
+    let db = open_active_database()?;
+    let normalized = sanitize_kebab(&page_uid);
+    let title = fallback_page_title(&normalized);
+    ensure_page(&db, &normalized, title)?;
+    db.set_kv("active.page", &normalized)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn create_page(payload: CreatePagePayload) -> Result<PageSummary, String> {
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err("Title is required".to_string());
+    }
+    let db = open_active_database()?;
+    let uid = resolve_unique_page_uid(&db, title)?;
+    db.insert_page(&uid, title)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(PageSummary {
+        uid,
+        title: title.to_string(),
+    })
+}
+
+#[tauri::command]
+fn rename_page(payload: RenamePagePayload) -> Result<PageSummary, String> {
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err("Title is required".to_string());
+    }
+    let db = open_active_database()?;
+    let page_uid = sanitize_kebab(&payload.page_uid);
+    let page = db
+        .get_page_by_uid(&page_uid)
+        .map_err(|err| format!("{:?}", err))?
+        .ok_or_else(|| "Page not found".to_string())?;
+    db.update_page_title(page.id, title)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(PageSummary {
+        uid: page_uid,
+        title: title.to_string(),
+    })
+}
+
+#[tauri::command]
 fn list_pages() -> Result<Vec<PageSummary>, String> {
     let db = open_active_database()?;
     let pages = db
@@ -1058,7 +1147,8 @@ fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
 #[tauri::command]
 fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
     let db = open_active_database()?;
-    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let title = fallback_page_title(&page_uid);
+    let page_id = ensure_page(&db, &page_uid, title)?;
     let page = db
         .get_page_by_uid(&page_uid)
         .map_err(|err| format!("{:?}", err))?
@@ -1076,7 +1166,8 @@ fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
 #[tauri::command]
 fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), String> {
     let mut db = open_active_database()?;
-    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let title = fallback_page_title(&page_uid);
+    let page_id = ensure_page(&db, &page_uid, title)?;
     let previous = db
         .load_blocks_for_page(page_id)
         .map_err(|err| format!("{:?}", err))?;
@@ -1259,7 +1350,8 @@ fn revoke_plugin_permission(plugin_id: String, permission: String) -> Result<(),
 fn plugin_read_page(plugin_id: String, page_uid: String) -> Result<PageBlocksResponse, String> {
     let db = open_active_database()?;
     ensure_plugin_permission(&db, &plugin_id, "data.read")?;
-    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let title = fallback_page_title(&page_uid);
+    let page_id = ensure_page(&db, &page_uid, title)?;
     let page = db
         .get_page_by_uid(&page_uid)
         .map_err(|err| format!("{:?}", err))?
@@ -1282,7 +1374,8 @@ fn plugin_write_page(
 ) -> Result<(), String> {
     let mut db = open_active_database()?;
     ensure_plugin_permission(&db, &plugin_id, "data.write")?;
-    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let title = fallback_page_title(&page_uid);
+    let page_id = ensure_page(&db, &page_uid, title)?;
     db.replace_blocks_for_page(page_id, &blocks)
         .map_err(|err| format!("{:?}", err))
 }
@@ -1307,6 +1400,10 @@ pub fn run() {
             list_vaults,
             create_vault,
             set_active_vault,
+            get_active_page,
+            set_active_page,
+            create_page,
+            rename_page,
             list_pages,
             search_blocks,
             load_page_blocks,

@@ -360,6 +360,10 @@ function App() {
   const [searchFilter, setSearchFilter] = createSignal<
     "all" | "links" | "tasks" | "pinned"
   >("all");
+  const [newPageTitle, setNewPageTitle] = createSignal("");
+  const [renameTitle, setRenameTitle] = createSignal("");
+  const [pageMessage, setPageMessage] = createSignal<string | null>(null);
+  const [pageBusy, setPageBusy] = createSignal(false);
   const [captureText, setCaptureText] = createSignal("");
   const [jumpToId, setJumpToId] = createSignal<string | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
@@ -748,6 +752,45 @@ function App() {
     }
   };
 
+  const loadActivePage = async () => {
+    const vaultId = activeVault()?.id;
+    if (!vaultId) return;
+    if (!isTauri()) {
+      const stored = localStorage.getItem(`sandpaper:active-page:${vaultId}`);
+      if (stored) {
+        setActivePageUid(resolvePageUid(stored));
+      }
+      return;
+    }
+    try {
+      const stored = (await invoke("get_active_page")) as string | null;
+      if (stored) {
+        setActivePageUid(resolvePageUid(stored));
+      }
+    } catch (error) {
+      console.error("Failed to load active page", error);
+    }
+  };
+
+  const persistActivePage = async (pageUid: string) => {
+    const resolved = resolvePageUid(pageUid);
+    setActivePageUid(resolved);
+    const vaultId = activeVault()?.id;
+    if (!vaultId) return;
+    if (!isTauri()) {
+      localStorage.setItem(`sandpaper:active-page:${vaultId}`, resolved);
+      return;
+    }
+    try {
+      await invoke("set_active_page", {
+        pageUid: resolved,
+        page_uid: resolved
+      });
+    } catch (error) {
+      console.error("Failed to persist active page", error);
+    }
+  };
+
   const switchPage = async (pageUid: string) => {
     const nextUid = resolvePageUid(pageUid);
     if (nextUid === resolvePageUid(activePageUid())) return;
@@ -756,6 +799,7 @@ function App() {
       saveLocalPageSnapshot(activePageUid(), pageTitle(), blocks);
     }
 
+    await persistActivePage(nextUid);
     await loadBlocks(nextUid);
   };
 
@@ -1104,6 +1148,7 @@ function App() {
         saveLocalPageSnapshot(resolvedUid, title, seeded);
         setBlocks(seeded);
         setPageTitle(title);
+        setRenameTitle(title);
         setActiveId(seeded[0]?.id ?? null);
         setAutosaved(true);
         setAutosaveStamp(stampNow());
@@ -1111,7 +1156,9 @@ function App() {
         return;
       }
       setBlocks(snapshotBlocks(local.blocks));
-      setPageTitle(local.title || "Untitled");
+      const localTitle = local.title || "Untitled";
+      setPageTitle(localTitle);
+      setRenameTitle(localTitle);
       setActiveId(local.blocks[0]?.id ?? null);
       setAutosaved(true);
       setAutosaveStamp(stampNow());
@@ -1128,6 +1175,7 @@ function App() {
       );
       const title = response.title || (resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled");
       setPageTitle(title);
+      setRenameTitle(title);
       if (loaded.length === 0) {
         const seeded = buildDefaultBlocks(makeRandomId);
         setBlocks(seeded);
@@ -1169,6 +1217,7 @@ function App() {
       console.error("Failed to load blocks", error);
       setBlocks(buildLocalDefaults());
       setPageTitle("Inbox");
+      setRenameTitle("Inbox");
       setAutosaved(true);
       setAutosaveStamp(stampNow());
     }
@@ -1624,6 +1673,83 @@ function App() {
     }
   };
 
+  const resolveUniqueLocalPageUid = (title: string) => {
+    const base = resolvePageUid(title);
+    let candidate = base;
+    let counter = 2;
+    while (localPages[candidate]) {
+      candidate = `${base}-${counter}`;
+      counter += 1;
+    }
+    return candidate;
+  };
+
+  const createPage = async () => {
+    const title = newPageTitle().trim();
+    if (!title) {
+      setPageMessage("Enter a page title first.");
+      return;
+    }
+    setPageBusy(true);
+    setPageMessage(null);
+    try {
+      let created: PageSummary;
+      if (isTauri()) {
+        created = (await invoke("create_page", { title })) as PageSummary;
+        await loadPages();
+      } else {
+        const uid = resolveUniqueLocalPageUid(title);
+        const seeded = buildEmptyBlocks(makeLocalId);
+        saveLocalPageSnapshot(uid, title, seeded);
+        created = { uid, title };
+        await loadPages();
+      }
+      await persistActivePage(created.uid);
+      await loadBlocks(created.uid);
+      setNewPageTitle("");
+      setRenameTitle(created.title);
+    } catch (error) {
+      console.error("Failed to create page", error);
+      setPageMessage("Failed to create page.");
+    } finally {
+      setPageBusy(false);
+    }
+  };
+
+  const renamePage = async () => {
+    const title = renameTitle().trim();
+    if (!title) {
+      setPageMessage("Enter a page title first.");
+      return;
+    }
+    setPageBusy(true);
+    setPageMessage(null);
+    const pageUid = resolvePageUid(activePageUid());
+    try {
+      if (isTauri()) {
+        const updated = (await invoke("rename_page", {
+          pageUid,
+          page_uid: pageUid,
+          title
+        })) as PageSummary;
+        setPageTitle(updated.title);
+        await loadPages();
+      } else {
+        if (localPages[pageUid]) {
+          setLocalPages(pageUid, "title", title);
+          setPageTitle(title);
+        }
+        await loadPages();
+      }
+      setRenameTitle(title);
+    } catch (error) {
+      console.error("Failed to rename page", error);
+      setPageMessage("Failed to rename page.");
+    } finally {
+      setPageBusy(false);
+    }
+  };
+
   const importMarkdown = async () => {
     if (importing()) return;
     const raw = importText().trim();
@@ -1670,7 +1796,7 @@ function App() {
         ? importedBlocks
         : [...baseBlocks, ...importedBlocks];
       setBlocks(nextBlocks);
-      setActivePageUid(targetUid);
+      await persistActivePage(targetUid);
       if (importedBlocks[0]) {
         setActiveId(importedBlocks[0].id);
         setJumpToId(importedBlocks[0].id);
@@ -1831,6 +1957,7 @@ function App() {
       };
       setVaults([fallback]);
       setActiveVault(fallback);
+      await loadActivePage();
       await loadBlocks(activePageUid());
       await loadPages();
       await loadPlugins();
@@ -1850,6 +1977,7 @@ function App() {
         entries[0] ??
         null;
       setActiveVault(active);
+      await loadActivePage();
       await loadBlocks(activePageUid());
       await loadPages();
       await loadPlugins();
@@ -1873,6 +2001,7 @@ function App() {
     setExportStatus(null);
     setActivePanel(null);
     setCommandStatus(null);
+    await loadActivePage();
     await loadBlocks(activePageUid());
     await loadPages();
     await loadPlugins();
@@ -1895,6 +2024,7 @@ function App() {
       const record = { id, name, path };
       setVaults((prev) => [...prev, record]);
       setActiveVault(record);
+      await persistActivePage(DEFAULT_PAGE_UID);
       await loadBlocks(activePageUid());
       await loadPages();
       await loadPlugins();
@@ -2401,6 +2531,25 @@ function App() {
             </div>
             <div class="sidebar__pages">
               <div class="sidebar__section-title">Pages</div>
+              <div class="page-actions">
+                <input
+                  class="page-input"
+                  type="text"
+                  placeholder="New page title"
+                  value={newPageTitle()}
+                  onInput={(event) => setNewPageTitle(event.currentTarget.value)}
+                />
+                <button
+                  class="page-action is-primary"
+                  onClick={createPage}
+                  disabled={pageBusy()}
+                >
+                  Create page
+                </button>
+              </div>
+              <Show when={pageMessage()}>
+                {(message) => <div class="page-message">{message()}</div>}
+              </Show>
               <div class="page-list">
                 <Show
                   when={pages().length > 0}
@@ -2425,6 +2574,22 @@ function App() {
                     )}
                   </For>
                 </Show>
+              </div>
+              <div class="page-rename">
+                <input
+                  class="page-input"
+                  type="text"
+                  placeholder="Rename page"
+                  value={renameTitle()}
+                  onInput={(event) => setRenameTitle(event.currentTarget.value)}
+                />
+                <button
+                  class="page-action"
+                  onClick={renamePage}
+                  disabled={pageBusy()}
+                >
+                  Rename page
+                </button>
               </div>
             </div>
             <div class="sidebar__vaults">
