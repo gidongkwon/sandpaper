@@ -68,6 +68,7 @@ describe("App", () => {
     expect(
       await screen.findByText(/desktop app required/i)
     ).toBeInTheDocument();
+    expect(await screen.findByText("Apply")).toBeInTheDocument();
   });
 
   it("renders a code preview for fenced blocks", async () => {

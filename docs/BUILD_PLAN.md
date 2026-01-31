@@ -239,6 +239,7 @@ Checklist
 - [x] Node sync server: device onboarding via passphrase
 - [x] Background sync: queue + retries
 - [x] Background sync: offline-first
+- [x] Sync: apply inbound ops to local DB
 
 Implementation details
 - Per-page op logs stored locally; server only relays encrypted ops.

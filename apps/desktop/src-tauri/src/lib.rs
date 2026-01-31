@@ -64,6 +64,48 @@ struct SyncOpEnvelope {
     payload: String,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncEnvelope {
+    version: Option<i64>,
+    algo: Option<String>,
+    iv_b64: String,
+    ciphertext_b64: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncOpPayload {
+    op_id: String,
+    page_id: String,
+    block_id: String,
+    device_id: String,
+    clock: i64,
+    timestamp: i64,
+    kind: String,
+    text: Option<String>,
+    sort_key: Option<String>,
+    indent: Option<i64>,
+    parent_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SyncApplyResult {
+    pages: Vec<String>,
+    applied: i64,
+}
+
+#[derive(Debug, Clone)]
+struct BlockState {
+    id: String,
+    text: String,
+    sort_key: String,
+    indent: i64,
+    deleted: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct VaultKeyStatus {
     configured: bool,
@@ -468,6 +510,162 @@ fn encrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String
     serde_json::to_vec(&envelope).map_err(|err| format!("{:?}", err))
 }
 
+fn decrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String> {
+    let envelope: SyncEnvelope =
+        serde_json::from_slice(payload).map_err(|err| format!("{:?}", err))?;
+    if let Some(algo) = &envelope.algo {
+        if algo != "aes-256-gcm" {
+            return Err("sync-unsupported-algo".to_string());
+        }
+    }
+    let key_bytes = base64::engine::general_purpose::STANDARD
+        .decode(key_b64)
+        .map_err(|err| format!("{:?}", err))?;
+    let iv = base64::engine::general_purpose::STANDARD
+        .decode(envelope.iv_b64)
+        .map_err(|err| format!("{:?}", err))?;
+    let ciphertext = base64::engine::general_purpose::STANDARD
+        .decode(envelope.ciphertext_b64)
+        .map_err(|err| format!("{:?}", err))?;
+
+    if iv.len() != 12 {
+        return Err("sync-invalid-iv".to_string());
+    }
+
+    let key = aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key_bytes);
+    let cipher = aes_gcm::Aes256Gcm::new(key);
+    let nonce = aes_gcm::Nonce::from_slice(&iv);
+    cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| "sync-decrypt-failed".to_string())
+}
+
+fn decode_sync_payload(db: &Database, payload: &[u8]) -> Result<Vec<u8>, String> {
+    let value: serde_json::Value = match serde_json::from_slice(payload) {
+        Ok(value) => value,
+        Err(_) => return Ok(payload.to_vec()),
+    };
+    if value.get("ciphertextB64").is_none() {
+        return Ok(payload.to_vec());
+    }
+    let key = get_vault_key_b64(db)?
+        .ok_or_else(|| "vault-key-missing".to_string())?;
+    decrypt_sync_payload(&key, payload)
+}
+
+fn sort_sync_ops(ops: &mut Vec<SyncOpPayload>) {
+    ops.sort_by(|a, b| {
+        if a.clock != b.clock {
+            return a.clock.cmp(&b.clock);
+        }
+        a.op_id.cmp(&b.op_id)
+    });
+}
+
+fn apply_sync_ops_to_blocks(
+    blocks: &[BlockSnapshot],
+    mut ops: Vec<SyncOpPayload>,
+) -> Vec<BlockSnapshot> {
+    let mut state = std::collections::HashMap::new();
+    for (index, block) in blocks.iter().enumerate() {
+        state.insert(
+            block.uid.clone(),
+            BlockState {
+                id: block.uid.clone(),
+                text: block.text.clone(),
+                sort_key: format!("{:06}", index),
+                indent: block.indent,
+                deleted: false,
+            },
+        );
+    }
+
+    sort_sync_ops(&mut ops);
+    let mut seen = std::collections::HashSet::new();
+
+    for op in ops {
+        if !seen.insert(op.op_id.clone()) {
+            continue;
+        }
+        let entry = state.get(&op.block_id).cloned();
+        match op.kind.as_str() {
+            "add" => {
+                if let Some(existing) = &entry {
+                    if !existing.deleted {
+                        continue;
+                    }
+                }
+                if let (Some(text), Some(sort_key), Some(indent)) =
+                    (op.text, op.sort_key, op.indent)
+                {
+                    state.insert(
+                        op.block_id.clone(),
+                        BlockState {
+                            id: op.block_id,
+                            text,
+                            sort_key,
+                            indent,
+                            deleted: false,
+                        },
+                    );
+                }
+            }
+            "edit" => {
+                if let Some(mut existing) = entry {
+                    if existing.deleted {
+                        continue;
+                    }
+                    if let Some(text) = op.text {
+                        existing.text = text;
+                        state.insert(op.block_id, existing);
+                    }
+                }
+            }
+            "move" => {
+                if let Some(mut existing) = entry {
+                    if existing.deleted {
+                        continue;
+                    }
+                    if let Some(sort_key) = op.sort_key {
+                        existing.sort_key = sort_key;
+                    }
+                    if let Some(indent) = op.indent {
+                        existing.indent = indent;
+                    }
+                    state.insert(op.block_id, existing);
+                }
+            }
+            "delete" => {
+                if let Some(mut existing) = entry {
+                    existing.deleted = true;
+                    state.insert(op.block_id, existing);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut blocks: Vec<BlockState> = state
+        .into_values()
+        .filter(|block| !block.deleted)
+        .collect();
+    blocks.sort_by(|a, b| {
+        let order = a.sort_key.cmp(&b.sort_key);
+        if order == std::cmp::Ordering::Equal {
+            return a.id.cmp(&b.id);
+        }
+        order
+    });
+    blocks
+        .into_iter()
+        .map(|block| BlockSnapshot {
+            uid: block.id,
+            text: block.text,
+            indent: block.indent,
+        })
+        .collect()
+}
+
 fn load_sync_config(db: &Database) -> Result<SyncConfig, String> {
     let server_url = db.get_kv("sync.server_url").map_err(|err| format!("{:?}", err))?;
     let vault_id = db.get_kv("sync.vault_id").map_err(|err| format!("{:?}", err))?;
@@ -620,6 +818,51 @@ fn store_sync_inbox_ops(ops: Vec<SyncOpEnvelope>) -> Result<(), String> {
             .map_err(|err| format!("{:?}", err))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
+    let mut db = open_active_database()?;
+    let inbox_ops = db
+        .list_sync_inbox_ops(2000)
+        .map_err(|err| format!("{:?}", err))?;
+    if inbox_ops.is_empty() {
+        return Ok(SyncApplyResult {
+            pages: Vec::new(),
+            applied: 0,
+        });
+    }
+
+    let mut by_page: std::collections::HashMap<String, Vec<SyncOpPayload>> =
+        std::collections::HashMap::new();
+    for op in inbox_ops.iter() {
+        let decoded = decode_sync_payload(&db, &op.payload)?;
+        let payload: SyncOpPayload =
+            serde_json::from_slice(&decoded).map_err(|err| format!("{:?}", err))?;
+        by_page
+            .entry(payload.page_id.clone())
+            .or_default()
+            .push(payload);
+    }
+
+    let mut pages = Vec::new();
+    for (page_uid, ops) in by_page {
+        let page_id = ensure_page(&db, &page_uid, &page_uid)?;
+        let current = db
+            .load_blocks_for_page(page_id)
+            .map_err(|err| format!("{:?}", err))?;
+        let next = apply_sync_ops_to_blocks(&current, ops);
+        db.replace_blocks_for_page(page_id, &next)
+            .map_err(|err| format!("{:?}", err))?;
+        pages.push(page_uid);
+    }
+
+    db.clear_sync_inbox().map_err(|err| format!("{:?}", err))?;
+
+    Ok(SyncApplyResult {
+        pages,
+        applied: inbox_ops.len() as i64,
+    })
 }
 
 #[tauri::command]
@@ -882,6 +1125,7 @@ pub fn run() {
             set_sync_cursors,
             list_sync_ops_since,
             store_sync_inbox_ops,
+            apply_sync_inbox,
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
@@ -899,10 +1143,11 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_markdown_export, build_sync_ops, compute_missing_permissions,
-        encrypt_sync_payload, ensure_plugin_permission, list_permissions_for_plugins,
-        load_sync_config, sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
-        BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
+        apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
+        compute_missing_permissions, encrypt_sync_payload, ensure_plugin_permission,
+        list_permissions_for_plugins, load_sync_config, sanitize_kebab,
+        shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot, Database,
+        PageBlocksResponse, PluginInfo, SyncOpPayload,
     };
     use aes_gcm::aead::KeyInit;
     use aes_gcm::aead::Aead;
@@ -1098,6 +1343,84 @@ mod tests {
         assert_eq!(config.last_push_cursor, 0);
         assert_eq!(config.last_pull_cursor, 0);
         assert!(config.server_url.is_none());
+    }
+
+    #[test]
+    fn apply_sync_ops_updates_blocks() {
+        let current = vec![
+            BlockSnapshot {
+                uid: "b1".to_string(),
+                text: "First".to_string(),
+                indent: 0,
+            },
+            BlockSnapshot {
+                uid: "b2".to_string(),
+                text: "Second".to_string(),
+                indent: 0,
+            },
+        ];
+
+        let ops = vec![
+            SyncOpPayload {
+                op_id: "op-1".to_string(),
+                page_id: "page-1".to_string(),
+                block_id: "b1".to_string(),
+                device_id: "dev-2".to_string(),
+                clock: 1,
+                timestamp: 0,
+                kind: "edit".to_string(),
+                text: Some("First updated".to_string()),
+                sort_key: None,
+                indent: None,
+                parent_id: None,
+            },
+            SyncOpPayload {
+                op_id: "op-2".to_string(),
+                page_id: "page-1".to_string(),
+                block_id: "b2".to_string(),
+                device_id: "dev-2".to_string(),
+                clock: 2,
+                timestamp: 0,
+                kind: "move".to_string(),
+                text: None,
+                sort_key: Some("000010".to_string()),
+                indent: Some(1),
+                parent_id: None,
+            },
+            SyncOpPayload {
+                op_id: "op-3".to_string(),
+                page_id: "page-1".to_string(),
+                block_id: "b3".to_string(),
+                device_id: "dev-2".to_string(),
+                clock: 3,
+                timestamp: 0,
+                kind: "add".to_string(),
+                text: Some("Third".to_string()),
+                sort_key: Some("000020".to_string()),
+                indent: Some(0),
+                parent_id: None,
+            },
+            SyncOpPayload {
+                op_id: "op-4".to_string(),
+                page_id: "page-1".to_string(),
+                block_id: "b1".to_string(),
+                device_id: "dev-2".to_string(),
+                clock: 4,
+                timestamp: 0,
+                kind: "delete".to_string(),
+                text: None,
+                sort_key: None,
+                indent: None,
+                parent_id: None,
+            },
+        ];
+
+        let next = apply_sync_ops_to_blocks(&current, ops);
+        assert_eq!(next.len(), 2);
+        assert_eq!(next[0].uid, "b2");
+        assert_eq!(next[0].indent, 1);
+        assert_eq!(next[1].uid, "b3");
+        assert_eq!(next[1].text, "Third");
     }
 
     #[test]

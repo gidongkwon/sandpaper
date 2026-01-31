@@ -67,6 +67,7 @@ type SyncStatus = {
   last_error: string | null;
   last_push_count: number;
   last_pull_count: number;
+  last_apply_count: number;
 };
 
 type SyncOpEnvelope = {
@@ -89,6 +90,11 @@ type SyncServerPullResponse = {
     createdAt: number;
   }[];
   nextCursor: number;
+};
+
+type SyncApplyResult = {
+  pages: string[];
+  applied: number;
 };
 
 type SearchResult = {
@@ -315,7 +321,8 @@ function App() {
     last_synced_at: null,
     last_error: null,
     last_push_count: 0,
-    last_pull_count: 0
+    last_pull_count: 0,
+    last_apply_count: 0
   });
   const [syncMessage, setSyncMessage] = createSignal<string | null>(null);
   const [syncBusy, setSyncBusy] = createSignal(false);
@@ -994,6 +1001,19 @@ function App() {
     return { pulled: remoteOps.length, cursor: nextCursor };
   };
 
+  const applySyncInbox = async () => {
+    if (!isTauri()) return { pages: [], applied: 0 };
+    const result = (await invoke("apply_sync_inbox")) as SyncApplyResult;
+    if (result.applied > 0 && result.pages.includes(DEFAULT_PAGE_UID)) {
+      await loadBlocks();
+    }
+    updateSyncStatus({
+      pending_ops: 0,
+      last_apply_count: result.applied
+    });
+    return result;
+  };
+
   const startSyncLoop = () => {
     if (!isTauri()) return;
     syncLoopEnabled = true;
@@ -1033,9 +1053,13 @@ function App() {
     });
 
     try {
+      await applySyncInbox();
       const pushResult = await pushSyncOps(config);
       const nextConfig = syncConfig() ?? config;
       const pullResult = await pullSyncOps(nextConfig);
+      if (pullResult.pulled > 0) {
+        await applySyncInbox();
+      }
       updateSyncStatus({
         state: "idle",
         last_synced_at: stampNow(),
@@ -1943,6 +1967,10 @@ function App() {
                   <div class="sync-stat">
                     <span>Pull</span>
                     <strong>{syncStatus().last_pull_count}</strong>
+                  </div>
+                  <div class="sync-stat">
+                    <span>Apply</span>
+                    <strong>{syncStatus().last_apply_count}</strong>
                   </div>
                 </div>
                 <div class="sync-card__fields">

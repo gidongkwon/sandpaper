@@ -764,6 +764,30 @@ impl Database {
         )?;
         Ok(self.conn.last_insert_rowid())
     }
+
+    pub fn list_sync_inbox_ops(&self, limit: i64) -> rusqlite::Result<Vec<SyncInboxOp>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, cursor, op_id, payload, received_at
+             FROM sync_inbox
+             ORDER BY cursor ASC, id ASC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], |row| {
+            Ok(SyncInboxOp {
+                id: row.get(0)?,
+                cursor: row.get(1)?,
+                op_id: row.get(2)?,
+                payload: row.get(3)?,
+                received_at: row.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn clear_sync_inbox(&self) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM sync_inbox", [])?;
+        Ok(())
+    }
 }
 
 fn parse_indent(props: &str) -> i64 {
@@ -1135,5 +1159,36 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM sync_inbox", [], |row| row.get(0))
             .expect("count");
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn sync_inbox_list_orders_by_cursor() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let payload = br#"{\"ciphertextB64\":\"abc\"}"#;
+        db.insert_sync_inbox_op(20, "op-2", payload)
+            .expect("insert op-2");
+        db.insert_sync_inbox_op(10, "op-1", payload)
+            .expect("insert op-1");
+
+        let ops = db.list_sync_inbox_ops(10).expect("list inbox");
+        assert_eq!(ops.len(), 2);
+        assert_eq!(ops[0].cursor, 10);
+        assert_eq!(ops[1].cursor, 20);
+    }
+
+    #[test]
+    fn sync_inbox_clear_removes_rows() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let payload = br#"{\"ciphertextB64\":\"abc\"}"#;
+        db.insert_sync_inbox_op(10, "op-1", payload)
+            .expect("insert inbox");
+        db.clear_sync_inbox().expect("clear inbox");
+
+        let ops = db.list_sync_inbox_ops(10).expect("list after clear");
+        assert!(ops.is_empty());
     }
 }
