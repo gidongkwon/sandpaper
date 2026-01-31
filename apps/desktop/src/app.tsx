@@ -62,6 +62,11 @@ type PageBlocksResponse = {
   blocks: BlockPayload[];
 };
 
+type MarkdownExportStatus = {
+  path: string;
+  pages: number;
+};
+
 type PluginPermissionInfo = {
   id: string;
   name: string;
@@ -198,6 +203,12 @@ function App() {
   );
   const [permissionPrompt, setPermissionPrompt] =
     createSignal<PermissionPrompt | null>(null);
+  const [exportStatus, setExportStatus] = createSignal<{
+    state: "success" | "error";
+    message: string;
+    preview?: string;
+  } | null>(null);
+  const [exporting, setExporting] = createSignal(false);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
@@ -525,6 +536,47 @@ function App() {
     }
   };
 
+  const exportMarkdown = async () => {
+    if (exporting()) return;
+    setExporting(true);
+    setExportStatus(null);
+
+    if (!isTauri()) {
+      const markdown = serializePageToMarkdown({
+        id: DEFAULT_PAGE_UID,
+        title: pageTitle(),
+        blocks: blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent
+        }))
+      });
+      setExportStatus({
+        state: "success",
+        message: "Preview generated in browser (desktop app required to write files).",
+        preview: markdown
+      });
+      setExporting(false);
+      return;
+    }
+
+    try {
+      const result = (await invoke("export_markdown")) as MarkdownExportStatus;
+      setExportStatus({
+        state: "success",
+        message: `Exported ${result.pages} pages to ${result.path}`
+      });
+    } catch (error) {
+      console.error("Export failed", error);
+      setExportStatus({
+        state: "error",
+        message: "Export failed. Check the logs for details."
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const loadVaults = async () => {
     if (!isTauri()) {
       const fallback = {
@@ -563,6 +615,7 @@ function App() {
       vaultId,
       vault_id: vaultId
     });
+    setExportStatus(null);
     await loadBlocks();
     await loadPlugins();
   };
@@ -1236,6 +1289,33 @@ function App() {
                   </Show>
                 </div>
               </Show>
+              <div class="export-card">
+                <div class="export-card__title">Markdown export</div>
+                <div class="export-card__desc">
+                  Export every page as read-only Markdown with stable block IDs.
+                </div>
+                <button
+                  class="export-button"
+                  onClick={exportMarkdown}
+                  disabled={exporting()}
+                >
+                  {exporting() ? "Exporting..." : "Export Markdown"}
+                </button>
+                <Show when={exportStatus()}>
+                  {(status) => (
+                    <div class={`export-status export-status--${status().state}`}>
+                      {status().message}
+                    </div>
+                  )}
+                </Show>
+                <Show when={exportStatus()?.preview}>
+                  {(preview) => (
+                    <pre class="export-preview">
+                      <code>{preview()}</code>
+                    </pre>
+                  )}
+                </Show>
+              </div>
             </div>
             <div class="sidebar__footer">
               <div>

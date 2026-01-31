@@ -317,6 +317,20 @@ impl Database {
             .optional()
     }
 
+    pub fn list_pages(&self) -> rusqlite::Result<Vec<PageRecord>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, uid, title FROM pages ORDER BY title ASC, id ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PageRecord {
+                id: row.get(0)?,
+                uid: row.get(1)?,
+                title: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn delete_page(&self, page_id: i64) -> rusqlite::Result<()> {
         self.conn
             .execute("DELETE FROM pages WHERE id = ?1", [page_id])?;
@@ -601,6 +615,21 @@ impl Database {
         )?;
         let rows = stmt.query_map([plugin_id], |row| row.get(0))?;
         rows.collect()
+    }
+
+    pub fn set_kv(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO kv (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_kv(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        self.conn
+            .query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| row.get(0))
+            .optional()
     }
 
     pub fn insert_edge(
@@ -952,6 +981,30 @@ mod tests {
             .list_plugin_permissions("alpha")
             .expect("list permissions after revoke");
         assert_eq!(permissions, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn list_pages_returns_sorted_titles() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.insert_page("page-a", "Alpha").expect("insert page");
+        db.insert_page("page-b", "Beta").expect("insert page");
+
+        let pages = db.list_pages().expect("list pages");
+        let titles: Vec<String> = pages.into_iter().map(|page| page.title).collect();
+        assert_eq!(titles, vec!["Alpha".to_string(), "Beta".to_string()]);
+    }
+
+    #[test]
+    fn kv_roundtrip() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.set_kv("export.last", "2026-01-31")
+            .expect("set kv");
+        let loaded = db.get_kv("export.last").expect("get kv");
+        assert_eq!(loaded, Some("2026-01-31".to_string()));
     }
 
     #[test]

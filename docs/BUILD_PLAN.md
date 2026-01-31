@@ -196,7 +196,7 @@ Checklist
 - [x] Plugin API: renderer extensions (code/diagrams)
 - [x] Core plugin: code block renderer
 - [x] Core plugin: diagram renderer
-- [ ] Core plugin: markdown export
+- [x] Core plugin: markdown export
 
 Implementation details
 - Sandbox runs as a sidecar process with JSON-RPC style messages.

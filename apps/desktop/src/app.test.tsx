@@ -61,4 +61,15 @@ describe("App", () => {
     const snippets = await screen.findAllByText("graph TD A-->B;");
     expect(snippets.length).toBeGreaterThan(0);
   });
+
+  it("exports markdown in browser mode", async () => {
+    render(() => <App />);
+    const exportButton = await screen.findByRole("button", {
+      name: /export markdown/i
+    });
+    await userEvent.click(exportButton);
+    expect(
+      await screen.findByText(/preview generated in browser/i)
+    ).toBeInTheDocument();
+  });
 });

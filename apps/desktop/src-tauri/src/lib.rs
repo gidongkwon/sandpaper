@@ -52,6 +52,12 @@ struct PluginRuntimeStatus {
     renderers: Vec<PluginRenderer>,
 }
 
+#[derive(Debug, Serialize)]
+struct MarkdownExportStatus {
+    path: String,
+    pages: usize,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -264,6 +270,59 @@ fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, St
 }
 
 #[tauri::command]
+fn export_markdown() -> Result<MarkdownExportStatus, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let db = open_active_database()?;
+    let pages = db
+        .list_pages()
+        .map_err(|err| format!("{:?}", err))?;
+    let mut exported = 0;
+
+    for page in pages {
+        let page_id = page.id;
+        let blocks = db
+            .load_blocks_for_page(page_id)
+            .map_err(|err| format!("{:?}", err))?;
+        let payload = PageBlocksResponse {
+            page_uid: page.uid.clone(),
+            title: page.title.clone(),
+            blocks: blocks
+                .iter()
+                .map(|block| BlockSnapshot {
+                    uid: block.uid.clone(),
+                    text: block.text.clone(),
+                    indent: block.indent,
+                })
+                .collect(),
+        };
+        let markdown = build_markdown_export(&payload);
+        write_shadow_markdown_to_vault(&vault_path, &payload.page_uid, &markdown)?;
+        exported += 1;
+    }
+
+    let stamp = format!("{}", chrono::Utc::now().date_naive());
+    db.set_kv("export.last", &stamp)
+        .map_err(|err| format!("{:?}", err))?;
+
+    Ok(MarkdownExportStatus {
+        path: vault_path.join("pages").to_string_lossy().to_string(),
+        pages: exported,
+    })
+}
+
+fn build_markdown_export(page: &PageBlocksResponse) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!("# {} ^{}", page.title, page.page_uid));
+    for block in &page.blocks {
+        let indent = "  ".repeat(std::cmp::max(0, block.indent) as usize);
+        let text = block.text.trim_end();
+        let spacer = if text.is_empty() { "" } else { " " };
+        lines.push(format!("{indent}- {text}{spacer}^{}", block.uid));
+    }
+    format!("{}\n", lines.join("\n"))
+}
+
+#[tauri::command]
 fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
@@ -403,6 +462,7 @@ pub fn run() {
             load_page_blocks,
             save_page_blocks,
             write_shadow_markdown,
+            export_markdown,
             list_plugins_command,
             load_plugins_command,
             grant_plugin_permission,
@@ -419,7 +479,8 @@ pub fn run() {
 mod tests {
     use super::{
         compute_missing_permissions, ensure_plugin_permission, list_permissions_for_plugins,
-        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, Database, PluginInfo,
+        build_markdown_export, sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault,
+        BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
     };
     use tempfile::tempdir;
 
@@ -502,5 +563,30 @@ mod tests {
             .expect("grant permission");
         let allowed = ensure_plugin_permission(&db, "alpha", "data.read");
         assert!(allowed.is_ok());
+    }
+
+    #[test]
+    fn build_markdown_export_serializes_blocks() {
+        let page = PageBlocksResponse {
+            page_uid: "page-1".to_string(),
+            title: "Inbox".to_string(),
+            blocks: vec![
+                BlockSnapshot {
+                    uid: "b1".to_string(),
+                    text: "First".to_string(),
+                    indent: 0,
+                },
+                BlockSnapshot {
+                    uid: "b2".to_string(),
+                    text: "Child".to_string(),
+                    indent: 1,
+                },
+            ],
+        };
+
+        let markdown = build_markdown_export(&page);
+        assert!(markdown.contains("# Inbox ^page-1"));
+        assert!(markdown.contains("- First ^b1"));
+        assert!(markdown.contains("  - Child ^b2"));
     }
 }
