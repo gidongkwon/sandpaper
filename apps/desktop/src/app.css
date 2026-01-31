@@ -2124,6 +2124,14 @@ button:disabled {
   color: var(--text-primary);
 }
 
+.settings-value.is-warning {
+  color: var(--warning);
+}
+
+.settings-value.is-success {
+  color: var(--success);
+}
+
 /* Typography slider */
 .settings-slider {
   padding: var(--space-2) 0;

@@ -662,6 +662,7 @@ function App() {
   const [autosaved, setAutosaved] = createSignal(false);
   const [autosaveStamp, setAutosaveStamp] = createSignal("");
   const [autosaveError, setAutosaveError] = createSignal<string | null>(null);
+  const [shadowPendingCount, setShadowPendingCount] = createSignal(0);
   const [importText, setImportText] = createSignal("");
   const [importStatus, setImportStatus] = createSignal<{
     state: "success" | "error";
@@ -1159,7 +1160,8 @@ function App() {
         page_uid: pageId,
         content
       });
-    }
+    },
+    onPendingChange: (count) => setShadowPendingCount(count)
   });
 
   const resolvePageUid = (value: string) =>
@@ -4556,6 +4558,16 @@ function App() {
                         <button class="settings-action is-primary" onClick={createVault}>Create vault</button>
                       </div>
                     </Show>
+                    <div class="settings-row">
+                      <label class="settings-label">Shadow write queue</label>
+                      <span
+                        class={`settings-value ${
+                          shadowPendingCount() > 0 ? "is-warning" : "is-success"
+                        }`}
+                      >
+                        {shadowPendingCount()} pending
+                      </span>
+                    </div>
                   </div>
                   <div class="settings-section">
                     <h3 class="settings-section__title">Encryption Key</h3>

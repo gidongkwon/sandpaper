@@ -65,4 +65,52 @@ describe("createShadowWriter", () => {
 
     expect(writes).toEqual([{ path: "/vault/page-a.md", content: "first" }]);
   });
+
+  it("retries failed writes and keeps pending items", async () => {
+    const writes: Array<{ path: string; content: string }> = [];
+    let attempts = 0;
+    const writer = createShadowWriter({
+      debounceMs: 50,
+      maxDelayMs: 200,
+      resolvePath: (pageId) => `/vault/${pageId}.md`,
+      writeFile: async (path, content) => {
+        attempts += 1;
+        if (attempts === 1) {
+          throw new Error("fail");
+        }
+        writes.push({ path, content });
+      }
+    });
+
+    writer.scheduleWrite("page-a", "first");
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(writes).toHaveLength(0);
+    expect(writer.getPendingCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(writes).toEqual([{ path: "/vault/page-a.md", content: "first" }]);
+    expect(writer.getPendingCount()).toBe(0);
+  });
+
+  it("notifies when pending count changes", async () => {
+    const pendingCounts: number[] = [];
+    const writer = createShadowWriter({
+      debounceMs: 40,
+      maxDelayMs: 120,
+      resolvePath: (pageId) => `/vault/${pageId}.md`,
+      writeFile: async () => {},
+      onPendingChange: (count) => pendingCounts.push(count)
+    });
+
+    writer.scheduleWrite("page-a", "first");
+
+    expect(pendingCounts).toEqual([1]);
+
+    await vi.advanceTimersByTimeAsync(40);
+
+    expect(pendingCounts).toEqual([1, 0]);
+  });
 });

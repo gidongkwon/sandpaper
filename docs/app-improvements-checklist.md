@@ -129,9 +129,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Show “Save failed” message on write errors
   - **Done when:** autosave status is accurate and reliable
 
-- [ ] **Shadow writer robustness**
-  - [ ] Add retry on failed writes
-  - [ ] Add a small queue indicator in settings
+- [x] **Shadow writer robustness**
+  - [x] Add retry on failed writes
+  - [x] Add a small queue indicator in settings
   - **Done when:** shadow writes recover from transient errors
 
 - [ ] **Crash-safe backups**

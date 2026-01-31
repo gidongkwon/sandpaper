@@ -5,6 +5,7 @@ export type ShadowWriterOptions = {
   writeFile: (path: string, content: string) => Promise<void> | void;
   setTimeout?: (handler: () => void, timeout: number) => ReturnType<typeof setTimeout>;
   clearTimeout?: (handle: ReturnType<typeof setTimeout>) => void;
+  onPendingChange?: (pendingCount: number) => void;
 };
 
 export type ShadowWriter = {
@@ -20,11 +21,20 @@ export const createShadowWriter = ({
   resolvePath,
   writeFile,
   setTimeout = globalThis.setTimeout,
-  clearTimeout = globalThis.clearTimeout
+  clearTimeout = globalThis.clearTimeout,
+  onPendingChange
 }: ShadowWriterOptions): ShadowWriter => {
   const pending = new Map<string, string>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let maxDelayTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastPendingCount = 0;
+
+  const notifyPendingChange = () => {
+    if (!onPendingChange) return;
+    if (pending.size === lastPendingCount) return;
+    lastPendingCount = pending.size;
+    onPendingChange(pending.size);
+  };
 
   const clearTimers = () => {
     if (debounceTimer) {
@@ -44,10 +54,28 @@ export const createShadowWriter = ({
     }
     const entries = Array.from(pending.entries());
     pending.clear();
+    notifyPendingChange();
     clearTimers();
+    const failures: Array<[string, string]> = [];
     await Promise.all(
-      entries.map(([pageId, content]) => writeFile(resolvePath(pageId), content))
+      entries.map(async ([pageId, content]) => {
+        try {
+          await writeFile(resolvePath(pageId), content);
+        } catch {
+          failures.push([pageId, content]);
+        }
+      })
     );
+
+    if (failures.length > 0) {
+      for (const [pageId, content] of failures) {
+        if (!pending.has(pageId)) {
+          pending.set(pageId, content);
+        }
+      }
+      notifyPendingChange();
+      scheduleFlush();
+    }
   };
 
   const scheduleFlush = () => {
@@ -66,13 +94,18 @@ export const createShadowWriter = ({
   };
 
   const scheduleWrite = (pageId: string, content: string) => {
+    const beforeSize = pending.size;
     pending.set(pageId, content);
+    if (pending.size !== beforeSize) {
+      notifyPendingChange();
+    }
     scheduleFlush();
   };
 
   const dispose = () => {
     clearTimers();
     pending.clear();
+    notifyPendingChange();
   };
 
   return {
