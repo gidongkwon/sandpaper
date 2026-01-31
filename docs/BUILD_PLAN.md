@@ -155,7 +155,7 @@ Checklist
 - [x] Attachments: DB mapping for friendly names
 - [x] Plugin loader v1: plugin discovery in `/plugins/<name>/`
 - [x] Plugin loader v1: manifest parse + enable/disable
-- [ ] Plugin loader v1: RPC bridge to sandbox runtime
+- [x] Plugin loader v1: RPC bridge to sandbox runtime
 
 Implementation details
 - Move DB + model code into `packages/core-db` and `packages/core-model` with a clean API.

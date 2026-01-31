@@ -8,6 +8,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockSearchResult, BlockSnapshot, Database};
+use plugins::{list_plugins, load_plugins_into_runtime, PluginInfo, PluginRegistry, PluginRuntimeLoadResult};
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
@@ -62,6 +63,10 @@ fn open_active_database() -> Result<Database, String> {
     let db = Database::open(&db_path).map_err(|err| format!("{:?}", err))?;
     db.run_migrations().map_err(|err| format!("{:?}", err))?;
     Ok(db)
+}
+
+fn plugin_registry_for_vault(vault_path: &std::path::Path) -> PluginRegistry {
+    PluginRegistry::new(vault_path.join("plugins/state.json"))
 }
 
 fn sanitize_kebab(input: &str) -> String {
@@ -173,6 +178,20 @@ fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, St
     Ok(path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn list_plugins_command() -> Result<Vec<PluginInfo>, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let registry = plugin_registry_for_vault(&vault_path);
+    list_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn load_plugins_command() -> Result<PluginRuntimeLoadResult, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let registry = plugin_registry_for_vault(&vault_path);
+    load_plugins_into_runtime(&vault_path, &registry).map_err(|err| format!("{:?}", err))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -185,7 +204,9 @@ pub fn run() {
             search_blocks,
             load_page_blocks,
             save_page_blocks,
-            write_shadow_markdown
+            write_shadow_markdown,
+            list_plugins_command,
+            load_plugins_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

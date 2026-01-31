@@ -1,12 +1,16 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 #[derive(Debug)]
 pub enum PluginError {
     Io(std::io::Error),
     Serde(serde_json::Error),
+    Runtime(String),
 }
 
 impl From<std::io::Error> for PluginError {
@@ -37,6 +41,17 @@ pub struct PluginDescriptor {
     pub manifest: PluginManifest,
     pub path: PathBuf,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct PluginInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    pub permissions: Vec<String>,
+    pub enabled: bool,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -115,10 +130,139 @@ pub fn discover_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<Pl
     Ok(plugins)
 }
 
+pub fn list_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<PluginInfo>, PluginError> {
+    let plugins = discover_plugins(root, registry)?;
+    Ok(plugins
+        .into_iter()
+        .map(|plugin| PluginInfo {
+            id: plugin.manifest.id,
+            name: plugin.manifest.name,
+            version: plugin.manifest.version,
+            description: plugin.manifest.description,
+            permissions: plugin.manifest.permissions,
+            enabled: plugin.enabled,
+            path: plugin.path.to_string_lossy().to_string(),
+        })
+        .collect())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RuntimeRequest {
+    id: u64,
+    method: String,
+    params: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RuntimeResponse {
+    id: Option<u64>,
+    result: Option<Value>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginRuntimeLoadResult {
+    pub loaded: Vec<String>,
+}
+
+pub struct PluginRuntimeClient {
+    script_path: PathBuf,
+}
+
+impl PluginRuntimeClient {
+    pub fn new(script_path: PathBuf) -> Self {
+        Self { script_path }
+    }
+
+    fn call(&self, method: &str, params: Value) -> Result<Value, PluginError> {
+        let mut child = Command::new("node")
+            .arg(&self.script_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let request = RuntimeRequest {
+            id: 1,
+            method: method.to_string(),
+            params,
+        };
+        let payload = serde_json::to_string(&request)?;
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| PluginError::Runtime("stdin-unavailable".to_string()))?;
+        stdin.write_all(payload.as_bytes())?;
+        stdin.write_all(b"\n")?;
+        drop(stdin);
+
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| PluginError::Runtime("stdout-unavailable".to_string()))?;
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Err(PluginError::Runtime("empty-response".to_string()));
+        }
+        let response: RuntimeResponse = serde_json::from_str(trimmed)?;
+        if let Some(error) = response.error {
+            return Err(PluginError::Runtime(error));
+        }
+        response
+            .result
+            .ok_or_else(|| PluginError::Runtime("missing-result".to_string()))
+    }
+
+    pub fn ping(&self) -> Result<Value, PluginError> {
+        self.call("ping", json!({}))
+    }
+
+    pub fn load_plugins(
+        &self,
+        plugins: &[PluginDescriptor],
+    ) -> Result<PluginRuntimeLoadResult, PluginError> {
+        let payload = json!({
+            "plugins": plugins
+                .iter()
+                .map(|plugin| {
+                    json!({
+                        "id": plugin.manifest.id,
+                        "name": plugin.manifest.name,
+                        "version": plugin.manifest.version
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        let result = self.call("loadPlugins", payload)?;
+        Ok(serde_json::from_value(result)?)
+    }
+}
+
+pub fn runtime_script_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../plugin-runtime/sandbox-runtime.mjs")
+}
+
+pub fn load_plugins_into_runtime(
+    root: &Path,
+    registry: &PluginRegistry,
+) -> Result<PluginRuntimeLoadResult, PluginError> {
+    let plugins = discover_plugins(root, registry)?;
+    let runtime = PluginRuntimeClient::new(runtime_script_path());
+    runtime.load_plugins(&plugins)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{discover_plugins, PluginRegistry, PluginState};
+    use super::{
+        discover_plugins, list_plugins, PluginDescriptor, PluginManifest, PluginRegistry,
+        PluginRuntimeClient, PluginState,
+    };
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
@@ -173,5 +317,124 @@ mod tests {
         let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
         let state = registry.load_state().expect("load state");
         assert_eq!(state, PluginState::default());
+    }
+
+    fn write_runtime_script(root: &std::path::Path) -> PathBuf {
+        let script_path = root.join("runtime.mjs");
+        fs::write(
+            &script_path,
+            r#"import readline from "node:readline";
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const respond = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`);
+rl.on("line", (line) => {
+  const msg = JSON.parse(line);
+  if (msg.method === "ping") {
+    respond({ id: msg.id, result: { ok: true } });
+    rl.close();
+    return;
+  }
+  if (msg.method === "loadPlugins") {
+    const ids = (msg.params?.plugins ?? []).map((plugin) => plugin.id);
+    respond({ id: msg.id, result: { loaded: ids } });
+    rl.close();
+    return;
+  }
+  respond({ id: msg.id, error: "unknown" });
+  rl.close();
+});
+"#,
+        )
+        .expect("write script");
+        script_path
+    }
+
+    #[test]
+    fn runtime_ping_returns_ok() {
+        let dir = tempdir().expect("tempdir");
+        let script_path = write_runtime_script(dir.path());
+        let runtime = PluginRuntimeClient::new(script_path);
+        let result = runtime.ping().expect("ping");
+        assert_eq!(result["ok"], true);
+    }
+
+    #[test]
+    fn runtime_load_plugins_returns_ids() {
+        let dir = tempdir().expect("tempdir");
+        let script_path = write_runtime_script(dir.path());
+        let runtime = PluginRuntimeClient::new(script_path);
+        let plugins = vec![
+            PluginDescriptor {
+                manifest: PluginManifest {
+                    id: "alpha".to_string(),
+                    name: "Alpha".to_string(),
+                    version: "0.1.0".to_string(),
+                    description: None,
+                    permissions: vec![],
+                },
+                path: dir.path().join("alpha"),
+                enabled: true,
+            },
+            PluginDescriptor {
+                manifest: PluginManifest {
+                    id: "beta".to_string(),
+                    name: "Beta".to_string(),
+                    version: "0.1.0".to_string(),
+                    description: None,
+                    permissions: vec![],
+                },
+                path: dir.path().join("beta"),
+                enabled: false,
+            },
+        ];
+
+        let result = runtime.load_plugins(&plugins).expect("load plugins");
+        assert_eq!(result.loaded, vec!["alpha".to_string(), "beta".to_string()]);
+    }
+
+    #[test]
+    fn list_plugins_maps_manifest_fields() {
+        let dir = tempdir().expect("tempdir");
+        let plugins_dir = dir.path().join("plugins");
+        fs::create_dir_all(&plugins_dir).expect("plugins dir");
+
+        let alpha_dir = plugins_dir.join("alpha");
+        fs::create_dir_all(&alpha_dir).expect("alpha dir");
+        fs::write(
+            alpha_dir.join("plugin.json"),
+            r#"{"id":"alpha","name":"Alpha","version":"0.1.0","description":"Alpha plugin","permissions":["fs"]}"#,
+        )
+        .expect("write alpha manifest");
+
+        let registry = PluginRegistry::new(plugins_dir.join("state.json"));
+        registry.set_enabled("alpha", true).expect("enable alpha");
+
+        let plugins = list_plugins(dir.path(), &registry).expect("list plugins");
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].id, "alpha");
+        assert_eq!(plugins[0].enabled, true);
+        assert_eq!(plugins[0].permissions, vec!["fs".to_string()]);
+    }
+
+    #[test]
+    fn load_plugins_into_runtime_roundtrip() {
+        let dir = tempdir().expect("tempdir");
+        let plugins_dir = dir.path().join("plugins");
+        fs::create_dir_all(&plugins_dir).expect("plugins dir");
+
+        let alpha_dir = plugins_dir.join("alpha");
+        fs::create_dir_all(&alpha_dir).expect("alpha dir");
+        fs::write(
+            alpha_dir.join("plugin.json"),
+            r#"{"id":"alpha","name":"Alpha","version":"0.1.0"}"#,
+        )
+        .expect("write alpha manifest");
+
+        let registry = PluginRegistry::new(plugins_dir.join("state.json"));
+        let script_path = write_runtime_script(dir.path());
+
+        let runtime = PluginRuntimeClient::new(script_path);
+        let plugins = discover_plugins(dir.path(), &registry).expect("discover");
+        let result = runtime.load_plugins(&plugins).expect("load");
+        assert_eq!(result.loaded, vec!["alpha".to_string()]);
     }
 }
