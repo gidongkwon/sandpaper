@@ -105,9 +105,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 4 — Markdown & Rendering
 
-- [ ] **Improve markdown display**
-  - [ ] Add support for inline links and basic lists in display mode
-  - [ ] Ensure display mode matches export formatting (no surprises)
+- [x] **Improve markdown display**
+  - [x] Add support for inline links and basic lists in display mode
+  - [x] Ensure display mode matches export formatting (no surprises)
   - **Done when:** display looks like expected markdown
 
 - [ ] **Code block UX**

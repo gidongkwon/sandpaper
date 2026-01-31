@@ -332,6 +332,11 @@ const makeBlock = (id: string, text = "", indent = 0): Block => ({
 
 const DIAGRAM_LANGS = new Set(["mermaid", "diagram"]);
 
+type MarkdownList = {
+  type: "ul" | "ol";
+  items: string[];
+};
+
 const parseInlineFence = (text: string): CodeFence | null => {
   const trimmed = text.trim();
   if (!trimmed.startsWith("```")) return null;
@@ -346,7 +351,10 @@ const parseInlineFence = (text: string): CodeFence | null => {
 };
 
 const INLINE_MARKDOWN_PATTERN =
-  /(\[\[[^\]]+?\]\]|`[^`]+`|\*\*[^*]+?\*\*|~~[^~]+?~~|\*[^*]+?\*)/g;
+  /(\[\[[^\]]+?\]\]|\[[^\]]+?\]\([^)]+?\)|`[^`]+`|\*\*[^*]+?\*\*|~~[^~]+?~~|\*[^*]+?\*)/g;
+
+const ORDERED_LIST_PATTERN = /^\s*\d+\.\s+(.+)$/;
+const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
 
 const SLASH_COMMANDS = [
   { id: "link", label: "Link to page" },
@@ -408,6 +416,35 @@ const parseWikilinkToken = (token: string) => {
   if (!target) return null;
   const label = (alias ?? beforeAlias).trim() || target;
   return { target, label };
+};
+
+const parseInlineLinkToken = (token: string) => {
+  const match = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+  if (!match) return null;
+  const label = match[1]?.trim() ?? "";
+  const href = match[2]?.trim() ?? "";
+  if (!label || !href) return null;
+  if (href.toLowerCase().startsWith("javascript:")) return null;
+  return { label, href };
+};
+
+const parseMarkdownList = (text: string): MarkdownList | null => {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length < 2) return null;
+  const orderedMatches = lines.map((line) => line.match(ORDERED_LIST_PATTERN));
+  const isOrdered = orderedMatches.every(Boolean);
+  const unorderedMatches = lines.map((line) =>
+    line.match(UNORDERED_LIST_PATTERN)
+  );
+  const isUnordered = unorderedMatches.every(Boolean);
+  if (!isOrdered && !isUnordered) return null;
+  const items = (isOrdered ? orderedMatches : unorderedMatches).map(
+    (match) => (match?.[1] ?? "").trim()
+  );
+  return {
+    type: isOrdered ? "ol" : "ul",
+    items
+  };
 };
 
 const replaceWikilinksInText = (
@@ -3382,6 +3419,22 @@ function App() {
           } else {
             nodes.push(token);
           }
+        } else if (token.startsWith("[")) {
+          const parsed = parseInlineLinkToken(token);
+          if (parsed) {
+            nodes.push(
+              <a
+                href={parsed.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-link"
+              >
+                {parsed.label}
+              </a>
+            );
+          } else {
+            nodes.push(token);
+          }
         } else if (token.startsWith("`")) {
           nodes.push(<code>{token.slice(1, -1)}</code>);
         } else if (token.startsWith("**")) {
@@ -3399,6 +3452,22 @@ function App() {
         nodes.push(text.slice(cursor));
       }
       return nodes;
+    };
+
+    const renderMarkdownDisplay = (text: string): JSX.Element => {
+      const list = parseMarkdownList(text);
+      if (list) {
+        const items = (
+          <For each={list.items}>
+            {(item) => <li>{renderInlineMarkdown(item)}</li>}
+          </For>
+        );
+        if (list.type === "ol") {
+          return <ol class="markdown-list">{items}</ol>;
+        }
+        return <ul class="markdown-list">{items}</ul>;
+      }
+      return <span>{renderInlineMarkdown(text)}</span>;
     };
 
     const requestRename = () => {
@@ -3480,7 +3549,7 @@ function App() {
                         <span class="block__placeholder">Write something...</span>
                       );
                     }
-                    return <span>{renderInlineMarkdown(block.text)}</span>;
+                    return renderMarkdownDisplay(block.text);
                   };
                   return (
                     <div
