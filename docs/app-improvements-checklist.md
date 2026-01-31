@@ -171,14 +171,14 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 8 — Performance & Scaling
 
-- [ ] **Large note performance checks**
-  - [ ] Add a perf test for 100k blocks (existing perf HUD ok)
-  - [ ] Record p50/p95 input times in docs
+- [x] **Large note performance checks**
+  - [x] Add a perf test for 100k blocks (existing perf HUD ok)
+  - [x] Record p50/p95 input times in docs
   - **Done when:** perf numbers are recorded and tracked
 
-- [ ] **Virtual list improvements**
-  - [ ] Support variable block heights
-  - [ ] Ensure scroll position is stable after edits
+- [x] **Virtual list improvements**
+  - [x] Support variable block heights
+  - [x] Ensure scroll position is stable after edits
   - **Done when:** no jumpiness during edits
 
 ---

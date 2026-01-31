@@ -202,6 +202,8 @@ Exit criteria
 - 2026-01-31: Phase 6 — Plugin error banner + reload action completed.
 - 2026-01-31: Phase 7 — Sync activity log completed (push/pull history + copy log).
 - 2026-01-31: Phase 7 — Sync conflict UI completed (diff view + resolution controls).
+- 2026-01-31: Phase 8 — Large note perf checks added (100k virtual list test + p50/p95 noted).
+- 2026-01-31: Phase 8 — Virtual list supports variable heights with stable scroll anchoring.
 
 ### Phase 2 — Plugin System + Core Plugins
 **Outcome:** extensible platform, core plugins installed.

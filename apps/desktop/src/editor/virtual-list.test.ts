@@ -69,7 +69,7 @@ describe("getVirtualRange", () => {
     const overscan = 6;
     const viewportHeight = 720;
     const range = getVirtualRange({
-      count: 50000,
+      count: 100000,
       rowHeight,
       overscan,
       scrollTop: 12000,
@@ -80,6 +80,25 @@ describe("getVirtualRange", () => {
     expect(range.end - range.start).toBeLessThanOrEqual(
       visibleRows + overscan * 2 + 1
     );
-    expect(range.totalHeight).toBe(rowHeight * 50000);
+    expect(range.totalHeight).toBe(rowHeight * 100000);
+  });
+
+  it("supports variable row heights", () => {
+    const heights = [30, 50, 40, 60];
+    const range = getVirtualRange({
+      count: heights.length,
+      rowHeight: 40,
+      rowHeights: heights,
+      overscan: 0,
+      scrollTop: 45,
+      viewportHeight: 70
+    });
+
+    expect(range).toEqual({
+      start: 1,
+      end: 3,
+      offset: 30,
+      totalHeight: 180
+    });
   });
 });

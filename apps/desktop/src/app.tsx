@@ -3149,6 +3149,9 @@ function App() {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const [copiedBlockId, setCopiedBlockId] = createSignal<string | null>(null);
+    const [blockHeights, setBlockHeights] = createStore<Record<string, number>>(
+      {}
+    );
     const inputRefs = new Map<string, HTMLTextAreaElement>();
     const caretPositions = new Map<string, { start: number; end: number }>();
     let editorRef: HTMLDivElement | undefined;
@@ -3156,22 +3159,68 @@ function App() {
     const effectiveViewport = createMemo(() =>
       viewportHeight() === 0 ? 560 : viewportHeight()
     );
+    const rowMetrics = createMemo(() => {
+      const heights = blocks.map((block) =>
+        Math.max(ROW_HEIGHT, blockHeights[block.id] ?? ROW_HEIGHT)
+      );
+      let offset = 0;
+      const offsets = heights.map((height) => {
+        const current = offset;
+        offset += height;
+        return current;
+      });
+      return { heights, offsets, totalHeight: offset };
+    });
+    const blockObserver =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver((entries) => {
+            for (const entry of entries) {
+              const target = entry.target as HTMLElement;
+              const id = target.dataset.blockId;
+              if (!id) continue;
+              const nextHeight = Math.max(
+                ROW_HEIGHT,
+                Math.round(entry.contentRect.height)
+              );
+              const prevHeight = blockHeights[id] ?? ROW_HEIGHT;
+              if (nextHeight === prevHeight) continue;
+              const index = findIndexById(id);
+              if (index >= 0 && index < range().start && editorRef) {
+                editorRef.scrollTop += nextHeight - prevHeight;
+              }
+              setBlockHeights(id, nextHeight);
+            }
+          })
+        : null;
+
+    const observeBlock = (el: HTMLDivElement | undefined) => {
+      if (!el || !blockObserver) return;
+      blockObserver.observe(el);
+      onCleanup(() => {
+        blockObserver.unobserve(el);
+      });
+    };
 
     onCleanup(() => {
       if (copyTimeout) {
         window.clearTimeout(copyTimeout);
       }
+      blockObserver?.disconnect();
     });
 
-    const range = createMemo(() =>
-      getVirtualRange({
+    const range = createMemo(() => {
+      const metrics = rowMetrics();
+      return getVirtualRange({
         count: blocks.length,
         rowHeight: ROW_HEIGHT,
+        rowHeights: metrics.heights,
+        rowOffsets: metrics.offsets,
+        totalHeight: metrics.totalHeight,
         overscan: OVERSCAN,
         scrollTop: scrollTop(),
         viewportHeight: effectiveViewport()
-      })
-    );
+      });
+    });
 
     const visibleBlocks = createMemo(() =>
       blocks.slice(range().start, range().end)
@@ -3207,8 +3256,10 @@ function App() {
 
     const scrollToIndex = (index: number) => {
       if (!editorRef || viewportHeight() === 0) return;
-      const top = index * ROW_HEIGHT;
-      const bottom = top + ROW_HEIGHT;
+      const metrics = rowMetrics();
+      const top = metrics.offsets[index] ?? index * ROW_HEIGHT;
+      const height = metrics.heights[index] ?? ROW_HEIGHT;
+      const bottom = top + height;
       const viewTop = editorRef.scrollTop;
       const viewBottom = viewTop + viewportHeight();
       if (top < viewTop) {
@@ -3976,6 +4027,8 @@ function App() {
                       class={`block ${activeId() === block.id ? "is-active" : ""} ${
                         highlightedBlockId() === block.id ? "is-highlighted" : ""
                       }`}
+                      ref={observeBlock}
+                      data-block-id={block.id}
                       style={{
                         "margin-left": `${block.indent * 24}px`,
                         "--i": `${blockIndex()}`
