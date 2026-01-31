@@ -7,12 +7,13 @@ pub mod vaults;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
     discover_plugins, list_plugins, runtime_script_path, PluginCommand, PluginDescriptor,
-    PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntimeClient,
-    PluginRuntimeLoadResult, PluginToolbarAction,
+    PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeLoadResult,
+    PluginToolbarAction,
 };
 
 #[derive(Debug, Serialize)]
@@ -50,6 +51,39 @@ struct PluginRuntimeStatus {
     panels: Vec<PluginPanel>,
     toolbar_actions: Vec<PluginToolbarAction>,
     renderers: Vec<PluginRenderer>,
+}
+
+struct RuntimeState {
+    script_path: PathBuf,
+    runtime: Mutex<Option<PluginRuntime>>,
+}
+
+impl RuntimeState {
+    fn new(script_path: PathBuf) -> Self {
+        Self {
+            script_path,
+            runtime: Mutex::new(None),
+        }
+    }
+
+    fn with_runtime<F, R>(&self, f: F) -> Result<R, String>
+    where
+        F: FnOnce(&mut PluginRuntime) -> Result<R, plugins::PluginError>,
+    {
+        let mut guard = self
+            .runtime
+            .lock()
+            .map_err(|_| "runtime-lock-poisoned".to_string())?;
+        if guard.is_none() {
+            *guard = Some(PluginRuntime::new(self.script_path.clone()).map_err(|err| {
+                format!("{:?}", err)
+            })?);
+        }
+        match guard.as_mut() {
+            Some(runtime) => f(runtime).map_err(|err| format!("{:?}", err)),
+            None => Err("runtime-unavailable".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -332,7 +366,7 @@ fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
 }
 
 #[tauri::command]
-fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
+fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRuntimeStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
     let db = open_active_database()?;
@@ -366,7 +400,6 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
         }
     }
 
-    let runtime = PluginRuntimeClient::new(runtime_script_path());
     let loaded = if allowed.is_empty() {
         PluginRuntimeLoadResult {
             loaded: Vec::new(),
@@ -376,9 +409,7 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
             renderers: Vec::new(),
         }
     } else {
-        runtime
-            .load_plugins(&allowed)
-            .map_err(|err| format!("{:?}", err))?
+        state.with_runtime(|runtime| runtime.load_plugins(&allowed))?
     };
 
     Ok(PluginRuntimeStatus {
@@ -442,16 +473,15 @@ fn emit_plugin_event(
     plugin_id: String,
     event: String,
     payload: Value,
+    state: tauri::State<RuntimeState>,
 ) -> Result<Value, String> {
-    let runtime = PluginRuntimeClient::new(runtime_script_path());
-    runtime
-        .emit_event(&plugin_id, &event, payload)
-        .map_err(|err| format!("{:?}", err))
+    state.with_runtime(|runtime| runtime.emit_event(&plugin_id, &event, payload))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(RuntimeState::new(runtime_script_path()))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,

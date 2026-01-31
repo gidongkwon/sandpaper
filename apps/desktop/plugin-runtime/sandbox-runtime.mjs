@@ -16,7 +16,6 @@ rl.on("line", (line) => {
     message = JSON.parse(line);
   } catch {
     respond({ id: null, error: "invalid-json" });
-    rl.close();
     return;
   }
 
@@ -24,7 +23,6 @@ rl.on("line", (line) => {
 
   if (method === "ping") {
     respond({ id, result: { ok: true, runtime: "sandbox-runtime" } });
-    rl.close();
     return;
   }
 
@@ -66,16 +64,19 @@ rl.on("line", (line) => {
       }
     ]));
     respond({ id, result: { loaded, commands, panels, toolbar_actions, renderers } });
-    rl.close();
     return;
   }
 
   if (method === "emitEvent") {
+    respond({ id, result: { ok: true } });
+    return;
+  }
+
+  if (method === "shutdown") {
     respond({ id, result: { ok: true } });
     rl.close();
     return;
   }
 
   respond({ id, error: "unknown-method" });
-  rl.close();
 });

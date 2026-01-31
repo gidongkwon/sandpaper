@@ -187,7 +187,7 @@ Exit criteria
 **Outcome:** extensible platform, core plugins installed.
 
 Checklist
-- [ ] Sandbox runtime: separate JS process
+- [x] Sandbox runtime: separate JS process
 - [x] Permissions: strict prompts (default-deny)
 - [x] Permissions: store granted permissions
 - [x] Plugin API: commands + events
@@ -214,7 +214,7 @@ Success metrics (Phase 2)
 
 Exit criteria
 - [ ] Plugins can modify data and UI safely
-- [ ] Permissions audited and enforced
+- [x] Permissions audited and enforced
  - [ ] Phase 2 success metrics met
 
 ---
