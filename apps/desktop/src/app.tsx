@@ -2830,12 +2830,20 @@ function App() {
   const EditorPane = (props: { title: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
+    const [copiedBlockId, setCopiedBlockId] = createSignal<string | null>(null);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
     const caretPositions = new Map<string, { start: number; end: number }>();
     let editorRef: HTMLDivElement | undefined;
+    let copyTimeout: number | undefined;
     const effectiveViewport = createMemo(() =>
       viewportHeight() === 0 ? 560 : viewportHeight()
     );
+
+    onCleanup(() => {
+      if (copyTimeout) {
+        window.clearTimeout(copyTimeout);
+      }
+    });
 
     const range = createMemo(() =>
       getVirtualRange({
@@ -3454,6 +3462,71 @@ function App() {
       return nodes;
     };
 
+    const copyToClipboard = async (content: string) => {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(content);
+          return;
+        } catch (error) {
+          console.warn("Clipboard write failed", error);
+        }
+      }
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = content;
+        textarea.setAttribute("readonly", "true");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch (error) {
+        console.warn("Clipboard fallback failed", error);
+      }
+    };
+
+    const renderCodePreview = (
+      code: CodeFence & { renderer: PluginRenderer },
+      blockId: string
+    ) => (
+      <div class="block-renderer block-renderer--code">
+        <div class="block-renderer__header">
+          <div class="block-renderer__heading">
+            <div class="block-renderer__title">Code preview</div>
+            <div class="block-renderer__meta">
+              <span class="block-renderer__badge">
+                {code.lang.toUpperCase()}
+              </span>
+              <span>{code.renderer.title}</span>
+            </div>
+          </div>
+          <button
+            class="block-renderer__copy"
+            type="button"
+            aria-label="Copy code"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void copyToClipboard(code.content);
+              setCopiedBlockId(blockId);
+              if (copyTimeout) {
+                window.clearTimeout(copyTimeout);
+              }
+              copyTimeout = window.setTimeout(() => {
+                setCopiedBlockId(null);
+              }, 1200);
+            }}
+          >
+            {copiedBlockId() === blockId ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <pre class="block-renderer__content">
+          <code>{code.content}</code>
+        </pre>
+      </div>
+    );
+
     const renderMarkdownDisplay = (text: string): JSX.Element => {
       const list = parseMarkdownList(text);
       if (list) {
@@ -3512,17 +3585,7 @@ function App() {
                   const displayContent = () => {
                     const code = codePreview();
                     if (code) {
-                      return (
-                        <div class="block-renderer block-renderer--code">
-                          <div class="block-renderer__title">Code preview</div>
-                          <div class="block-renderer__meta">
-                            {code.renderer.title} · {code.lang}
-                          </div>
-                          <pre class="block-renderer__content">
-                            <code>{code.content}</code>
-                          </pre>
-                        </div>
-                      );
+                      return renderCodePreview(code, block.id);
                     }
                     const diagram = diagramPreview();
                     if (diagram) {
@@ -3687,17 +3750,7 @@ function App() {
                           {displayContent()}
                         </div>
                         <Show when={isEditing() && codePreview()}>
-                          {(preview) => (
-                            <div class="block-renderer block-renderer--code">
-                              <div class="block-renderer__title">Code preview</div>
-                              <div class="block-renderer__meta">
-                                {preview().renderer.title} · {preview().lang}
-                              </div>
-                              <pre class="block-renderer__content">
-                                <code>{preview().content}</code>
-                              </pre>
-                            </div>
-                          )}
+                          {(preview) => renderCodePreview(preview(), block.id)}
                         </Show>
                         <Show when={isEditing() && diagramPreview()}>
                           {(preview) => (

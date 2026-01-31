@@ -110,9 +110,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Ensure display mode matches export formatting (no surprises)
   - **Done when:** display looks like expected markdown
 
-- [ ] **Code block UX**
-  - [ ] Add “Copy” button for code preview
-  - [ ] Add language badge
+- [x] **Code block UX**
+  - [x] Add “Copy” button for code preview
+  - [x] Add language badge
   - **Done when:** code blocks can be copied easily
 
 - [ ] **Diagram preview enhancements**
