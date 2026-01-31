@@ -13,6 +13,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
   buildBacklinks,
+  buildWikilinkBacklinks,
   createShadowWriter,
   parseMarkdownPage,
   serializePageToMarkdown
@@ -641,6 +642,16 @@ function App() {
     )
   );
 
+  const pageBacklinksMap = createMemo(() =>
+    buildWikilinkBacklinks(
+      blocks.map((block) => ({
+        id: block.id,
+        text: block.text
+      })),
+      normalizePageUid
+    )
+  );
+
   const activeBlock = createMemo(
     () => blocks.find((block) => block.id === activeId()) ?? null
   );
@@ -655,11 +666,26 @@ function App() {
       .map((block) => ({ id: block.id, text: block.text || "Untitled" }));
   });
 
+  const activePageBacklinks = createMemo<BacklinkEntry[]>(() => {
+    const pageUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
+    const linked = pageBacklinksMap()[pageUid] ?? [];
+    return linked
+      .map((id) => blocks.find((block) => block.id === id))
+      .filter((block): block is Block => Boolean(block))
+      .map((block) => ({ id: block.id, text: block.text || "Untitled" }));
+  });
+
+  const totalBacklinks = createMemo(
+    () => activeBacklinks().length + activePageBacklinks().length
+  );
+
   const filteredSearchResults = createMemo<SearchResult[]>(() => {
     const results = searchResults();
     if (searchFilter() === "all") return results;
     if (searchFilter() === "links") {
-      return results.filter((result) => result.text.includes("(("));
+      return results.filter(
+        (result) => result.text.includes("((") || result.text.includes("[[")
+      );
     }
     if (searchFilter() === "tasks") {
       return results.filter((result) => /\[\s?[xX ]\s?\]/.test(result.text));
@@ -2669,17 +2695,17 @@ function App() {
 
             {/* Backlinks toggle button */}
             <button
-              class={`backlinks-toggle ${backlinksOpen() ? "is-active" : ""} ${activeBacklinks().length > 0 ? "has-links" : ""}`}
+              class={`backlinks-toggle ${backlinksOpen() ? "is-active" : ""} ${totalBacklinks() > 0 ? "has-links" : ""}`}
               onClick={() => setBacklinksOpen(prev => !prev)}
               aria-label={backlinksOpen() ? "Hide backlinks" : "Show backlinks"}
-              title={`${activeBacklinks().length} backlinks`}
+              title={`${totalBacklinks()} backlinks`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
               </svg>
-              <Show when={activeBacklinks().length > 0}>
-                <span class="backlinks-toggle__badge">{activeBacklinks().length}</span>
+              <Show when={totalBacklinks() > 0}>
+                <span class="backlinks-toggle__badge">{totalBacklinks()}</span>
               </Show>
             </button>
 
@@ -2701,50 +2727,74 @@ function App() {
                 </button>
               </div>
               <div class="backlinks-panel__body">
-                <Show when={activeBlock()}>
-                  {(block) => (
-                    <>
-                      <div class="backlinks-panel__context">
-                        Linked to <strong>{block().text.slice(0, 40) || "this block"}{block().text.length > 40 ? "..." : ""}</strong>
+                <Show
+                  when={
+                    activePageBacklinks().length > 0 ||
+                    (activeBlock() && activeBacklinks().length > 0)
+                  }
+                  fallback={
+                    <div class="backlinks-panel__empty">
+                      <div class="backlinks-panel__empty-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                        </svg>
                       </div>
-                      <Show
-                        when={activeBacklinks().length > 0}
-                        fallback={
-                          <div class="backlinks-panel__empty">
-                            <div class="backlinks-panel__empty-icon">
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                              </svg>
-                            </div>
-                            <p>No backlinks yet</p>
-                            <span>Use <code>((block-id))</code> to create links</span>
+                      <p>No backlinks yet</p>
+                      <span>Use <code>((block-id))</code> or <code>[[Page]]</code> to create links</span>
+                    </div>
+                  }
+                >
+                  <Show when={activePageBacklinks().length > 0}>
+                    <div class="backlinks-panel__section">
+                      <div class="backlinks-panel__section-title">Page backlinks</div>
+                      <div class="backlinks-panel__context">
+                        Linked to page <strong>{pageTitle()}</strong>
+                      </div>
+                      <div class="backlinks-panel__list">
+                        <For each={activePageBacklinks()}>
+                          {(entry) => (
+                            <button
+                              class="backlink-item"
+                              onClick={() => {
+                                setActiveId(entry.id);
+                                setJumpToId(entry.id);
+                              }}
+                            >
+                              <div class="backlink-item__text">{entry.text || "Untitled"}</div>
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={activeBlock()}>
+                    {(block) => (
+                      <Show when={activeBacklinks().length > 0}>
+                        <div class="backlinks-panel__section">
+                          <div class="backlinks-panel__section-title">Block backlinks</div>
+                          <div class="backlinks-panel__context">
+                            Linked to <strong>{block().text.slice(0, 40) || "this block"}{block().text.length > 40 ? "..." : ""}</strong>
                           </div>
-                        }
-                      >
-                        <div class="backlinks-panel__list">
-                          <For each={activeBacklinks()}>
-                            {(entry) => (
-                              <button
-                                class="backlink-item"
-                                onClick={() => {
-                                  setActiveId(entry.id);
-                                  setJumpToId(entry.id);
-                                }}
-                              >
-                                <div class="backlink-item__text">{entry.text || "Untitled"}</div>
-                              </button>
-                            )}
-                          </For>
+                          <div class="backlinks-panel__list">
+                            <For each={activeBacklinks()}>
+                              {(entry) => (
+                                <button
+                                  class="backlink-item"
+                                  onClick={() => {
+                                    setActiveId(entry.id);
+                                    setJumpToId(entry.id);
+                                  }}
+                                >
+                                  <div class="backlink-item__text">{entry.text || "Untitled"}</div>
+                                </button>
+                              )}
+                            </For>
+                          </div>
                         </div>
                       </Show>
-                    </>
-                  )}
-                </Show>
-                <Show when={!activeBlock()}>
-                  <div class="backlinks-panel__empty">
-                    <p>Select a block to see backlinks</p>
-                  </div>
+                    )}
+                  </Show>
                 </Show>
               </div>
             </aside>

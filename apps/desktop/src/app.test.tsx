@@ -175,6 +175,24 @@ describe("App", () => {
     expect(backlinks.length).toBeGreaterThan(0);
   });
 
+  it("shows backlinks for wiki-linked pages", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const inputs = await screen.findAllByPlaceholderText("Write something...");
+    const firstInput = inputs[0];
+    const secondInput = inputs[1];
+    fireEvent.input(secondInput, { target: { value: "See [[Inbox]]" } });
+    fireEvent.focus(firstInput);
+    await userEvent.click(
+      screen.getByRole("button", { name: /show backlinks/i })
+    );
+    expect(await screen.findByText("Page backlinks")).toBeInTheDocument();
+    const backlinks = await screen.findAllByText("See [[Inbox]]", {
+      selector: ".backlink-item__text"
+    });
+    expect(backlinks.length).toBeGreaterThan(0);
+  });
+
   it("exports markdown in browser mode", async () => {
     render(() => <App />);
     await userEvent.click(

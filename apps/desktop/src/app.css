@@ -839,6 +839,18 @@ button:disabled {
   padding: var(--space-3);
 }
 
+.backlinks-panel__section + .backlinks-panel__section {
+  margin-top: var(--space-3);
+}
+
+.backlinks-panel__section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-1-5);
+}
+
 .backlinks-panel__context {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
