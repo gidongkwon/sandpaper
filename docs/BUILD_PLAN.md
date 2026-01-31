@@ -119,6 +119,10 @@ Benchmarks (latest)
 - 2026-01-31: Phase 1 smoke metrics (dev, browser seed=100000): DCL 1069ms, load 1077ms, JS heap ~122MB, FTS search 28ms.
   - Reproduce: `pnpm dev:desktop` then open `http://localhost:1420/?seed=100000&perf=1` and run `cd apps/desktop/src-tauri && cargo run --bin fts-bench`.
 
+Perf Baseline
+- 2026-01-31: Editor input p50 6.2ms, p95 7.8ms (240 samples, perf HUD). Scroll ~61fps.
+- 2026-01-31: Search p95 28ms on 100k blocks (FTS, in-memory).
+
 Phase 0 evidence (2026-01-31)
 - Editor perf HUD (production build, headless Chromium via Playwright): p50 6.2ms, p95 7.8ms on 240 input events (max samples 160).
 - Scroll perf HUD: 61 fps while scrolling the editor pane (90 rAF-driven scroll steps).

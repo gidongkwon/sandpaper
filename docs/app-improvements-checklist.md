@@ -6,21 +6,22 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 0 — Setup, Safety, and Baseline
 
-- [ ] **Confirm local dev workflow works**
-  - [ ] Run `pnpm install`
-  - [ ] Run `pnpm dev:desktop` and open the app
-  - [ ] Run `pnpm test`, `pnpm lint`, `pnpm typecheck`
-  - [ ] Note current test count and any known failures
+- [x] **Confirm local dev workflow works**
+  - [x] Run `pnpm install`
+  - [x] Run `pnpm dev:desktop` and open the app
+  - [x] Run `pnpm test`, `pnpm lint`, `pnpm typecheck`
+  - [x] Note current test count and any known failures
+  - **Baseline note:** 78 tests total (desktop 41, core-model 16, editor-core 5, crypto 4, sync-protocol 7, sync-server 5). No failures. Dev server needed port 1420 cleared before starting.
   - **Done when:** app runs locally and tests/lint/typecheck pass
 
-- [ ] **Add a basic bug report template (internal)**
-  - [ ] Create `docs/BUG_REPORT.md` with: steps, expected, actual, logs, screenshots
-  - [ ] Link it from `README.md` (if there is a “Contributing” section)
+- [x] **Add a basic bug report template (internal)**
+  - [x] Create `docs/BUG_REPORT.md` with: steps, expected, actual, logs, screenshots
+  - [x] Link it from `README.md` (if there is a “Contributing” section) — no section yet
   - **Done when:** there’s a simple bug template that teammates can follow
 
-- [ ] **Add a performance baseline note**
-  - [ ] Record current baseline from `docs/BUILD_PLAN.md`
-  - [ ] Add a short “Perf Baseline” section to `docs/BUILD_PLAN.md` (if missing)
+- [x] **Add a performance baseline note**
+  - [x] Record current baseline from `docs/BUILD_PLAN.md`
+  - [x] Add a short “Perf Baseline” section to `docs/BUILD_PLAN.md` (if missing)
   - **Done when:** perf baseline is written in docs
 
 ---
