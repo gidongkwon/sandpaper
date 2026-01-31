@@ -15,19 +15,20 @@ Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Noti
 - Sync: **SQLite-first**, CRDT **only for sync**, **Node** server.
 - Shadow files are **read-only**; no external edits import (for v1).
 
-## Decision Records (must finalize before Phase 1)
-- **Block schema**: fields (id, page_id, parent_id, sort_key, text, props JSON), block-level metadata, and inline formatting storage.
-- **Indexing strategy**: FTS tokenization, stemming/stop-words, and indexing for tags/props.
-- **Shadow Markdown spec**: ID syntax, attribute syntax, code/diagram blocks, and plugin data serialization.
-- **Block operations**: canonical order key (fractional index vs integer sequence), move semantics, and undo/redo storage.
-- **Interoperability strategy**: import/export formats, forward-compat versioning, and schema upgrade policy.
-- **Attachments**: file placement and metadata (mime, size, hash), and GC policy for unused assets.
+## Decision Records (finalized)
+- **Block schema**: `blocks(id, uid, page_id, parent_id, sort_key, text, props)` with `props` JSON for indent + metadata; `pages(uid, title)`; `edges(from_block_id, to_block_uid, kind)`; `tags` + `block_tags`; `assets(hash, path, mime_type, size, original_name)`; `kv` for settings.
+- **Ordering**: `sort_key` is zero-padded string (`000001`) and reindexed on save; moves reindex the page (v1).
+- **Indexing**: FTS5 default tokenizer; `bm25` ranking; explicit indexes on `review_queue(status, due_at)`, `sync_ops(page_id, created_at)`, `blocks(page_id, sort_key)`, and tag joins.
+- **Shadow Markdown**: `# Title ^page-id` and `- Block text ^block-id`; plugin metadata stored as HTML comments `<!--sp:{"plugin":"id","data":{...}}-->` appended to the block line; fenced code blocks live inside block text.
+- **Interoperability**: export Markdown now, import/export compatibility later with schema versioning.
+- **Attachments**: `/assets/<hash>` content-addressed files + DB mapping; GC only after explicit cleanup tool.
+- **Packaging**: Tauri bundler for macOS (universal dmg) + Windows (MSI); Android deferred.
 
 ## High-level Architecture
 
 ### Core Data Model (canonical)
 - SQLite WAL
-- Tables: `pages`, `blocks`, `edges`, `tags`, `assets`, `kv` (settings), `plugin_perms`
+- Tables: `pages`, `blocks`, `edges`, `tags`, `assets`, `kv` (settings), `plugin_perms`, `review_queue`, `sync_ops`, `sync_inbox`
 - FTS5 index on page title + block content
 - Shadow Markdown writer: per-page `.md` file, batch flush on idle
 
@@ -45,17 +46,14 @@ Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Noti
 - APIs: commands + events + UI panels + data transforms + data fetch
 
 ### Sync
-- Per-page CRDT ops for sync only
+- Per-page op log for sync only (custom CRDT)
 - All ops encrypted client-side (passphrase-derived key)
 - Node sync server stores encrypted ops + metadata
 - Auto-merge at block level
 
-## Missing-to-Implement (address before heavy build-out)
-- **Success metrics**: targets for startup time, editor latency, search, memory, sync merge rates.
-- **Plugin API surface**: commands, events, UI extensions, data access, permissions, versioning.
-- **Security posture**: threat model, plugin sandbox boundaries, key management, update safety.
-- **Mobile constraints**: Android storage path, background sync limits, offline behavior.
-- **Operational plan**: CI, release channels, crash reporting, migration tests.
+## Deferred or Ongoing
+- **Mobile constraints** (Phase 4 deferred): Android storage path, background sync limits, offline behavior.
+- **Operational plan**: release channels + crash reporting (defer until first beta).
 
 ---
 
@@ -305,51 +303,46 @@ Exit criteria
 - **CRDT complexity** → page-level ops only, keep scope small
 - **Plugin stability** → sandbox process + strict permissions
 
-## Security & Privacy (define before Phase 2)
+## Security & Privacy
 - Threat model: local adversary, malicious plugin, compromised sync server.
-- Key management: passphrase KDF parameters, key rotation, recovery policy.
-- Plugin isolation: process boundary + restricted APIs; deny-by-default FS/network.
-- Update safety: signed releases; plugin signature verification (future).
+- Key management: passphrase → PBKDF2-SHA256 → AES-256-GCM key; store salt + iterations; no key rotation in v1 (reset + resync); key fingerprint binds devices to vault.
+- Plugin isolation: Node sidecar with RPC; default-deny permissions; explicit grants for FS/network/UI/system/clipboard; plugin data stays under vault.
+- Update safety: signed app releases planned; plugin signature verification deferred.
 
-## Sync Protocol Details (define before Phase 3)
-- Choose ops format (CRDT vs op-log) and ordering guarantees.
-- Vector clock / lamport strategy for conflict resolution.
-- Merge rules for move/edit/delete on the same block.
-- Device onboarding flow and key exchange.
-- Server API: auth, pagination, and rate limits.
+## Sync Protocol Details
+- Ops format: custom op-log CRDT; payloads are encrypted envelopes.
+- Ordering: lamport clock + opId tie-breaker.
+- Merge rules: delete creates tombstone; edit/move ignored after delete; add can resurrect if later by clock.
+- Onboarding: client derives key, sends key fingerprint; server binds vault + device; no plaintext ever leaves client.
+- Server API: cursor-based pagination; no auth beyond vault/device IDs in v1.
 
-## Plugin API Surface (define before Phase 2)
-- Command registration: name, description, shortcut, args schema.
-- Event model: editor lifecycle, data-change, and sync events.
-- UI extension points: side panels, toolbar buttons, renderers.
-- Data access: read/write blocks, search, and transactional updates.
-- Permissions: manifest-defined, explicit prompts, stored grants.
+## Plugin API Surface
+- Manifest: `id`, `name`, `version`, `description`, `permissions`, `entry`, `apiVersion`.
+- Commands: register command id/title/description; execute through RPC bridge.
+- Events: editor lifecycle + data-change; optional sync events later.
+- UI extensions: panels, toolbar actions, renderers for code/diagram.
+- Data access: read/write pages + blocks, search; transactional writes in host.
+- Permissions: manifest-declared + explicit user grants (default-deny).
 
 ## Storage & Migration Policy
 - Schema versioning in SQLite with forward-only migrations.
 - Shadow Markdown versioning and upgrade strategy.
 - Migration tests run in CI (apply N -> N+1; rollback not required).
 
-## Testing & CI (define before Phase 1)
-- CI pipeline: lint + typecheck + tests on every PR.
-- Perf regression checks: p95 input-to-paint and search latency.
+## Testing & CI
+- CI pipeline: `pnpm lint`, `pnpm typecheck`, `pnpm test`, plus `cargo test` for Tauri.
+- Perf regression checks: editor p95 input-to-paint + FTS bench; keep under Phase 0 targets.
 - Golden files: shadow markdown and export formats.
-- Fuzz tests: op merge and serialization round-trips.
+- Fuzz tests: op merge and serialization round-trips (later).
 
 ---
 
-## Open TODOs (for early decisions)
-- Pick JS runtime for plugin sandbox (Node sidecar vs embedded runtime)
-- Choose editor model implementation details
-- Decide exact CRDT library for sync (Yjs vs Automerge vs custom ops)
-- Confirm packaging strategy for Windows/macOS/Android
- - Finalize block schema and sort key strategy
- - Decide shadow Markdown syntax for plugin metadata
+## Open TODOs (deferred)
+- Phase 4 Android packaging + background sync (explicitly deferred).
+- Release channels and crash reporting (post-beta).
+- Import workflows for other formats (Obsidian/Logseq) and plugin signature verification.
 
 ---
 
 ## Suggested Next Step
-If you want, I can scaffold the repo and create initial modules for:
-- SQLite schema + migration system
-- Editor prototype
-- Plugin sandbox runtime
+- Phase 4 (deferred) or interoperability import/export tooling.
