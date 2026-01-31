@@ -145,7 +145,7 @@ Checklist
 - [x] SQLite core: CRUD for pages/blocks/tags/edges
 - [x] SQLite core: FTS5 updates on write
 - [x] Editor core: outline ops (split/merge/indent/outdent/move)
-- [ ] Editor core: block refs + backlinks
+- [x] Editor core: block refs + backlinks
 - [x] Editor core: multi-pane editor (2-3 panes)
 - [ ] Search: left panel (FTS + filters)
 - [x] Navigation: open results in editor panes
