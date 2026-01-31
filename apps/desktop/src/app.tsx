@@ -263,6 +263,26 @@ type SlashMenuState = {
   position: SlashMenuPosition | null;
 };
 
+type WikilinkMenuState = {
+  open: boolean;
+  blockId: string | null;
+  blockIndex: number;
+  rangeStart: number;
+  rangeEnd: number;
+  hasClosing: boolean;
+  query: string;
+  position: SlashMenuPosition | null;
+};
+
+type LinkPreviewState = {
+  open: boolean;
+  position: SlashMenuPosition | null;
+  pageUid: string | null;
+  title: string;
+  blocks: string[];
+  loading: boolean;
+};
+
 let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
@@ -382,6 +402,30 @@ const parseWikilinkToken = (token: string) => {
   return { target, label };
 };
 
+const replaceWikilinksInText = (
+  text: string,
+  fromTitle: string,
+  toTitle: string
+) => {
+  const normalizedFrom = normalizePageUid(fromTitle);
+  const normalizedTo = normalizePageUid(toTitle);
+  if (!normalizedFrom || normalizedFrom === normalizedTo) return text;
+  return text.replace(/\[\[[^\]]+?\]\]/g, (token) => {
+    const inner = token.slice(2, -2);
+    const raw = inner.trim();
+    if (!raw) return token;
+    const [targetPart, aliasPart] = raw.split("|");
+    const [targetBase, headingPart] = targetPart.split("#");
+    const targetTitle = targetBase.trim();
+    if (!targetTitle) return token;
+    if (normalizePageUid(targetTitle) !== normalizedFrom) return token;
+    const nextTarget = toTitle.trim() || targetTitle;
+    const headingSuffix = headingPart ? `#${headingPart.trim()}` : "";
+    const aliasSuffix = aliasPart ? `|${aliasPart.trim()}` : "";
+    return `[[${nextTarget}${headingSuffix}${aliasSuffix}]]`;
+  });
+};
+
 const MAX_SEED_BLOCKS = 200_000;
 
 const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
@@ -486,6 +530,25 @@ function App() {
     slashIndex: -1,
     position: null
   });
+  const [wikilinkMenu, setWikilinkMenu] = createSignal<WikilinkMenuState>({
+    open: false,
+    blockId: null,
+    blockIndex: -1,
+    rangeStart: -1,
+    rangeEnd: -1,
+    hasClosing: false,
+    query: "",
+    position: null
+  });
+  const [linkPreview, setLinkPreview] = createSignal<LinkPreviewState>({
+    open: false,
+    position: null,
+    pageUid: null,
+    title: "",
+    blocks: [],
+    loading: false
+  });
+  const previewCache = new Map<string, { title: string; blocks: string[] }>();
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
   const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
@@ -856,12 +919,57 @@ function App() {
     () => activeBacklinks().length + activePageBacklinks().length
   );
 
+  const wikilinkQuery = createMemo(() => wikilinkMenu().query.trim());
+  const wikilinkMatches = createMemo(() => {
+    const query = wikilinkQuery().toLowerCase();
+    const entries = pages();
+    if (!query) return entries;
+    return entries.filter((page) =>
+      (page.title || page.uid).toLowerCase().includes(query)
+    );
+  });
+  const wikilinkCreateLabel = createMemo(() => {
+    const query = wikilinkQuery();
+    if (!query) return null;
+    const normalized = normalizePageUid(query);
+    const exists = pages().some(
+      (page) => normalizePageUid(page.uid || page.title) === normalized
+    );
+    if (exists) return null;
+    return `Create page "${query}"`;
+  });
+
   const getPageBacklinkSource = (entry: BacklinkEntry) => {
     const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
     const sourceUid = normalizePageUid(entry.pageUid || currentUid);
     if (sourceUid === currentUid) return "This page";
     return entry.pageTitle || "Untitled page";
   };
+
+  const formatBacklinkSnippet = (text: string) => {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) return "Untitled";
+    if (normalized.length <= 80) return normalized;
+    return `${normalized.slice(0, 80)}...`;
+  };
+
+  const groupedPageBacklinks = createMemo(() => {
+    const groups = new Map<
+      string,
+      { title: string; entries: BacklinkEntry[] }
+    >();
+    activePageBacklinks().forEach((entry) => {
+      const key = normalizePageUid(entry.pageUid || entry.pageTitle || "page");
+      const title = getPageBacklinkSource(entry);
+      if (!groups.has(key)) {
+        groups.set(key, { title, entries: [] });
+      }
+      groups.get(key)?.entries.push(entry);
+    });
+    return Array.from(groups.values()).sort((a, b) =>
+      a.title.localeCompare(b.title)
+    );
+  });
 
   const openPageBacklink = async (entry: BacklinkEntry) => {
     const targetPage = entry.pageUid ?? activePageUid();
@@ -873,6 +981,13 @@ function App() {
     }
     setActiveId(entry.id);
     setJumpTarget({ id: entry.id, caret: "start" });
+  };
+
+  const supportsMultiPane = false;
+
+  const openPageBacklinkInPane = async (entry: BacklinkEntry) => {
+    if (!supportsMultiPane) return;
+    await openPageBacklink(entry);
   };
 
   const filteredSearchResults = createMemo<SearchResult[]>(() => {
@@ -1304,6 +1419,7 @@ function App() {
   let saveTimeout: number | undefined;
   let autosaveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
+  let previewCloseTimeout: number | undefined;
   const persistBlocks = async (
     pageUid: string,
     payload: BlockPayload[],
@@ -1959,6 +2075,95 @@ function App() {
     }
   };
 
+  const createPageFromLink = async (title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return null;
+    setPageMessage(null);
+    try {
+      let created: PageSummary;
+      if (isTauri()) {
+        created = (await invoke("create_page", {
+          payload: { title: trimmed }
+        })) as PageSummary;
+        await loadPages();
+      } else {
+        const uid = resolveUniqueLocalPageUid(trimmed);
+        const seeded = buildEmptyBlocks(makeLocalId);
+        saveLocalPageSnapshot(uid, trimmed, seeded);
+        created = { uid, title: trimmed };
+        await loadPages();
+      }
+      return created;
+    } catch (error) {
+      console.error("Failed to create page from link", error);
+      setPageMessage("Failed to create page.");
+      return null;
+    }
+  };
+
+  const updateWikilinksAcrossPages = async (
+    fromTitle: string,
+    toTitle: string
+  ) => {
+    const normalizedFrom = normalizePageUid(fromTitle);
+    const normalizedTo = normalizePageUid(toTitle);
+    if (!normalizedFrom || normalizedFrom === normalizedTo) return;
+
+    const updateBlocks = <T extends { text: string }>(source: T[]) => {
+      let changed = false;
+      const updated = source.map((block) => {
+        const nextText = replaceWikilinksInText(block.text, fromTitle, toTitle);
+        if (nextText === block.text) return block;
+        changed = true;
+        return { ...block, text: nextText };
+      });
+      return { updated, changed };
+    };
+
+    if (!isTauri()) {
+      const currentUid = resolvePageUid(activePageUid());
+      Object.values(localPages).forEach((page) => {
+        const { updated, changed } = updateBlocks(page.blocks);
+        if (!changed) return;
+        setLocalPages(page.uid, "blocks", updated);
+        if (page.uid === currentUid) {
+          setBlocks(updated as Block[]);
+        }
+      });
+      return;
+    }
+
+    const pageList = pages().length
+      ? pages()
+      : ((await invoke("list_pages")) as PageSummary[]);
+    for (const page of pageList) {
+      const pageUid = resolvePageUid(page.uid);
+      if (pageUid === resolvePageUid(activePageUid())) {
+        const { updated, changed } = updateBlocks(blocks);
+        if (changed) {
+          setBlocks(updated as Block[]);
+          await invoke("save_page_blocks", {
+            pageUid,
+            page_uid: pageUid,
+            blocks: updated.map((block) => toPayload(block as Block))
+          });
+        }
+        continue;
+      }
+      const response = (await invoke("load_page_blocks", {
+        pageUid,
+        page_uid: pageUid
+      })) as PageBlocksResponse;
+      const { updated, changed } = updateBlocks(response.blocks);
+      if (!changed) continue;
+      await invoke("save_page_blocks", {
+        pageUid,
+        page_uid: pageUid,
+        blocks: updated
+      });
+    }
+  };
+
   const renamePage = async () => {
     const title = renameTitle().trim();
     if (!title) {
@@ -1968,6 +2173,7 @@ function App() {
     setPageBusy(true);
     setPageMessage(null);
     const pageUid = resolvePageUid(activePageUid());
+    const previousTitle = pageTitle();
     try {
       if (isTauri()) {
         const updated = (await invoke("rename_page", {
@@ -1986,6 +2192,7 @@ function App() {
         await loadPages();
       }
       setRenameTitle(title);
+      await updateWikilinksAcrossPages(previousTitle, title);
     } catch (error) {
       console.error("Failed to rename page", error);
       setPageMessage("Failed to rename page.");
@@ -2418,6 +2625,9 @@ function App() {
       if (highlightTimeout) {
         window.clearTimeout(highlightTimeout);
       }
+      if (previewCloseTimeout) {
+        window.clearTimeout(previewCloseTimeout);
+      }
       void shadowWriter.flush();
       shadowWriter.dispose();
       stopSyncLoop();
@@ -2654,6 +2864,9 @@ function App() {
         slashIndex,
         position
       });
+      setWikilinkMenu((prev) =>
+        prev.open ? { ...prev, open: false, position: null } : prev
+      );
     };
 
     const applySlashCommand = (commandId: string) => {
@@ -2706,6 +2919,95 @@ function App() {
       });
     };
 
+    const closeWikilinkMenu = () => {
+      setWikilinkMenu((prev) =>
+        prev.open ? { ...prev, open: false, position: null } : prev
+      );
+    };
+
+    const updateWikilinkMenu = (
+      block: Block,
+      index: number,
+      target: HTMLTextAreaElement
+    ) => {
+      const value = target.value;
+      const start = value.lastIndexOf("[[");
+      if (start < 0) {
+        closeWikilinkMenu();
+        return;
+      }
+      const caretRaw = target.selectionStart ?? value.length;
+      const caret = caretRaw === 0 ? value.length : caretRaw;
+      const closeIndex = value.indexOf("]]", start + 2);
+      const hasClosing = closeIndex !== -1;
+      if (hasClosing && closeIndex < caret) {
+        closeWikilinkMenu();
+        return;
+      }
+      const inner = hasClosing
+        ? value.slice(start + 2, closeIndex)
+        : value.slice(start + 2);
+      const [targetPart] = inner.split("|");
+      const [targetBase] = targetPart.split("#");
+      const query = targetBase.trim();
+      let position: SlashMenuPosition;
+      try {
+        position = getCaretPosition(target, Math.min(caret, value.length));
+      } catch {
+        position = { x: 0, y: 0 };
+      }
+      setWikilinkMenu({
+        open: true,
+        blockId: block.id,
+        blockIndex: index,
+        rangeStart: start,
+        rangeEnd: hasClosing ? closeIndex + 2 : value.length,
+        hasClosing,
+        query,
+        position
+      });
+      closeSlashMenu();
+    };
+
+    const applyWikilinkSuggestion = (title: string, create = false) => {
+      const state = wikilinkMenu();
+      if (!state.blockId || state.blockIndex < 0 || state.rangeStart < 0) {
+        return;
+      }
+      const block = blocks[state.blockIndex];
+      if (!block || block.id !== state.blockId) {
+        closeWikilinkMenu();
+        return;
+      }
+      const text = block.text;
+      const before = text.slice(0, state.rangeStart);
+      const inner = text.slice(
+        state.rangeStart + 2,
+        state.rangeEnd - (state.hasClosing ? 2 : 0)
+      );
+      const after = text.slice(state.rangeEnd);
+      const [targetPart, aliasPart] = inner.split("|");
+      const [, headingPart] = targetPart.split("#");
+      const headingSuffix = headingPart ? `#${headingPart.trim()}` : "";
+      const aliasSuffix = aliasPart ? `|${aliasPart.trim()}` : "";
+      const nextInner = `${title.trim()}${headingSuffix}${aliasSuffix}`;
+      const nextText = `${before}[[${nextInner}]]${after}`;
+      setBlocks(state.blockIndex, "text", nextText);
+      scheduleSave();
+      closeWikilinkMenu();
+      if (create) {
+        void createPageFromLink(title);
+      }
+      requestAnimationFrame(() => {
+        const input = inputRefs.get(block.id);
+        if (!input) return;
+        const caret = before.length + 2 + nextInner.length + 2;
+        input.focus();
+        input.setSelectionRange(caret, caret);
+        storeSelection(block.id, input, true);
+      });
+    };
+
     const findPageByTitle = (title: string) => {
       const normalized = normalizePageUid(title);
       return (
@@ -2746,6 +3048,91 @@ function App() {
       scheduleSave();
 
       await openPageByTitle(title);
+    };
+
+    const closeLinkPreview = () => {
+      setLinkPreview((prev) =>
+        prev.open ? { ...prev, open: false, position: null } : prev
+      );
+    };
+
+    const cancelLinkPreviewClose = () => {
+      if (previewCloseTimeout) {
+        window.clearTimeout(previewCloseTimeout);
+        previewCloseTimeout = undefined;
+      }
+    };
+
+    const scheduleLinkPreviewClose = () => {
+      cancelLinkPreviewClose();
+      previewCloseTimeout = window.setTimeout(() => {
+        closeLinkPreview();
+      }, 120);
+    };
+
+    const loadPreviewBlocks = async (pageUid: string) => {
+      if (!isTauri()) {
+        const local = localPages[pageUid];
+        return (
+          local?.blocks.map((block) => block.text).filter(Boolean).slice(0, 2) ??
+          []
+        );
+      }
+      try {
+        const response = (await invoke("load_page_blocks", {
+          pageUid,
+          page_uid: pageUid
+        })) as PageBlocksResponse;
+        return response.blocks
+          .map((block) => block.text)
+          .filter((text) => text.trim().length > 0)
+          .slice(0, 2);
+      } catch (error) {
+        console.error("Failed to load link preview", error);
+        return [];
+      }
+    };
+
+    const openLinkPreview = async (
+      targetTitle: string,
+      anchor: HTMLElement
+    ) => {
+      cancelLinkPreviewClose();
+      const resolved = findPageByTitle(targetTitle);
+      const pageUid = resolvePageUid(resolved?.uid ?? targetTitle);
+      const rect = anchor.getBoundingClientRect();
+      const position = {
+        x: rect.left,
+        y: rect.bottom + 8
+      };
+      const cached = previewCache.get(pageUid);
+      if (cached) {
+        setLinkPreview({
+          open: true,
+          position,
+          pageUid,
+          title: cached.title,
+          blocks: cached.blocks,
+          loading: false
+        });
+        return;
+      }
+      setLinkPreview({
+        open: true,
+        position,
+        pageUid,
+        title: resolved?.title ?? targetTitle,
+        blocks: [],
+        loading: true
+      });
+      const blocks = await loadPreviewBlocks(pageUid);
+      const title = resolved?.title ?? targetTitle;
+      previewCache.set(pageUid, { title, blocks });
+      setLinkPreview((prev) => ({
+        ...prev,
+        blocks,
+        loading: false
+      }));
     };
 
     const handleKeyDown = (block: Block, index: number, event: KeyboardEvent) => {
@@ -2852,6 +3239,14 @@ function App() {
                   event.stopPropagation();
                   void openPageByTitle(parsed.target);
                 }}
+                onMouseEnter={(event) =>
+                  void openLinkPreview(parsed.target, event.currentTarget)
+                }
+                onMouseLeave={() => scheduleLinkPreviewClose()}
+                onFocus={(event) =>
+                  void openLinkPreview(parsed.target, event.currentTarget)
+                }
+                onBlur={() => scheduleLinkPreviewClose()}
               >
                 {parsed.label}
               </button>
@@ -3027,6 +3422,14 @@ function App() {
                                 closeSlashMenu();
                               }, 0);
                             }
+                            if (
+                              wikilinkMenu().open &&
+                              wikilinkMenu().blockId === block.id
+                            ) {
+                              window.setTimeout(() => {
+                                closeWikilinkMenu();
+                              }, 0);
+                            }
                           }}
                           onInput={(event) => {
                             recordLatency("input");
@@ -3049,6 +3452,11 @@ function App() {
                             ) {
                               closeSlashMenu();
                             }
+                            updateWikilinkMenu(
+                              block,
+                              blockIndex(),
+                              event.currentTarget
+                            );
                           }}
                           onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                           onKeyUp={(event) => {
@@ -3141,6 +3549,113 @@ function App() {
                       </button>
                     )}
                   </For>
+                </div>
+              </div>
+            )}
+          </Show>
+          <Show when={wikilinkMenu().open && wikilinkMenu().position}>
+            {(position) => (
+              <div
+                class="wikilink-menu"
+                role="listbox"
+                aria-label="Wikilink suggestions"
+                style={{
+                  left: `${position().x}px`,
+                  top: `${position().y}px`
+                }}
+              >
+                <div class="wikilink-menu__title">Link suggestions</div>
+                <div class="wikilink-menu__list">
+                  <For each={wikilinkMatches()}>
+                    {(page) => {
+                      const label = page.title || "Untitled";
+                      const insertTitle = page.title || page.uid;
+                      return (
+                        <button
+                          class="wikilink-menu__item"
+                          type="button"
+                          aria-label={label}
+                          onClick={() => applyWikilinkSuggestion(insertTitle)}
+                        >
+                          <span class="wikilink-menu__label">{label}</span>
+                          <Show
+                            when={
+                              resolvePageUid(page.uid) ===
+                              resolvePageUid(activePageUid())
+                            }
+                          >
+                            <span class="wikilink-menu__meta">Current</span>
+                          </Show>
+                        </button>
+                      );
+                    }}
+                  </For>
+                  <Show when={wikilinkCreateLabel()}>
+                    {(label) => (
+                      <button
+                        class="wikilink-menu__item wikilink-menu__item--create"
+                        type="button"
+                        onClick={() =>
+                          applyWikilinkSuggestion(wikilinkQuery(), true)
+                        }
+                      >
+                        {label()}
+                      </button>
+                    )}
+                  </Show>
+                </div>
+              </div>
+            )}
+          </Show>
+          <Show when={linkPreview().open && linkPreview().position}>
+            {(position) => (
+              <div
+                class="wikilink-preview"
+                role="dialog"
+                aria-label="Link preview"
+                style={{
+                  left: `${position().x}px`,
+                  top: `${position().y}px`
+                }}
+                onMouseEnter={() => cancelLinkPreviewClose()}
+                onMouseLeave={() => scheduleLinkPreviewClose()}
+              >
+                <div class="wikilink-preview__header">
+                  <div class="wikilink-preview__title">
+                    {linkPreview().title || "Untitled"}
+                  </div>
+                  <button
+                    class="wikilink-preview__open"
+                    type="button"
+                    onClick={() => void openPageByTitle(linkPreview().title)}
+                  >
+                    Open
+                  </button>
+                </div>
+                <div class="wikilink-preview__body">
+                  <Show
+                    when={!linkPreview().loading}
+                    fallback={
+                      <div class="wikilink-preview__loading">
+                        Loading preview...
+                      </div>
+                    }
+                  >
+                    <Show
+                      when={linkPreview().blocks.length > 0}
+                      fallback={
+                        <div class="wikilink-preview__empty">
+                          No content yet.
+                        </div>
+                      }
+                    >
+                      <For each={linkPreview().blocks}>
+                        {(blockText) => (
+                          <div class="wikilink-preview__block">{blockText}</div>
+                        )}
+                      </For>
+                    </Show>
+                  </Show>
                 </div>
               </div>
             )}
@@ -3449,16 +3964,41 @@ function App() {
                       <div class="backlinks-panel__context">
                         Linked to page <strong>{pageTitle()}</strong>
                       </div>
-                      <div class="backlinks-panel__list">
-                        <For each={activePageBacklinks()}>
-                          {(entry) => (
-                            <button
-                              class="backlink-item"
-                              onClick={() => void openPageBacklink(entry)}
-                            >
-                              <div class="backlink-item__text">{entry.text || "Untitled"}</div>
-                              <div class="backlink-item__meta">{getPageBacklinkSource(entry)}</div>
-                            </button>
+                      <div class="backlinks-panel__groups">
+                        <For each={groupedPageBacklinks()}>
+                          {(group) => (
+                            <div class="backlink-group">
+                              <div class="backlink-group__header">
+                                <div class="backlink-group__title">
+                                  {group.title}
+                                </div>
+                                <Show when={supportsMultiPane}>
+                                  <button
+                                    class="backlink-group__action"
+                                    type="button"
+                                    onClick={() =>
+                                      void openPageBacklinkInPane(group.entries[0])
+                                    }
+                                  >
+                                    Open in pane
+                                  </button>
+                                </Show>
+                              </div>
+                              <div class="backlink-group__list">
+                                <For each={group.entries}>
+                                  {(entry) => (
+                                    <button
+                                      class="backlink-item"
+                                      onClick={() => void openPageBacklink(entry)}
+                                    >
+                                      <div class="backlink-item__text">
+                                        {formatBacklinkSnippet(entry.text || "Untitled")}
+                                      </div>
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
                           )}
                         </For>
                       </div>
@@ -3482,7 +4022,9 @@ function App() {
                                     setJumpTarget({ id: entry.id, caret: "start" });
                                   }}
                                 >
-                                  <div class="backlink-item__text">{entry.text || "Untitled"}</div>
+                                  <div class="backlink-item__text">
+                                    {formatBacklinkSnippet(entry.text || "Untitled")}
+                                  </div>
                                 </button>
                               )}
                             </For>

@@ -57,29 +57,29 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 2 — Linking & Navigation
 
-- [ ] **Wikilink autocomplete**
-  - [ ] On `[[`, show page title suggestions
-  - [ ] Allow creating a new page from the list
-  - [ ] Support alias (`[[Page|Alias]]`) in the UI
+- [x] **Wikilink autocomplete**
+  - [x] On `[[`, show page title suggestions
+  - [x] Allow creating a new page from the list
+  - [x] Support alias (`[[Page|Alias]]`) in the UI
   - **Done when:** selecting a suggestion inserts the correct link
   - **Suggested tests:** type `[[`, pick suggestion, assert link text
 
-- [ ] **Backlink improvements**
-  - [ ] Group backlinks by source page (use headings)
-  - [ ] Show a snippet of the linking block
-  - [ ] Add “open in new pane” option (if multi-pane exists)
+- [x] **Backlink improvements**
+  - [x] Group backlinks by source page (use headings)
+  - [x] Show a snippet of the linking block
+  - [x] Add “open in new pane” option (if multi-pane exists)
   - **Done when:** backlinks panel shows context and page source
 
-- [ ] **Rename page updates backlinks**
-  - [ ] When renaming a page, rewrite matching `[[Old]]` links
-  - [ ] Update alias links if `[[Old|Alias]]`
-  - [ ] Leave unrelated text untouched
+- [x] **Rename page updates backlinks**
+  - [x] When renaming a page, rewrite matching `[[Old]]` links
+  - [x] Update alias links if `[[Old|Alias]]`
+  - [x] Leave unrelated text untouched
   - **Done when:** renaming a page updates all wikilinks
   - **Suggested tests:** rename page and verify text update
 
-- [ ] **Link preview (hover)**
-  - [ ] Hover a wikilink shows a small preview with top 2 blocks
-  - [ ] Preview has “Open” action
+- [x] **Link preview (hover)**
+  - [x] Hover a wikilink shows a small preview with top 2 blocks
+  - [x] Preview has “Open” action
   - **Done when:** hover preview appears and is usable
 
 ---

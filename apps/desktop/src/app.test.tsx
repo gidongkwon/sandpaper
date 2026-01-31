@@ -282,7 +282,7 @@ describe("App", () => {
     expect(backlinks.length).toBeGreaterThan(0);
     expect(
       await screen.findByText("Project Atlas", {
-        selector: ".backlink-item__meta"
+        selector: ".backlink-group__title"
       })
     ).toBeInTheDocument();
     await userEvent.click(backlinks[0]);
