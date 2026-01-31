@@ -8,13 +8,42 @@ use serde::Serialize;
 use std::path::PathBuf;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockSearchResult, BlockSnapshot, Database};
-use plugins::{list_plugins, load_plugins_into_runtime, PluginInfo, PluginRegistry, PluginRuntimeLoadResult};
+use plugins::{
+    discover_plugins, list_plugins, runtime_script_path, PluginDescriptor, PluginInfo,
+    PluginRegistry, PluginRuntimeClient, PluginRuntimeLoadResult,
+};
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
     page_uid: String,
     title: String,
     blocks: Vec<BlockSnapshot>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginPermissionInfo {
+    id: String,
+    name: String,
+    version: String,
+    description: Option<String>,
+    permissions: Vec<String>,
+    enabled: bool,
+    path: String,
+    granted_permissions: Vec<String>,
+    missing_permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginBlockInfo {
+    id: String,
+    reason: String,
+    missing_permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginRuntimeStatus {
+    loaded: Vec<String>,
+    blocked: Vec<PluginBlockInfo>,
 }
 
 #[tauri::command]
@@ -67,6 +96,41 @@ fn open_active_database() -> Result<Database, String> {
 
 fn plugin_registry_for_vault(vault_path: &std::path::Path) -> PluginRegistry {
     PluginRegistry::new(vault_path.join("plugins/state.json"))
+}
+
+fn compute_missing_permissions(required: &[String], granted: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+    let granted_set: HashSet<&str> = granted.iter().map(|value| value.as_str()).collect();
+    required
+        .iter()
+        .filter(|perm| !granted_set.contains(perm.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn list_permissions_for_plugins(
+    db: &Database,
+    plugins: Vec<PluginInfo>,
+) -> Result<Vec<PluginPermissionInfo>, String> {
+    let mut result = Vec::with_capacity(plugins.len());
+    for plugin in plugins {
+        let granted = db
+            .list_plugin_permissions(&plugin.id)
+            .map_err(|err| format!("{:?}", err))?;
+        let missing = compute_missing_permissions(&plugin.permissions, &granted);
+        result.push(PluginPermissionInfo {
+            id: plugin.id,
+            name: plugin.name,
+            version: plugin.version,
+            description: plugin.description,
+            permissions: plugin.permissions,
+            enabled: plugin.enabled,
+            path: plugin.path,
+            granted_permissions: granted,
+            missing_permissions: missing,
+        });
+    }
+    Ok(result)
 }
 
 fn sanitize_kebab(input: &str) -> String {
@@ -179,17 +243,76 @@ fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, St
 }
 
 #[tauri::command]
-fn list_plugins_command() -> Result<Vec<PluginInfo>, String> {
+fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
-    list_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))
+    let db = open_active_database()?;
+    let plugins = list_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
+    list_permissions_for_plugins(&db, plugins)
 }
 
 #[tauri::command]
-fn load_plugins_command() -> Result<PluginRuntimeLoadResult, String> {
+fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
-    load_plugins_into_runtime(&vault_path, &registry).map_err(|err| format!("{:?}", err))
+    let db = open_active_database()?;
+    let plugins = discover_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
+
+    let mut allowed: Vec<PluginDescriptor> = Vec::new();
+    let mut blocked: Vec<PluginBlockInfo> = Vec::new();
+
+    for plugin in plugins {
+        if !plugin.enabled {
+            blocked.push(PluginBlockInfo {
+                id: plugin.manifest.id,
+                reason: "disabled".to_string(),
+                missing_permissions: Vec::new(),
+            });
+            continue;
+        }
+
+        let granted = db
+            .list_plugin_permissions(&plugin.manifest.id)
+            .map_err(|err| format!("{:?}", err))?;
+        let missing = compute_missing_permissions(&plugin.manifest.permissions, &granted);
+        if missing.is_empty() {
+            allowed.push(plugin);
+        } else {
+            blocked.push(PluginBlockInfo {
+                id: plugin.manifest.id,
+                reason: "missing-permissions".to_string(),
+                missing_permissions: missing,
+            });
+        }
+    }
+
+    let runtime = PluginRuntimeClient::new(runtime_script_path());
+    let loaded = if allowed.is_empty() {
+        PluginRuntimeLoadResult { loaded: Vec::new() }
+    } else {
+        runtime
+            .load_plugins(&allowed)
+            .map_err(|err| format!("{:?}", err))?
+    };
+
+    Ok(PluginRuntimeStatus {
+        loaded: loaded.loaded,
+        blocked,
+    })
+}
+
+#[tauri::command]
+fn grant_plugin_permission(plugin_id: String, permission: String) -> Result<(), String> {
+    let db = open_active_database()?;
+    db.grant_plugin_permission(&plugin_id, &permission)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn revoke_plugin_permission(plugin_id: String, permission: String) -> Result<(), String> {
+    let db = open_active_database()?;
+    db.revoke_plugin_permission(&plugin_id, &permission)
+        .map_err(|err| format!("{:?}", err))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -206,7 +329,9 @@ pub fn run() {
             save_page_blocks,
             write_shadow_markdown,
             list_plugins_command,
-            load_plugins_command
+            load_plugins_command,
+            grant_plugin_permission,
+            revoke_plugin_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -214,7 +339,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault};
+    use super::{
+        compute_missing_permissions, list_permissions_for_plugins, sanitize_kebab,
+        shadow_markdown_path, write_shadow_markdown_to_vault, Database, PluginInfo,
+    };
     use tempfile::tempdir;
 
     #[test]
@@ -250,5 +378,37 @@ mod tests {
                 & 0o777;
             assert_eq!(mode, 0o444);
         }
+    }
+
+    #[test]
+    fn compute_missing_permissions_respects_required_order() {
+        let required = vec!["fs".to_string(), "network".to_string(), "ui".to_string()];
+        let granted = vec!["fs".to_string(), "ui".to_string()];
+        let missing = compute_missing_permissions(&required, &granted);
+        assert_eq!(missing, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn list_permissions_for_plugins_returns_grants() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.grant_plugin_permission("alpha", "fs")
+            .expect("grant fs");
+
+        let plugins = vec![PluginInfo {
+            id: "alpha".to_string(),
+            name: "Alpha".to_string(),
+            version: "0.1.0".to_string(),
+            description: None,
+            permissions: vec!["fs".to_string(), "network".to_string()],
+            enabled: true,
+            path: "/tmp/alpha".to_string(),
+        }];
+
+        let result = list_permissions_for_plugins(&db, plugins).expect("list permissions");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].granted_permissions, vec!["fs".to_string()]);
+        assert_eq!(result[0].missing_permissions, vec!["network".to_string()]);
     }
 }

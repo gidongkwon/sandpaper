@@ -189,7 +189,7 @@ Exit criteria
 Checklist
 - [ ] Sandbox runtime: separate JS process
 - [ ] Permissions: strict prompts (default-deny)
-- [ ] Permissions: store granted permissions
+- [x] Permissions: store granted permissions
 - [ ] Plugin API: commands + events
 - [ ] Plugin API: data access (read/write blocks/pages)
 - [ ] Plugin API: UI panels + toolbar actions

@@ -570,6 +570,39 @@ impl Database {
         rows.collect()
     }
 
+    pub fn grant_plugin_permission(
+        &self,
+        plugin_id: &str,
+        permission: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO plugin_perms (plugin_id, permission)
+             VALUES (?1, ?2)",
+            params![plugin_id, permission],
+        )?;
+        Ok(())
+    }
+
+    pub fn revoke_plugin_permission(
+        &self,
+        plugin_id: &str,
+        permission: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM plugin_perms WHERE plugin_id = ?1 AND permission = ?2",
+            params![plugin_id, permission],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_plugin_permissions(&self, plugin_id: &str) -> rusqlite::Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT permission FROM plugin_perms WHERE plugin_id = ?1 ORDER BY permission",
+        )?;
+        let rows = stmt.query_map([plugin_id], |row| row.get(0))?;
+        rows.collect()
+    }
+
     pub fn insert_edge(
         &self,
         from_block_id: i64,
@@ -896,6 +929,29 @@ mod tests {
         assert!(page.is_none());
         let child = db.get_block(child_id).expect("get child");
         assert!(child.is_none());
+    }
+
+    #[test]
+    fn plugin_permissions_roundtrip() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.grant_plugin_permission("alpha", "fs")
+            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "network")
+            .expect("grant network");
+
+        let permissions = db
+            .list_plugin_permissions("alpha")
+            .expect("list permissions");
+        assert_eq!(permissions, vec!["fs".to_string(), "network".to_string()]);
+
+        db.revoke_plugin_permission("alpha", "fs")
+            .expect("revoke fs");
+        let permissions = db
+            .list_plugin_permissions("alpha")
+            .expect("list permissions after revoke");
+        assert_eq!(permissions, vec!["network".to_string()]);
     }
 
     #[test]
