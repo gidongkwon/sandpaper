@@ -198,6 +198,7 @@ Exit criteria
 - 2026-01-31: Phase 5 — Autosave status accuracy completed (save state reflects DB write + error state).
 - 2026-01-31: Phase 5 — Shadow writer retries + queue indicator completed.
 - 2026-01-31: Phase 5 — Crash-safe migration backups completed (rotate last 3).
+- 2026-01-31: Phase 6 — Permission audit tab completed (missing/unused highlights).
 
 ### Phase 2 — Plugin System + Core Plugins
 **Outcome:** extensible platform, core plugins installed.

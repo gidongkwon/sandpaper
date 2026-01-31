@@ -2132,6 +2132,88 @@ button:disabled {
   color: var(--success);
 }
 
+.settings-permission-legend {
+  display: flex;
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.settings-permission-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.settings-permission-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+
+.settings-permission-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-permission-version {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.settings-permission-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
+.settings-permission {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.settings-permission.is-granted {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.settings-permission.is-missing {
+  border-color: var(--error);
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.settings-permission.is-unused {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.settings-permission-note {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+.settings-permission-note.is-missing {
+  color: var(--error);
+}
+
+.settings-permission-note.is-unused {
+  color: var(--warning);
+}
+
 /* Typography slider */
 .settings-slider {
   padding: var(--space-2) 0;

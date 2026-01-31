@@ -679,7 +679,9 @@ function App() {
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  const [settingsTab, setSettingsTab] = createSignal<"general" | "vault" | "sync" | "plugins" | "import">("general");
+  const [settingsTab, setSettingsTab] = createSignal<
+    "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
+  >("general");
   const [sidebarOpen, setSidebarOpen] = createSignal(true);
   const [backlinksOpen, setBacklinksOpen] = createSignal(false);
   const [typeScale, setTypeScale] = createSignal(TYPE_SCALE_DEFAULT);
@@ -749,7 +751,7 @@ function App() {
       permissions: ["fs", "network", "data.write", "ui"],
       enabled: true,
       path: "/plugins/local-calendar",
-      granted_permissions: ["fs", "data.write", "ui"],
+      granted_permissions: ["fs", "data.write", "ui", "clipboard"],
       missing_permissions: ["network"]
     },
     {
@@ -4483,6 +4485,10 @@ function App() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>
                   Plugins
                 </button>
+                <button class={`settings-nav__item ${settingsTab() === "permissions" ? "is-active" : ""}`} onClick={() => setSettingsTab("permissions")}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 5-3.5 9-7 9s-7-4-7-9V7l7-4z" /><path d="M9 12l2 2 4-4" /></svg>
+                  Permissions
+                </button>
                 <button class={`settings-nav__item ${settingsTab() === "import" ? "is-active" : ""}`} onClick={() => setSettingsTab("import")}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                   Import
@@ -4692,6 +4698,90 @@ function App() {
                             </button>
                           </div>
                         )}
+                      </For>
+                    </Show>
+                  </div>
+                </Show>
+                <Show when={settingsTab() === "permissions"}>
+                  <div class="settings-section">
+                    <h3 class="settings-section__title">Permission Audit</h3>
+                    <p class="settings-section__desc">
+                      Review required permissions, missing grants, and unused grants.
+                    </p>
+                    <div class="settings-permission-legend">
+                      <span class="settings-permission is-granted">Granted</span>
+                      <span class="settings-permission is-missing">Missing</span>
+                      <span class="settings-permission is-unused">Unused</span>
+                    </div>
+                    <Show
+                      when={plugins().length > 0}
+                      fallback={<p class="settings-section__desc">No plugins installed.</p>}
+                    >
+                      <For each={plugins()}>
+                        {(plugin) => {
+                          const missing = plugin.missing_permissions;
+                          const unused = plugin.granted_permissions.filter(
+                            (perm) => !plugin.permissions.includes(perm)
+                          );
+                          const orderedPermissions = [
+                            ...plugin.permissions,
+                            ...unused
+                          ];
+                          const showPermissions = orderedPermissions.length > 0;
+                          return (
+                            <div class="settings-permission-card">
+                              <div class="settings-permission-header">
+                                <span class="settings-permission-name">
+                                  {plugin.name}
+                                </span>
+                                <span class="settings-permission-version">
+                                  {plugin.version}
+                                </span>
+                              </div>
+                              <Show when={plugin.description}>
+                                <p class="settings-section__desc">
+                                  {plugin.description}
+                                </p>
+                              </Show>
+                              <Show
+                                when={showPermissions}
+                                fallback={
+                                  <p class="settings-section__desc">
+                                    No permissions requested.
+                                  </p>
+                                }
+                              >
+                                <div class="settings-permission-list">
+                                  <For each={orderedPermissions}>
+                                    {(perm) => (
+                                      <span
+                                        class={`settings-permission ${
+                                          missing.includes(perm)
+                                            ? "is-missing"
+                                            : unused.includes(perm)
+                                              ? "is-unused"
+                                              : "is-granted"
+                                        }`}
+                                      >
+                                        {perm}
+                                      </span>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+                              <Show when={missing.length > 0}>
+                                <p class="settings-permission-note is-missing">
+                                  Missing: {missing.join(", ")}
+                                </p>
+                              </Show>
+                              <Show when={unused.length > 0}>
+                                <p class="settings-permission-note is-unused">
+                                  Unused grants: {unused.join(", ")}
+                                </p>
+                              </Show>
+                            </div>
+                          );
+                        }}
                       </For>
                     </Show>
                   </div>

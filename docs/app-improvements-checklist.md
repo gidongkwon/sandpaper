@@ -143,9 +143,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 6 — Plugin System Improvements
 
-- [ ] **Permission audit view**
-  - [ ] Add a settings tab showing all plugin permissions
-  - [ ] Highlight unused permissions and missing grants
+- [x] **Permission audit view**
+  - [x] Add a settings tab showing all plugin permissions
+  - [x] Highlight unused permissions and missing grants
   - **Done when:** there is a clear audit list
 
 - [ ] **Plugin error surface**
