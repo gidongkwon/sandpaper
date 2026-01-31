@@ -1679,11 +1679,32 @@ button:disabled {
 }
 
 .settings-slider__labels {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  height: 12px;
   margin-top: var(--space-1-5);
   font-size: 10px;
   color: var(--text-tertiary);
+}
+
+.settings-slider__label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.settings-slider__label.is-min {
+  left: 0;
+  transform: translateX(0);
+}
+
+.settings-slider__label.is-default {
+  left: var(--default-position, 50%);
+}
+
+.settings-slider__label.is-max {
+  left: 100%;
+  transform: translateX(-100%);
 }
 
 .settings-code {

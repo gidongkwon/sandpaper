@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
 import App from "./app";
 
 describe("App", () => {
@@ -7,11 +8,17 @@ describe("App", () => {
     localStorage.clear();
   });
 
-  it("renders the outline header", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders the mode switch", () => {
     render(() => <App />);
     expect(
-      screen.getByText("Sandpaper", { selector: ".topbar__title" })
+      screen.getByRole("button", { name: "Capture" })
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Editor" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
   });
 
   it("shows autosave status after load", async () => {
@@ -19,16 +26,31 @@ describe("App", () => {
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
   });
 
+  it("positions the default text size label at the correct scale", async () => {
+    render(() => <App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    const labels = await screen.findByText("Default");
+    const container = labels.closest(
+      ".settings-slider__labels"
+    ) as HTMLElement | null;
+    expect(container).not.toBeNull();
+    expect(container?.style.getPropertyValue("--default-position")).toBe(
+      "33.33%"
+    );
+  });
+
   it("shows search results for matching blocks", async () => {
     render(() => <App />);
-    const input = screen.getByPlaceholderText("Search notes, tags, or IDs");
+    const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
     expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
   });
 
   it("filters search results by links", async () => {
     render(() => <App />);
-    const input = screen.getByPlaceholderText("Search notes, tags, or IDs");
+    const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
     expect(await screen.findByText("Draft line 1")).toBeInTheDocument();
     const linksButton = screen.getByRole("button", { name: "Links" });
@@ -38,41 +60,49 @@ describe("App", () => {
 
   it("prompts for plugin permission grants", async () => {
     render(() => <App />);
-    const grantButton = await screen.findByRole("button", {
-      name: /grant network/i
-    });
-    await userEvent.click(grantButton);
-    expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Grant permission"
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
     );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const grantButton = await screen.findByRole("button", { name: /grant network/i });
+    await userEvent.click(grantButton);
+    expect(await screen.findByText("Grant permission")).toBeInTheDocument();
   });
 
-  it("shows plugin panels and toolbar actions", async () => {
+  it("shows plugin commands and panels", async () => {
     render(() => <App />);
-    expect(await screen.findByText("Panels")).toBeInTheDocument();
-    expect(await screen.findByText("Toolbar actions")).toBeInTheDocument();
-    expect(await screen.findByText("Renderers")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    expect(await screen.findByText("Plugin Commands")).toBeInTheDocument();
+    expect(await screen.findByText("Plugin Panels")).toBeInTheDocument();
     expect(await screen.findByText("Calendar panel")).toBeInTheDocument();
-    expect(await screen.findByText("Today focus")).toBeInTheDocument();
-    expect(await screen.findByText("Code block renderer")).toBeInTheDocument();
+    expect(await screen.findByText("Capture highlight")).toBeInTheDocument();
   });
 
   it("renders the vault key section", async () => {
     render(() => <App />);
-    expect(await screen.findByText("Vault key")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    expect(await screen.findByText("Encryption Key")).toBeInTheDocument();
     const setButton = screen.getByRole("button", { name: /set passphrase/i });
     expect(setButton).toBeDisabled();
   });
 
   it("renders the sync section in browser mode", async () => {
     render(() => <App />);
-    expect(await screen.findByText("Sync")).toBeInTheDocument();
-    const connectButton = screen.getByRole("button", { name: /connect sync/i });
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Sync" }));
+    const connectButton = screen.getByRole("button", { name: /connect/i });
     expect(connectButton).toBeDisabled();
     expect(
       await screen.findByText(/desktop app required/i)
     ).toBeInTheDocument();
-    expect(await screen.findByText("Apply")).toBeInTheDocument();
   });
 
   it("renders the review mode panel", async () => {
@@ -101,7 +131,7 @@ describe("App", () => {
 
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
-    await screen.findByText("Panels");
+    await screen.findByText(/saved/i);
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     fireEvent.input(firstInput, { target: { value: "```ts const x = 1;" } });
@@ -113,7 +143,7 @@ describe("App", () => {
 
   it("renders a diagram preview for fenced mermaid blocks", async () => {
     render(() => <App />);
-    await screen.findByText("Panels");
+    await screen.findByText(/saved/i);
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     fireEvent.input(firstInput, {
@@ -127,7 +157,7 @@ describe("App", () => {
 
   it("shows backlinks for referenced blocks", async () => {
     render(() => <App />);
-    await screen.findByText("Panels");
+    await screen.findByText("Editor");
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     const secondInput = inputs[1];
@@ -135,18 +165,23 @@ describe("App", () => {
     expect(targetId).toBeTruthy();
     fireEvent.input(secondInput, { target: { value: `See ((${targetId}))` } });
     fireEvent.focus(firstInput);
+    await userEvent.click(
+      screen.getByRole("button", { name: /show backlinks/i })
+    );
     expect(await screen.findByText("Backlinks")).toBeInTheDocument();
     const backlinks = await screen.findAllByText(/see/i, {
-      selector: ".backlink__text"
+      selector: ".backlink-item__text"
     });
     expect(backlinks.length).toBeGreaterThan(0);
   });
 
   it("exports markdown in browser mode", async () => {
     render(() => <App />);
-    const exportButton = await screen.findByRole("button", {
-      name: /export markdown/i
-    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    const exportButton = await screen.findByRole("button", { name: /export all pages/i });
     await userEvent.click(exportButton);
     expect(
       await screen.findByText(/preview generated in browser/i)
@@ -155,15 +190,24 @@ describe("App", () => {
 
   it("imports markdown into a new page in browser mode", async () => {
     render(() => <App />);
-    const input = screen.getByPlaceholderText(/paste markdown to import/i);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    const input = screen.getByPlaceholderText(/paste markdown here/i);
     await userEvent.type(
       input,
       `# Import
 - Imported line ^import-1`
     );
-    const importButton = screen.getByRole("button", {
-      name: /import markdown/i
-    });
+    const importSection = screen
+      .getByRole("heading", { name: "Import Markdown" })
+      .closest(".settings-section");
+    expect(importSection).not.toBeNull();
+    const importButton = within(importSection as HTMLElement).getByRole(
+      "button",
+      { name: "Import" }
+    );
     await userEvent.click(importButton);
     expect(await screen.findByText(/imported 1 blocks?/i)).toBeInTheDocument();
     expect(
@@ -172,67 +216,73 @@ describe("App", () => {
     const pageButton = screen.getByRole("button", { name: "Open Import" });
     await userEvent.click(pageButton);
     expect(
-      await screen.findByText("Import", { selector: ".editor-pane__meta" })
+      await screen.findByText("Import", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    const searchInput = screen.getByPlaceholderText("Search notes, tags, or IDs");
+    const searchInput = screen.getByPlaceholderText("Search...");
     await userEvent.type(searchInput, "Imported line");
-    expect(await screen.findByText("Imported line")).toBeInTheDocument();
+    const results = await screen.findAllByText("Imported line", {
+      selector: ".result__text"
+    });
+    expect(results.length).toBeGreaterThan(0);
   });
 
   it("creates a new page and switches to it", async () => {
     render(() => <App />);
-    const input = screen.getByPlaceholderText(/new page title/i);
-    await userEvent.type(input, "Project Atlas");
-    const createButton = screen.getByRole("button", { name: /create page/i });
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Project Atlas");
+    const createButton = screen.getByRole("button", { name: /create new page/i });
     await userEvent.click(createButton);
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Project Atlas", { selector: ".editor-pane__meta" })
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
+    promptSpy.mockRestore();
   });
 
   it("renames the active page", async () => {
     render(() => <App />);
-    await screen.findByText("Panels");
-    const renameInput = screen.getByPlaceholderText(/rename page/i);
-    fireEvent.input(renameInput, { target: { value: "Inbox Zero" } });
-    const renameButton = screen.getByRole("button", { name: /rename page/i });
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Inbox Zero");
+    const renameButton = await screen.findByRole("button", { name: "Rename" });
     await userEvent.click(renameButton);
     expect(
       await screen.findByText("Inbox Zero", { selector: ".page-item__title" })
     ).toBeInTheDocument();
     expect(
-      await screen.findByText("Inbox Zero", { selector: ".editor-pane__meta" })
+      await screen.findByText("Inbox Zero", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
+    promptSpy.mockRestore();
   });
 
   it("opens a plugin panel from the list", async () => {
     render(() => <App />);
-    const openButtons = await screen.findAllByRole("button", {
-      name: /open panel/i
-    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const openButtons = await screen.findAllByRole("button", { name: "Open" });
     await userEvent.click(openButtons[0]);
     expect(await screen.findByText(/active panel/i)).toBeInTheDocument();
   });
 
   it("blocks panel open when permission is missing", async () => {
     render(() => <App />);
-    const openButtons = await screen.findAllByRole("button", {
-      name: /open panel/i
-    });
-    await userEvent.click(openButtons[1]);
-    expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Grant permission"
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
     );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const openButtons = await screen.findAllByRole("button", { name: "Open" });
+    await userEvent.click(openButtons[1]);
+    expect(await screen.findByText("Grant permission")).toBeInTheDocument();
   });
 
   it("runs a plugin command to append a block", async () => {
     render(() => <App />);
-    const runButtons = await screen.findAllByRole("button", {
-      name: /run command/i
-    });
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const runButtons = await screen.findAllByRole("button", { name: "Run" });
     await userEvent.click(runButtons[0]);
     const matches = await screen.findAllByDisplayValue(/plugin action/i);
     expect(matches.length).toBeGreaterThan(0);
@@ -240,12 +290,12 @@ describe("App", () => {
 
   it("blocks command run when permission is missing", async () => {
     render(() => <App />);
-    const runButtons = await screen.findAllByRole("button", {
-      name: /run command/i
-    });
-    await userEvent.click(runButtons[1]);
-    expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Grant permission"
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
     );
+    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    const runButtons = await screen.findAllByRole("button", { name: "Run" });
+    await userEvent.click(runButtons[1]);
+    expect(await screen.findByText("Grant permission")).toBeInTheDocument();
   });
 });

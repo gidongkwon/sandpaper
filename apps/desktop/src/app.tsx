@@ -235,6 +235,15 @@ let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
 const DEFAULT_PAGE_UID = "inbox";
+const TYPE_SCALE_MIN = 0.8;
+const TYPE_SCALE_MAX = 1.4;
+const TYPE_SCALE_STEP = 0.05;
+const TYPE_SCALE_DEFAULT = 1;
+const TYPE_SCALE_DEFAULT_POSITION = `${(
+  ((TYPE_SCALE_DEFAULT - TYPE_SCALE_MIN) /
+    (TYPE_SCALE_MAX - TYPE_SCALE_MIN)) *
+  100
+).toFixed(2)}%`;
 
 const makeLocalId = () => `b${nextId++}`;
 const makeRandomId = () => globalThis.crypto?.randomUUID?.() ?? makeLocalId();
@@ -434,7 +443,7 @@ function App() {
   const [settingsTab, setSettingsTab] = createSignal<"general" | "vault" | "sync" | "plugins" | "import">("general");
   const [sidebarOpen, setSidebarOpen] = createSignal(true);
   const [backlinksOpen, setBacklinksOpen] = createSignal(false);
-  const [typeScale, setTypeScale] = createSignal(1);
+  const [typeScale, setTypeScale] = createSignal(TYPE_SCALE_DEFAULT);
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -2062,7 +2071,7 @@ function App() {
     const savedScale = localStorage.getItem("sandpaper:type-scale");
     if (savedScale) {
       const parsed = parseFloat(savedScale);
-      if (parsed >= 0.8 && parsed <= 1.4) {
+      if (parsed >= TYPE_SCALE_MIN && parsed <= TYPE_SCALE_MAX) {
         setTypeScale(parsed);
       }
     }
@@ -2817,16 +2826,19 @@ function App() {
                       <input
                         type="range"
                         class="settings-slider__input"
-                        min="0.8"
-                        max="1.4"
-                        step="0.05"
+                        min={TYPE_SCALE_MIN}
+                        max={TYPE_SCALE_MAX}
+                        step={TYPE_SCALE_STEP}
                         value={typeScale()}
                         onInput={(e) => setTypeScale(parseFloat(e.currentTarget.value))}
                       />
-                      <div class="settings-slider__labels">
-                        <span>Compact</span>
-                        <span>Default</span>
-                        <span>Large</span>
+                      <div
+                        class="settings-slider__labels"
+                        style={{ "--default-position": TYPE_SCALE_DEFAULT_POSITION }}
+                      >
+                        <span class="settings-slider__label is-min">Compact</span>
+                        <span class="settings-slider__label is-default">Default</span>
+                        <span class="settings-slider__label is-max">Large</span>
                       </div>
                     </div>
                   </div>
