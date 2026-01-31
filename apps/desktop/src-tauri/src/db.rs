@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub struct Database {
@@ -181,6 +181,13 @@ pub struct BlockSearchResult {
     pub id: i64,
     pub uid: String,
     pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlockSnapshot {
+    pub uid: String,
+    pub text: String,
+    pub indent: i64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -412,6 +419,49 @@ impl Database {
         rows.collect()
     }
 
+    pub fn load_blocks_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<BlockSnapshot>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT uid, text, props FROM blocks WHERE page_id = ?1 ORDER BY sort_key",
+        )?;
+        let rows = stmt.query_map([page_id], |row| {
+            let props: String = row.get(2)?;
+            Ok(BlockSnapshot {
+                uid: row.get(0)?,
+                text: row.get(1)?,
+                indent: parse_indent(&props),
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn replace_blocks_for_page(
+        &mut self,
+        page_id: i64,
+        blocks: &[BlockSnapshot],
+    ) -> rusqlite::Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM blocks WHERE page_id = ?1", [page_id])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO blocks (uid, page_id, parent_id, sort_key, text, props)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5)",
+            )?;
+            for (index, block) in blocks.iter().enumerate() {
+                let sort_key = format!("{:06}", index);
+                let props = serde_json::json!({ "indent": block.indent }).to_string();
+                stmt.execute(params![
+                    block.uid,
+                    page_id,
+                    sort_key,
+                    block.text,
+                    props
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn search_pages(&self, query: &str) -> rusqlite::Result<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?1 ORDER BY rowid",
@@ -597,9 +647,20 @@ impl Database {
     }
 }
 
+fn parse_indent(props: &str) -> i64 {
+    let parsed: serde_json::Value = match serde_json::from_str(props) {
+        Ok(value) => value,
+        Err(_) => return 0,
+    };
+    parsed
+        .get("indent")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Database;
+    use super::{BlockSnapshot, Database};
 
     fn table_exists(db: &Database, name: &str) -> bool {
         db.conn
@@ -717,6 +778,34 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].uid, "block-uid");
         assert_eq!(results[0].text, "alpha note");
+    }
+
+    #[test]
+    fn replace_and_load_blocks_roundtrip() {
+        let mut db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-uid", "Inbox").expect("insert page");
+        let blocks = vec![
+            BlockSnapshot {
+                uid: "block-1".to_string(),
+                text: "First line".to_string(),
+                indent: 0,
+            },
+            BlockSnapshot {
+                uid: "block-2".to_string(),
+                text: "Indented line".to_string(),
+                indent: 2,
+            },
+        ];
+
+        db.replace_blocks_for_page(page_id, &blocks)
+            .expect("replace blocks");
+
+        let loaded = db
+            .load_blocks_for_page(page_id)
+            .expect("load blocks");
+        assert_eq!(loaded, blocks);
     }
 
     #[test]

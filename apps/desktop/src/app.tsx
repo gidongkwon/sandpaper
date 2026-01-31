@@ -6,7 +6,8 @@ import {
   createResource,
   createSignal,
   onCleanup,
-  onMount
+  onMount,
+  untrack
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
@@ -48,26 +49,55 @@ type BlockSearchResult = {
   text: string;
 };
 
+type BlockPayload = {
+  uid: string;
+  text: string;
+  indent: number;
+};
+
+type PageBlocksResponse = {
+  page_uid: string;
+  title: string;
+  blocks: BlockPayload[];
+};
+
 let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
+const DEFAULT_PAGE_UID = "inbox";
 
-const createBlock = (text = "", indent = 0): Block => ({
-  id: `b${nextId++}`,
+const makeLocalId = () => `b${nextId++}`;
+const makeRandomId = () => globalThis.crypto?.randomUUID?.() ?? makeLocalId();
+
+const makeBlock = (id: string, text = "", indent = 0): Block => ({
+  id,
   text,
   indent
 });
 
-function App() {
-  const fillerBlocks = Array.from({ length: 60 }, (_, index) =>
-    createBlock(`Draft line ${index + 1}`, index % 3)
+const buildDefaultBlocks = (idFactory: () => string): Block[] => {
+  const core = [
+    { text: "Sandpaper outline prototype", indent: 0 },
+    { text: "Enter to add a block", indent: 1 },
+    { text: "Tab to indent, Shift+Tab to outdent", indent: 1 },
+    { text: "Backspace on empty removes the block", indent: 1 }
+  ];
+  const filler = Array.from({ length: 60 }, (_, index) => ({
+    text: `Draft line ${index + 1}`,
+    indent: index % 3
+  }));
+
+  return [...core, ...filler].map(({ text, indent }) =>
+    makeBlock(idFactory(), text, indent)
   );
+};
+
+const buildLocalDefaults = () => buildDefaultBlocks(makeLocalId);
+const defaultBlocks = buildLocalDefaults();
+
+function App() {
   const [blocks, setBlocks] = createStore<Block[]>([
-    createBlock("Sandpaper outline prototype"),
-    createBlock("Enter to add a block", 1),
-    createBlock("Tab to indent, Shift+Tab to outdent", 1),
-    createBlock("Backspace on empty removes the block", 1),
-    ...fillerBlocks
+    ...defaultBlocks
   ]);
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [mode, setMode] = createSignal<Mode>("editor");
@@ -79,6 +109,7 @@ function App() {
   const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
   const [newVaultName, setNewVaultName] = createSignal("");
   const [newVaultPath, setNewVaultPath] = createSignal("");
+  const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [perfEnabled, setPerfEnabled] = createSignal(false);
   const [perfStats, setPerfStats] = createSignal<PerfStats>({
     count: 0,
@@ -150,6 +181,76 @@ function App() {
     isTauri() ? remoteResults() : localResults()
   );
 
+  const createNewBlock = (text = "", indent = 0) =>
+    makeBlock(isTauri() ? makeRandomId() : makeLocalId(), text, indent);
+
+  const toPayload = (block: Block): BlockPayload => ({
+    uid: block.id,
+    text: block.text,
+    indent: block.indent
+  });
+
+  let saveTimeout: number | undefined;
+  const persistBlocks = async () => {
+    if (!isTauri()) return;
+    const payload = untrack(() => blocks.map((block) => toPayload(block)));
+    try {
+      await invoke("save_page_blocks", {
+        pageUid: DEFAULT_PAGE_UID,
+        page_uid: DEFAULT_PAGE_UID,
+        blocks: payload
+      });
+    } catch (error) {
+      console.error("Failed to save blocks", error);
+    }
+  };
+
+  const scheduleSave = () => {
+    if (!isTauri()) return;
+    if (saveTimeout) {
+      window.clearTimeout(saveTimeout);
+    }
+    saveTimeout = window.setTimeout(() => {
+      void persistBlocks();
+    }, 400);
+  };
+
+  const loadBlocks = async () => {
+    if (!isTauri()) {
+      setBlocks(buildLocalDefaults());
+      setPageTitle("Inbox");
+      return;
+    }
+
+    try {
+      const response = (await invoke("load_page_blocks", {
+        pageUid: DEFAULT_PAGE_UID,
+        page_uid: DEFAULT_PAGE_UID
+      })) as PageBlocksResponse;
+      const loaded = response.blocks.map((block) =>
+        makeBlock(block.uid, block.text, block.indent)
+      );
+      setPageTitle(response.title || "Inbox");
+      if (loaded.length === 0) {
+        const seeded = buildDefaultBlocks(makeRandomId);
+        setBlocks(seeded);
+        await invoke("save_page_blocks", {
+          pageUid: DEFAULT_PAGE_UID,
+          page_uid: DEFAULT_PAGE_UID,
+          blocks: seeded.map((block) => toPayload(block))
+        });
+        setActiveId(seeded[0]?.id ?? null);
+        return;
+      }
+      setBlocks(loaded);
+      setActiveId(loaded[0]?.id ?? null);
+    } catch (error) {
+      console.error("Failed to load blocks", error);
+      setBlocks(buildLocalDefaults());
+      setPageTitle("Inbox");
+    }
+  };
+
   const loadVaults = async () => {
     if (!isTauri()) {
       const fallback = {
@@ -159,6 +260,7 @@ function App() {
       };
       setVaults([fallback]);
       setActiveVault(fallback);
+      await loadBlocks();
       return;
     }
 
@@ -171,6 +273,7 @@ function App() {
         entries[0] ??
         null;
       setActiveVault(active);
+      await loadBlocks();
     } catch (error) {
       console.error("Failed to load vaults", error);
     }
@@ -184,6 +287,7 @@ function App() {
       vaultId,
       vault_id: vaultId
     });
+    await loadBlocks();
   };
 
   const createVault = async () => {
@@ -199,6 +303,7 @@ function App() {
       const record = { id, name, path };
       setVaults((prev) => [...prev, record]);
       setActiveVault(record);
+      await loadBlocks();
     }
 
     setVaultFormOpen(false);
@@ -219,6 +324,9 @@ function App() {
 
     onCleanup(() => {
       scrollMeter.dispose();
+      if (saveTimeout) {
+        window.clearTimeout(saveTimeout);
+      }
     });
   });
 
@@ -230,12 +338,13 @@ function App() {
   const addCapture = () => {
     const text = captureText().trim();
     if (!text) return;
-    const block = createBlock(text, 0);
+    const block = createNewBlock(text, 0);
     setBlocks(
       produce((draft) => {
         draft.unshift(block);
       })
     );
+    scheduleSave();
     setCaptureText("");
     setMode("editor");
     setActiveId(block.id);
@@ -326,12 +435,13 @@ function App() {
     });
 
     const insertBlockAfter = (index: number, indent: number) => {
-      const block = createBlock("", indent);
+      const block = createNewBlock("", indent);
       setBlocks(
         produce((draft) => {
           draft.splice(index + 1, 0, block);
         })
       );
+      scheduleSave();
       focusBlock(block.id, "start");
     };
 
@@ -344,6 +454,7 @@ function App() {
           draft.splice(index, 1);
         })
       );
+      scheduleSave();
       const target = next ?? prev;
       if (target) focusBlock(target.id);
     };
@@ -375,6 +486,7 @@ function App() {
         const delta = event.shiftKey ? -1 : 1;
         const nextIndent = Math.max(0, block.indent + delta);
         setBlocks(index, "indent", nextIndent);
+        scheduleSave();
         return;
       }
 
@@ -435,6 +547,7 @@ function App() {
                         onInput={(event) => {
                           recordLatency("input");
                           setBlocks(blockIndex(), "text", event.currentTarget.value);
+                          scheduleSave();
                         }}
                         onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                       />
@@ -635,7 +748,7 @@ function App() {
           </aside>
 
           <div class="panes">
-            <EditorPane title="Primary editor" meta="Inbox / Daily" />
+            <EditorPane title="Primary editor" meta={pageTitle()} />
             <EditorPane title="Connection pane" meta="Split view" />
           </div>
         </div>

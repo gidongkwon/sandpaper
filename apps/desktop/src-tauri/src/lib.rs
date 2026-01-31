@@ -4,9 +4,17 @@ pub mod db;
 pub mod plugins;
 pub mod vaults;
 
+use serde::Serialize;
 use std::path::PathBuf;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
-use db::{BlockSearchResult, Database};
+use db::{BlockSearchResult, BlockSnapshot, Database};
+
+#[derive(Debug, Serialize)]
+struct PageBlocksResponse {
+    page_uid: String,
+    title: String,
+    blocks: Vec<BlockSnapshot>,
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -56,10 +64,48 @@ fn open_active_database() -> Result<Database, String> {
     Ok(db)
 }
 
+fn ensure_page(db: &Database, page_uid: &str, title: &str) -> Result<i64, String> {
+    if let Some(page) = db
+        .get_page_by_uid(page_uid)
+        .map_err(|err| format!("{:?}", err))?
+    {
+        return Ok(page.id);
+    }
+
+    db.insert_page(page_uid, title)
+        .map_err(|err| format!("{:?}", err))
+}
+
 #[tauri::command]
 fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
     let db = open_active_database()?;
     db.search_block_summaries(&query, 50)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
+    let db = open_active_database()?;
+    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let page = db
+        .get_page_by_uid(&page_uid)
+        .map_err(|err| format!("{:?}", err))?
+        .ok_or_else(|| "Page not found".to_string())?;
+    let blocks = db
+        .load_blocks_for_page(page_id)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(PageBlocksResponse {
+        page_uid,
+        title: page.title,
+        blocks,
+    })
+}
+
+#[tauri::command]
+fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), String> {
+    let mut db = open_active_database()?;
+    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    db.replace_blocks_for_page(page_id, &blocks)
         .map_err(|err| format!("{:?}", err))
 }
 
@@ -72,7 +118,9 @@ pub fn run() {
             list_vaults,
             create_vault,
             set_active_vault,
-            search_blocks
+            search_blocks,
+            load_page_blocks,
+            save_page_blocks
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
