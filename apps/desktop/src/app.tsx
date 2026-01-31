@@ -2910,6 +2910,41 @@ function App() {
     return candidate;
   };
 
+  const formatDailyNoteTitle = () =>
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(new Date());
+
+  const ensureDailyNote = async () => {
+    const title = formatDailyNoteTitle();
+    const dailyUid = resolvePageUid(title);
+    if (!dailyUid) return;
+
+    const exists = pages().some((page) => {
+      const pageUid = resolvePageUid(page.uid);
+      const titleUid = resolvePageUid(page.title || "");
+      return pageUid === dailyUid || titleUid === dailyUid;
+    });
+    if (exists) return;
+
+    try {
+      if (isTauri()) {
+        await invoke("create_page", {
+          payload: { title }
+        });
+      } else {
+        const uid = resolveUniqueLocalPageUid(title);
+        const seeded = buildEmptyBlocks(makeLocalId);
+        saveLocalPageSnapshot(uid, title, seeded);
+      }
+      await loadPages();
+    } catch (error) {
+      console.error("Failed to auto-create daily note", error);
+    }
+  };
+
   const createPage = async () => {
     const title = newPageTitle().trim();
     if (!title) {
@@ -3778,6 +3813,7 @@ function App() {
       await loadActivePage();
       await loadBlocks(activePageUid());
       await loadPages();
+      await ensureDailyNote();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
@@ -3798,6 +3834,7 @@ function App() {
       await loadActivePage();
       await loadBlocks(activePageUid());
       await loadPages();
+      await ensureDailyNote();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
@@ -3822,6 +3859,7 @@ function App() {
     await loadActivePage();
     await loadBlocks(activePageUid());
     await loadPages();
+    await ensureDailyNote();
     await loadPlugins();
     await loadVaultKeyStatus();
     await loadSyncConfig();
@@ -3845,6 +3883,7 @@ function App() {
       await persistActivePage(DEFAULT_PAGE_UID);
       await loadBlocks(activePageUid());
       await loadPages();
+      await ensureDailyNote();
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
