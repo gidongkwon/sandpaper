@@ -97,6 +97,22 @@ type SyncApplyResult = {
   applied: number;
 };
 
+type ReviewQueueSummary = {
+  due_count: number;
+  next_due_at: number | null;
+};
+
+type ReviewQueueItem = {
+  id: number;
+  page_uid: string;
+  block_uid: string;
+  added_at: number;
+  due_at: number;
+  status: string;
+  last_reviewed_at: number | null;
+  text: string;
+};
+
 type SearchResult = {
   id: string;
   text: string;
@@ -311,6 +327,13 @@ function App() {
   const [vaultKeyMessage, setVaultKeyMessage] = createSignal<string | null>(
     null
   );
+  const [reviewSummary, setReviewSummary] = createSignal<ReviewQueueSummary>({
+    due_count: 0,
+    next_due_at: null
+  });
+  const [reviewItems, setReviewItems] = createSignal<ReviewQueueItem[]>([]);
+  const [reviewBusy, setReviewBusy] = createSignal(false);
+  const [reviewMessage, setReviewMessage] = createSignal<string | null>(null);
   const [syncConfig, setSyncConfig] = createSignal<SyncConfig | null>(null);
   const [syncServerUrl, setSyncServerUrl] = createSignal("");
   const [syncVaultIdInput, setSyncVaultIdInput] = createSignal("");
@@ -631,6 +654,173 @@ function App() {
     text: block.text,
     indent: block.indent
   });
+
+  const formatReviewDate = (timestamp: number | null) => {
+    if (!timestamp) return "—";
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(timestamp));
+  };
+
+  const loadReviewSummary = async () => {
+    if (!isTauri()) {
+      setReviewSummary({ due_count: 0, next_due_at: null });
+      return;
+    }
+    try {
+      const summary = (await invoke("review_queue_summary")) as ReviewQueueSummary;
+      setReviewSummary(summary);
+    } catch (error) {
+      console.error("Failed to load review summary", error);
+    }
+  };
+
+  const loadReviewQueue = async () => {
+    if (!isTauri()) {
+      setReviewItems([]);
+      return;
+    }
+    setReviewBusy(true);
+    try {
+      const items = (await invoke("list_review_queue_due", {
+        limit: 12
+      })) as ReviewQueueItem[];
+      setReviewItems(items);
+    } catch (error) {
+      console.error("Failed to load review queue", error);
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const addReviewItem = async (blockId: string) => {
+    if (!isTauri()) {
+      setReviewMessage("Review queue is only available in the desktop app.");
+      return;
+    }
+    const pageUid = DEFAULT_PAGE_UID;
+    setReviewMessage(null);
+    try {
+      await invoke("add_review_queue_item", {
+        pageUid,
+        page_uid: pageUid,
+        blockUid: blockId,
+        block_uid: blockId
+      });
+      setReviewMessage("Added to review queue.");
+      await loadReviewSummary();
+      await loadReviewQueue();
+    } catch (error) {
+      console.error("Failed to add review item", error);
+      setReviewMessage("Unable to add to review queue.");
+    }
+  };
+
+  const handleReviewAction = async (item: ReviewQueueItem, action: string) => {
+    if (!isTauri()) return;
+    setReviewBusy(true);
+    try {
+      await invoke("update_review_queue_item", {
+        id: item.id,
+        action
+      });
+      await loadReviewSummary();
+      await loadReviewQueue();
+    } catch (error) {
+      console.error("Failed to update review item", error);
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const ReviewPane = () => (
+    <div class="review">
+      <div class="review__header">
+        <div>
+          <div class="review__eyebrow">Review mode</div>
+          <h2>Daily queue</h2>
+          <p>Collect highlights, revisit key blocks, and clear the queue.</p>
+        </div>
+        <div class="review__summary">
+          <div class="review__stat">
+            <span>Due now</span>
+            <strong>{reviewSummary().due_count}</strong>
+          </div>
+          <div class="review__stat">
+            <span>Next due</span>
+            <strong>{formatReviewDate(reviewSummary().next_due_at)}</strong>
+          </div>
+        </div>
+      </div>
+      <div class="review__deck">
+        <Show
+          when={reviewItems().length > 0}
+          fallback={
+            <div class="review__empty">
+              <div>Nothing due yet.</div>
+              <div>Tag blocks for review from the editor.</div>
+            </div>
+          }
+        >
+          <For each={reviewItems()}>
+            {(item) => (
+              <article class="review-card">
+                <div class="review-card__meta">
+                  <span>{item.page_uid}</span>
+                  <span>Due {formatReviewDate(item.due_at)}</span>
+                </div>
+                <div class="review-card__text">{item.text || "Untitled"}</div>
+                <div class="review-card__actions">
+                  <button
+                    class="review-card__button"
+                    disabled={reviewBusy()}
+                    onClick={() => handleReviewAction(item, "snooze")}
+                  >
+                    Snooze
+                  </button>
+                  <button
+                    class="review-card__button"
+                    disabled={reviewBusy()}
+                    onClick={() => handleReviewAction(item, "later")}
+                  >
+                    Schedule
+                  </button>
+                  <button
+                    class="review-card__button is-primary"
+                    disabled={reviewBusy()}
+                    onClick={() => handleReviewAction(item, "done")}
+                  >
+                    Done
+                  </button>
+                </div>
+              </article>
+            )}
+          </For>
+        </Show>
+      </div>
+      <Show when={reviewMessage()}>
+        <div class="review__message">{reviewMessage()}</div>
+      </Show>
+      <div class="review__actions">
+        <button
+          class="review__button"
+          disabled={!activeId() || !isTauri()}
+          onClick={() => {
+            const id = activeId();
+            if (id) void addReviewItem(id);
+          }}
+        >
+          Add current block to review queue
+        </button>
+        <Show when={!isTauri()}>
+          <span class="review__hint">Desktop app required.</span>
+        </Show>
+      </div>
+    </div>
+  );
 
   let saveTimeout: number | undefined;
   let autosaveTimeout: number | undefined;
@@ -1307,6 +1497,8 @@ function App() {
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
+      await loadReviewSummary();
+      await loadReviewQueue();
       return;
     }
 
@@ -1323,6 +1515,8 @@ function App() {
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
+      await loadReviewSummary();
+      await loadReviewQueue();
     } catch (error) {
       console.error("Failed to load vaults", error);
     }
@@ -1343,6 +1537,8 @@ function App() {
     await loadPlugins();
     await loadVaultKeyStatus();
     await loadSyncConfig();
+    await loadReviewSummary();
+    await loadReviewQueue();
   };
 
   const createVault = async () => {
@@ -1362,6 +1558,8 @@ function App() {
       await loadPlugins();
       await loadVaultKeyStatus();
       await loadSyncConfig();
+      await loadReviewSummary();
+      await loadReviewQueue();
     }
 
     setVaultFormOpen(false);
@@ -1540,6 +1738,11 @@ function App() {
       focusBlock(target.id, direction === -1 ? "end" : "start");
     };
 
+    const addReviewFromBlock = (block: Block) => {
+      if (!block.id) return;
+      void addReviewItem(block.id);
+    };
+
     const handleKeyDown = (block: Block, index: number, event: KeyboardEvent) => {
       const target = event.currentTarget as HTMLTextAreaElement;
       const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
@@ -1651,6 +1854,16 @@ function App() {
                           }}
                           onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
                         />
+                        <Show when={activeId() === block.id}>
+                          <div class="block__actions">
+                            <button
+                              class="block__action"
+                              onClick={() => addReviewFromBlock(block)}
+                            >
+                              Add to review
+                            </button>
+                          </div>
+                        </Show>
                         <Show when={codePreview()}>
                           {(preview) => (
                             <div class="block-renderer block-renderer--code">
@@ -1760,15 +1973,7 @@ function App() {
             <Show
               when={mode() === "quick-capture"}
               fallback={
-                <div class="review">
-                  <h2>Review queue</h2>
-                  <p>Skim yesterday’s highlights, reconnect threads, and plan next steps.</p>
-                  <ul>
-                    <For each={blocks.slice(0, 6)}>
-                      {(block) => <li>{block.text || "Untitled"}</li>}
-                    </For>
-                  </ul>
-                </div>
+                <ReviewPane />
               }
             >
               <div class="capture">

@@ -71,6 +71,23 @@ describe("App", () => {
     expect(await screen.findByText("Apply")).toBeInTheDocument();
   });
 
+  it("renders the review mode panel", async () => {
+    render(() => <App />);
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(await screen.findByText("Daily queue")).toBeInTheDocument();
+    expect(await screen.findByText(/review mode/i)).toBeInTheDocument();
+  });
+
+  it("renders the review add button in review mode", async () => {
+    render(() => <App />);
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(
+      await screen.findByRole("button", {
+        name: /add current block to review queue/i
+      })
+    ).toBeInTheDocument();
+  });
+
   it("renders a code preview for fenced blocks", async () => {
     render(() => <App />);
     const inputs = await screen.findAllByPlaceholderText("Write something...");

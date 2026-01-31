@@ -81,6 +81,17 @@ const MIGRATIONS: &[Migration] = &[
             PRIMARY KEY (plugin_id, permission)
         );
 
+        CREATE TABLE IF NOT EXISTS review_queue (
+            id INTEGER PRIMARY KEY,
+            page_uid TEXT NOT NULL,
+            block_uid TEXT NOT NULL,
+            added_at INTEGER DEFAULT (strftime('%s','now')),
+            due_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            last_reviewed_at INTEGER,
+            UNIQUE(page_uid, block_uid)
+        );
+
         CREATE TABLE IF NOT EXISTS sync_ops (
             id INTEGER PRIMARY KEY,
             op_id TEXT NOT NULL UNIQUE,
@@ -110,6 +121,8 @@ const MIGRATIONS: &[Migration] = &[
           ON edges(to_block_uid);
         CREATE INDEX IF NOT EXISTS block_tags_tag
           ON block_tags(tag_id);
+        CREATE INDEX IF NOT EXISTS review_queue_due
+          ON review_queue(status, due_at);
         CREATE INDEX IF NOT EXISTS sync_ops_page_created_at
           ON sync_ops(page_id, created_at);
         CREATE INDEX IF NOT EXISTS sync_inbox_cursor
@@ -242,6 +255,17 @@ pub struct SyncInboxOp {
     pub op_id: String,
     pub payload: Vec<u8>,
     pub received_at: i64,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ReviewQueueItem {
+    pub id: i64,
+    pub page_uid: String,
+    pub block_uid: String,
+    pub added_at: i64,
+    pub due_at: i64,
+    pub status: String,
+    pub last_reviewed_at: Option<i64>,
 }
 
 impl Database {
@@ -788,6 +812,73 @@ impl Database {
         self.conn.execute("DELETE FROM sync_inbox", [])?;
         Ok(())
     }
+
+    pub fn upsert_review_queue_item(
+        &self,
+        page_uid: &str,
+        block_uid: &str,
+        due_at: i64,
+    ) -> rusqlite::Result<i64> {
+        let now = chrono::Utc::now().timestamp_millis();
+        self.conn.execute(
+            "INSERT INTO review_queue (page_uid, block_uid, added_at, due_at, status)
+             VALUES (?1, ?2, ?3, ?4, 'pending')
+             ON CONFLICT(page_uid, block_uid)
+             DO UPDATE SET due_at = excluded.due_at",
+            params![page_uid, block_uid, now, due_at],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn list_review_queue_due(&self, now: i64, limit: i64) -> rusqlite::Result<Vec<ReviewQueueItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, page_uid, block_uid, added_at, due_at, status, last_reviewed_at
+             FROM review_queue
+             WHERE status = 'pending' AND due_at <= ?1
+             ORDER BY due_at ASC, id ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![now, limit], |row| {
+            Ok(ReviewQueueItem {
+                id: row.get(0)?,
+                page_uid: row.get(1)?,
+                block_uid: row.get(2)?,
+                added_at: row.get(3)?,
+                due_at: row.get(4)?,
+                status: row.get(5)?,
+                last_reviewed_at: row.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn mark_review_queue_item(
+        &self,
+        id: i64,
+        status: &str,
+        reviewed_at: i64,
+        next_due_at: Option<i64>,
+    ) -> rusqlite::Result<()> {
+        if let Some(next_due) = next_due_at {
+            self.conn.execute(
+                "UPDATE review_queue
+                 SET status = ?1,
+                     last_reviewed_at = ?2,
+                     due_at = ?3
+                 WHERE id = ?4",
+                params![status, reviewed_at, next_due, id],
+            )?;
+        } else {
+            self.conn.execute(
+                "UPDATE review_queue
+                 SET status = ?1,
+                     last_reviewed_at = ?2
+                 WHERE id = ?3",
+                params![status, reviewed_at, id],
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn parse_indent(props: &str) -> i64 {
@@ -818,7 +909,7 @@ mod tests {
     fn table_columns(db: &Database, name: &str) -> Vec<String> {
         let allowed = match name {
             "blocks" | "pages" | "edges" | "tags" | "block_tags" | "assets" | "kv"
-            | "plugin_perms" | "sync_ops" | "sync_inbox" => name,
+            | "plugin_perms" | "review_queue" | "sync_ops" | "sync_inbox" => name,
             _ => panic!("unsupported table name"),
         };
         let query = format!("PRAGMA table_info({})", allowed);
@@ -844,6 +935,7 @@ mod tests {
             "assets",
             "kv",
             "plugin_perms",
+            "review_queue",
             "sync_ops",
             "sync_inbox",
             "blocks_fts",
@@ -1190,5 +1282,47 @@ mod tests {
 
         let ops = db.list_sync_inbox_ops(10).expect("list after clear");
         assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn review_queue_upserts_and_lists_due() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let due_at = chrono::Utc::now().timestamp_millis() - 1000;
+        let due_future = chrono::Utc::now().timestamp_millis() + 5000;
+        db.upsert_review_queue_item("page-1", "b1", due_at)
+            .expect("insert review item");
+        db.upsert_review_queue_item("page-1", "b1", due_future)
+            .expect("upsert review item");
+
+        let results = db.list_review_queue_due(due_future, 10).expect("list due");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].page_uid, "page-1");
+        assert_eq!(results[0].block_uid, "b1");
+    }
+
+    #[test]
+    fn review_queue_mark_updates_status() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let due_at = chrono::Utc::now().timestamp_millis() - 1000;
+        db.upsert_review_queue_item("page-1", "b1", due_at)
+            .expect("insert review item");
+
+        let item = db
+            .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
+            .expect("list due")
+            .pop()
+            .expect("item");
+        let reviewed_at = chrono::Utc::now().timestamp_millis();
+        db.mark_review_queue_item(item.id, "done", reviewed_at, None)
+            .expect("mark done");
+
+        let remaining = db
+            .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
+            .expect("list after mark");
+        assert!(remaining.is_empty());
     }
 }

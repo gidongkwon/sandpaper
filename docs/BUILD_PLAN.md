@@ -269,7 +269,7 @@ Exit criteria
 **Outcome:** read/quick-capture on mobile.
 
 Checklist
-- [ ] Review mode: daily notes + review queue
+- [x] Review mode: daily notes + review queue
 - [ ] Review mode: templates/hooks for spaced review
 - [ ] Android app: read-only browsing
 - [ ] Android app: quick capture to inbox

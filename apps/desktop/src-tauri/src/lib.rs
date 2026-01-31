@@ -97,6 +97,31 @@ struct SyncApplyResult {
     applied: i64,
 }
 
+#[derive(Debug, Serialize)]
+struct ReviewQueueSummary {
+    due_count: i64,
+    next_due_at: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReviewQueueItemResponse {
+    id: i64,
+    page_uid: String,
+    block_uid: String,
+    added_at: i64,
+    due_at: i64,
+    status: String,
+    last_reviewed_at: Option<i64>,
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewActionPayload {
+    id: i64,
+    action: String,
+}
+
 #[derive(Debug, Clone)]
 struct BlockState {
     id: String,
@@ -666,6 +691,20 @@ fn apply_sync_ops_to_blocks(
         .collect()
 }
 
+fn next_review_due(interval_days: i64) -> i64 {
+    let millis = interval_days * 24 * 60 * 60 * 1000;
+    chrono::Utc::now().timestamp_millis() + millis
+}
+
+fn resolve_review_interval(action: &str, last_interval: i64) -> i64 {
+    match action {
+        "snooze" => 1,
+        "later" => std::cmp::min(14, std::cmp::max(1, last_interval * 2)),
+        "done" => 30,
+        _ => std::cmp::min(7, std::cmp::max(1, last_interval)),
+    }
+}
+
 fn load_sync_config(db: &Database) -> Result<SyncConfig, String> {
     let server_url = db.get_kv("sync.server_url").map_err(|err| format!("{:?}", err))?;
     let vault_id = db.get_kv("sync.vault_id").map_err(|err| format!("{:?}", err))?;
@@ -863,6 +902,77 @@ fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
         pages,
         applied: inbox_ops.len() as i64,
     })
+}
+
+#[tauri::command]
+fn review_queue_summary() -> Result<ReviewQueueSummary, String> {
+    let db = open_active_database()?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let due = db
+        .list_review_queue_due(now, 200)
+        .map_err(|err| format!("{:?}", err))?;
+    let next_due_at = due.iter().map(|item| item.due_at).min();
+    Ok(ReviewQueueSummary {
+        due_count: due.len() as i64,
+        next_due_at,
+    })
+}
+
+#[tauri::command]
+fn add_review_queue_item(page_uid: String, block_uid: String, due_at: Option<i64>) -> Result<(), String> {
+    let db = open_active_database()?;
+    let due = due_at.unwrap_or_else(|| next_review_due(1));
+    db.upsert_review_queue_item(&page_uid, &block_uid, due)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn list_review_queue_due(limit: i64) -> Result<Vec<ReviewQueueItemResponse>, String> {
+    let db = open_active_database()?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let items = db
+        .list_review_queue_due(now, limit)
+        .map_err(|err| format!("{:?}", err))?;
+    let mut responses = Vec::with_capacity(items.len());
+    for item in items {
+        let page_id = ensure_page(&db, &item.page_uid, &item.page_uid)?;
+        let blocks = db
+            .load_blocks_for_page(page_id)
+            .map_err(|err| format!("{:?}", err))?;
+        let text = blocks
+            .iter()
+            .find(|block| block.uid == item.block_uid)
+            .map(|block| block.text.clone())
+            .unwrap_or_else(|| "Missing block".to_string());
+        responses.push(ReviewQueueItemResponse {
+            id: item.id,
+            page_uid: item.page_uid,
+            block_uid: item.block_uid,
+            added_at: item.added_at,
+            due_at: item.due_at,
+            status: item.status,
+            last_reviewed_at: item.last_reviewed_at,
+            text,
+        });
+    }
+    Ok(responses)
+}
+
+#[tauri::command]
+fn update_review_queue_item(payload: ReviewActionPayload) -> Result<(), String> {
+    let db = open_active_database()?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let interval = resolve_review_interval(&payload.action, 3);
+    let next_due = if payload.action == "done" {
+        None
+    } else {
+        Some(next_review_due(interval))
+    };
+    let status = if payload.action == "done" { "done" } else { "pending" };
+    db.mark_review_queue_item(payload.id, status, now, next_due)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1126,6 +1236,10 @@ pub fn run() {
             list_sync_ops_since,
             store_sync_inbox_ops,
             apply_sync_inbox,
+            review_queue_summary,
+            add_review_queue_item,
+            list_review_queue_due,
+            update_review_queue_item,
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
@@ -1145,9 +1259,9 @@ mod tests {
     use super::{
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, encrypt_sync_payload, ensure_plugin_permission,
-        list_permissions_for_plugins, load_sync_config, sanitize_kebab,
-        shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot, Database,
-        PageBlocksResponse, PluginInfo, SyncOpPayload,
+        list_permissions_for_plugins, load_sync_config, resolve_review_interval,
+        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
+        Database, PageBlocksResponse, PluginInfo, SyncOpPayload,
     };
     use aes_gcm::aead::KeyInit;
     use aes_gcm::aead::Aead;
@@ -1421,6 +1535,14 @@ mod tests {
         assert_eq!(next[0].indent, 1);
         assert_eq!(next[1].uid, "b3");
         assert_eq!(next[1].text, "Third");
+    }
+
+    #[test]
+    fn resolve_review_interval_behaves_for_actions() {
+        assert_eq!(resolve_review_interval("snooze", 3), 1);
+        assert_eq!(resolve_review_interval("later", 2), 4);
+        assert_eq!(resolve_review_interval("later", 10), 14);
+        assert_eq!(resolve_review_interval("done", 3), 30);
     }
 
     #[test]
