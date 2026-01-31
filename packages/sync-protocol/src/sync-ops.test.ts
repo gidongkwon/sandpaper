@@ -88,6 +88,105 @@ describe("sync ops", () => {
     expect(next.appliedOps.size).toBe(1);
   });
 
+  it("keeps deletes as tombstones over edits and moves", () => {
+    const ops: SyncOp[] = [
+      {
+        opId: "dev1-1",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 1,
+        timestamp: 1,
+        kind: "add",
+        parentId: null,
+        sortKey: "a",
+        indent: 0,
+        text: "First"
+      },
+      {
+        opId: "dev1-2",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 2,
+        timestamp: 2,
+        kind: "delete"
+      },
+      {
+        opId: "dev1-3",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 3,
+        timestamp: 3,
+        kind: "edit",
+        text: "Should be ignored"
+      },
+      {
+        opId: "dev1-4",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 4,
+        timestamp: 4,
+        kind: "move",
+        parentId: null,
+        sortKey: "z",
+        indent: 2
+      }
+    ];
+
+    const state = applyOps(createEmptyPageState("page-1"), ops);
+    const block = state.blocks.get("block-1");
+    expect(block?.deleted).toBe(true);
+    expect(block?.text).toBe("First");
+  });
+
+  it("allows add to resurrect a deleted block", () => {
+    const ops: SyncOp[] = [
+      {
+        opId: "dev1-1",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 1,
+        timestamp: 1,
+        kind: "add",
+        parentId: null,
+        sortKey: "a",
+        indent: 0,
+        text: "First"
+      },
+      {
+        opId: "dev1-2",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 2,
+        timestamp: 2,
+        kind: "delete"
+      },
+      {
+        opId: "dev1-3",
+        pageId: "page-1",
+        blockId: "block-1",
+        deviceId: "dev1",
+        clock: 3,
+        timestamp: 3,
+        kind: "add",
+        parentId: null,
+        sortKey: "b",
+        indent: 1,
+        text: "Reborn"
+      }
+    ];
+
+    const state = applyOps(createEmptyPageState("page-1"), ops);
+    const block = state.blocks.get("block-1");
+    expect(block?.deleted).toBe(false);
+    expect(block?.text).toBe("Reborn");
+  });
+
   it("sorts ops by clock then opId", () => {
     const ops: SyncOp[] = [
       {

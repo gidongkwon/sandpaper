@@ -231,7 +231,7 @@ Exit criteria
 
 Checklist
 - [x] CRDT ops: per-page op log
-- [ ] CRDT ops: conflict resolution policies
+- [x] CRDT ops: conflict resolution policies
 - [ ] E2E: passphrase-derived vault key
 - [ ] E2E: encrypt ops + metadata
 - [ ] Node sync server: store encrypted ops
@@ -242,7 +242,7 @@ Checklist
 
 Implementation details
 - Per-page op logs stored locally; server only relays encrypted ops.
-- Conflict resolution favors block-level merge; record conflicts for UI if needed.
+- Conflict resolution: delete creates a tombstone that blocks later edits/moves; add can resurrect a deleted block (clock-ordered).
 - Sync server in `apps/sync-server` with simple REST/WebSocket endpoints.
 
 Test design

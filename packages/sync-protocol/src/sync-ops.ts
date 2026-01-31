@@ -74,6 +74,7 @@ export const applyOp = (state: PageState, op: SyncOp): PageState => {
 
   switch (op.kind) {
     case "add": {
+      if (existing && !existing.deleted) return next;
       next.blocks.set(op.blockId, {
         id: op.blockId,
         text: op.text,
@@ -85,7 +86,7 @@ export const applyOp = (state: PageState, op: SyncOp): PageState => {
       return next;
     }
     case "edit": {
-      if (!existing) return next;
+      if (!existing || existing.deleted) return next;
       next.blocks.set(op.blockId, {
         ...existing,
         text: op.text
@@ -93,7 +94,7 @@ export const applyOp = (state: PageState, op: SyncOp): PageState => {
       return next;
     }
     case "move": {
-      if (!existing) return next;
+      if (!existing || existing.deleted) return next;
       next.blocks.set(op.blockId, {
         ...existing,
         parentId: op.parentId,
