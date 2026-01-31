@@ -5,12 +5,13 @@ pub mod plugins;
 pub mod vaults;
 
 use serde::Serialize;
+use serde_json::Value;
 use std::path::PathBuf;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
-    discover_plugins, list_plugins, runtime_script_path, PluginDescriptor, PluginInfo,
-    PluginRegistry, PluginRuntimeClient, PluginRuntimeLoadResult,
+    discover_plugins, list_plugins, runtime_script_path, PluginCommand, PluginDescriptor,
+    PluginInfo, PluginRegistry, PluginRuntimeClient, PluginRuntimeLoadResult,
 };
 
 #[derive(Debug, Serialize)]
@@ -44,6 +45,7 @@ struct PluginBlockInfo {
 struct PluginRuntimeStatus {
     loaded: Vec<String>,
     blocked: Vec<PluginBlockInfo>,
+    commands: Vec<PluginCommand>,
 }
 
 #[tauri::command]
@@ -106,6 +108,21 @@ fn compute_missing_permissions(required: &[String], granted: &[String]) -> Vec<S
         .filter(|perm| !granted_set.contains(perm.as_str()))
         .cloned()
         .collect()
+}
+
+fn ensure_plugin_permission(
+    db: &Database,
+    plugin_id: &str,
+    permission: &str,
+) -> Result<(), String> {
+    let granted = db
+        .list_plugin_permissions(plugin_id)
+        .map_err(|err| format!("{:?}", err))?;
+    if granted.iter().any(|perm| perm == permission) {
+        Ok(())
+    } else {
+        Err(format!("missing-permission:{permission}"))
+    }
 }
 
 fn list_permissions_for_plugins(
@@ -288,7 +305,10 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
 
     let runtime = PluginRuntimeClient::new(runtime_script_path());
     let loaded = if allowed.is_empty() {
-        PluginRuntimeLoadResult { loaded: Vec::new() }
+        PluginRuntimeLoadResult {
+            loaded: Vec::new(),
+            commands: Vec::new(),
+        }
     } else {
         runtime
             .load_plugins(&allowed)
@@ -298,6 +318,7 @@ fn load_plugins_command() -> Result<PluginRuntimeStatus, String> {
     Ok(PluginRuntimeStatus {
         loaded: loaded.loaded,
         blocked,
+        commands: loaded.commands,
     })
 }
 
@@ -312,6 +333,50 @@ fn grant_plugin_permission(plugin_id: String, permission: String) -> Result<(), 
 fn revoke_plugin_permission(plugin_id: String, permission: String) -> Result<(), String> {
     let db = open_active_database()?;
     db.revoke_plugin_permission(&plugin_id, &permission)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn plugin_read_page(plugin_id: String, page_uid: String) -> Result<PageBlocksResponse, String> {
+    let db = open_active_database()?;
+    ensure_plugin_permission(&db, &plugin_id, "data.read")?;
+    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    let page = db
+        .get_page_by_uid(&page_uid)
+        .map_err(|err| format!("{:?}", err))?
+        .ok_or_else(|| "Page not found".to_string())?;
+    let blocks = db
+        .load_blocks_for_page(page_id)
+        .map_err(|err| format!("{:?}", err))?;
+    Ok(PageBlocksResponse {
+        page_uid,
+        title: page.title,
+        blocks,
+    })
+}
+
+#[tauri::command]
+fn plugin_write_page(
+    plugin_id: String,
+    page_uid: String,
+    blocks: Vec<BlockSnapshot>,
+) -> Result<(), String> {
+    let mut db = open_active_database()?;
+    ensure_plugin_permission(&db, &plugin_id, "data.write")?;
+    let page_id = ensure_page(&db, &page_uid, "Inbox")?;
+    db.replace_blocks_for_page(page_id, &blocks)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn emit_plugin_event(
+    plugin_id: String,
+    event: String,
+    payload: Value,
+) -> Result<Value, String> {
+    let runtime = PluginRuntimeClient::new(runtime_script_path());
+    runtime
+        .emit_event(&plugin_id, &event, payload)
         .map_err(|err| format!("{:?}", err))
 }
 
@@ -331,7 +396,10 @@ pub fn run() {
             list_plugins_command,
             load_plugins_command,
             grant_plugin_permission,
-            revoke_plugin_permission
+            revoke_plugin_permission,
+            plugin_read_page,
+            plugin_write_page,
+            emit_plugin_event
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -340,8 +408,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_missing_permissions, list_permissions_for_plugins, sanitize_kebab,
-        shadow_markdown_path, write_shadow_markdown_to_vault, Database, PluginInfo,
+        compute_missing_permissions, ensure_plugin_permission, list_permissions_for_plugins,
+        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, Database, PluginInfo,
     };
     use tempfile::tempdir;
 
@@ -410,5 +478,19 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].granted_permissions, vec!["fs".to_string()]);
         assert_eq!(result[0].missing_permissions, vec!["network".to_string()]);
+    }
+
+    #[test]
+    fn ensure_plugin_permission_requires_grant() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let denied = ensure_plugin_permission(&db, "alpha", "data.read");
+        assert!(denied.is_err());
+
+        db.grant_plugin_permission("alpha", "data.read")
+            .expect("grant permission");
+        let allowed = ensure_plugin_permission(&db, "alpha", "data.read");
+        assert!(allowed.is_ok());
     }
 }

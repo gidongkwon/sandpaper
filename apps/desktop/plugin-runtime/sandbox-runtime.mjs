@@ -33,7 +33,19 @@ rl.on("line", (line) => {
     const loaded = plugins
       .map((plugin) => plugin?.id)
       .filter((item) => typeof item === "string");
-    respond({ id, result: { loaded } });
+    const commands = loaded.map((pluginId) => ({
+      plugin_id: pluginId,
+      id: `${pluginId}.open`,
+      title: `Open ${pluginId}`,
+      description: `Open ${pluginId} panel`
+    }));
+    respond({ id, result: { loaded, commands } });
+    rl.close();
+    return;
+  }
+
+  if (method === "emitEvent") {
+    respond({ id, result: { ok: true } });
     rl.close();
     return;
   }

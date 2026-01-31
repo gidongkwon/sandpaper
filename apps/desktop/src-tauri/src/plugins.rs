@@ -163,6 +163,17 @@ struct RuntimeResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginRuntimeLoadResult {
     pub loaded: Vec<String>,
+    #[serde(default)]
+    pub commands: Vec<PluginCommand>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginCommand {
+    pub plugin_id: String,
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 pub struct PluginRuntimeClient {
@@ -238,6 +249,23 @@ impl PluginRuntimeClient {
         });
         let result = self.call("loadPlugins", payload)?;
         Ok(serde_json::from_value(result)?)
+    }
+
+    pub fn emit_event(
+        &self,
+        plugin_id: &str,
+        event: &str,
+        payload: Value,
+    ) -> Result<Value, PluginError> {
+        let result = self.call(
+            "emitEvent",
+            json!({
+                "plugin_id": plugin_id,
+                "event": event,
+                "payload": payload
+            }),
+        )?;
+        Ok(result)
     }
 }
 
@@ -335,7 +363,17 @@ rl.on("line", (line) => {
   }
   if (msg.method === "loadPlugins") {
     const ids = (msg.params?.plugins ?? []).map((plugin) => plugin.id);
-    respond({ id: msg.id, result: { loaded: ids } });
+    const commands = ids.map((id) => ({
+      plugin_id: id,
+      id: `${id}.open`,
+      title: `Open ${id}`
+    }));
+    respond({ id: msg.id, result: { loaded: ids, commands } });
+    rl.close();
+    return;
+  }
+  if (msg.method === "emitEvent") {
+    respond({ id: msg.id, result: { ok: true } });
     rl.close();
     return;
   }
@@ -389,6 +427,19 @@ rl.on("line", (line) => {
 
         let result = runtime.load_plugins(&plugins).expect("load plugins");
         assert_eq!(result.loaded, vec!["alpha".to_string(), "beta".to_string()]);
+        assert_eq!(result.commands.len(), 2);
+        assert_eq!(result.commands[0].plugin_id, "alpha");
+    }
+
+    #[test]
+    fn runtime_emit_event_returns_ok() {
+        let dir = tempdir().expect("tempdir");
+        let script_path = write_runtime_script(dir.path());
+        let runtime = PluginRuntimeClient::new(script_path);
+        let result = runtime
+            .emit_event("alpha", "note:created", serde_json::json!({"id": "b1"}))
+            .expect("emit event");
+        assert_eq!(result["ok"], true);
     }
 
     #[test]

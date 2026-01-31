@@ -83,6 +83,14 @@ type PluginBlockInfo = {
 type PluginRuntimeStatus = {
   loaded: string[];
   blocked: PluginBlockInfo[];
+  commands: PluginCommand[];
+};
+
+type PluginCommand = {
+  plugin_id: string;
+  id: string;
+  title: string;
+  description?: string | null;
 };
 
 type PermissionPrompt = {
@@ -202,8 +210,16 @@ function App() {
   ];
 
   const fallbackPluginStatus: PluginRuntimeStatus = {
-    loaded: [],
-    blocked: []
+    loaded: ["local-calendar"],
+    blocked: [],
+    commands: [
+      {
+        plugin_id: "local-calendar",
+        id: "local-calendar.open",
+        title: "Open local-calendar",
+        description: "Open local-calendar panel"
+      }
+    ]
   };
 
   const localSearch = (query: string): SearchResult[] => {
@@ -994,7 +1010,20 @@ function App() {
                 <div class="plugin-status">
                   <span>{pluginStatus()?.loaded.length ?? 0} loaded</span>
                   <span>{pluginStatus()?.blocked.length ?? 0} blocked</span>
+                  <span>{pluginStatus()?.commands.length ?? 0} commands</span>
                 </div>
+                <Show when={(pluginStatus()?.commands.length ?? 0) > 0}>
+                  <div class="plugin-commands">
+                    <For each={pluginStatus()?.commands ?? []}>
+                      {(command) => (
+                        <div class="plugin-command">
+                          <div class="plugin-command__title">{command.title}</div>
+                          <div class="plugin-command__meta">{command.id}</div>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </Show>
             </div>
             <div class="sidebar__footer">

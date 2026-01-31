@@ -190,8 +190,8 @@ Checklist
 - [ ] Sandbox runtime: separate JS process
 - [x] Permissions: strict prompts (default-deny)
 - [x] Permissions: store granted permissions
-- [ ] Plugin API: commands + events
-- [ ] Plugin API: data access (read/write blocks/pages)
+- [x] Plugin API: commands + events
+- [x] Plugin API: data access (read/write blocks/pages)
 - [ ] Plugin API: UI panels + toolbar actions
 - [ ] Plugin API: renderer extensions (code/diagrams)
 - [ ] Core plugin: code block renderer
