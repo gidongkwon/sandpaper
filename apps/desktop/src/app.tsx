@@ -165,6 +165,14 @@ type BacklinkEntry = {
   pageTitle?: string;
 };
 
+type UnlinkedReference = {
+  pageTitle: string;
+  pageUid: string;
+  blockId: string;
+  blockIndex: number;
+  snippet: string;
+};
+
 type PageLinkBlock = {
   id: string;
   text: string;
@@ -426,6 +434,9 @@ const replaceWikilinksInText = (
   });
 };
 
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const MAX_SEED_BLOCKS = 200_000;
 
 const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
@@ -514,6 +525,7 @@ function App() {
   const [searchFilter, setSearchFilter] = createSignal<
     "all" | "links" | "tasks" | "pinned"
   >("all");
+  const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal("");
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
@@ -1007,6 +1019,44 @@ function App() {
     return results;
   });
 
+  const commitSearchTerm = (term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    const normalized = trimmed.toLowerCase();
+    setSearchHistory((prev) => {
+      const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== normalized)];
+      return next.slice(0, 5);
+    });
+  };
+
+  const applySearchTerm = (term: string) => {
+    setSearchQuery(term);
+    searchInputRef?.focus();
+  };
+
+  const renderSearchHighlight = (text: string): Array<string | JSX.Element> | string => {
+    const query = searchQuery().trim();
+    if (!query) return text;
+    const escaped = escapeRegExp(query);
+    if (!escaped) return text;
+    const regex = new RegExp(escaped, "gi");
+    const nodes: Array<string | JSX.Element> = [];
+    let lastIndex = 0;
+    for (const match of text.matchAll(regex)) {
+      const index = match.index ?? 0;
+      if (index > lastIndex) {
+        nodes.push(text.slice(lastIndex, index));
+      }
+      nodes.push(<mark class="search-highlight">{match[0]}</mark>);
+      lastIndex = index + match[0].length;
+    }
+    if (nodes.length === 0) return text;
+    if (lastIndex < text.length) {
+      nodes.push(text.slice(lastIndex));
+    }
+    return nodes;
+  };
+
   const syncConnected = createMemo(() => {
     const config = syncConfig();
     return Boolean(config?.server_url && config?.vault_id && config?.device_id);
@@ -1062,6 +1112,55 @@ function App() {
 
   const resolvePageUid = (value: string) =>
     normalizePageUid(value || DEFAULT_PAGE_UID);
+
+  const stripWikilinks = (text: string) => text.replace(/\[\[[^\]]+?\]\]/g, "");
+
+  const unlinkedReferences = createMemo<UnlinkedReference[]>(() => {
+    const currentUid = resolvePageUid(activePageUid());
+    const availablePages = pages().filter(
+      (page) =>
+        page.title &&
+        resolvePageUid(page.uid) !== currentUid &&
+        page.title.trim().length > 0
+    );
+    if (availablePages.length === 0) return [];
+    const refs: UnlinkedReference[] = [];
+    const seen = new Set<string>();
+    blocks.forEach((block, index) => {
+      const source = stripWikilinks(block.text);
+      if (!source.trim()) return;
+      availablePages.forEach((page) => {
+        const title = page.title?.trim();
+        if (!title) return;
+        const key = `${block.id}:${page.uid}`;
+        if (seen.has(key)) return;
+        const pattern = new RegExp(escapeRegExp(title), "i");
+        if (pattern.test(source)) {
+          seen.add(key);
+          refs.push({
+            pageTitle: title,
+            pageUid: page.uid,
+            blockId: block.id,
+            blockIndex: index,
+            snippet: formatBacklinkSnippet(source)
+          });
+        }
+      });
+    });
+    return refs.slice(0, 12);
+  });
+
+  const linkUnlinkedReference = (ref: UnlinkedReference) => {
+    const block = blocks[ref.blockIndex];
+    if (!block || block.id !== ref.blockId) return;
+    const pattern = new RegExp(escapeRegExp(ref.pageTitle), "i");
+    const nextText = block.text.replace(pattern, `[[${ref.pageTitle}]]`);
+    if (nextText === block.text) return;
+    setBlocks(ref.blockIndex, "text", nextText);
+    scheduleSave();
+    setActiveId(ref.blockId);
+    setJumpTarget({ id: ref.blockId, caret: "end" });
+  };
 
   const snapshotBlocks = (source: Block[]) =>
     source.map((block) => ({ ...block }));
@@ -1122,6 +1221,33 @@ function App() {
       console.error("Failed to load active page", error);
     }
   };
+
+  const searchHistoryKey = createMemo(() => {
+    const vaultId = activeVault()?.id ?? "default";
+    return `sandpaper:search-history:${vaultId}`;
+  });
+
+  createEffect(() => {
+    const key = searchHistoryKey();
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem(key);
+    if (!stored) {
+      setSearchHistory([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(stored);
+      setSearchHistory(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSearchHistory([]);
+    }
+  });
+
+  createEffect(() => {
+    const key = searchHistoryKey();
+    if (typeof window === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(searchHistory()));
+  });
 
   const persistActivePage = async (pageUid: string) => {
     const resolved = resolvePageUid(pageUid);
@@ -2662,6 +2788,8 @@ function App() {
     }, 1500);
   };
 
+  let searchInputRef: HTMLInputElement | undefined;
+
   const EditorPane = (props: { title: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
@@ -3781,11 +3909,17 @@ function App() {
                   <line x1="21" y1="21" x2="16" y2="16" />
                 </svg>
                 <input
+                  ref={searchInputRef}
                   class="sidebar__input"
                   type="search"
                   placeholder="Search..."
                   value={searchQuery()}
                   onInput={(event) => setSearchQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      commitSearchTerm(event.currentTarget.value);
+                    }
+                  }}
                 />
               </div>
               <div class="sidebar__filters">
@@ -3811,6 +3945,29 @@ function App() {
             </div>
 
             <div class="sidebar__content">
+              <Show when={searchHistory().length > 0}>
+                <div class="sidebar__section">
+                  <div class="sidebar__section-header">
+                    <span class="sidebar__section-title">Recent searches</span>
+                    <span class="sidebar__section-count">
+                      {searchHistory().length}
+                    </span>
+                  </div>
+                  <div class="search-history">
+                    <For each={searchHistory()}>
+                      {(term) => (
+                        <button
+                          class="search-history__item"
+                          aria-label={`Recent search ${term}`}
+                          onClick={() => applySearchTerm(term)}
+                        >
+                          {term}
+                        </button>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              </Show>
               <Show when={searchQuery().trim().length > 0}>
                 <div class="sidebar__section">
                   <div class="sidebar__section-header">
@@ -3831,11 +3988,46 @@ function App() {
                               setJumpTarget({ id: block.id, caret: "start" });
                             }}
                           >
-                            <div class="result__text">{block.text || "Untitled"}</div>
+                            <div class="result__text">
+                              {renderSearchHighlight(block.text || "Untitled")}
+                            </div>
                           </button>
                         )}
                       </For>
                     </Show>
+                  </div>
+                </div>
+              </Show>
+
+              <Show
+                when={
+                  searchQuery().trim().length === 0 &&
+                  unlinkedReferences().length > 0
+                }
+              >
+                <div class="sidebar__section">
+                  <div class="sidebar__section-header">
+                    <span class="sidebar__section-title">Unlinked references</span>
+                    <span class="sidebar__section-count">
+                      {unlinkedReferences().length}
+                    </span>
+                  </div>
+                  <div class="unlinked-list">
+                    <For each={unlinkedReferences()}>
+                      {(ref) => (
+                        <div class="unlinked-item">
+                          <div class="unlinked-item__title">{ref.pageTitle}</div>
+                          <div class="unlinked-item__snippet">{ref.snippet}</div>
+                          <button
+                            class="unlinked-item__action"
+                            type="button"
+                            onClick={() => linkUnlinkedReference(ref)}
+                          >
+                            Link it
+                          </button>
+                        </div>
+                      )}
+                    </For>
                   </div>
                 </div>
               </Show>

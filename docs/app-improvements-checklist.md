@@ -86,19 +86,19 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 3 — Search & Discovery
 
-- [ ] **Search highlighting**
-  - [ ] Highlight matching terms in results
-  - [ ] Keep result text readable (do not break layout)
+- [x] **Search highlighting**
+  - [x] Highlight matching terms in results
+  - [x] Keep result text readable (do not break layout)
   - **Done when:** matches are visually obvious
 
-- [ ] **Search history / saved searches**
-  - [ ] Save last 5 search terms per vault
-  - [ ] Allow clicking a past search to re-run
+- [x] **Search history / saved searches**
+  - [x] Save last 5 search terms per vault
+  - [x] Allow clicking a past search to re-run
   - **Done when:** quick history works and persists
 
-- [ ] **Unlinked references panel**
-  - [ ] Scan for plain text matches to page titles
-  - [ ] Show “Link it” action to convert to `[[Page]]`
+- [x] **Unlinked references panel**
+  - [x] Scan for plain text matches to page titles
+  - [x] Show “Link it” action to convert to `[[Page]]`
   - **Done when:** can quickly convert references to links
 
 ---

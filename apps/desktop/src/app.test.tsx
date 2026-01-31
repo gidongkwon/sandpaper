@@ -64,23 +64,25 @@ describe("App", () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
-    expect(
-      await screen.findByText("Draft line 1", { selector: ".result__text" })
-    ).toBeInTheDocument();
+    const results = await screen.findAllByText("Draft line 1", {
+      selector: ".search-highlight"
+    });
+    expect(results.length).toBeGreaterThan(0);
   });
 
   it("filters search results by links", async () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
-    expect(
-      await screen.findByText("Draft line 1", { selector: ".result__text" })
-    ).toBeInTheDocument();
+    const results = await screen.findAllByText("Draft line 1", {
+      selector: ".search-highlight"
+    });
+    expect(results.length).toBeGreaterThan(0);
     const linksButton = screen.getByRole("button", { name: "Links" });
     await userEvent.click(linksButton);
     expect(
-      screen.queryByText("Draft line 1", { selector: ".result__text" })
-    ).not.toBeInTheDocument();
+      screen.queryAllByText("Draft line 1", { selector: ".search-highlight" })
+    ).toHaveLength(0);
   });
 
   it("prompts for plugin permission grants", async () => {
@@ -398,7 +400,7 @@ describe("App", () => {
     const searchInput = screen.getByPlaceholderText("Search...");
     await userEvent.type(searchInput, "Imported line");
     const results = await screen.findAllByText("Imported line", {
-      selector: ".result__text"
+      selector: ".search-highlight"
     });
     expect(results.length).toBeGreaterThan(0);
   });
