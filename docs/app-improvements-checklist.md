@@ -211,8 +211,8 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 ## Optional Stretch Goals
 
 - [x] **Offline export + import** (zip with assets)
-- [x] **Mobile read‑only viewer**
-- [x] **Graph view for wikilinks**
+- [ ] **Mobile read‑only viewer**
+- [ ] **Graph view for wikilinks**
 - [x] **Daily note auto‑create**
 
 ---

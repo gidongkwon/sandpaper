@@ -38,7 +38,12 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Editor" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Viewer" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Viewer" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /graph/i })
+    ).not.toBeInTheDocument();
   });
 
   it("shows autosave status after load", async () => {

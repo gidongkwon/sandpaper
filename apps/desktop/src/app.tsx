@@ -19,7 +19,6 @@ import {
   buildBacklinks,
   buildWikilinkBacklinks,
   createShadowWriter,
-  extractWikiLinks,
   parseMarkdownPage,
   serializePageToMarkdown
 } from "@sandpaper/core-model";
@@ -38,15 +37,14 @@ type Block = {
   indent: number;
 };
 
-type Mode = "quick-capture" | "editor" | "review" | "viewer";
+type Mode = "quick-capture" | "editor" | "review";
 
 type SectionId =
   | "sidebar"
   | "editor"
   | "backlinks"
   | "capture"
-  | "review"
-  | "viewer";
+  | "review";
 
 type CommandPaletteItem = {
   id: string;
@@ -532,9 +530,6 @@ const replaceWikilinksInText = (
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const escapeMermaidLabel = (value: string) =>
-  value.replace(/"/g, "\\\"").replace(/\r?\n/g, " ");
-
 const MAX_SEED_BLOCKS = 200_000;
 
 const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
@@ -623,7 +618,6 @@ function App() {
   const [searchFilter, setSearchFilter] = createSignal<
     "all" | "links" | "tasks" | "pinned"
   >("all");
-  const [viewerQuery, setViewerQuery] = createSignal("");
   const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal("");
@@ -747,11 +741,6 @@ function App() {
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  const [graphOpen, setGraphOpen] = createSignal(false);
-  const [graphSvg, setGraphSvg] = createSignal<string | null>(null);
-  const [graphError, setGraphError] = createSignal<string | null>(null);
-  const [graphLoading, setGraphLoading] = createSignal(false);
-  const [graphEmpty, setGraphEmpty] = createSignal(false);
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [paletteQuery, setPaletteQuery] = createSignal("");
   const [paletteIndex, setPaletteIndex] = createSignal(0);
@@ -773,7 +762,6 @@ function App() {
   let markdownFilePickerRef: HTMLInputElement | undefined;
   let offlineArchivePickerRef: HTMLInputElement | undefined;
   let paletteInputRef: HTMLInputElement | undefined;
-  let viewerSearchRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
     const map = new Map<string, PluginRenderer>();
@@ -1005,25 +993,6 @@ function App() {
   const pageBacklinksMap = createMemo(() =>
     buildWikilinkBacklinks(pageLinkBlocks(), normalizePageUid)
   );
-
-  const viewerAllPages = createMemo<PageSummary[]>(() =>
-    pages().length > 0
-      ? pages()
-      : Object.values(localPages).map((page) => ({
-          uid: page.uid,
-          title: page.title
-        }))
-  );
-
-  const viewerPages = createMemo<PageSummary[]>(() => {
-    const query = viewerQuery().trim().toLowerCase();
-    if (!query) return viewerAllPages();
-    return viewerAllPages().filter((page) => {
-      const title = page.title.toLowerCase();
-      const uid = page.uid.toLowerCase();
-      return title.includes(query) || uid.includes(query);
-    });
-  });
 
   const [remotePageBacklinks] = createResource(
     activePageUid,
@@ -1695,314 +1664,6 @@ function App() {
       </div>
     </div>
   );
-
-  const ViewerPane = () => {
-    const pageCount = () => viewerAllPages().length;
-    const activeViewerUid = () =>
-      resolvePageUid(activePageUid() || DEFAULT_PAGE_UID);
-
-    const findViewerPage = (title: string) => {
-      const normalized = normalizePageUid(title);
-      return (
-        viewerAllPages().find(
-          (page) => normalizePageUid(page.uid) === normalized
-        ) ??
-        viewerAllPages().find(
-          (page) => page.title.toLowerCase() === title.toLowerCase()
-        ) ??
-        null
-      );
-    };
-
-    const openViewerPage = async (title: string) => {
-      const existing = findViewerPage(title);
-      if (!existing) return;
-      await switchPage(existing.uid);
-    };
-
-    const renderViewerInlineMarkdown = (
-      text: string
-    ): Array<string | JSX.Element> => {
-      const nodes: Array<string | JSX.Element> = [];
-      let cursor = 0;
-      for (const match of text.matchAll(INLINE_MARKDOWN_PATTERN)) {
-        const index = match.index ?? 0;
-        if (index > cursor) {
-          nodes.push(text.slice(cursor, index));
-        }
-        const token = match[0];
-        if (token.startsWith("[[")) {
-          const parsed = parseWikilinkToken(token);
-          if (parsed) {
-            nodes.push(
-              <button
-                type="button"
-                class="wikilink"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void openViewerPage(parsed.target);
-                }}
-              >
-                {parsed.label}
-              </button>
-            );
-          } else {
-            nodes.push(token);
-          }
-        } else if (token.startsWith("[")) {
-          const parsed = parseInlineLinkToken(token);
-          if (parsed) {
-            nodes.push(
-              <a
-                href={parsed.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-link"
-              >
-                {parsed.label}
-              </a>
-            );
-          } else {
-            nodes.push(token);
-          }
-        } else if (token.startsWith("`")) {
-          nodes.push(<code>{token.slice(1, -1)}</code>);
-        } else if (token.startsWith("**")) {
-          nodes.push(<strong>{token.slice(2, -2)}</strong>);
-        } else if (token.startsWith("~~")) {
-          nodes.push(<del>{token.slice(2, -2)}</del>);
-        } else if (token.startsWith("*")) {
-          nodes.push(<em>{token.slice(1, -1)}</em>);
-        } else {
-          nodes.push(token);
-        }
-        cursor = index + token.length;
-      }
-      if (cursor < text.length) {
-        nodes.push(text.slice(cursor));
-      }
-      return nodes;
-    };
-
-    const renderViewerDisplay = (text: string): JSX.Element => {
-      const list = parseMarkdownList(text);
-      if (list) {
-        const items = (
-          <For each={list.items}>
-            {(item) => <li>{renderViewerInlineMarkdown(item)}</li>}
-          </For>
-        );
-        if (list.type === "ol") {
-          return <ol class="markdown-list">{items}</ol>;
-        }
-        return <ul class="markdown-list">{items}</ul>;
-      }
-      return <span>{renderViewerInlineMarkdown(text)}</span>;
-    };
-
-    return (
-      <section class="viewer">
-        <SectionJump id="viewer" label="Viewer" />
-        <div class="viewer__header">
-          <div>
-            <div class="viewer__eyebrow">Read-only viewer</div>
-            <h2 class="viewer__title">{pageTitle()}</h2>
-            <div class="viewer__meta">
-              {pageCount()} pages · {blocks.length} blocks
-            </div>
-          </div>
-          <button class="viewer__button" onClick={() => setMode("editor")}>
-            Open in editor
-          </button>
-        </div>
-        <div class="viewer__controls">
-          <input
-            ref={(el) => {
-              viewerSearchRef = el;
-            }}
-            class="viewer__search"
-            type="search"
-            placeholder="Find a page..."
-            value={viewerQuery()}
-            onInput={(event) => setViewerQuery(event.currentTarget.value)}
-          />
-        </div>
-        <div class="viewer__page-list">
-          <Show
-            when={viewerPages().length > 0}
-            fallback={<div class="viewer__empty">No pages found.</div>}
-          >
-            <For each={viewerPages()}>
-              {(page) => (
-                <button
-                  class={`viewer-page ${
-                    resolvePageUid(page.uid) === activeViewerUid()
-                      ? "is-active"
-                      : ""
-                  }`}
-                  onClick={() => void switchPage(page.uid)}
-                >
-                  <div class="viewer-page__title">
-                    {page.title || page.uid}
-                  </div>
-                  <div class="viewer-page__meta">{page.uid}</div>
-                </button>
-              )}
-            </For>
-          </Show>
-        </div>
-        <div class="viewer__content">
-          <div class="viewer__content-title">{pageTitle()}</div>
-          <Show
-            when={blocks.length > 0}
-            fallback={<div class="viewer__empty">No blocks yet.</div>}
-          >
-            <For each={blocks}>
-              {(block) => {
-                const trimmed = () => block.text.trim();
-                return (
-                  <div
-                    class="viewer-block"
-                    style={{ "margin-left": `${block.indent * 18}px` }}
-                  >
-                    <span class="viewer-block__bullet">•</span>
-                    <div class="viewer-block__text">
-                      <Show
-                        when={trimmed().length > 0}
-                        fallback={
-                          <span class="viewer-block__placeholder">
-                            Empty block
-                          </span>
-                        }
-                      >
-                        {renderViewerDisplay(block.text)}
-                      </Show>
-                    </div>
-                  </div>
-                );
-              }}
-            </For>
-          </Show>
-        </div>
-      </section>
-    );
-  };
-
-  const GraphModal = () => {
-    let containerRef: HTMLDivElement | undefined;
-    let renderToken = 0;
-
-    const refreshGraph = async () => {
-      const token = (renderToken += 1);
-      setGraphLoading(true);
-      setGraphError(null);
-      setGraphSvg(null);
-      setGraphEmpty(false);
-
-      try {
-        const pagesToGraph = await collectOfflineExportPages();
-        const { diagram, hasEdges } = buildWikilinkGraph(pagesToGraph);
-        if (token !== renderToken) return;
-        setGraphEmpty(!hasEdges);
-        const engine = ensureMermaid();
-        const result = await engine.render(
-          `mermaid-graph-${makeRandomId()}`,
-          diagram
-        );
-        if (token !== renderToken) return;
-        setGraphSvg(result.svg ?? "");
-        if (result.bindFunctions && containerRef) {
-          Promise.resolve().then(() => {
-            if (token !== renderToken) return;
-            result.bindFunctions?.(containerRef);
-          });
-        }
-      } catch (error) {
-        if (token !== renderToken) return;
-        console.error("Graph render failed", error);
-        setGraphError("Unable to render graph.");
-      } finally {
-        if (token === renderToken) {
-          setGraphLoading(false);
-        }
-      }
-    };
-
-    onMount(() => {
-      void refreshGraph();
-    });
-
-    return (
-      <div
-        class="modal-backdrop"
-        onClick={(event) =>
-          event.target === event.currentTarget && closeGraph()
-        }
-      >
-        <div
-          class="graph-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="graph-title"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div class="graph-modal__header">
-            <div>
-              <div class="graph-modal__eyebrow">Wikilink graph</div>
-              <h3 id="graph-title" class="graph-modal__title">
-                Connection map
-              </h3>
-              <div class="graph-modal__subtitle">
-                Explore how your pages link together.
-              </div>
-            </div>
-            <div class="graph-modal__actions">
-              <button
-                class="graph-modal__button"
-                onClick={() => void refreshGraph()}
-                disabled={graphLoading()}
-              >
-                {graphLoading() ? "Refreshing..." : "Refresh"}
-              </button>
-              <button
-                class="graph-modal__button is-primary"
-                onClick={closeGraph}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-          <div class="graph-modal__body">
-            <Show
-              when={graphSvg()}
-              fallback={
-                <div class="graph-modal__status">
-                  {graphError() ??
-                    (graphLoading()
-                      ? "Building graph..."
-                      : "Graph unavailable.")}
-                </div>
-              }
-            >
-              {(value) => (
-                <div
-                  ref={containerRef}
-                  class="graph-modal__canvas"
-                  innerHTML={value() ?? ""}
-                />
-              )}
-            </Show>
-            <Show when={graphEmpty()}>
-              <div class="graph-modal__empty">
-                No wikilinks yet. Add [[Page]] links to connect your notes.
-              </div>
-            </Show>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
@@ -3311,73 +2972,6 @@ function App() {
     return Array.from(result.values());
   };
 
-  const buildWikilinkGraph = (pagesToGraph: LocalPageRecord[]) => {
-    const knownUids = new Set<string>();
-    const titleByUid = new Map<string, string>();
-    const edges = new Set<string>();
-    const missingUids = new Set<string>();
-
-    pagesToGraph.forEach((page) => {
-      const uid = resolvePageUid(page.uid);
-      if (!uid) return;
-      knownUids.add(uid);
-      titleByUid.set(uid, page.title || uid);
-    });
-
-    pagesToGraph.forEach((page) => {
-      const sourceUid = resolvePageUid(page.uid);
-      if (!sourceUid) return;
-      page.blocks.forEach((block) => {
-        const links = extractWikiLinks(block.text);
-        links.forEach((link) => {
-          const targetUid = resolvePageUid(link);
-          if (!targetUid) return;
-          edges.add(`${sourceUid}=>${targetUid}`);
-          if (!titleByUid.has(targetUid)) {
-            titleByUid.set(targetUid, link);
-          }
-          if (!knownUids.has(targetUid)) {
-            missingUids.add(targetUid);
-          }
-        });
-      });
-    });
-
-    const entries = Array.from(titleByUid.entries()).sort((a, b) =>
-      a[1].localeCompare(b[1])
-    );
-    const nodeIds = new Map<string, string>();
-    entries.forEach(([uid], index) => {
-      nodeIds.set(uid, `P${index}`);
-    });
-
-    const lines = ["graph LR"];
-    entries.forEach(([uid, title]) => {
-      const id = nodeIds.get(uid);
-      if (!id) return;
-      const label = escapeMermaidLabel(title || uid);
-      const classSuffix = missingUids.has(uid) ? ":::missing" : "";
-      lines.push(`  ${id}["${label}"]${classSuffix}`);
-    });
-    edges.forEach((edge) => {
-      const [from, to] = edge.split("=>");
-      const fromId = nodeIds.get(from);
-      const toId = nodeIds.get(to);
-      if (!fromId || !toId) return;
-      lines.push(`  ${fromId} --> ${toId}`);
-    });
-    if (missingUids.size > 0) {
-      lines.push(
-        "  classDef missing fill:#FFF5E9,stroke:#F59E0B,stroke-dasharray: 4 2,color:#6B4C1A;"
-      );
-    }
-
-    return {
-      diagram: lines.join("\n"),
-      hasEdges: edges.size > 0
-    };
-  };
-
   const buildOfflineArchive = async () => {
     const pagesToExport = await collectOfflineExportPages();
     if (pagesToExport.length === 0) {
@@ -3608,14 +3202,6 @@ function App() {
     setPaletteIndex(0);
   };
 
-  const openGraph = () => {
-    setGraphOpen(true);
-  };
-
-  const closeGraph = () => {
-    setGraphOpen(false);
-  };
-
   const closeCommandPalette = () => {
     setPaletteOpen(false);
     setPaletteQuery("");
@@ -3629,13 +3215,6 @@ function App() {
         label: "Open settings",
         action: () => {
           setSettingsOpen(true);
-        }
-      },
-      {
-        id: "open-graph",
-        label: "Open graph view",
-        action: () => {
-          openGraph();
         }
       }
     ];
@@ -3667,16 +3246,6 @@ function App() {
         }
       });
     }
-    if (mode() !== "viewer") {
-      items.push({
-        id: "switch-viewer",
-        label: "Switch to viewer",
-        action: () => {
-          setMode("viewer");
-        }
-      });
-    }
-
     if (mode() === "editor") {
       items.push(
         {
@@ -4128,7 +3697,7 @@ function App() {
     if (mode() === "review") {
       return ["review"];
     }
-    return ["viewer"];
+    return ["review"];
   });
 
   const focusSectionJump = (id: SectionId) => {
@@ -4209,11 +3778,6 @@ function App() {
         target?.focus();
       });
       return;
-    }
-    if (id === "viewer") {
-      requestAnimationFrame(() => {
-        viewerSearchRef?.focus();
-      });
     }
   };
 
@@ -5474,12 +5038,6 @@ function App() {
           >
             Review
           </button>
-          <button
-            class={`mode-switch__button ${mode() === "viewer" ? "is-active" : ""}`}
-            onClick={() => setMode("viewer")}
-          >
-            Viewer
-          </button>
         </nav>
 
         <div class="topbar__right">
@@ -5496,20 +5054,6 @@ function App() {
               (autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving...")}
           </span>
           <button
-            class="topbar__graph"
-            onClick={openGraph}
-            aria-label="Open graph"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="5" cy="12" r="3" />
-              <circle cx="19" cy="5" r="3" />
-              <circle cx="19" cy="19" r="3" />
-              <line x1="7.5" y1="10.5" x2="16.5" y2="6.5" />
-              <line x1="7.5" y1="13.5" x2="16.5" y2="17.5" />
-            </svg>
-            <span>Graph</span>
-          </button>
-          <button
             class="topbar__settings"
             onClick={() => setSettingsOpen(true)}
             aria-label="Open settings"
@@ -5525,40 +5069,36 @@ function App() {
       <Show
         when={mode() === "editor"}
         fallback={
-          <Show when={mode() === "viewer"} fallback={
-            <section class="focus-panel">
-              <SectionJump
-                id={mode() === "quick-capture" ? "capture" : "review"}
-                label={mode() === "quick-capture" ? "Capture" : "Review"}
-              />
-              <Show
-                when={mode() === "quick-capture"}
-                fallback={
-                  <ReviewPane />
-                }
-              >
-                <div class="capture">
-                  <h2>Quick capture</h2>
-                  <p>Drop a thought and send it straight to your inbox.</p>
-                  <textarea
-                    class="capture__input"
-                    rows={4}
-                    placeholder="Capture a thought, link, or task..."
-                    value={captureText()}
-                    onInput={(event) => setCaptureText(event.currentTarget.value)}
-                  />
-                  <div class="capture__actions">
-                    <button class="capture__button" onClick={addCapture}>
-                      Add to Inbox
-                    </button>
-                    <span class="capture__hint">Shift+Enter for newline</span>
-                  </div>
+          <section class="focus-panel">
+            <SectionJump
+              id={mode() === "quick-capture" ? "capture" : "review"}
+              label={mode() === "quick-capture" ? "Capture" : "Review"}
+            />
+            <Show
+              when={mode() === "quick-capture"}
+              fallback={
+                <ReviewPane />
+              }
+            >
+              <div class="capture">
+                <h2>Quick capture</h2>
+                <p>Drop a thought and send it straight to your inbox.</p>
+                <textarea
+                  class="capture__input"
+                  rows={4}
+                  placeholder="Capture a thought, link, or task..."
+                  value={captureText()}
+                  onInput={(event) => setCaptureText(event.currentTarget.value)}
+                />
+                <div class="capture__actions">
+                  <button class="capture__button" onClick={addCapture}>
+                    Add to Inbox
+                  </button>
+                  <span class="capture__hint">Shift+Enter for newline</span>
                 </div>
-              </Show>
-            </section>
-          }>
-            <ViewerPane />
-          </Show>
+              </div>
+            </Show>
+          </section>
         }
       >
         <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
@@ -6007,11 +5547,6 @@ function App() {
             </div>
           </div>
         </div>
-      </Show>
-
-      {/* Graph View */}
-      <Show when={graphOpen()}>
-        <GraphModal />
       </Show>
 
       {/* Settings Modal */}

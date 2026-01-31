@@ -9,4 +9,4 @@ Highlights
 - Reliability: accurate autosave states, shadow writer retries + queue indicator, crash-safe backups.
 - Plugins and sync: permission audit, plugin error recovery, sync activity log, and conflict resolution UI.
 - Performance and accessibility: virtual list stability, large-note perf checks, keyboard navigation, and contrast fixes.
-- Offline and review extras: offline export/import, mobile read-only viewer, wikilink graph view, and daily note auto-create.
+- Offline and review extras: offline export/import and daily note auto-create.
