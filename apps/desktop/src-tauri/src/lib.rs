@@ -106,9 +106,19 @@ struct SyncOpPayload {
 }
 
 #[derive(Debug, Serialize)]
+struct SyncConflict {
+    op_id: String,
+    page_uid: String,
+    block_uid: String,
+    local_text: String,
+    remote_text: String,
+}
+
+#[derive(Debug, Serialize)]
 struct SyncApplyResult {
     pages: Vec<String>,
     applied: i64,
+    conflicts: Vec<SyncConflict>,
 }
 
 #[derive(Debug, Serialize)]
@@ -856,6 +866,39 @@ fn apply_sync_ops_to_blocks(
         .collect()
 }
 
+fn detect_sync_conflicts(
+    blocks: &[BlockSnapshot],
+    ops: &[SyncOpPayload],
+) -> Vec<SyncConflict> {
+    let mut by_id = std::collections::HashMap::new();
+    for block in blocks.iter() {
+        by_id.insert(block.uid.clone(), block.text.clone());
+    }
+    let mut conflicts = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for op in ops.iter() {
+        if op.kind != "edit" {
+            continue;
+        }
+        let Some(remote_text) = op.text.as_ref() else { continue };
+        let Some(local_text) = by_id.get(&op.block_id) else { continue };
+        if local_text == remote_text {
+            continue;
+        }
+        if !seen.insert(op.block_id.clone()) {
+            continue;
+        }
+        conflicts.push(SyncConflict {
+            op_id: op.op_id.clone(),
+            page_uid: op.page_id.clone(),
+            block_uid: op.block_id.clone(),
+            local_text: local_text.clone(),
+            remote_text: remote_text.clone(),
+        });
+    }
+    conflicts
+}
+
 fn next_review_due(interval_days: i64) -> i64 {
     let millis = interval_days * 24 * 60 * 60 * 1000;
     chrono::Utc::now().timestamp_millis() + millis
@@ -1034,6 +1077,7 @@ fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
         return Ok(SyncApplyResult {
             pages: Vec::new(),
             applied: 0,
+            conflicts: Vec::new(),
         });
     }
 
@@ -1050,11 +1094,13 @@ fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
     }
 
     let mut pages = Vec::new();
+    let mut conflicts = Vec::new();
     for (page_uid, ops) in by_page {
         let page_id = ensure_page(&db, &page_uid, &page_uid)?;
         let current = db
             .load_blocks_for_page(page_id)
             .map_err(|err| format!("{:?}", err))?;
+        conflicts.extend(detect_sync_conflicts(&current, &ops));
         let next = apply_sync_ops_to_blocks(&current, ops);
         db.replace_blocks_for_page(page_id, &next)
             .map_err(|err| format!("{:?}", err))?;
@@ -1066,6 +1112,7 @@ fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
     Ok(SyncApplyResult {
         pages,
         applied: inbox_ops.len() as i64,
+        conflicts,
     })
 }
 
@@ -1920,6 +1967,35 @@ mod tests {
         assert_eq!(next[0].indent, 1);
         assert_eq!(next[1].uid, "b3");
         assert_eq!(next[1].text, "Third");
+    }
+
+    #[test]
+    fn detect_sync_conflicts_flags_remote_edits() {
+        let current = vec![BlockSnapshot {
+            uid: "b1".to_string(),
+            text: "Local text".to_string(),
+            indent: 0,
+        }];
+
+        let ops = vec![SyncOpPayload {
+            op_id: "op-remote".to_string(),
+            page_id: "page-1".to_string(),
+            block_id: "b1".to_string(),
+            device_id: "dev-2".to_string(),
+            clock: 1,
+            timestamp: 0,
+            kind: "edit".to_string(),
+            text: Some("Remote text".to_string()),
+            sort_key: None,
+            indent: None,
+            parent_id: None,
+        }];
+
+        let conflicts = detect_sync_conflicts(&current, &ops);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].block_uid, "b1");
+        assert_eq!(conflicts[0].local_text, "Local text");
+        assert_eq!(conflicts[0].remote_text, "Remote text");
     }
 
     #[test]

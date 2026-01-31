@@ -162,9 +162,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
   - [x] Provide a “Copy log” button
   - **Done when:** sync history is visible
 
-- [ ] **Sync conflict UI**
-  - [ ] If conflict detected, show a diff view for blocks
-  - [ ] Let users pick left/right or merge
+- [x] **Sync conflict UI**
+  - [x] If conflict detected, show a diff view for blocks
+  - [x] Let users pick left/right or merge
   - **Done when:** conflicts are surfaced and resolvable
 
 ---

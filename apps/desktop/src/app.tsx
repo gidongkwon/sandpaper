@@ -120,6 +120,15 @@ type SyncServerPullResponse = {
 type SyncApplyResult = {
   pages: string[];
   applied: number;
+  conflicts?: SyncConflict[];
+};
+
+type SyncConflict = {
+  op_id: string;
+  page_uid: string;
+  block_uid: string;
+  local_text: string;
+  remote_text: string;
 };
 
 type ReviewQueueSummary = {
@@ -662,6 +671,11 @@ function App() {
   const [syncMessage, setSyncMessage] = createSignal<string | null>(null);
   const [syncBusy, setSyncBusy] = createSignal(false);
   const [syncLog, setSyncLog] = createSignal<SyncLogEntry[]>([]);
+  const [syncConflicts, setSyncConflicts] = createSignal<SyncConflict[]>([]);
+  const [syncConflictMergeId, setSyncConflictMergeId] = createSignal<string | null>(null);
+  const [syncConflictMergeDrafts, setSyncConflictMergeDrafts] = createStore<
+    Record<string, string>
+  >({});
   const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
@@ -1760,6 +1774,190 @@ function App() {
     await copyToClipboard(lines.join("\n"));
   };
 
+  const mergeSyncConflicts = (incoming: SyncConflict[]) => {
+    if (incoming.length === 0) return;
+    setSyncConflicts((prev) => {
+      const seen = new Set(prev.map((conflict) => conflict.op_id));
+      const next = [...prev];
+      for (const conflict of incoming) {
+        if (!seen.has(conflict.op_id)) {
+          next.push(conflict);
+          seen.add(conflict.op_id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const fetchPageBlocks = async (pageUid: string): Promise<LocalPageRecord | null> => {
+    const resolvedUid = resolvePageUid(pageUid);
+    if (!isTauri()) {
+      const local = localPages[resolvedUid];
+      if (!local) return null;
+      return {
+        uid: resolvedUid,
+        title: local.title,
+        blocks: snapshotBlocks(local.blocks)
+      };
+    }
+    try {
+      const response = (await invoke("load_page_blocks", {
+        pageUid: resolvedUid,
+        page_uid: resolvedUid
+      })) as PageBlocksResponse;
+      return {
+        uid: resolvedUid,
+        title:
+          response.title ||
+          (resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled"),
+        blocks: response.blocks.map((block) =>
+          makeBlock(block.uid, block.text, block.indent)
+        )
+      };
+    } catch (error) {
+      console.error("Failed to load page for conflict", error);
+      return null;
+    }
+  };
+
+  const resolveSyncConflict = async (
+    conflict: SyncConflict,
+    resolution: "local" | "remote" | "merge",
+    mergeText?: string
+  ) => {
+    const resolvedUid = resolvePageUid(conflict.page_uid);
+    const resolvedText =
+      resolution === "merge"
+        ? mergeText ?? ""
+        : resolution === "local"
+          ? conflict.local_text
+          : conflict.remote_text;
+
+    const updateBlocks = (items: Block[]) => {
+      const index = items.findIndex((block) => block.id === conflict.block_uid);
+      if (index < 0) return null;
+      const next = snapshotBlocks(items);
+      next[index] = {
+        ...next[index],
+        text: resolvedText
+      };
+      return next;
+    };
+
+    const saveBlocks = async (items: Block[], title: string) => {
+      const next = updateBlocks(items);
+      if (!next) return false;
+      if (resolvedUid === resolvePageUid(activePageUid())) {
+        setBlocks(next);
+      } else if (!isTauri()) {
+        saveLocalPageSnapshot(resolvedUid, title, next);
+      }
+      markSaving();
+      const payload = next.map((block) => toPayload(block));
+      const success = await persistBlocks(resolvedUid, payload, title, next);
+      if (success) {
+        markSaved();
+        if (resolvedUid === resolvePageUid(activePageUid())) {
+          scheduleShadowWrite(resolvedUid);
+        }
+      } else {
+        markSaveFailed();
+      }
+      return success;
+    };
+
+    if (resolvedUid === resolvePageUid(activePageUid())) {
+      await saveBlocks(snapshotBlocks(blocks), pageTitle());
+    } else {
+      const record = await fetchPageBlocks(resolvedUid);
+      if (!record) return;
+      await saveBlocks(record.blocks, record.title);
+    }
+
+    setSyncConflicts((prev) =>
+      prev.filter((entry) => entry.op_id !== conflict.op_id)
+    );
+    if (syncConflictMergeId() === conflict.op_id) {
+      setSyncConflictMergeId(null);
+    }
+    setSyncConflictMergeDrafts(conflict.op_id, "");
+  };
+
+  const startSyncConflictMerge = (conflict: SyncConflict) => {
+    const existing = syncConflictMergeDrafts[conflict.op_id];
+    if (!existing) {
+      setSyncConflictMergeDrafts(
+        conflict.op_id,
+        `${conflict.local_text}\n${conflict.remote_text}`
+      );
+    }
+    setSyncConflictMergeId(conflict.op_id);
+  };
+
+  const cancelSyncConflictMerge = () => {
+    setSyncConflictMergeId(null);
+  };
+
+  const getConflictPageTitle = (pageUid: string) =>
+    pages().find((page) => page.uid === resolvePageUid(pageUid))?.title ??
+    pageUid;
+
+  const SyncConflictDiagram = () => {
+    const [svg, setSvg] = createSignal<string | null>(null);
+    const [error, setError] = createSignal<string | null>(null);
+    let containerRef: HTMLDivElement | undefined;
+    let renderToken = 0;
+
+    createEffect(() => {
+      const token = (renderToken += 1);
+      setSvg(null);
+      setError(null);
+      const content = `flowchart LR\n  L[Local edit] --> C{Conflict}\n  R[Remote edit] --> C\n  C --> M[Merged result]`;
+
+      void (async () => {
+        try {
+          const engine = ensureMermaid();
+          const result = await engine.render(
+            `mermaid-sync-${makeRandomId()}`,
+            content
+          );
+          if (token !== renderToken) return;
+          setSvg(result.svg ?? "");
+          if (result.bindFunctions && containerRef) {
+            Promise.resolve().then(() => {
+              if (token !== renderToken) return;
+              result.bindFunctions?.(containerRef);
+            });
+          }
+        } catch {
+          if (token !== renderToken) return;
+          setError("Conflict diagram unavailable.");
+        }
+      })();
+    });
+
+    return (
+      <div class="sync-conflict-diagram">
+        <Show
+          when={svg()}
+          fallback={
+            <div class="sync-conflict-diagram__fallback">
+              {error() ?? "Rendering conflict diagram..."}
+            </div>
+          }
+        >
+          {(value) => (
+            <div
+              ref={containerRef}
+              class="sync-conflict-diagram__svg"
+              innerHTML={value() ?? ""}
+            />
+          )}
+        </Show>
+      </div>
+    );
+  };
+
   const loadBlocks = async (pageUid = activePageUid()) => {
     const resolvedUid = resolvePageUid(pageUid);
     setActivePageUid(resolvedUid);
@@ -2092,8 +2290,12 @@ function App() {
   };
 
   const applySyncInbox = async () => {
-    if (!isTauri()) return { pages: [], applied: 0 };
+    if (!isTauri()) return { pages: [], applied: 0, conflicts: [] };
     const result = (await invoke("apply_sync_inbox")) as SyncApplyResult;
+    const conflicts = result.conflicts ?? [];
+    if (conflicts.length > 0) {
+      mergeSyncConflicts(conflicts);
+    }
     if (
       result.applied > 0 &&
       result.pages.includes(resolvePageUid(activePageUid()))
@@ -2131,8 +2333,8 @@ function App() {
     }, delay);
   };
 
-  const runSyncCycle = async () => {
-    if (!syncLoopEnabled || syncRunning) return;
+  const runSyncCycle = async (force = false) => {
+    if ((!syncLoopEnabled && !force) || syncRunning) return;
     const config = syncConfig();
     if (!config || !config.server_url || !config.vault_id || !config.device_id) {
       updateSyncStatus({ state: "idle" });
@@ -2264,7 +2466,10 @@ function App() {
 
   const syncNow = async () => {
     if (!isTauri() || syncBusy()) return;
-    await runSyncCycle();
+    if (!syncConfig()) {
+      await loadSyncConfig();
+    }
+    await runSyncCycle(true);
   };
 
   const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {
@@ -4733,6 +4938,136 @@ function App() {
                         </div>
                       </Show>
                     </div>
+                    <Show when={syncConflicts().length > 0}>
+                      <div class="settings-section">
+                        <div class="settings-section__header">
+                          <h3 class="settings-section__title">Sync conflicts</h3>
+                          <span class="sync-conflict-count">
+                            {syncConflicts().length} open
+                          </span>
+                        </div>
+                        <p class="settings-section__desc">
+                          Conflicting edits were detected during sync. Choose a
+                          version or merge the text before continuing.
+                        </p>
+                        <SyncConflictDiagram />
+                        <div class="sync-conflicts">
+                          <For each={syncConflicts()}>
+                            {(conflict) => (
+                              <div class="sync-conflict">
+                                <div class="sync-conflict__header">
+                                  <div>
+                                    <div class="sync-conflict__title">
+                                      {getConflictPageTitle(conflict.page_uid)}
+                                    </div>
+                                    <div class="sync-conflict__meta">
+                                      Block {conflict.block_uid}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div class="sync-conflict__diff">
+                                  <div class="sync-conflict__pane is-local">
+                                    <div class="sync-conflict__label">
+                                      Local
+                                    </div>
+                                    <pre class="sync-conflict__text">
+                                      {conflict.local_text}
+                                    </pre>
+                                  </div>
+                                  <div class="sync-conflict__pane is-remote">
+                                    <div class="sync-conflict__label">
+                                      Remote
+                                    </div>
+                                    <pre class="sync-conflict__text">
+                                      {conflict.remote_text}
+                                    </pre>
+                                  </div>
+                                </div>
+                                <div class="sync-conflict__actions">
+                                  <button
+                                    class="settings-action"
+                                    onClick={() =>
+                                      void resolveSyncConflict(
+                                        conflict,
+                                        "local"
+                                      )
+                                    }
+                                  >
+                                    Use local
+                                  </button>
+                                  <button
+                                    class="settings-action"
+                                    onClick={() =>
+                                      void resolveSyncConflict(
+                                        conflict,
+                                        "remote"
+                                      )
+                                    }
+                                  >
+                                    Use remote
+                                  </button>
+                                  <button
+                                    class="settings-action is-primary"
+                                    onClick={() =>
+                                      startSyncConflictMerge(conflict)
+                                    }
+                                  >
+                                    Merge
+                                  </button>
+                                </div>
+                                <Show
+                                  when={
+                                    syncConflictMergeId() === conflict.op_id
+                                  }
+                                >
+                                  <div class="sync-conflict__merge">
+                                    <label class="sync-conflict__label">
+                                      Merged
+                                    </label>
+                                    <textarea
+                                      class="sync-conflict__textarea"
+                                      value={
+                                        syncConflictMergeDrafts[
+                                          conflict.op_id
+                                        ] ?? ""
+                                      }
+                                      onInput={(event) =>
+                                        setSyncConflictMergeDrafts(
+                                          conflict.op_id,
+                                          event.currentTarget.value
+                                        )
+                                      }
+                                    />
+                                    <div class="sync-conflict__actions">
+                                      <button
+                                        class="settings-action is-primary"
+                                        onClick={() =>
+                                          void resolveSyncConflict(
+                                            conflict,
+                                            "merge",
+                                            syncConflictMergeDrafts[
+                                              conflict.op_id
+                                            ] ?? ""
+                                          )
+                                        }
+                                      >
+                                        Apply merge
+                                      </button>
+                                      <button
+                                        class="settings-action"
+                                        onClick={cancelSyncConflictMerge}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
                   </Show>
                 </Show>
                 <Show when={settingsTab() === "plugins"}>
