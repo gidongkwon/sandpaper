@@ -200,6 +200,7 @@ Exit criteria
 - 2026-01-31: Phase 5 — Crash-safe migration backups completed (rotate last 3).
 - 2026-01-31: Phase 6 — Permission audit tab completed (missing/unused highlights).
 - 2026-01-31: Phase 6 — Plugin error banner + reload action completed.
+- 2026-01-31: Phase 7 — Sync activity log completed (push/pull history + copy log).
 
 ### Phase 2 — Plugin System + Core Plugins
 **Outcome:** extensible platform, core plugins installed.

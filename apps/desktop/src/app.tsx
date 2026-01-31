@@ -86,6 +86,15 @@ type SyncStatus = {
   last_apply_count: number;
 };
 
+type SyncLogEntry = {
+  id: string;
+  at: string;
+  action: "push" | "pull";
+  count: number;
+  status: "ok" | "error";
+  detail?: string | null;
+};
+
 type SyncOpEnvelope = {
   cursor: number;
   op_id: string;
@@ -652,6 +661,7 @@ function App() {
   });
   const [syncMessage, setSyncMessage] = createSignal<string | null>(null);
   const [syncBusy, setSyncBusy] = createSignal(false);
+  const [syncLog, setSyncLog] = createSignal<SyncLogEntry[]>([]);
   const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
@@ -1689,6 +1699,67 @@ function App() {
       minute: "2-digit"
     }).format(new Date());
 
+  const syncStampNow = () =>
+    new Intl.DateTimeFormat(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    }).format(new Date());
+
+  const appendSyncLog = (
+    entry: Omit<SyncLogEntry, "id" | "at"> & { at?: string }
+  ) => {
+    setSyncLog((prev) => {
+      const next = [
+        ...prev,
+        {
+          id: makeRandomId(),
+          at: entry.at ?? syncStampNow(),
+          action: entry.action,
+          count: entry.count,
+          status: entry.status,
+          detail: entry.detail ?? null
+        }
+      ];
+      return next.slice(-10);
+    });
+  };
+
+  const copyToClipboard = async (content: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(content);
+        return;
+      } catch (error) {
+        console.warn("Clipboard write failed", error);
+      }
+    }
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = content;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    } catch (error) {
+      console.warn("Clipboard fallback failed", error);
+    }
+  };
+
+  const formatSyncLogLine = (entry: SyncLogEntry) => {
+    const status = entry.status === "error" ? " error" : "";
+    const detail = entry.detail ? ` (${entry.detail})` : "";
+    return `${entry.at} ${entry.action.toUpperCase()} ${entry.count}${status}${detail}`;
+  };
+
+  const copySyncLog = async () => {
+    const lines = syncLog().map((entry) => formatSyncLogLine(entry));
+    await copyToClipboard(lines.join("\n"));
+  };
+
   const loadBlocks = async (pageUid = activePageUid()) => {
     const resolvedUid = resolvePageUid(pageUid);
     setActivePageUid(resolvedUid);
@@ -2077,8 +2148,18 @@ function App() {
     try {
       await applySyncInbox();
       const pushResult = await pushSyncOps(config);
+      appendSyncLog({
+        action: "push",
+        count: pushResult.pushed,
+        status: "ok"
+      });
       const nextConfig = syncConfig() ?? config;
       const pullResult = await pullSyncOps(nextConfig);
+      appendSyncLog({
+        action: "pull",
+        count: pullResult.pulled,
+        status: "ok"
+      });
       if (pullResult.pulled > 0) {
         await applySyncInbox();
       }
@@ -3494,30 +3575,6 @@ function App() {
       return nodes;
     };
 
-    const copyToClipboard = async (content: string) => {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(content);
-          return;
-        } catch (error) {
-          console.warn("Clipboard write failed", error);
-        }
-      }
-      try {
-        const textarea = document.createElement("textarea");
-        textarea.value = content;
-        textarea.setAttribute("readonly", "true");
-        textarea.style.position = "absolute";
-        textarea.style.left = "-9999px";
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-      } catch (error) {
-        console.warn("Clipboard fallback failed", error);
-      }
-    };
-
     const renderCodePreview = (
       code: CodeFence & { renderer: PluginRenderer },
       blockId: string
@@ -4630,6 +4687,51 @@ function App() {
                       </div>
                       <div class="settings-row"><label class="settings-label">Vault ID</label><code class="settings-code">{syncConfig()?.vault_id}</code></div>
                       <div class="settings-row"><label class="settings-label">Device ID</label><code class="settings-code">{syncConfig()?.device_id}</code></div>
+                    </div>
+                    <div class="settings-section">
+                      <div class="settings-section__header">
+                        <h3 class="settings-section__title">Activity log</h3>
+                        <button
+                          class="settings-action"
+                          onClick={copySyncLog}
+                          disabled={syncLog().length === 0}
+                        >
+                          Copy log
+                        </button>
+                      </div>
+                      <Show
+                        when={syncLog().length > 0}
+                        fallback={
+                          <p class="settings-section__desc">
+                            No sync activity yet.
+                          </p>
+                        }
+                      >
+                        <div class="sync-log">
+                          <For each={[...syncLog()].reverse()}>
+                            {(entry) => (
+                              <div
+                                class={`sync-log__row ${
+                                  entry.status === "error" ? "is-error" : ""
+                                }`}
+                              >
+                                <span class="sync-log__time">{entry.at}</span>
+                                <span class={`sync-log__action is-${entry.action}`}>
+                                  {entry.action}
+                                </span>
+                                <span class="sync-log__count">
+                                  {entry.count}
+                                </span>
+                                <Show when={entry.detail}>
+                                  <span class="sync-log__detail">
+                                    {entry.detail}
+                                  </span>
+                                </Show>
+                              </div>
+                            )}
+                          </For>
+                        </div>
+                      </Show>
                     </div>
                   </Show>
                 </Show>

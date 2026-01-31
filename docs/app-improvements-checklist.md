@@ -157,9 +157,9 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 7 — Sync UX (Desktop)
 
-- [ ] **Sync activity log**
-  - [ ] Show last 10 sync actions (push/pull)
-  - [ ] Provide a “Copy log” button
+- [x] **Sync activity log**
+  - [x] Show last 10 sync actions (push/pull)
+  - [x] Provide a “Copy log” button
   - **Done when:** sync history is visible
 
 - [ ] **Sync conflict UI**
