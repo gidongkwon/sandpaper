@@ -126,7 +126,7 @@ Success metrics (Phase 0)
 Exit criteria
 - [x] Editor prototype smooth at 50k+ blocks
 - [x] FTS update path works on all edits
-- [ ] Shadow files match DB deterministically
+- [x] Shadow files match DB deterministically
 - [x] CRDT ops prove viable for page-level merge
  - [ ] Phase 0 success metrics met and documented
 

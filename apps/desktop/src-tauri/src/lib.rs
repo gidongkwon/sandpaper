@@ -550,6 +550,79 @@ mod tests {
     }
 
     #[test]
+    fn shadow_markdown_matches_db_state() {
+        let dir = tempdir().expect("tempdir");
+        let mut db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db
+            .insert_page("page-uid", "Inbox")
+            .expect("insert page");
+        let blocks = vec![
+            BlockSnapshot {
+                uid: "block-1".to_string(),
+                text: "First line".to_string(),
+                indent: 0,
+            },
+            BlockSnapshot {
+                uid: "block-2".to_string(),
+                text: "Child line".to_string(),
+                indent: 1,
+            },
+        ];
+        db.replace_blocks_for_page(page_id, &blocks)
+            .expect("replace blocks");
+
+        let loaded = db
+            .load_blocks_for_page(page_id)
+            .expect("load blocks");
+        let payload = PageBlocksResponse {
+            page_uid: "page-uid".to_string(),
+            title: "Inbox".to_string(),
+            blocks: loaded,
+        };
+        let markdown = build_markdown_export(&payload);
+        let path =
+            write_shadow_markdown_to_vault(dir.path(), &payload.page_uid, &markdown)
+                .expect("write shadow");
+        let saved = std::fs::read_to_string(&path).expect("read shadow");
+        assert_eq!(saved, markdown);
+
+        let updated_blocks = vec![
+            BlockSnapshot {
+                uid: "block-1".to_string(),
+                text: "First line updated".to_string(),
+                indent: 0,
+            },
+            BlockSnapshot {
+                uid: "block-2".to_string(),
+                text: "Child line".to_string(),
+                indent: 2,
+            },
+        ];
+        db.replace_blocks_for_page(page_id, &updated_blocks)
+            .expect("replace updated");
+        let updated = db
+            .load_blocks_for_page(page_id)
+            .expect("load updated");
+        let updated_payload = PageBlocksResponse {
+            page_uid: "page-uid".to_string(),
+            title: "Inbox".to_string(),
+            blocks: updated,
+        };
+        let updated_markdown = build_markdown_export(&updated_payload);
+        write_shadow_markdown_to_vault(
+            dir.path(),
+            &updated_payload.page_uid,
+            &updated_markdown,
+        )
+        .expect("write updated");
+        let saved_updated = std::fs::read_to_string(&path).expect("read updated");
+        assert_eq!(saved_updated, updated_markdown);
+        assert_ne!(saved_updated, markdown);
+    }
+
+    #[test]
     fn compute_missing_permissions_respects_required_order() {
         let required = vec!["fs".to_string(), "network".to_string(), "ui".to_string()];
         let granted = vec!["fs".to_string(), "ui".to_string()];
