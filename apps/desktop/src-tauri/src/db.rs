@@ -1,4 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::Serialize;
+use std::path::Path;
 
 pub struct Database {
     conn: Connection,
@@ -174,6 +176,13 @@ pub struct BlockRecord {
     pub props: String,
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+pub struct BlockSearchResult {
+    pub id: i64,
+    pub uid: String,
+    pub text: String,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct TagRecord {
     pub id: i64,
@@ -210,6 +219,19 @@ pub struct SyncOp {
 }
 
 impl Database {
+    pub fn open(path: &Path) -> rusqlite::Result<Self> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA busy_timeout = 5000;
+             PRAGMA cache_size = -64000;",
+        )?;
+        Ok(Self { conn })
+    }
+
     pub fn new_in_memory() -> rusqlite::Result<Self> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(
@@ -364,6 +386,29 @@ impl Database {
             "SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?1 ORDER BY rowid",
         )?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    pub fn search_block_summaries(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> rusqlite::Result<Vec<BlockSearchResult>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT b.id, b.uid, b.text
+             FROM blocks b
+             JOIN blocks_fts fts ON b.id = fts.rowid
+             WHERE blocks_fts MATCH ?1
+             ORDER BY bm25(blocks_fts)
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![query, limit], |row| {
+            Ok(BlockSearchResult {
+                id: row.get(0)?,
+                uid: row.get(1)?,
+                text: row.get(2)?,
+            })
+        })?;
         rows.collect()
     }
 
@@ -652,6 +697,26 @@ mod tests {
         db.delete_block(block_id).expect("delete block");
         let results = db.search_blocks("goodbye").expect("search after delete");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn search_block_summaries_returns_text() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-uid", "Search page").expect("insert page");
+        db.insert_block(page_id, "block-uid", None, "a", "alpha note", "{}")
+            .expect("insert block");
+        db.insert_block(page_id, "block-uid-2", None, "b", "beta note", "{}")
+            .expect("insert block");
+
+        let results = db
+            .search_block_summaries("alpha", 10)
+            .expect("search summaries");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].uid, "block-uid");
+        assert_eq!(results[0].text, "alpha note");
     }
 
     #[test]

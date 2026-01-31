@@ -147,7 +147,7 @@ Checklist
 - [x] Editor core: outline ops (split/merge/indent/outdent/move)
 - [x] Editor core: block refs + backlinks
 - [x] Editor core: multi-pane editor (2-3 panes)
-- [ ] Search: left panel (FTS + filters)
+- [x] Search: left panel (FTS + filters)
 - [x] Navigation: open results in editor panes
 - [ ] Shadow Markdown: batched writer (idle or timer)
 - [ ] Shadow Markdown: read-only generated `.md` per page

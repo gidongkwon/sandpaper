@@ -3,6 +3,7 @@ import {
   Show,
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   onCleanup,
   onMount
@@ -34,6 +35,17 @@ type VaultRecord = {
 type VaultConfig = {
   active_id?: string | null;
   vaults: VaultRecord[];
+};
+
+type SearchResult = {
+  id: string;
+  text: string;
+};
+
+type BlockSearchResult = {
+  id: number;
+  uid: string;
+  text: string;
 };
 
 let nextId = 1;
@@ -92,17 +104,51 @@ function App() {
     }
   });
 
-  const searchResults = createMemo(() => {
-    const query = searchQuery().trim().toLowerCase();
-    if (!query) return [];
-    return blocks
-      .filter((block) => block.text.toLowerCase().includes(query))
-      .slice(0, 12);
-  });
-
   const isTauri = () =>
     typeof window !== "undefined" &&
     Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+
+  const localSearch = (query: string): SearchResult[] => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return [];
+    return blocks
+      .filter((block) => block.text.toLowerCase().includes(normalized))
+      .slice(0, 12)
+      .map((block) => ({ id: block.id, text: block.text }));
+  };
+
+  const localResults = createMemo<SearchResult[]>(() => {
+    const trimmed = searchQuery().trim();
+    if (!trimmed) return [];
+    return localSearch(trimmed);
+  });
+
+  const [remoteResults] = createResource(
+    searchQuery,
+    async (query) => {
+      const trimmed = query.trim();
+      if (!trimmed) return [];
+      if (!isTauri()) return [];
+
+      try {
+        const remote = (await invoke("search_blocks", { query: trimmed })) as
+          | BlockSearchResult[]
+          | null;
+        if (remote && remote.length > 0) {
+          return remote.map((block) => ({ id: block.uid, text: block.text }));
+        }
+      } catch (error) {
+        console.error("Search failed", error);
+      }
+
+      return [];
+    },
+    { initialValue: [] }
+  );
+
+  const searchResults = createMemo<SearchResult[]>(() =>
+    isTauri() ? remoteResults() : localResults()
+  );
 
   const loadVaults = async () => {
     if (!isTauri()) {
@@ -195,7 +241,7 @@ function App() {
     setActiveId(block.id);
   };
 
-    const EditorPane = (props: { title: string; meta: string }) => {
+  const EditorPane = (props: { title: string; meta: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
     const [viewportHeight, setViewportHeight] = createSignal(0);
     const inputRefs = new Map<string, HTMLTextAreaElement>();
