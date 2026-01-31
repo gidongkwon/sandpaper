@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -13,11 +13,22 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
+const mermaidMocks = vi.hoisted(() => ({
+  render: vi.fn(),
+  initialize: vi.fn()
+}));
+
+vi.mock("mermaid", () => ({
+  default: mermaidMocks
+}));
+
 import App from "./app";
 
 describe("App diagram preview", () => {
   beforeEach(() => {
     localStorage.clear();
+    mermaidMocks.render.mockReset();
+    mermaidMocks.initialize.mockReset();
   });
 
   afterEach(() => {
@@ -26,7 +37,11 @@ describe("App diagram preview", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders diagram nodes from mermaid content", async () => {
+  it("renders mermaid svg output", async () => {
+    mermaidMocks.render.mockResolvedValueOnce({
+      svg: "<svg data-testid=\"diagram-svg\"></svg>",
+      bindFunctions: undefined
+    });
     render(() => <App />);
     await screen.findByText(/saved/i);
     const inputs = await screen.findAllByPlaceholderText("Write something...");
@@ -37,16 +52,18 @@ describe("App diagram preview", () => {
     });
     fireEvent.blur(firstInput);
 
-    const previewTitle = await screen.findByText("Diagram preview");
-    const preview = previewTitle.closest(".block-renderer--diagram") as HTMLElement;
-    expect(preview).not.toBeNull();
-
-    const scope = within(preview);
-    expect(scope.getByText("Start", { selector: ".diagram-node" })).toBeInTheDocument();
-    expect(scope.getByText("End", { selector: ".diagram-node" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mermaidMocks.render).toHaveBeenCalled();
+    });
+    expect(mermaidMocks.render).toHaveBeenCalledWith(
+      expect.stringContaining("mermaid-"),
+      "graph TD Start-->End;"
+    );
+    expect(await screen.findByTestId("diagram-svg")).toBeInTheDocument();
   });
 
   it("shows a fallback error when diagram render fails", async () => {
+    mermaidMocks.render.mockRejectedValueOnce(new Error("bad diagram"));
     render(() => <App />);
     await screen.findByText(/saved/i);
     const inputs = await screen.findAllByPlaceholderText("Write something...");
@@ -58,7 +75,7 @@ describe("App diagram preview", () => {
     fireEvent.blur(firstInput);
 
     expect(
-      await screen.findByText(/unable to render diagram/i)
+      await screen.findByText(/unable to render diagram preview/i)
     ).toBeInTheDocument();
   });
 });

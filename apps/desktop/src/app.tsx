@@ -13,6 +13,7 @@ import {
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import mermaid from "mermaid";
 import {
   buildBacklinks,
   buildWikilinkBacklinks,
@@ -337,16 +338,6 @@ type MarkdownList = {
   items: string[];
 };
 
-type DiagramEdge = {
-  from: string;
-  to: string;
-};
-
-type DiagramGraph = {
-  edges: DiagramEdge[];
-  nodes: string[];
-};
-
 const parseInlineFence = (text: string): CodeFence | null => {
   const trimmed = text.trim();
   if (!trimmed.startsWith("```")) return null;
@@ -365,8 +356,6 @@ const INLINE_MARKDOWN_PATTERN =
 
 const ORDERED_LIST_PATTERN = /^\s*\d+\.\s+(.+)$/;
 const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
-const DIAGRAM_EDGE_PATTERN =
-  /([A-Za-z0-9_]+)(?:\[[^\]]+\])?\s*-+>\s*([A-Za-z0-9_]+)(?:\[[^\]]+\])?/g;
 
 const SLASH_COMMANDS = [
   { id: "link", label: "Link to page" },
@@ -459,19 +448,17 @@ const parseMarkdownList = (text: string): MarkdownList | null => {
   };
 };
 
-const parseDiagramGraph = (content: string): DiagramGraph | null => {
-  const edges: DiagramEdge[] = [];
-  for (const match of content.matchAll(DIAGRAM_EDGE_PATTERN)) {
-    const from = match[1]?.trim() ?? "";
-    const to = match[2]?.trim() ?? "";
-    if (!from || !to) continue;
-    edges.push({ from, to });
+let mermaidInitialized = false;
+
+const ensureMermaid = () => {
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict"
+    });
+    mermaidInitialized = true;
   }
-  if (edges.length === 0) return null;
-  const nodes = Array.from(
-    new Set(edges.flatMap((edge) => [edge.from, edge.to]))
-  );
-  return { edges, nodes };
+  return mermaid;
 };
 
 const replaceWikilinksInText = (
@@ -3554,33 +3541,79 @@ function App() {
       </div>
     );
 
-    const renderDiagramPreview = (diagram: CodeFence & { renderer: PluginRenderer }) => {
-      const graph = parseDiagramGraph(diagram.content);
+    const DiagramPreview = (props: {
+      diagram: CodeFence & { renderer: PluginRenderer };
+    }) => {
+      const [svg, setSvg] = createSignal<string | null>(null);
+      const [error, setError] = createSignal<string | null>(null);
+      let containerRef: HTMLDivElement | undefined;
+      let renderToken = 0;
+
+      createEffect(() => {
+        const content = props.diagram.content.trim();
+        const token = (renderToken += 1);
+        setSvg(null);
+        setError(null);
+
+        if (!content) {
+          setError("Unable to render diagram preview.");
+          return;
+        }
+
+        void (async () => {
+          try {
+            const engine = ensureMermaid();
+            const result = await engine.render(
+              `mermaid-${makeRandomId()}`,
+              content
+            );
+            if (token !== renderToken) return;
+            setSvg(result.svg ?? "");
+            if (result.bindFunctions && containerRef) {
+              Promise.resolve().then(() => {
+                if (token !== renderToken) return;
+                result.bindFunctions?.(containerRef);
+              });
+            }
+          } catch {
+            if (token !== renderToken) return;
+            setSvg(null);
+            setError("Unable to render diagram preview.");
+          }
+        })();
+      });
+
       return (
         <div class="block-renderer block-renderer--diagram">
           <div class="block-renderer__title">Diagram preview</div>
           <div class="block-renderer__meta">
-            {diagram.renderer.title} · {diagram.lang}
+            {props.diagram.renderer.title} · {props.diagram.lang}
           </div>
           <div class="block-renderer__diagram">
-            {graph ? (
-              <div class="diagram-flow">
-                <For each={graph.edges}>
-                  {(edge) => (
-                    <div class="diagram-flow__edge">
-                      <span class="diagram-node">{edge.from}</span>
-                      <span class="diagram-edge">→</span>
-                      <span class="diagram-node">{edge.to}</span>
-                    </div>
-                  )}
-                </For>
-              </div>
-            ) : (
-              <div class="diagram-error">Unable to render diagram preview.</div>
-            )}
+            <Show
+              when={svg()}
+              fallback={
+                <Show
+                  when={error()}
+                  fallback={
+                    <div class="diagram-loading">Rendering diagram...</div>
+                  }
+                >
+                  <div class="diagram-error">{error()}</div>
+                </Show>
+              }
+            >
+              {(value) => (
+                <div
+                  ref={containerRef}
+                  class="diagram-svg"
+                  innerHTML={value() ?? ""}
+                />
+              )}
+            </Show>
           </div>
           <pre class="block-renderer__content">
-            <code>{diagram.content}</code>
+            <code>{props.diagram.content}</code>
           </pre>
         </div>
       );
@@ -3648,7 +3681,7 @@ function App() {
                     }
                     const diagram = diagramPreview();
                     if (diagram) {
-                      return renderDiagramPreview(diagram);
+                      return <DiagramPreview diagram={diagram} />;
                     }
                     const trimmed = block.text.trim();
                     if (!trimmed) {
@@ -3797,7 +3830,9 @@ function App() {
                           {(preview) => renderCodePreview(preview(), block.id)}
                         </Show>
                         <Show when={isEditing() && diagramPreview()}>
-                          {(preview) => renderDiagramPreview(preview())}
+                          {(preview) => (
+                            <DiagramPreview diagram={preview()} />
+                          )}
                         </Show>
                       </div>
                     </div>
