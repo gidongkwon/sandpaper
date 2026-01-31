@@ -221,7 +221,7 @@ describe("App", () => {
 
   it("shows backlinks for referenced blocks", async () => {
     render(() => <App />);
-    await screen.findByText("Editor");
+    await screen.findByRole("button", { name: "Editor" });
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     const secondInput = inputs[1];
@@ -232,7 +232,11 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /show backlinks/i })
     );
-    expect(await screen.findByText("Backlinks")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Backlinks", {
+        selector: ".backlinks-panel__title"
+      })
+    ).toBeInTheDocument();
     const backlinks = await screen.findAllByText(/see/i, {
       selector: ".backlink-item__text"
     });
@@ -287,7 +291,8 @@ describe("App", () => {
         selector: ".backlink-group__title"
       })
     ).toBeInTheDocument();
-    await userEvent.click(backlinks[0]);
+    const backlinkButton = backlinks[0].closest(".backlink-item") as HTMLElement;
+    await userEvent.click(backlinkButton);
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();

@@ -185,15 +185,15 @@ This checklist is ordered so you can implement it top‑to‑bottom. Each item i
 
 ## Phase 9 — Accessibility & UI Polish
 
-- [ ] **Keyboard navigation**
-  - [ ] `Tab` to move between UI sections
-  - [ ] `Cmd/Ctrl+K` to open command palette
-  - [ ] Ensure focus ring is visible everywhere
+- [x] **Keyboard navigation**
+  - [x] `Tab` to move between UI sections
+  - [x] `Cmd/Ctrl+K` to open command palette
+  - [x] Ensure focus ring is visible everywhere
   - **Done when:** app is fully usable without a mouse
 
-- [ ] **Color contrast audit**
-  - [ ] Check text vs background in both themes
-  - [ ] Fix any failing contrast (WCAG AA)
+- [x] **Color contrast audit**
+  - [x] Check text vs background in both themes
+  - [x] Fix any failing contrast (WCAG AA)
   - **Done when:** all core UI text passes contrast
 
 ---

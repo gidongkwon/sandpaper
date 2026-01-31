@@ -38,6 +38,15 @@ type Block = {
 
 type Mode = "quick-capture" | "editor" | "review";
 
+type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
+
+type CommandPaletteItem = {
+  id: string;
+  label: string;
+  hint?: string;
+  action: () => void | Promise<void>;
+};
+
 type VaultRecord = {
   id: string;
   name: string;
@@ -704,6 +713,9 @@ function App() {
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  const [paletteQuery, setPaletteQuery] = createSignal("");
+  const [paletteIndex, setPaletteIndex] = createSignal(0);
   const [settingsTab, setSettingsTab] = createSignal<
     "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
   >("general");
@@ -720,6 +732,7 @@ function App() {
   const [scrollFps, setScrollFps] = createSignal(0);
   let vaultFolderPickerRef: HTMLInputElement | undefined;
   let markdownFilePickerRef: HTMLInputElement | undefined;
+  let paletteInputRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
     const map = new Map<string, PluginRenderer>();
@@ -2890,6 +2903,181 @@ function App() {
     }
   };
 
+  const openCommandPalette = () => {
+    setPaletteOpen(true);
+    setPaletteQuery("");
+    setPaletteIndex(0);
+  };
+
+  const closeCommandPalette = () => {
+    setPaletteOpen(false);
+    setPaletteQuery("");
+    setPaletteIndex(0);
+  };
+
+  const paletteCommands = createMemo<CommandPaletteItem[]>(() => {
+    const items: CommandPaletteItem[] = [
+      {
+        id: "open-settings",
+        label: "Open settings",
+        action: () => {
+          setSettingsOpen(true);
+        }
+      }
+    ];
+
+    if (mode() !== "editor") {
+      items.push({
+        id: "switch-editor",
+        label: "Switch to editor",
+        action: () => {
+          setMode("editor");
+        }
+      });
+    }
+    if (mode() !== "quick-capture") {
+      items.push({
+        id: "switch-capture",
+        label: "Switch to quick capture",
+        action: () => {
+          setMode("quick-capture");
+        }
+      });
+    }
+    if (mode() !== "review") {
+      items.push({
+        id: "switch-review",
+        label: "Switch to review",
+        action: () => {
+          setMode("review");
+        }
+      });
+    }
+
+    if (mode() === "editor") {
+      items.push(
+        {
+          id: "focus-search",
+          label: "Focus search",
+          action: () => {
+            if (!sidebarOpen()) {
+              setSidebarOpen(true);
+            }
+            requestAnimationFrame(() => {
+              searchInputRef?.focus();
+            });
+          }
+        },
+        {
+          id: "focus-editor",
+          label: "Focus editor",
+          action: focusEditorSection
+        },
+        {
+          id: "new-page",
+          label: "Create new page",
+          action: () => {
+            const title = prompt("New page title:", "");
+            if (!title?.trim()) return;
+            setNewPageTitle(title.trim());
+            void createPage();
+          }
+        },
+        {
+          id: "rename-page",
+          label: "Rename current page",
+          action: () => {
+            const currentTitle = renameTitle().trim() || pageTitle();
+            const nextTitle = prompt("Rename page", currentTitle);
+            if (!nextTitle?.trim()) return;
+            setRenameTitle(nextTitle.trim());
+            void renamePage();
+          }
+        },
+        {
+          id: "toggle-backlinks",
+          label: backlinksOpen() ? "Hide backlinks panel" : "Show backlinks panel",
+          action: () => {
+            setBacklinksOpen((prev) => !prev);
+          }
+        }
+      );
+    }
+
+    if (isTauri() && syncConnected()) {
+      items.push({
+        id: "sync-now",
+        label: "Sync now",
+        action: () => void syncNow()
+      });
+    }
+
+    for (const command of pluginStatus()?.commands ?? []) {
+      items.push({
+        id: `plugin:${command.id}`,
+        label: command.title,
+        hint: `Plugin · ${command.plugin_id}`,
+        action: () => void runPluginCommand(command)
+      });
+    }
+
+    return items;
+  });
+
+  const filteredPaletteCommands = createMemo(() => {
+    const query = paletteQuery().trim().toLowerCase();
+    const commands = paletteCommands();
+    if (!query) return commands;
+    return commands.filter((command) => {
+      const label = command.label.toLowerCase();
+      const hint = command.hint?.toLowerCase() ?? "";
+      return label.includes(query) || hint.includes(query);
+    });
+  });
+
+  const runPaletteCommand = async (command?: CommandPaletteItem) => {
+    if (!command) return;
+    closeCommandPalette();
+    try {
+      await command.action();
+    } catch (error) {
+      console.error("Command palette action failed", error);
+    }
+  };
+
+  const movePaletteIndex = (delta: number) => {
+    const commands = filteredPaletteCommands();
+    if (commands.length === 0) return;
+    setPaletteIndex((current) => {
+      const next = (current + delta + commands.length) % commands.length;
+      return next;
+    });
+  };
+
+  createEffect(() => {
+    paletteQuery();
+    setPaletteIndex(0);
+  });
+
+  createEffect(() => {
+    const commands = filteredPaletteCommands();
+    if (commands.length === 0) {
+      setPaletteIndex(0);
+      return;
+    }
+    if (paletteIndex() >= commands.length) {
+      setPaletteIndex(commands.length - 1);
+    }
+  });
+
+  createEffect(() => {
+    if (!paletteOpen()) return;
+    requestAnimationFrame(() => {
+      paletteInputRef?.focus();
+      paletteInputRef?.select();
+    });
+  });
+
   const loadVaults = async () => {
     if (!isTauri()) {
       const fallback = {
@@ -3096,9 +3284,21 @@ function App() {
       setPerfStats(perfTracker.getStats());
     }
 
+    const handleGlobalKeydown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        openCommandPalette();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeydown);
     void loadVaults();
 
     onCleanup(() => {
+      window.removeEventListener("keydown", handleGlobalKeydown);
       scrollMeter.dispose();
       if (saveTimeout) {
         window.clearTimeout(saveTimeout);
@@ -3144,6 +3344,143 @@ function App() {
   };
 
   let searchInputRef: HTMLInputElement | undefined;
+
+  const sectionJumpRefs = new Map<SectionId, HTMLButtonElement>();
+
+  const sectionOrder = createMemo<SectionId[]>(() => {
+    if (mode() === "editor") {
+      const order: SectionId[] = [];
+      if (sidebarOpen()) {
+        order.push("sidebar");
+      }
+      order.push("editor");
+      if (backlinksOpen()) {
+        order.push("backlinks");
+      }
+      return order;
+    }
+    if (mode() === "quick-capture") {
+      return ["capture"];
+    }
+    return ["review"];
+  });
+
+  const focusSectionJump = (id: SectionId) => {
+    const target = sectionJumpRefs.get(id);
+    if (target && document.body.contains(target)) {
+      target.focus();
+    }
+  };
+
+  const focusAdjacentSection = (current: SectionId, delta: number) => {
+    const available = sectionOrder().filter((id) => {
+      const el = sectionJumpRefs.get(id);
+      return !!el && document.body.contains(el);
+    });
+    if (available.length === 0) return;
+    const index = available.indexOf(current);
+    if (index === -1) return;
+    const nextIndex = (index + delta + available.length) % available.length;
+    focusSectionJump(available[nextIndex]);
+  };
+
+  function focusEditorSection() {
+    if (mode() !== "editor") return;
+    const targetId = activeId();
+    if (targetId) {
+      const target = document.querySelector<HTMLElement>(
+        `[data-block-id="${targetId}"] .block__display`
+      );
+      if (target) {
+        target.click();
+        return;
+      }
+    }
+    const fallback = document.querySelector<HTMLElement>(".block__display");
+    fallback?.click();
+  }
+
+  const activateSection = (id: SectionId) => {
+    if (id === "sidebar") {
+      if (!sidebarOpen()) {
+        setSidebarOpen(true);
+      }
+      requestAnimationFrame(() => {
+        searchInputRef?.focus();
+      });
+      return;
+    }
+    if (id === "editor") {
+      focusEditorSection();
+      return;
+    }
+    if (id === "backlinks") {
+      if (!backlinksOpen()) {
+        setBacklinksOpen(true);
+      }
+      requestAnimationFrame(() => {
+        const closeButton = document.querySelector<HTMLButtonElement>(
+          ".backlinks-panel__close"
+        );
+        closeButton?.focus();
+      });
+      return;
+    }
+    if (id === "capture") {
+      requestAnimationFrame(() => {
+        const captureInput = document.querySelector<HTMLTextAreaElement>(
+          ".capture__input"
+        );
+        captureInput?.focus();
+      });
+      return;
+    }
+    if (id === "review") {
+      requestAnimationFrame(() => {
+        const target = document.querySelector<HTMLElement>(
+          ".review-card__button, .review__button, .review-template"
+        );
+        target?.focus();
+      });
+    }
+  };
+
+  const handleSectionJumpKeyDown = (id: SectionId, event: KeyboardEvent) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      focusAdjacentSection(id, event.shiftKey ? -1 : 1);
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      activateSection(id);
+    }
+  };
+
+  const SectionJump = (props: { id: SectionId; label: string }) => {
+    let buttonRef: HTMLButtonElement | undefined;
+    onCleanup(() => {
+      if (buttonRef) {
+        sectionJumpRefs.delete(props.id);
+      }
+    });
+
+    return (
+      <button
+        ref={(el) => {
+          buttonRef = el;
+          sectionJumpRefs.set(props.id, el);
+        }}
+        class="section-jump"
+        type="button"
+        data-section-jump={props.id}
+        aria-label={`${props.label} section`}
+        onClick={() => activateSection(props.id)}
+        onKeyDown={(event) => handleSectionJumpKeyDown(props.id, event)}
+      >
+        {props.label}
+      </button>
+    );
+  };
 
   const EditorPane = (props: { title: string }) => {
     const [scrollTop, setScrollTop] = createSignal(0);
@@ -4397,6 +4734,10 @@ function App() {
         when={mode() === "editor"}
         fallback={
           <section class="focus-panel">
+            <SectionJump
+              id={mode() === "quick-capture" ? "capture" : "review"}
+              label={mode() === "quick-capture" ? "Capture" : "Review"}
+            />
             <Show
               when={mode() === "quick-capture"}
               fallback={
@@ -4426,6 +4767,9 @@ function App() {
       >
         <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
           <aside class={`sidebar ${sidebarOpen() ? "is-open" : ""}`}>
+            <Show when={sidebarOpen()}>
+              <SectionJump id="sidebar" label="Sidebar" />
+            </Show>
             <div class="sidebar__header">
               <div class="sidebar__search">
                 <svg class="sidebar__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -4619,6 +4963,7 @@ function App() {
 
           <main class={`main-pane ${backlinksOpen() ? "has-panel" : ""}`} role="main">
             <div class="main-pane__editor">
+              <SectionJump id="editor" label="Editor" />
               <EditorPane title={pageTitle()} />
             </div>
 
@@ -4640,6 +4985,9 @@ function App() {
 
             {/* Backlinks side panel */}
             <aside class={`backlinks-panel ${backlinksOpen() ? "is-open" : ""}`}>
+              <Show when={backlinksOpen()}>
+                <SectionJump id="backlinks" label="Backlinks" />
+              </Show>
               <div class="backlinks-panel__header">
                 <div class="backlinks-panel__title">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -4778,6 +5126,90 @@ function App() {
               )}
             </Show>
           </main>
+        </div>
+      </Show>
+
+      {/* Command Palette */}
+      <Show when={paletteOpen()}>
+        <div
+          class="modal-backdrop"
+          onClick={(event) =>
+            event.target === event.currentTarget && closeCommandPalette()
+          }
+        >
+          <div
+            class="command-palette"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div class="command-palette__title">Command palette</div>
+            <input
+              ref={(el) => {
+                paletteInputRef = el;
+                if (paletteOpen()) {
+                  queueMicrotask(() => el.focus());
+                }
+              }}
+              class="command-palette__input"
+              type="search"
+              placeholder="Search commands..."
+              value={paletteQuery()}
+              onInput={(event) => setPaletteQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  movePaletteIndex(1);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  movePaletteIndex(-1);
+                  return;
+                }
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void runPaletteCommand(
+                    filteredPaletteCommands()[paletteIndex()]
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeCommandPalette();
+                }
+              }}
+            />
+            <div class="command-palette__list" role="listbox" aria-label="Command results">
+              <Show
+                when={filteredPaletteCommands().length > 0}
+                fallback={<div class="command-palette__empty">No matches</div>}
+              >
+                <For each={filteredPaletteCommands()}>
+                  {(command, index) => (
+                    <button
+                      class={`command-palette__item ${
+                        index() === paletteIndex() ? "is-active" : ""
+                      }`}
+                      type="button"
+                      role="option"
+                      aria-selected={index() === paletteIndex()}
+                      onMouseEnter={() => setPaletteIndex(index())}
+                      onClick={() => void runPaletteCommand(command)}
+                    >
+                      <span>{command.label}</span>
+                      <Show when={command.hint}>
+                        {(hint) => (
+                          <span class="command-palette__hint">{hint()}</span>
+                        )}
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </div>
         </div>
       </Show>
 

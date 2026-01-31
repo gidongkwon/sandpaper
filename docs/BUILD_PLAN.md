@@ -204,6 +204,8 @@ Exit criteria
 - 2026-01-31: Phase 7 — Sync conflict UI completed (diff view + resolution controls).
 - 2026-01-31: Phase 8 — Large note perf checks added (100k virtual list test + p50/p95 noted).
 - 2026-01-31: Phase 8 — Virtual list supports variable heights with stable scroll anchoring.
+- 2026-01-31: Phase 9 — Keyboard navigation completed (section jump tabs + command palette).
+- 2026-01-31: Phase 9 — Color contrast audit completed (AA-safe text tokens).
 
 ### Phase 2 — Plugin System + Core Plugins
 **Outcome:** extensible platform, core plugins installed.
