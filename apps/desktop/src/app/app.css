@@ -1229,6 +1229,33 @@ button:disabled {
   z-index: 2;
 }
 
+.block-selection-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 160px;
+  padding: var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.block-selection-menu__item {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: transparent;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.block-selection-menu__item:hover {
+  background: var(--bg-hover);
+}
+
 /* Virtual list */
 .virtual-space {
   position: relative;

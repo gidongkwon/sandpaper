@@ -196,6 +196,10 @@ export const EditorPane = (props: EditorPaneProps) => {
     start: number;
     end: number;
   } | null>(null);
+  const [contextMenu, setContextMenu] = createSignal<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [dragBox, setDragBox] = createSignal<{
     top: number;
     height: number;
@@ -231,6 +235,7 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   const clearSelection = () => {
     setSelectionRange(null);
+    setContextMenu(null);
     setDragBox(null);
     selecting = false;
     selectionPointerId = null;
@@ -320,6 +325,12 @@ export const EditorPane = (props: EditorPaneProps) => {
     const start = Math.min(anchorIndex, targetIndex);
     const end = Math.max(anchorIndex, targetIndex);
     setSelectionRangeValue(start, end, anchorIndex);
+  };
+
+  const isIndexSelected = (index: number) => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return false;
+    return index >= rangeValue.start && index <= rangeValue.end;
   };
 
   const setSelectionFromIndex = (index: number) => {
@@ -424,11 +435,25 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const handleBodyClick = (event: MouseEvent) => {
+    if (contextMenu()) {
+      setContextMenu(null);
+    }
     if (!selectionRange()) return;
     if (event.shiftKey) return;
     const target = event.target as HTMLElement | null;
-    if (target?.closest(".block")) return;
+    if (target?.closest(".block") || target?.closest(".block-selection-menu")) {
+      return;
+    }
     clearSelection();
+  };
+
+  const handleContextMenu = (event: MouseEvent) => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return;
+    const index = resolveIndexFromEvent(event.target, event.clientY);
+    if (index < 0 || !isIndexSelected(index)) return;
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY });
   };
   const blockObserver =
     typeof ResizeObserver === "function"
@@ -549,10 +574,38 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   onMount(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (!selectionRange()) return;
-      event.preventDefault();
-      clearSelection();
+      const rangeValue = selectionRange();
+      if (!rangeValue) return;
+      const target = event.target;
+      if (target instanceof Element) {
+        if (target.closest("textarea, input, select")) return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        clearSelection();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        adjustSelectionIndent(event.shiftKey ? -1 : 1);
+        return;
+      }
+
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        removeSelection();
+        return;
+      }
+
+      if (
+        (event.key === "d" || event.key === "D") &&
+        (event.metaKey || event.ctrlKey)
+      ) {
+        event.preventDefault();
+        duplicateSelection();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     onCleanup(() => {
@@ -739,6 +792,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     );
     scheduleSave();
   };
+
 
   const moveFocus = (index: number, direction: -1 | 1) => {
     const nextIndex = index + direction;
@@ -1486,6 +1540,7 @@ export const EditorPane = (props: EditorPaneProps) => {
         onPointerDown={handlePointerDown}
         onMouseDown={handleMouseDown}
         onClick={handleBodyClick}
+        onContextMenu={handleContextMenu}
       >
         <Show when={dragBox()}>
           {(box) => (
@@ -1496,6 +1551,75 @@ export const EditorPane = (props: EditorPaneProps) => {
                 height: `${box().height}px`
               }}
             />
+          )}
+        </Show>
+        <Show when={contextMenu()}>
+          {(menu) => (
+            <div
+              class="block-selection-menu"
+              style={{
+                top: `${menu().y}px`,
+                left: `${menu().x}px`
+              }}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                class="block-selection-menu__item"
+                data-action="duplicate"
+                type="button"
+                onClick={() => {
+                  duplicateSelection();
+                  setContextMenu(null);
+                }}
+              >
+                Duplicate
+              </button>
+              <button
+                class="block-selection-menu__item"
+                data-action="indent"
+                type="button"
+                onClick={() => {
+                  adjustSelectionIndent(1);
+                  setContextMenu(null);
+                }}
+              >
+                Indent
+              </button>
+              <button
+                class="block-selection-menu__item"
+                data-action="outdent"
+                type="button"
+                onClick={() => {
+                  adjustSelectionIndent(-1);
+                  setContextMenu(null);
+                }}
+              >
+                Outdent
+              </button>
+              <button
+                class="block-selection-menu__item"
+                data-action="delete"
+                type="button"
+                onClick={() => {
+                  removeSelection();
+                  setContextMenu(null);
+                }}
+              >
+                Delete
+              </button>
+              <button
+                class="block-selection-menu__item"
+                data-action="clear"
+                type="button"
+                onClick={() => {
+                  clearSelection();
+                  setContextMenu(null);
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
           )}
         </Show>
         <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
