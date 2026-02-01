@@ -29,9 +29,7 @@ import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import type { Mode } from "../../../shared/model/mode";
 import {
   buildDefaultBlocks,
-  buildEmptyBlocks,
-  buildSeedBlocks,
-  getSeedCount
+  buildEmptyBlocks
 } from "../../../shared/lib/blocks/block-seeds";
 import { copyToClipboard } from "../../../shared/lib/clipboard/copy-to-clipboard";
 import { makeLocalId, makeRandomId } from "../../../shared/lib/id/id-factory";
@@ -53,23 +51,17 @@ import { createTypeScale } from "./use-type-scale";
 import { createVaultKeyState } from "./use-vault-key";
 import { createVaultState } from "./use-vaults";
 import { type MainPageContextValue } from "./main-page-context";
-
-const DEFAULT_PAGE_UID = "inbox";
+import {
+  DEFAULT_PAGE_UID,
+  buildLocalDefaults,
+  resolveInitialBlocks
+} from "./main-page-defaults";
 
 type JumpTarget = {
   id: string;
   caret: "start" | "end" | "preserve";
 };
 
-const buildLocalDefaults = () => buildDefaultBlocks(makeLocalId);
-const defaultBlocks = buildLocalDefaults();
-const resolveInitialBlocks = () => {
-  const seedCount = getSeedCount();
-  if (seedCount) {
-    return buildSeedBlocks(makeLocalId, seedCount);
-  }
-  return defaultBlocks;
-};
 
 export const createMainPageState = () => {
   const initialBlocks = resolveInitialBlocks();
