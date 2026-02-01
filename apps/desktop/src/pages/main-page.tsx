@@ -26,14 +26,12 @@ import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
 import { BacklinksToggle } from "../widgets/backlinks/backlinks-toggle";
 import { CapturePane } from "../widgets/capture/capture-pane";
 import { EditorPane } from "../widgets/editor/editor-pane";
-import { UnlinkedReferencesPane } from "../widgets/discovery/unlinked-references-pane";
 import { FocusPanel } from "../widgets/focus-panel/focus-panel";
 import { PerfHud } from "../widgets/perf/perf-hud";
 import { PluginPanelWidget } from "../widgets/plugins/plugin-panel";
 import { ReviewPane } from "../widgets/review/review-pane";
-import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
-import { PagesPane } from "../widgets/sidebar/pages-pane";
+import { SidebarContent } from "../widgets/sidebar/sidebar-content";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
 import { PermissionPromptModal } from "../widgets/permissions/permission-prompt-modal";
 import { createSectionJump } from "../widgets/section-jump/section-jump";
@@ -2948,44 +2946,45 @@ function MainPage() {
               sectionJump={SectionJumpLink}
               footerLabel={() => activeVault()?.name ?? "Default"}
             >
-              <SearchPane
-                searchInputRef={(el) => {
-                  searchInputRef = el;
+              <SidebarContent
+                search={{
+                  inputRef: (el) => {
+                    searchInputRef = el;
+                  },
+                  query: searchQuery,
+                  setQuery: setSearchQuery,
+                  filter: searchFilter,
+                  setFilter: setSearchFilter,
+                  commitTerm: commitSearchTerm,
+                  history: searchHistory,
+                  applyTerm: applySearchTerm,
+                  results: filteredSearchResults,
+                  renderHighlight: renderSearchHighlight,
+                  onResultSelect: (block) => {
+                    setActiveId(block.id);
+                    setJumpTarget({ id: block.id, caret: "start" });
+                  }
                 }}
-                query={searchQuery}
-                setQuery={setSearchQuery}
-                filter={searchFilter}
-                setFilter={setSearchFilter}
-                commitTerm={commitSearchTerm}
-                history={searchHistory}
-                applyTerm={applySearchTerm}
-                results={filteredSearchResults}
-                renderHighlight={renderSearchHighlight}
-                onResultSelect={(block) => {
-                  setActiveId(block.id);
-                  setJumpTarget({ id: block.id, caret: "start" });
+                unlinked={{
+                  query: searchQuery,
+                  references: unlinkedReferences,
+                  onLink: linkUnlinkedReference
                 }}
-              >
-                <UnlinkedReferencesPane
-                  query={searchQuery}
-                  references={unlinkedReferences}
-                  onLink={linkUnlinkedReference}
-                />
-                <PagesPane
-                  pages={pages}
-                  activePageUid={activePageUid}
-                  resolvePageUid={resolvePageUid}
-                  onSwitch={switchPage}
-                  pageMessage={pageMessage}
-                  onCreate={() => {
+                pages={{
+                  pages,
+                  activePageUid,
+                  resolvePageUid,
+                  onSwitch: switchPage,
+                  pageMessage,
+                  onCreate: () => {
                     const title = prompt("New page title:");
                     if (title?.trim()) {
                       setNewPageTitle(title.trim());
                       void createPage();
                     }
-                  }}
-                />
-              </SearchPane>
+                  }
+                }}
+              />
             </SidebarPanel>
           }
           editor={

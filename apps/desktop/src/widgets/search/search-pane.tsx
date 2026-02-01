@@ -26,7 +26,7 @@ export const SearchPane = (props: SearchPaneProps) => {
             <line x1="21" y1="21" x2="16" y2="16" />
           </svg>
           <input
-            ref={props.searchInputRef}
+            ref={(el) => props.searchInputRef?.(el)}
             class="sidebar__input"
             type="search"
             placeholder="Search..."
