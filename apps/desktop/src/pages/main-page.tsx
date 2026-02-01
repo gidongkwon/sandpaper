@@ -24,12 +24,15 @@ import { deriveVaultKey } from "@sandpaper/crypto";
 import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/model/block-types";
 import { makeBlock } from "../entities/block/model/make-block";
 import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
+import { CapturePane } from "../widgets/capture/capture-pane";
 import { EditorPane } from "../widgets/editor/editor-pane";
 import { UnlinkedReferencesPane } from "../widgets/discovery/unlinked-references-pane";
+import { ReviewPane } from "../widgets/review/review-pane";
 import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
 import { PagesPane } from "../widgets/sidebar/pages-pane";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
+import { Topbar } from "../widgets/topbar/topbar";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -1038,122 +1041,6 @@ function MainPage() {
       setReviewBusy(false);
     }
   };
-
-  const ReviewPane = () => (
-    <div class="review">
-      <div class="review__header">
-        <div>
-          <div class="review__eyebrow">Review mode</div>
-          <h2>Daily queue</h2>
-          <p>Collect highlights, revisit key blocks, and clear the queue.</p>
-        </div>
-        <div class="review__summary">
-          <div class="review__stat">
-            <span>Due now</span>
-            <strong>{reviewSummary().due_count}</strong>
-          </div>
-          <div class="review__stat">
-            <span>Next due</span>
-            <strong>{formatReviewDate(reviewSummary().next_due_at)}</strong>
-          </div>
-        </div>
-      </div>
-      <div class="review__deck">
-        <Show
-          when={reviewItems().length > 0}
-          fallback={
-            <div class="review__empty">
-              <div>Nothing due yet.</div>
-              <div>Tag blocks for review from the editor.</div>
-            </div>
-          }
-        >
-          <For each={reviewItems()}>
-            {(item) => (
-              <article class="review-card">
-                <div class="review-card__meta">
-                  <span>{item.page_uid}</span>
-                  <span>Due {formatReviewDate(item.due_at)}</span>
-                </div>
-                <div class="review-card__text">{item.text || "Untitled"}</div>
-                <div class="review-card__actions">
-                  <button
-                    class="review-card__button"
-                    disabled={reviewBusy()}
-                    onClick={() => handleReviewAction(item, "snooze")}
-                  >
-                    Snooze
-                  </button>
-                  <button
-                    class="review-card__button"
-                    disabled={reviewBusy()}
-                    onClick={() => handleReviewAction(item, "later")}
-                  >
-                    Schedule
-                  </button>
-                  <button
-                    class="review-card__button is-primary"
-                    disabled={reviewBusy()}
-                    onClick={() => handleReviewAction(item, "done")}
-                  >
-                    Done
-                  </button>
-                </div>
-              </article>
-            )}
-          </For>
-        </Show>
-      </div>
-      <Show when={reviewMessage()}>
-        <div class="review__message">{reviewMessage()}</div>
-      </Show>
-      <div class="review__templates">
-        <div class="review__template-header">
-          <div>
-            <div class="review__eyebrow">Templates</div>
-            <div class="review__subtitle">Seed a daily review page</div>
-          </div>
-          <button
-            class="review__button is-secondary"
-            disabled={reviewBusy() || !isTauri()}
-            onClick={createReviewTemplate}
-          >
-            Create template
-          </button>
-        </div>
-        <div class="review__template-grid">
-          <For each={reviewTemplates}>
-            {(template) => (
-              <button
-                class={`review-template ${
-                  selectedReviewTemplate() === template.id ? "is-active" : ""
-                }`}
-                onClick={() => setSelectedReviewTemplate(template.id)}
-              >
-                <div class="review-template__title">{template.title}</div>
-                <div class="review-template__desc">{template.description}</div>
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-      <div class="review__actions">
-        <button
-          class="review__button"
-          disabled={!activeId() || !isTauri()}
-          onClick={() => {
-            const id = activeId();
-            if (id) void addReviewItem(id);
-          }}
-        >
-          Add current block to review queue
-        </button>
-        <Show when={!isTauri()}>
-          <span class="review__hint">Desktop app required.</span>
-        </Show>
-      </div>
-    </div>
-  );
 
   let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
@@ -3142,66 +3029,19 @@ function MainPage() {
         </aside>
       )}
 
-      <header class="topbar">
-        <div class="topbar__left">
-          <button
-            class="topbar__sidebar-toggle"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            aria-label={sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="9" y1="3" x2="9" y2="21" />
-            </svg>
-          </button>
-        </div>
-
-        <nav class="mode-switch">
-          <button
-            class={`mode-switch__button ${mode() === "quick-capture" ? "is-active" : ""}`}
-            onClick={() => setMode("quick-capture")}
-          >
-            Capture
-          </button>
-          <button
-            class={`mode-switch__button ${mode() === "editor" ? "is-active" : ""}`}
-            onClick={() => setMode("editor")}
-          >
-            Editor
-          </button>
-          <button
-            class={`mode-switch__button ${mode() === "review" ? "is-active" : ""}`}
-            onClick={() => setMode("review")}
-          >
-            Review
-          </button>
-        </nav>
-
-        <div class="topbar__right">
-          <span class={`topbar__sync-indicator ${syncStatus().state}`} title={syncStateDetail()}>
-            <span class="topbar__sync-dot" />
-            <span class="topbar__sync-label">{syncStateLabel()}</span>
-          </span>
-          <span
-            class={`topbar__autosave ${
-              autosaveError() ? "is-error" : autosaved() ? "is-saved" : ""
-            }`}
-          >
-            {autosaveError() ??
-              (autosaved() ? `Saved ${autosaveStamp() ?? ""}` : "Saving...")}
-          </span>
-          <button
-            class="topbar__settings"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Open settings"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
-        </div>
-      </header>
+      <Topbar
+        sidebarOpen={sidebarOpen}
+        toggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        mode={mode}
+        setMode={setMode}
+        syncStatus={syncStatus}
+        syncStateLabel={syncStateLabel}
+        syncStateDetail={syncStateDetail}
+        autosaveError={autosaveError}
+        autosaved={autosaved}
+        autosaveStamp={autosaveStamp}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
       <Show
         when={mode() === "editor"}
@@ -3214,26 +3054,28 @@ function MainPage() {
             <Show
               when={mode() === "quick-capture"}
               fallback={
-                <ReviewPane />
+                <ReviewPane
+                  summary={reviewSummary}
+                  items={reviewItems}
+                  busy={reviewBusy}
+                  message={reviewMessage}
+                  templates={reviewTemplates}
+                  selectedTemplate={selectedReviewTemplate}
+                  setSelectedTemplate={setSelectedReviewTemplate}
+                  formatReviewDate={formatReviewDate}
+                  onAction={handleReviewAction}
+                  onCreateTemplate={createReviewTemplate}
+                  isTauri={isTauri}
+                  activeId={activeId}
+                  onAddCurrent={addReviewItem}
+                />
               }
             >
-              <div class="capture">
-                <h2>Quick capture</h2>
-                <p>Drop a thought and send it straight to your inbox.</p>
-                <textarea
-                  class="capture__input"
-                  rows={4}
-                  placeholder="Capture a thought, link, or task..."
-                  value={captureText()}
-                  onInput={(event) => setCaptureText(event.currentTarget.value)}
-                />
-                <div class="capture__actions">
-                  <button class="capture__button" onClick={addCapture}>
-                    Add to Inbox
-                  </button>
-                  <span class="capture__hint">Shift+Enter for newline</span>
-                </div>
-              </div>
+              <CapturePane
+                text={captureText}
+                setText={setCaptureText}
+                onCapture={addCapture}
+              />
             </Show>
           </section>
         }
