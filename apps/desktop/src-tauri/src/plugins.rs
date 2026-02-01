@@ -1,5 +1,6 @@
 use rquickjs::{
-    Context, FromJs, Function, IntoJs, Object, Persistent, Runtime, Value as JsValue,
+    function::Opt, Context, FromJs, Function, IntoJs, Object, Persistent, Runtime,
+    Value as JsValue,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -607,10 +608,10 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
             let fetch_ctx = ctx.clone();
             let fetch_fn = Function::new(
                 ctx.clone(),
-                move |url: String, options: Option<Object>| -> rquickjs::Result<Object> {
+                move |url: String, options: Opt<Object>| -> rquickjs::Result<Object> {
                 let mut method = "GET".to_string();
                 let mut body: Option<String> = None;
-                if let Some(opts) = options {
+                if let Some(opts) = options.0 {
                     if let Ok(value) = opts.get::<_, String>("method") {
                         method = value;
                     }
