@@ -1,4 +1,12 @@
-import { For, Show, createEffect, createSignal, on, onMount } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  on,
+  onCleanup,
+  onMount
+} from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { Block } from "../../entities/block/model/block-types";
 import type {
@@ -182,12 +190,21 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [skipNextRender, setSkipNextRender] = createSignal<string | null>(null);
+  let mounted = true;
+  let requestToken = 0;
+  const nextRequestToken = () => {
+    requestToken += 1;
+    return requestToken;
+  };
+  const isActive = (token: number) => mounted && token === requestToken;
 
   const loadView = async () => {
     if (!props.isTauri()) return;
+    const token = nextRequestToken();
     const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
     const cached = readCachedView(key);
     if (cached) {
+      if (!isActive(token)) return;
       setError(null);
       setView(cached);
       setLoading(false);
@@ -212,6 +229,7 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         block_uid: props.block.id,
         text: props.block.text
       });
+      if (!isActive(token)) return;
       setView(result);
       storeCachedView(key, result);
       if (result.next_text && result.next_text !== props.block.text) {
@@ -229,15 +247,19 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         (value) => setSkipNextRender(value)
       );
     } catch (err) {
+      if (!isActive(token)) return;
       console.error("Failed to render plugin block", err);
       setError(err instanceof Error ? err.message : "Failed to render block.");
     } finally {
-      setLoading(false);
+      if (isActive(token)) {
+        setLoading(false);
+      }
     }
   };
 
   const runAction = async (controlId: string, value?: string) => {
     if (!props.isTauri()) return;
+    const token = nextRequestToken();
     setLoading(true);
     setError(null);
     try {
@@ -253,6 +275,7 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         action_id: controlId,
         value
       });
+      if (!isActive(token)) return;
       setView(result);
       const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
       storeCachedView(key, result);
@@ -271,10 +294,13 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         (value) => setSkipNextRender(value)
       );
     } catch (err) {
+      if (!isActive(token)) return;
       console.error("Failed to run plugin action", err);
       setError(err instanceof Error ? err.message : "Failed to run action.");
     } finally {
-      setLoading(false);
+      if (isActive(token)) {
+        setLoading(false);
+      }
     }
   };
 
@@ -300,6 +326,10 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
     if (props.isTauri()) {
       void loadView();
     }
+  });
+
+  onCleanup(() => {
+    mounted = false;
   });
 
   return (

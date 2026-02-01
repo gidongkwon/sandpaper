@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { render, screen, waitFor } from "@solidjs/testing-library";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
@@ -223,5 +223,49 @@ describe("PluginBlockPreview", () => {
     expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
+  });
+
+  it("ignores late render results after unmount", async () => {
+    let resolveInvoke: ((value: unknown) => void) | undefined;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveInvoke = resolve;
+        })
+    );
+
+    const onUpdateText = vi.fn();
+    const { unmount } = render(() => (
+      <PluginBlockPreview
+        block={{ id: "b1", text: "```hn-top count=5 :: Loading HN top", indent: 0 }}
+        renderer={{
+          plugin_id: "hn-top",
+          id: "hn-top.block",
+          title: "Hacker News Top",
+          kind: "block",
+          languages: ["hn-top"]
+        }}
+        isTauri={() => true}
+        onUpdateText={onUpdateText}
+      />
+    ));
+
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalled());
+    unmount();
+
+    resolveInvoke?.({
+      plugin_id: "hn-top",
+      renderer_id: "hn-top.block",
+      block_uid: "b1",
+      body: {
+        kind: "list",
+        items: ["Story 1"]
+      },
+      next_text: "```hn-top count=5 :: Updated"
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onUpdateText).not.toHaveBeenCalled();
   });
 });

@@ -21,7 +21,7 @@ const makeBlocks = (total: number) =>
   }));
 
 describe("EditorPane", () => {
-  it("updates the correct block after async plugin render despite scroll changes", async () => {
+  it("ignores plugin updates after the block unmounts", async () => {
     const baseBlocks = makeBlocks(40);
     baseBlocks[0] = {
       id: "plugin-1",
@@ -123,12 +123,12 @@ describe("EditorPane", () => {
       next_text: "```hn-top count=5 :: Updated"
     });
 
-    await waitFor(() =>
-      expect(untrack(() => blocks[0].text)).toBe(
-        "```hn-top count=5 :: Updated"
-      )
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(untrack(() => blocks[0].text)).toBe(
+      "```hn-top count=5 :: Loading HN top"
     );
     expect(untrack(() => blocks[25].text)).toBe("Block 26");
-    expect(scheduleSave).toHaveBeenCalled();
+    expect(scheduleSave).not.toHaveBeenCalled();
   });
 });
