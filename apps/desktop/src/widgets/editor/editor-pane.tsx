@@ -1131,7 +1131,9 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const isEditing = () => focusedId() === block.id;
                 const updateBlockText = (nextText: string) => {
                   if (nextText === block.text) return;
-                  setBlocks(blockIndex(), "text", nextText);
+                  const index = findIndexById(block.id);
+                  if (index < 0) return;
+                  setBlocks(index, "text", nextText);
                   scheduleSave();
                 };
                 const displayContent = () => {
