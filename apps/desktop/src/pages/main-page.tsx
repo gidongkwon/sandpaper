@@ -6,7 +6,6 @@ import {
   createSignal,
   onCleanup,
   onMount,
-  untrack,
   type JSX
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
@@ -38,6 +37,10 @@ import { createSectionJump } from "../widgets/section-jump/section-jump";
 import { Topbar } from "../widgets/topbar/topbar";
 import { EditorWorkspace } from "../widgets/workspace/editor-workspace";
 import { CommandPalette } from "../features/command-palette/ui/command-palette";
+import { createAutosave } from "../features/autosave/model/use-autosave";
+import { createPlugins } from "../features/plugins/model/use-plugins";
+import { createVaultLoaders } from "../features/vault/model/use-vault-loaders";
+import { createSync } from "../features/sync/model/use-sync";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -52,10 +55,7 @@ import type {
 import type {
   PluginCommand,
   PluginPanel,
-  PluginPermissionInfo,
-  PluginRenderer,
-  PluginRuntimeStatus,
-  PermissionPrompt
+  PluginRenderer
 } from "../entities/plugin/model/plugin-types";
 import type {
   ReviewQueueItem,
@@ -63,16 +63,6 @@ import type {
   ReviewTemplate
 } from "../entities/review/model/review-types";
 import type { SearchResult } from "../entities/search/model/search-types";
-import type {
-  SyncApplyResult,
-  SyncConfig,
-  SyncConflict,
-  SyncLogEntry,
-  SyncOpEnvelope,
-  SyncServerPullResponse,
-  SyncServerPushResponse,
-  SyncStatus
-} from "../entities/sync/model/sync-types";
 import type { VaultConfig, VaultKeyStatus, VaultRecord } from "../entities/vault/model/vault-types";
 import type { MarkdownExportStatus } from "../shared/model/markdown-export-types";
 import type { Mode } from "../shared/model/mode";
@@ -192,38 +182,7 @@ function MainPage() {
   const [reviewMessage, setReviewMessage] = createSignal<string | null>(null);
   const [selectedReviewTemplate, setSelectedReviewTemplate] =
     createSignal("daily-brief");
-  const [syncConfig, setSyncConfig] = createSignal<SyncConfig | null>(null);
-  const [syncServerUrl, setSyncServerUrl] = createSignal("");
-  const [syncVaultIdInput, setSyncVaultIdInput] = createSignal("");
-  const [syncDeviceIdInput, setSyncDeviceIdInput] = createSignal("");
-  const [syncStatus, setSyncStatus] = createSignal<SyncStatus>({
-    state: "idle",
-    pending_ops: 0,
-    last_synced_at: null,
-    last_error: null,
-    last_push_count: 0,
-    last_pull_count: 0,
-    last_apply_count: 0
-  });
-  const [syncMessage, setSyncMessage] = createSignal<string | null>(null);
-  const [syncBusy, setSyncBusy] = createSignal(false);
-  const [syncLog, setSyncLog] = createSignal<SyncLogEntry[]>([]);
-  const [syncConflicts, setSyncConflicts] = createSignal<SyncConflict[]>([]);
-  const [syncConflictMergeId, setSyncConflictMergeId] = createSignal<string | null>(null);
-  const [syncConflictMergeDrafts, setSyncConflictMergeDrafts] = createStore<
-    Record<string, string>
-  >({});
   const [pageTitle, setPageTitle] = createSignal("Inbox");
-  const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
-  const [pluginStatus, setPluginStatus] = createSignal<PluginRuntimeStatus | null>(
-    null
-  );
-  const [pluginError, setPluginError] = createSignal<string | null>(null);
-  const [permissionPrompt, setPermissionPrompt] =
-    createSignal<PermissionPrompt | null>(null);
-  const [autosaved, setAutosaved] = createSignal(false);
-  const [autosaveStamp, setAutosaveStamp] = createSignal("");
-  const [autosaveError, setAutosaveError] = createSignal<string | null>(null);
   const [shadowPendingCount, setShadowPendingCount] = createSignal(0);
   const [importText, setImportText] = createSignal("");
   const [importStatus, setImportStatus] = createSignal<{
@@ -252,7 +211,6 @@ function MainPage() {
   );
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
-  const [pluginBusy, setPluginBusy] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [paletteOpen, setPaletteOpen] = createSignal(false);
   const [paletteQuery, setPaletteQuery] = createSignal("");
@@ -273,6 +231,27 @@ function MainPage() {
   const [scrollFps, setScrollFps] = createSignal(0);
   let paletteInputRef: HTMLInputElement | undefined;
 
+  const isTauri = () =>
+    typeof window !== "undefined" &&
+    Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+
+  const pluginsApi = createPlugins({ isTauri, invoke });
+  const {
+    plugins,
+    pluginStatus,
+    pluginError,
+    pluginBusy,
+    permissionPrompt,
+    setPluginError,
+    loadPlugins,
+    loadPluginRuntime,
+    requestGrantPermission,
+    grantPermission,
+    denyPermission,
+    findPlugin,
+    hasPermission
+  } = pluginsApi;
+
   const renderersByKind = createMemo(() => {
     const map = new Map<string, PluginRenderer>();
     for (const renderer of pluginStatus()?.renderers ?? []) {
@@ -282,15 +261,6 @@ function MainPage() {
     }
     return map;
   });
-
-  const findPlugin = (pluginId: string) =>
-    plugins().find((plugin) => plugin.id === pluginId) ?? null;
-
-  const hasPermission = (pluginId: string, permission: string) => {
-    const plugin = findPlugin(pluginId);
-    if (!plugin) return false;
-    return plugin.granted_permissions.includes(permission);
-  };
 
   const perfTracker = createPerfTracker({
     maxSamples: 160,
@@ -307,108 +277,6 @@ function MainPage() {
       }
     }
   });
-  const SYNC_BATCH_LIMIT = 200;
-  const SYNC_INTERVAL_MS = 8000;
-  const SYNC_MAX_BACKOFF_MS = 60000;
-  let syncTimeout: number | undefined;
-  let syncBackoffMs = SYNC_INTERVAL_MS;
-  let syncRunning = false;
-  let syncLoopEnabled = false;
-
-  const isTauri = () =>
-    typeof window !== "undefined" &&
-    Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
-
-  const fallbackPlugins: PluginPermissionInfo[] = [
-    {
-      id: "local-calendar",
-      name: "Local Calendar",
-      version: "0.1.0",
-      description: "Daily agenda panel",
-      permissions: ["fs", "network", "data.write", "ui"],
-      enabled: true,
-      path: "/plugins/local-calendar",
-      granted_permissions: ["fs", "data.write", "ui", "clipboard"],
-      missing_permissions: ["network"]
-    },
-    {
-      id: "focus-mode",
-      name: "Focus Mode",
-      version: "0.2.0",
-      description: "Minimal editor layout",
-      permissions: ["ui"],
-      enabled: true,
-      path: "/plugins/focus-mode",
-      granted_permissions: [],
-      missing_permissions: ["ui"]
-    },
-    {
-      id: "insight-lens",
-      name: "Insight Lens",
-      version: "0.1.0",
-      description: "Context-aware capture helper",
-      permissions: ["data.write"],
-      enabled: true,
-      path: "/plugins/insight-lens",
-      granted_permissions: [],
-      missing_permissions: ["data.write"]
-    }
-  ];
-
-  const fallbackPluginStatus: PluginRuntimeStatus = {
-    loaded: ["local-calendar", "focus-mode", "insight-lens"],
-    blocked: [],
-    commands: [
-      {
-        plugin_id: "local-calendar",
-        id: "local-calendar.open",
-        title: "Open local-calendar",
-        description: "Open local-calendar panel"
-      },
-      {
-        plugin_id: "insight-lens",
-        id: "insight-lens.capture",
-        title: "Capture highlight",
-        description: "Append a capture block"
-      }
-    ],
-    panels: [
-      {
-        plugin_id: "local-calendar",
-        id: "local-calendar.panel",
-        title: "Calendar panel",
-        location: "sidebar"
-      },
-      {
-        plugin_id: "focus-mode",
-        id: "focus-mode.panel",
-        title: "Focus panel",
-        location: "sidebar"
-      }
-    ],
-    toolbar_actions: [
-      {
-        plugin_id: "local-calendar",
-        id: "local-calendar.toolbar",
-        title: "Today focus",
-        tooltip: "Jump to today"
-      }
-    ],
-    renderers: [
-      {
-        plugin_id: "local-calendar",
-        id: "local-calendar.renderer.code",
-        title: "Code block renderer",
-        kind: "code"
-      },
-      {
-        plugin_id: "local-calendar",
-        id: "local-calendar.renderer.diagram",
-        title: "Diagram renderer",
-        kind: "diagram"
-      }
-    ]
-  };
 
   const localSearch = (query: string): SearchResult[] => {
     const normalized = query.trim().toLowerCase();
@@ -669,47 +537,6 @@ function MainPage() {
     return nodes;
   };
 
-  const syncConnected = createMemo(() => {
-    const config = syncConfig();
-    return Boolean(config?.server_url && config?.vault_id && config?.device_id);
-  });
-
-  const syncStateLabel = createMemo(() => {
-    if (!isTauri()) return "Desktop only";
-    if (!syncConnected()) return "Not connected";
-    switch (syncStatus().state) {
-      case "syncing":
-        return "Syncing";
-      case "offline":
-        return "Offline";
-      case "error":
-        return "Error";
-      default:
-        return "Ready";
-    }
-  });
-
-  const syncStateDetail = createMemo(() => {
-    if (!isTauri()) {
-      return "Desktop app required for background sync.";
-    }
-    if (!syncConnected()) {
-      return "Connect a server to sync across devices.";
-    }
-    if (syncStatus().state === "offline") {
-      return "Offline. Edits stay queued until you reconnect.";
-    }
-    if (syncStatus().state === "error") {
-      return syncStatus().last_error ?? "Sync error.";
-    }
-    if (syncStatus().state === "syncing") {
-      return "Syncing in the background.";
-    }
-    return syncStatus().last_synced_at
-      ? `Last sync ${syncStatus().last_synced_at}`
-      : "Ready to sync.";
-  });
-
   const shadowWriter = createShadowWriter({
     resolvePath: (pageId) => pageId,
     writeFile: async (pageId, content) => {
@@ -784,55 +611,6 @@ function MainPage() {
       title,
       blocks: snapshotBlocks(items)
     });
-  };
-
-  const loadPages = async () => {
-    if (!isTauri()) {
-      const entries = Object.values(localPages)
-        .map((page) => ({ uid: page.uid, title: page.title }))
-        .sort((left, right) => left.title.localeCompare(right.title));
-      setPages(entries);
-      if (
-        entries.length > 0 &&
-        !entries.find((page) => page.uid === resolvePageUid(activePageUid()))
-      ) {
-        setActivePageUid(entries[0]?.uid ?? DEFAULT_PAGE_UID);
-      }
-      return;
-    }
-
-    try {
-      const remote = (await invoke("list_pages")) as PageSummary[];
-      setPages(remote);
-      if (
-        remote.length > 0 &&
-        !remote.find((page) => page.uid === resolvePageUid(activePageUid()))
-      ) {
-        setActivePageUid(remote[0]?.uid ?? DEFAULT_PAGE_UID);
-      }
-    } catch (error) {
-      console.error("Failed to load pages", error);
-    }
-  };
-
-  const loadActivePage = async () => {
-    const vaultId = activeVault()?.id;
-    if (!vaultId) return;
-    if (!isTauri()) {
-      const stored = localStorage.getItem(`sandpaper:active-page:${vaultId}`);
-      if (stored) {
-        setActivePageUid(resolvePageUid(stored));
-      }
-      return;
-    }
-    try {
-      const stored = (await invoke("get_active_page")) as string | null;
-      if (stored) {
-        setActivePageUid(resolvePageUid(stored));
-      }
-    } catch (error) {
-      console.error("Failed to load active page", error);
-    }
   };
 
   const searchHistoryKey = createMemo(() => {
@@ -910,37 +688,6 @@ function MainPage() {
       hour: "2-digit",
       minute: "2-digit"
     }).format(new Date(timestamp));
-  };
-
-  const loadReviewSummary = async () => {
-    if (!isTauri()) {
-      setReviewSummary({ due_count: 0, next_due_at: null });
-      return;
-    }
-    try {
-      const summary = (await invoke("review_queue_summary")) as ReviewQueueSummary;
-      setReviewSummary(summary);
-    } catch (error) {
-      console.error("Failed to load review summary", error);
-    }
-  };
-
-  const loadReviewQueue = async () => {
-    if (!isTauri()) {
-      setReviewItems([]);
-      return;
-    }
-    setReviewBusy(true);
-    try {
-      const items = (await invoke("list_review_queue_due", {
-        limit: 12
-      })) as ReviewQueueItem[];
-      setReviewItems(items);
-    } catch (error) {
-      console.error("Failed to load review queue", error);
-    } finally {
-      setReviewBusy(false);
-    }
   };
 
   const addReviewItem = async (blockId: string) => {
@@ -1039,379 +786,128 @@ function MainPage() {
     }
   };
 
-  let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
-  let saveRequestId = 0;
-  let pendingSavePageUid: string | null = null;
-  const markSaved = () => {
-    setAutosaveError(null);
-    setAutosaveStamp(stampNow());
-    setAutosaved(true);
-  };
-  const markSaving = () => {
-    setAutosaveError(null);
-    setAutosaved(false);
-  };
-  const markSaveFailed = () => {
-    setAutosaveError("Save failed");
-    setAutosaved(false);
-  };
-  const persistBlocks = async (
-    pageUid: string,
-    payload: BlockPayload[],
-    title: string,
-    snapshot: Block[]
-  ): Promise<boolean> => {
-    if (!isTauri()) {
-      saveLocalPageSnapshot(pageUid, title, snapshot);
-      return true;
-    }
-    try {
-      await invoke("save_page_blocks", {
-        pageUid,
-        page_uid: pageUid,
-        blocks: payload
-      });
-      return true;
-    } catch (error) {
+  const autosave = createAutosave({
+    isTauri,
+    invoke,
+    resolvePageUid,
+    activePageUid,
+    getBlocks: () => blocks,
+    pageTitle,
+    snapshotBlocks,
+    toPayload,
+    saveLocalPageSnapshot,
+    shadowWriter,
+    serializePageToMarkdown,
+    onPersistError: (error) => {
       console.error("Failed to save blocks", error);
-      return false;
     }
-  };
+  });
+  const {
+    autosaved,
+    autosaveStamp,
+    autosaveError,
+    markSaved,
+    markSaving,
+    markSaveFailed,
+    persistBlocks,
+    scheduleSave,
+    cancelPendingSave,
+    scheduleShadowWrite
+  } = autosave;
 
-  const scheduleShadowWrite = (pageUid = activePageUid()) => {
-    if (!isTauri()) return;
-    const resolvedUid = resolvePageUid(pageUid);
-    const snapshot = untrack(() =>
-      blocks.map((block) => ({
-        id: block.id,
-        text: block.text,
-        indent: block.indent
-      }))
-    );
-    const title = untrack(() => pageTitle());
-    const content = serializePageToMarkdown({
-      id: resolvedUid,
-      title,
-      blocks: snapshot
-    });
-    shadowWriter.scheduleWrite(resolvedUid, content);
-  };
+  const vaultLoaders = createVaultLoaders({
+    isTauri,
+    invoke,
+    localPages,
+    setPages,
+    activePageUid,
+    setActivePageUid,
+    activeVault,
+    resolvePageUid,
+    snapshotBlocks,
+    saveLocalPageSnapshot,
+    buildLocalDefaults,
+    buildEmptyBlocks,
+    buildDefaultBlocks,
+    makeLocalId,
+    makeRandomId,
+    setBlocks,
+    setPageTitle,
+    setRenameTitle,
+    setActiveId,
+    setFocusedId,
+    markSaved,
+    toPayload,
+    serializePageToMarkdown,
+    shadowWriter,
+    setReviewSummary,
+    setReviewItems,
+    setReviewBusy,
+    defaultPageUid: DEFAULT_PAGE_UID
+  });
+  const {
+    loadPages,
+    loadActivePage,
+    loadReviewSummary,
+    loadReviewQueue,
+    loadBlocks
+  } = vaultLoaders;
 
-  const scheduleSave = () => {
-    const pageUid = resolvePageUid(activePageUid());
-    pendingSavePageUid = pageUid;
-    const snapshot = untrack(() => snapshotBlocks(blocks));
-    const payload = snapshot.map((block) => toPayload(block));
-    const title = untrack(() => pageTitle());
-    saveRequestId += 1;
-    const requestId = saveRequestId;
-    if (saveTimeout) {
-      window.clearTimeout(saveTimeout);
-    }
-    saveTimeout = window.setTimeout(() => {
-      void (async () => {
-        const success = await persistBlocks(pageUid, payload, title, snapshot);
-        if (requestId !== saveRequestId) return;
-        pendingSavePageUid = null;
-        if (success) {
-          markSaved();
-        } else {
-          markSaveFailed();
-        }
-      })();
-    }, 400);
-    scheduleShadowWrite(pageUid);
-    markSaving();
-  };
-
-  const cancelPendingSave = (pageUid: string) => {
-    if (pendingSavePageUid !== pageUid) return;
-    if (saveTimeout) {
-      window.clearTimeout(saveTimeout);
-      saveTimeout = undefined;
-    }
-    saveRequestId += 1;
-    pendingSavePageUid = null;
-  };
-
-  const stampNow = () =>
-    new Intl.DateTimeFormat(undefined, {
-      hour: "2-digit",
-      minute: "2-digit"
-    }).format(new Date());
-
-  const syncStampNow = () =>
-    new Intl.DateTimeFormat(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    }).format(new Date());
-
-  const appendSyncLog = (
-    entry: Omit<SyncLogEntry, "id" | "at"> & { at?: string }
-  ) => {
-    setSyncLog((prev) => {
-      const next = [
-        ...prev,
-        {
-          id: makeRandomId(),
-          at: entry.at ?? syncStampNow(),
-          action: entry.action,
-          count: entry.count,
-          status: entry.status,
-          detail: entry.detail ?? null
-        }
-      ];
-      return next.slice(-10);
-    });
-  };
-
-  const formatSyncLogLine = (entry: SyncLogEntry) => {
-    const status = entry.status === "error" ? " error" : "";
-    const detail = entry.detail ? ` (${entry.detail})` : "";
-    return `${entry.at} ${entry.action.toUpperCase()} ${entry.count}${status}${detail}`;
-  };
-
-  const copySyncLog = async () => {
-    const lines = syncLog().map((entry) => formatSyncLogLine(entry));
-    await copyToClipboard(lines.join("\n"));
-  };
-
-  const mergeSyncConflicts = (incoming: SyncConflict[]) => {
-    if (incoming.length === 0) return;
-    setSyncConflicts((prev) => {
-      const seen = new Set(prev.map((conflict) => conflict.op_id));
-      const next = [...prev];
-      for (const conflict of incoming) {
-        if (!seen.has(conflict.op_id)) {
-          next.push(conflict);
-          seen.add(conflict.op_id);
-        }
-      }
-      return next;
-    });
-  };
-
-  const fetchPageBlocks = async (pageUid: string): Promise<LocalPageRecord | null> => {
-    const resolvedUid = resolvePageUid(pageUid);
-    if (!isTauri()) {
-      const local = localPages[resolvedUid];
-      if (!local) return null;
-      return {
-        uid: resolvedUid,
-        title: local.title,
-        blocks: snapshotBlocks(local.blocks)
-      };
-    }
-    try {
-      const response = (await invoke("load_page_blocks", {
-        pageUid: resolvedUid,
-        page_uid: resolvedUid
-      })) as PageBlocksResponse;
-      return {
-        uid: resolvedUid,
-        title:
-          response.title ||
-          (resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled"),
-        blocks: response.blocks.map((block) =>
-          makeBlock(block.uid, block.text, block.indent)
-        )
-      };
-    } catch (error) {
-      console.error("Failed to load page for conflict", error);
-      return null;
-    }
-  };
-
-  const resolveSyncConflict = async (
-    conflict: SyncConflict,
-    resolution: "local" | "remote" | "merge",
-    mergeText?: string
-  ) => {
-    const resolvedUid = resolvePageUid(conflict.page_uid);
-    const resolvedText =
-      resolution === "merge"
-        ? mergeText ?? ""
-        : resolution === "local"
-          ? conflict.local_text
-          : conflict.remote_text;
-
-    const updateBlocks = (items: Block[]) => {
-      const index = items.findIndex((block) => block.id === conflict.block_uid);
-      if (index < 0) return null;
-      const next = snapshotBlocks(items);
-      next[index] = {
-        ...next[index],
-        text: resolvedText
-      };
-      return next;
-    };
-
-    const saveBlocks = async (items: Block[], title: string) => {
-      const next = updateBlocks(items);
-      if (!next) return false;
-      if (resolvedUid === resolvePageUid(activePageUid())) {
-        setBlocks(next);
-      } else if (!isTauri()) {
-        saveLocalPageSnapshot(resolvedUid, title, next);
-      }
-      markSaving();
-      const payload = next.map((block) => toPayload(block));
-      const success = await persistBlocks(resolvedUid, payload, title, next);
-      if (success) {
-        markSaved();
-        if (resolvedUid === resolvePageUid(activePageUid())) {
-          scheduleShadowWrite(resolvedUid);
-        }
-      } else {
-        markSaveFailed();
-      }
-      return success;
-    };
-
-    if (resolvedUid === resolvePageUid(activePageUid())) {
-      await saveBlocks(snapshotBlocks(blocks), pageTitle());
-    } else {
-      const record = await fetchPageBlocks(resolvedUid);
-      if (!record) return;
-      await saveBlocks(record.blocks, record.title);
-    }
-
-    setSyncConflicts((prev) =>
-      prev.filter((entry) => entry.op_id !== conflict.op_id)
-    );
-    if (syncConflictMergeId() === conflict.op_id) {
-      setSyncConflictMergeId(null);
-    }
-    setSyncConflictMergeDrafts(conflict.op_id, "");
-  };
-
-  const startSyncConflictMerge = (conflict: SyncConflict) => {
-    const existing = syncConflictMergeDrafts[conflict.op_id];
-    if (!existing) {
-      setSyncConflictMergeDrafts(
-        conflict.op_id,
-        `${conflict.local_text}\n${conflict.remote_text}`
-      );
-    }
-    setSyncConflictMergeId(conflict.op_id);
-  };
-
-  const cancelSyncConflictMerge = () => {
-    setSyncConflictMergeId(null);
-  };
-
-  const getConflictPageTitle = (pageUid: string) =>
-    pages().find((page) => page.uid === resolvePageUid(pageUid))?.title ??
-    pageUid;
-
-  const loadBlocks = async (pageUid = activePageUid()) => {
-    const resolvedUid = resolvePageUid(pageUid);
-    setActivePageUid(resolvedUid);
-    setFocusedId(null);
-
-    if (!isTauri()) {
-      const local = localPages[resolvedUid];
-      if (!local) {
-        const seeded =
-          resolvedUid === DEFAULT_PAGE_UID
-            ? buildLocalDefaults()
-            : buildEmptyBlocks(makeLocalId);
-        const title = resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled";
-        saveLocalPageSnapshot(resolvedUid, title, seeded);
-        setBlocks(seeded);
-        setPageTitle(title);
-        setRenameTitle(title);
-        setActiveId(seeded[0]?.id ?? null);
-        markSaved();
-        await loadPages();
-        return;
-      }
-      setBlocks(snapshotBlocks(local.blocks));
-      const localTitle = local.title || "Untitled";
-      setPageTitle(localTitle);
-      setRenameTitle(localTitle);
-      setActiveId(local.blocks[0]?.id ?? null);
-      markSaved();
-      return;
-    }
-
-    try {
-      const response = (await invoke("load_page_blocks", {
-        pageUid: resolvedUid,
-        page_uid: resolvedUid
-      })) as PageBlocksResponse;
-      const loaded = response.blocks.map((block) =>
-        makeBlock(block.uid, block.text, block.indent)
-      );
-      const title = response.title || (resolvedUid === DEFAULT_PAGE_UID ? "Inbox" : "Untitled");
-      setPageTitle(title);
-      setRenameTitle(title);
-      if (loaded.length === 0) {
-        const seeded = buildDefaultBlocks(makeRandomId);
-        setBlocks(seeded);
-        await invoke("save_page_blocks", {
-          pageUid: resolvedUid,
-          page_uid: resolvedUid,
-          blocks: seeded.map((block) => toPayload(block))
-        });
-        const seedMarkdown = serializePageToMarkdown({
-          id: resolvedUid,
-          title,
-          blocks: seeded.map((block) => ({
-            id: block.id,
-            text: block.text,
-            indent: block.indent
-          }))
-        });
-        shadowWriter.scheduleWrite(resolvedUid, seedMarkdown);
-        setActiveId(seeded[0]?.id ?? null);
-        markSaved();
-        return;
-      }
-      setBlocks(loaded);
-      setActiveId(loaded[0]?.id ?? null);
-      const loadedMarkdown = serializePageToMarkdown({
-        id: resolvedUid,
-        title,
-        blocks: loaded.map((block) => ({
-          id: block.id,
-          text: block.text,
-          indent: block.indent
-        }))
-      });
-      shadowWriter.scheduleWrite(resolvedUid, loadedMarkdown);
-      markSaved();
-    } catch (error) {
-      console.error("Failed to load blocks", error);
-      setBlocks(buildLocalDefaults());
-      setPageTitle("Inbox");
-      setRenameTitle("Inbox");
-      markSaved();
-    }
-  };
-
-  const loadPlugins = async () => {
-    if (!isTauri()) {
-      setPlugins(fallbackPlugins);
-      setPluginStatus(fallbackPluginStatus);
-      return;
-    }
-
-    setPluginError(null);
-    try {
-      const remote = (await invoke("list_plugins_command")) as PluginPermissionInfo[];
-      setPlugins(remote);
-    } catch (error) {
-      console.error("Failed to load plugins", error);
-      setPluginError(
-        error instanceof Error ? error.message : "Failed to load plugins."
-      );
-    }
-
-    await loadPluginRuntime();
-  };
+  const syncApi = createSync({
+    isTauri,
+    invoke,
+    resolvePageUid,
+    activePageUid,
+    pages,
+    localPages,
+    getBlocks: () => blocks,
+    snapshotBlocks,
+    saveLocalPageSnapshot,
+    setBlocks,
+    pageTitle,
+    toPayload,
+    makeBlock,
+    persistBlocks,
+    scheduleShadowWrite,
+    markSaving,
+    markSaved,
+    markSaveFailed,
+    loadBlocks,
+    vaultKeyStatus,
+    copyToClipboard,
+    makeRandomId,
+    defaultPageUid: DEFAULT_PAGE_UID
+  });
+  const {
+    syncConfig,
+    syncServerUrl,
+    setSyncServerUrl,
+    syncVaultIdInput,
+    setSyncVaultIdInput,
+    syncDeviceIdInput,
+    setSyncDeviceIdInput,
+    syncStatus,
+    syncMessage,
+    syncBusy,
+    syncLog,
+    syncConflicts,
+    syncConflictMergeId,
+    syncConflictMergeDrafts,
+    setSyncConflictMergeDrafts,
+    syncConnected,
+    syncStateLabel,
+    syncStateDetail,
+    loadSyncConfig,
+    connectSync,
+    syncNow,
+    copySyncLog,
+    resolveSyncConflict,
+    startSyncConflictMerge,
+    cancelSyncConflictMerge,
+    getConflictPageTitle,
+    stopSyncLoop
+  } = syncApi;
 
   const loadVaultKeyStatus = async () => {
     if (!isTauri()) {
@@ -1494,375 +990,6 @@ function MainPage() {
       setVaultKeyMessage("Failed to derive vault key.");
     } finally {
       setVaultKeyBusy(false);
-    }
-  };
-
-  const normalizeServerUrl = (value: string) =>
-    value.trim().replace(/\/+$/, "");
-
-  const updateSyncStatus = (next: Partial<SyncStatus>) => {
-    setSyncStatus((prev) => ({
-      ...prev,
-      ...next
-    }));
-  };
-
-  const loadSyncConfig = async () => {
-    if (!isTauri()) {
-      setSyncConfig(null);
-      setSyncServerUrl("");
-      setSyncVaultIdInput("");
-      setSyncDeviceIdInput("");
-      updateSyncStatus({
-        state: "idle",
-        last_error: null
-      });
-      stopSyncLoop();
-      return;
-    }
-
-    try {
-      const config = (await invoke("get_sync_config")) as SyncConfig;
-      setSyncConfig(config);
-      setSyncServerUrl(config.server_url ?? "");
-      setSyncVaultIdInput(config.vault_id ?? "");
-      setSyncDeviceIdInput(config.device_id ?? "");
-      if (config.server_url && config.vault_id && config.device_id) {
-        startSyncLoop();
-      } else {
-        stopSyncLoop();
-      }
-    } catch (error) {
-      console.error("Failed to load sync config", error);
-      setSyncConfig(null);
-      stopSyncLoop();
-    }
-  };
-
-  const setSyncConfigState = (config: SyncConfig) => {
-    setSyncConfig(config);
-    setSyncServerUrl(config.server_url ?? "");
-    setSyncVaultIdInput(config.vault_id ?? "");
-    setSyncDeviceIdInput(config.device_id ?? "");
-  };
-
-  const pushSyncOps = async (config: SyncConfig) => {
-    let cursor = config.last_push_cursor;
-    let pushed = 0;
-    let iterations = 0;
-    const serverUrl = normalizeServerUrl(config.server_url ?? "");
-    if (!serverUrl) return { pushed, cursor };
-
-    while (iterations < 3) {
-      const ops = (await invoke("list_sync_ops_since", {
-        cursor,
-        limit: SYNC_BATCH_LIMIT
-      })) as SyncOpEnvelope[];
-      updateSyncStatus({
-        pending_ops: ops.length
-      });
-      if (ops.length === 0) break;
-
-      const response = await fetch(`${serverUrl}/v1/ops/push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          vaultId: config.vault_id,
-          deviceId: config.device_id,
-          ops: ops.map((op) => ({
-            opId: op.op_id,
-            payload: op.payload
-          }))
-        })
-      });
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => "push-failed");
-        throw new Error(text || "push-failed");
-      }
-
-      const result = (await response.json()) as SyncServerPushResponse;
-      const lastCursor = ops[ops.length - 1]?.cursor ?? cursor;
-      cursor = lastCursor;
-      pushed += result.accepted ?? ops.length;
-      const nextConfig = (await invoke("set_sync_cursors", {
-        lastPushCursor: cursor,
-        last_push_cursor: cursor
-      })) as SyncConfig;
-      setSyncConfig(nextConfig);
-
-      if (ops.length < SYNC_BATCH_LIMIT) break;
-      iterations += 1;
-    }
-
-    return { pushed, cursor };
-  };
-
-  const pullSyncOps = async (config: SyncConfig) => {
-    const serverUrl = normalizeServerUrl(config.server_url ?? "");
-    if (!serverUrl || !config.vault_id) return { pulled: 0, cursor: config.last_pull_cursor };
-    const response = await fetch(
-      `${serverUrl}/v1/ops/pull?vaultId=${encodeURIComponent(
-        config.vault_id
-      )}&since=${config.last_pull_cursor}&limit=${SYNC_BATCH_LIMIT}`,
-      {
-        method: "GET"
-      }
-    );
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "pull-failed");
-      throw new Error(text || "pull-failed");
-    }
-
-    const payload = (await response.json()) as SyncServerPullResponse;
-    const remoteOps = payload.ops
-      .filter((op) => op.deviceId !== config.device_id)
-      .map((op) => ({
-        cursor: op.cursor,
-        op_id: op.opId,
-        payload: op.payload
-      }));
-    if (remoteOps.length > 0) {
-      await invoke("store_sync_inbox_ops", { ops: remoteOps });
-    }
-    const nextCursor = payload.nextCursor ?? config.last_pull_cursor;
-    const nextConfig = (await invoke("set_sync_cursors", {
-      lastPullCursor: nextCursor,
-      last_pull_cursor: nextCursor
-    })) as SyncConfig;
-    setSyncConfig(nextConfig);
-    return { pulled: remoteOps.length, cursor: nextCursor };
-  };
-
-  const applySyncInbox = async () => {
-    if (!isTauri()) return { pages: [], applied: 0, conflicts: [] };
-    const result = (await invoke("apply_sync_inbox")) as SyncApplyResult;
-    const conflicts = result.conflicts ?? [];
-    if (conflicts.length > 0) {
-      mergeSyncConflicts(conflicts);
-    }
-    if (
-      result.applied > 0 &&
-      result.pages.includes(resolvePageUid(activePageUid()))
-    ) {
-      await loadBlocks(activePageUid());
-    }
-    updateSyncStatus({
-      pending_ops: 0,
-      last_apply_count: result.applied
-    });
-    return result;
-  };
-
-  const startSyncLoop = () => {
-    if (!isTauri()) return;
-    syncLoopEnabled = true;
-    scheduleSync(1200);
-  };
-
-  const stopSyncLoop = () => {
-    syncLoopEnabled = false;
-    if (syncTimeout) {
-      window.clearTimeout(syncTimeout);
-      syncTimeout = undefined;
-    }
-  };
-
-  const scheduleSync = (delay: number) => {
-    if (!syncLoopEnabled) return;
-    if (syncTimeout) {
-      window.clearTimeout(syncTimeout);
-    }
-    syncTimeout = window.setTimeout(() => {
-      void runSyncCycle();
-    }, delay);
-  };
-
-  const runSyncCycle = async (force = false) => {
-    if ((!syncLoopEnabled && !force) || syncRunning) return;
-    const config = syncConfig();
-    if (!config || !config.server_url || !config.vault_id || !config.device_id) {
-      updateSyncStatus({ state: "idle" });
-      return;
-    }
-
-    syncRunning = true;
-    updateSyncStatus({
-      state: "syncing",
-      last_error: null
-    });
-
-    try {
-      await applySyncInbox();
-      const pushResult = await pushSyncOps(config);
-      appendSyncLog({
-        action: "push",
-        count: pushResult.pushed,
-        status: "ok"
-      });
-      const nextConfig = syncConfig() ?? config;
-      const pullResult = await pullSyncOps(nextConfig);
-      appendSyncLog({
-        action: "pull",
-        count: pullResult.pulled,
-        status: "ok"
-      });
-      if (pullResult.pulled > 0) {
-        await applySyncInbox();
-      }
-      updateSyncStatus({
-        state: "idle",
-        last_synced_at: stampNow(),
-        last_push_count: pushResult.pushed,
-        last_pull_count: pullResult.pulled,
-        last_error: null
-      });
-      syncBackoffMs = SYNC_INTERVAL_MS;
-      scheduleSync(SYNC_INTERVAL_MS);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "sync-unavailable";
-      const offline =
-        error instanceof TypeError || message.includes("network");
-      updateSyncStatus({
-        state: offline ? "offline" : "error",
-        last_error: message
-      });
-      syncBackoffMs = Math.min(SYNC_MAX_BACKOFF_MS, syncBackoffMs * 2);
-      scheduleSync(syncBackoffMs);
-    } finally {
-      syncRunning = false;
-    }
-  };
-
-  const connectSync = async () => {
-    if (!isTauri()) return;
-    const serverUrl = normalizeServerUrl(syncServerUrl());
-    if (!serverUrl) {
-      setSyncMessage("Add a sync server URL.");
-      return;
-    }
-    if (!vaultKeyStatus().configured) {
-      setSyncMessage("Set a vault passphrase first.");
-      return;
-    }
-
-    setSyncBusy(true);
-    setSyncMessage(null);
-    try {
-      const keyFingerprint = (await invoke("vault_key_fingerprint")) as string;
-      const requestedVaultId = syncVaultIdInput().trim() || undefined;
-      const vaultResponse = await fetch(`${serverUrl}/v1/vaults`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          keyFingerprint,
-          vaultId: requestedVaultId
-        })
-      });
-      if (!vaultResponse.ok) {
-        const text = await vaultResponse.text().catch(() => "vault-failed");
-        throw new Error(text || "vault-failed");
-      }
-      const { vaultId } = (await vaultResponse.json()) as { vaultId: string };
-      const deviceResponse = await fetch(`${serverUrl}/v1/devices`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          vaultId,
-          keyFingerprint,
-          deviceId: syncDeviceIdInput().trim() || undefined
-        })
-      });
-      if (!deviceResponse.ok) {
-        const text = await deviceResponse.text().catch(() => "device-failed");
-        throw new Error(text || "device-failed");
-      }
-      const { deviceId } = (await deviceResponse.json()) as { deviceId: string };
-      const config = (await invoke("set_sync_config", {
-        serverUrl,
-        server_url: serverUrl,
-        vaultId,
-        vault_id: vaultId,
-        deviceId,
-        device_id: deviceId,
-        keyFingerprint,
-        key_fingerprint: keyFingerprint
-      })) as SyncConfig;
-      setSyncConfigState(config);
-      setSyncMessage("Sync connected. Background sync is running.");
-      startSyncLoop();
-      void runSyncCycle();
-    } catch (error) {
-      console.error("Failed to connect sync", error);
-      setSyncMessage("Sync connection failed.");
-      updateSyncStatus({
-        state: "error",
-        last_error: error instanceof Error ? error.message : "sync-failed"
-      });
-    } finally {
-      setSyncBusy(false);
-    }
-  };
-
-  const syncNow = async () => {
-    if (!isTauri() || syncBusy()) return;
-    if (!syncConfig()) {
-      await loadSyncConfig();
-    }
-    await runSyncCycle(true);
-  };
-
-  const requestGrantPermission = (plugin: PluginPermissionInfo, permission: string) => {
-    setPermissionPrompt({
-      pluginId: plugin.id,
-      pluginName: plugin.name,
-      permission
-    });
-  };
-
-  const grantPermission = async () => {
-    const prompt = permissionPrompt();
-    if (!prompt) return;
-    if (isTauri()) {
-      await invoke("grant_plugin_permission", {
-        pluginId: prompt.pluginId,
-        permission: prompt.permission
-      });
-      await loadPlugins();
-    }
-    setPermissionPrompt(null);
-    markSaved();
-  };
-
-  const dismissPermissionPrompt = () => {
-    setPermissionPrompt(null);
-  };
-
-  const loadPluginRuntime = async () => {
-    if (!isTauri()) {
-      setPluginStatus(fallbackPluginStatus);
-      return;
-    }
-    setPluginError(null);
-    setPluginBusy(true);
-    try {
-      const status = (await invoke("load_plugins_command")) as PluginRuntimeStatus;
-      setPluginStatus(status);
-    } catch (error) {
-      console.error("Failed to load plugins", error);
-      setPluginError(
-        error instanceof Error ? error.message : "Plugin runtime failed."
-      );
-    } finally {
-      setPluginBusy(false);
     }
   };
 
@@ -2845,9 +1972,7 @@ function MainPage() {
     onCleanup(() => {
       window.removeEventListener("keydown", handleGlobalKeydown);
       scrollMeter.dispose();
-      if (saveTimeout) {
-        window.clearTimeout(saveTimeout);
-      }
+      cancelPendingSave(resolvePageUid(activePageUid()));
       if (highlightTimeout) {
         window.clearTimeout(highlightTimeout);
       }
@@ -3175,7 +2300,7 @@ function MainPage() {
       />
       <PermissionPromptModal
         prompt={permissionPrompt}
-        onDeny={dismissPermissionPrompt}
+        onDeny={denyPermission}
         onAllow={grantPermission}
       />
     </div>
