@@ -51,6 +51,53 @@ export type PluginRenderer = {
   id: string;
   title: string;
   kind: string;
+  languages?: string[];
+};
+
+export type PluginBlockControl =
+  | {
+      id: string;
+      type: "button";
+      label: string;
+    }
+  | {
+      id: string;
+      type: "select";
+      label: string;
+      options: Array<{ label: string; value: string }>;
+      value?: string | null;
+    }
+  | {
+      id: string;
+      type: "clipboard";
+      label: string;
+      text: string;
+    };
+
+export type PluginBlockBody =
+  | {
+      kind: "text";
+      text: string;
+    }
+  | {
+      kind: "list";
+      items: string[];
+    }
+  | {
+      kind: "stats";
+      items: Array<{ label: string; value: string }>;
+    };
+
+export type PluginBlockView = {
+  plugin_id: string;
+  renderer_id: string;
+  block_uid: string;
+  summary?: string | null;
+  next_text?: string | null;
+  status?: string | null;
+  message?: string | null;
+  body?: PluginBlockBody | null;
+  controls?: PluginBlockControl[];
 };
 
 export type PermissionPrompt = {
