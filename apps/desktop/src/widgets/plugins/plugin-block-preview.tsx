@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import type { Block } from "../../entities/block/model/block-types";
 import type {
@@ -18,10 +18,12 @@ type PluginBlockPreviewProps = {
 const applyNextText = (
   current: string,
   nextText: string | null | undefined,
-  onUpdateText: (value: string) => void
+  onUpdateText: (value: string) => void,
+  onSkipNextRender: (value: string) => void
 ) => {
   if (!nextText) return;
   if (nextText === current) return;
+  onSkipNextRender(nextText);
   onUpdateText(nextText);
 };
 
@@ -108,6 +110,7 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
   const [view, setView] = createSignal<PluginBlockView | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [skipNextRender, setSkipNextRender] = createSignal<string | null>(null);
 
   const loadView = async () => {
     if (!props.isTauri()) return;
@@ -124,7 +127,12 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         text: props.block.text
       });
       setView(result);
-      applyNextText(props.block.text, result.next_text, props.onUpdateText);
+      applyNextText(
+        props.block.text,
+        result.next_text,
+        props.onUpdateText,
+        (value) => setSkipNextRender(value)
+      );
     } catch (err) {
       console.error("Failed to render plugin block", err);
       setError(err instanceof Error ? err.message : "Failed to render block.");
@@ -151,7 +159,12 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         value
       });
       setView(result);
-      applyNextText(props.block.text, result.next_text, props.onUpdateText);
+      applyNextText(
+        props.block.text,
+        result.next_text,
+        props.onUpdateText,
+        (value) => setSkipNextRender(value)
+      );
     } catch (err) {
       console.error("Failed to run plugin action", err);
       setError(err instanceof Error ? err.message : "Failed to run action.");
@@ -168,11 +181,21 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
           setView(null);
           return;
         }
+        if (skipNextRender() && props.block.text === skipNextRender()) {
+          setSkipNextRender(null);
+          return;
+        }
         void loadView();
       },
       { defer: true }
     )
   );
+
+  onMount(() => {
+    if (props.isTauri()) {
+      void loadView();
+    }
+  });
 
   return (
     <div class="plugin-block">
