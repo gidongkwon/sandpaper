@@ -76,6 +76,7 @@ export const MainPageProvider = (props: {
   value: MainPageContextValue;
   children: JSX.Element;
 }) => {
+  // The context value is a stable object of accessors; avoid unnecessary tracking here.
   const value = untrack(() => props.value);
   return (
     <MainPageContext.Provider value={value}>
