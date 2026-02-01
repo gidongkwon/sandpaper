@@ -35,6 +35,7 @@ import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
 import { PagesPane } from "../widgets/sidebar/pages-pane";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
+import { PermissionPromptModal } from "../widgets/permissions/permission-prompt-modal";
 import { createSectionJump } from "../widgets/section-jump/section-jump";
 import { Topbar } from "../widgets/topbar/topbar";
 import { EditorWorkspace } from "../widgets/workspace/editor-workspace";
@@ -3174,31 +3175,11 @@ function MainPage() {
           setOfflineImportStatus
         }}
       />
-      <Show when={permissionPrompt()}>
-        {(prompt) => (
-          <div class="modal-backdrop" role="presentation">
-            <div class="modal" role="dialog" aria-modal="true">
-              <div class="modal__header">
-                <h3>Grant permission</h3>
-              </div>
-              <div class="modal__body">
-                <p>
-                  Allow <strong>{prompt().pluginName}</strong> to use{" "}
-                  <strong>{prompt().permission}</strong>?
-                </p>
-              </div>
-              <div class="modal__actions">
-                <button class="modal__button" onClick={dismissPermissionPrompt}>
-                  Deny
-                </button>
-                <button class="modal__button is-primary" onClick={grantPermission}>
-                  Allow
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </Show>
+      <PermissionPromptModal
+        prompt={permissionPrompt}
+        onDeny={dismissPermissionPrompt}
+        onAllow={grantPermission}
+      />
     </div>
   );
 }
