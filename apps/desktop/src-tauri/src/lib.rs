@@ -17,9 +17,9 @@ use tauri::Manager;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
-    discover_plugins, list_plugins, PluginBlockView, PluginCommand, PluginDescriptor, PluginInfo,
-    PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeLoadResult,
-    PluginToolbarAction,
+    discover_plugins, install_plugin, list_plugins, PluginBlockView, PluginCommand,
+    PluginDescriptor, PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime,
+    PluginRuntimeLoadResult, PluginToolbarAction,
 };
 
 #[derive(Debug, Serialize)]
@@ -1791,6 +1791,21 @@ fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
 }
 
 #[tauri::command]
+fn install_plugin_command(path: String) -> Result<PluginPermissionInfo, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let registry = plugin_registry_for_vault(&vault_path);
+    let db = open_active_database()?;
+    let source = PathBuf::from(path);
+    let plugin = install_plugin(&vault_path, &registry, &source)
+        .map_err(|err| format!("{:?}", err))?;
+    let mut entries =
+        list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
+    entries
+        .pop()
+        .ok_or_else(|| "Failed to install plugin.".to_string())
+}
+
+#[tauri::command]
 fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRuntimeStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
@@ -1998,6 +2013,7 @@ pub fn run() {
             write_shadow_markdown,
             export_markdown,
             list_plugins_command,
+            install_plugin_command,
             load_plugins_command,
             grant_plugin_permission,
             revoke_plugin_permission,

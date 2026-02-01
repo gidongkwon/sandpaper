@@ -158,12 +158,18 @@ export const createMainPageState = () => {
     pluginError,
     pluginBusy,
     permissionPrompt,
+    installPath,
+    installStatus,
+    installing,
     setPluginError,
+    clearInstallStatus,
     loadPlugins,
     loadPluginRuntime,
     requestGrantPermission,
     grantPermission,
     denyPermission,
+    installPlugin,
+    setInstallPath,
     findPlugin,
     hasPermission
   } = pluginsApi;
@@ -938,7 +944,13 @@ export const createMainPageState = () => {
           status: pluginStatus,
           requestGrant: requestGrantPermission,
           runCommand: runPluginCommand,
-          openPanel: openPanel
+          openPanel: openPanel,
+          installPath,
+          setInstallPath,
+          installStatus,
+          installing,
+          installPlugin,
+          clearInstallStatus
         },
         importExport: {
           importText,

@@ -1,6 +1,6 @@
 import { Show, type Accessor, type Setter } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
-import type { PluginCommand, PluginPanel, PluginPermissionInfo, PluginRuntimeStatus } from "../../entities/plugin/model/plugin-types";
+import type { PluginCommand, PluginInstallStatus, PluginPanel, PluginPermissionInfo, PluginRuntimeStatus } from "../../entities/plugin/model/plugin-types";
 import type { SyncConfig, SyncConflict, SyncLogEntry, SyncStatus } from "../../entities/sync/model/sync-types";
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import type { PageId, VaultId } from "../../shared/model/id-types";
@@ -99,6 +99,12 @@ type SettingsModalProps = {
     requestGrant: (plugin: PluginPermissionInfo, permission: string) => void | Promise<void>;
     runCommand: (command: PluginCommand) => void | Promise<void>;
     openPanel: (panel: PluginPanel) => void;
+    installPath: Accessor<string>;
+    setInstallPath: Setter<string>;
+    installStatus: Accessor<PluginInstallStatus | null>;
+    installing: Accessor<boolean>;
+    installPlugin: () => void | Promise<void>;
+    clearInstallStatus: () => void;
   };
   importExport: {
     importText: Accessor<string>;
@@ -220,7 +226,10 @@ export const SettingsModal = (props: SettingsModalProps) => {
                 />
               </Show>
               <Show when={props.tab() === "plugins"}>
-                <SettingsPluginsTab plugins={plugins} />
+                <SettingsPluginsTab
+                  isTauri={props.isTauri}
+                  plugins={plugins}
+                />
               </Show>
               <Show when={props.tab() === "permissions"}>
                 <SettingsPermissionsTab plugins={plugins} />

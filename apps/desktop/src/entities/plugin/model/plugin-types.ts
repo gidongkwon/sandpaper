@@ -10,6 +10,11 @@ export type PluginPermissionInfo = {
   missing_permissions: string[];
 };
 
+export type PluginInstallStatus = {
+  state: "success" | "error";
+  message: string;
+};
+
 export type PluginBlockInfo = {
   id: string;
   reason: string;

@@ -175,6 +175,73 @@ pub fn list_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<Plugin
         .collect())
 }
 
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), PluginError> {
+    fs::create_dir_all(dest)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let path = entry.path();
+        let target = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&path, &target)?;
+        } else {
+            fs::copy(&path, &target)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn install_plugin(
+    root: &Path,
+    registry: &PluginRegistry,
+    source_dir: &Path,
+) -> Result<PluginInfo, PluginError> {
+    if !source_dir.exists() {
+        return Err(PluginError::Runtime("plugin-source-missing".to_string()));
+    }
+    if !source_dir.is_dir() {
+        return Err(PluginError::Runtime("plugin-source-not-directory".to_string()));
+    }
+    let manifest_path = source_dir.join("plugin.json");
+    if !manifest_path.exists() {
+        return Err(PluginError::Runtime("plugin-manifest-missing".to_string()));
+    }
+    let raw = fs::read_to_string(&manifest_path)?;
+    let manifest: PluginManifest = serde_json::from_str(&raw)?;
+    if manifest.id.contains('/') || manifest.id.contains('\\') {
+        return Err(PluginError::Runtime("plugin-id-invalid".to_string()));
+    }
+
+    let plugins_dir = root.join("plugins");
+    fs::create_dir_all(&plugins_dir)?;
+    let dest_dir = plugins_dir.join(&manifest.id);
+    if dest_dir.exists() {
+        let same_dir = dest_dir
+            .canonicalize()
+            .ok()
+            .zip(source_dir.canonicalize().ok())
+            .map(|(dest, source)| dest == source)
+            .unwrap_or(false);
+        if same_dir {
+            registry.set_enabled(&manifest.id, true)?;
+        } else {
+            return Err(PluginError::Runtime("plugin-already-installed".to_string()));
+        }
+    } else {
+        copy_dir_recursive(source_dir, &dest_dir)?;
+        registry.set_enabled(&manifest.id, true)?;
+    }
+
+    Ok(PluginInfo {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        permissions: manifest.permissions,
+        enabled: true,
+        path: dest_dir.to_string_lossy().to_string(),
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginRuntimeLoadResult {
     pub loaded: Vec<String>,
@@ -788,7 +855,7 @@ pub fn load_plugins_into_runtime(
 #[cfg(test)]
 mod tests {
     use super::{
-        discover_plugins, list_plugins, PluginRegistry, PluginRuntime, PluginState,
+        discover_plugins, install_plugin, list_plugins, PluginRegistry, PluginRuntime, PluginState,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -932,6 +999,29 @@ mod tests {
         assert_eq!(plugins[0].id, "alpha");
         assert_eq!(plugins[0].enabled, true);
         assert_eq!(plugins[0].permissions, vec!["fs".to_string()]);
+    }
+
+    #[test]
+    fn install_plugin_copies_folder_and_enables() {
+        let dir = tempdir().expect("tempdir");
+        let source_dir = dir.path().join("source");
+        fs::create_dir_all(&source_dir).expect("source dir");
+        fs::write(
+            source_dir.join("plugin.json"),
+            r#"{"id":"alpha","name":"Alpha","version":"0.1.0"}"#,
+        )
+        .expect("write manifest");
+        fs::write(source_dir.join("index.js"), "module.exports = () => {};")
+            .expect("write entry");
+
+        let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
+        let info = install_plugin(dir.path(), &registry, &source_dir).expect("install");
+
+        let dest_dir = dir.path().join("plugins").join("alpha");
+        assert!(dest_dir.join("plugin.json").exists());
+        assert!(dest_dir.join("index.js").exists());
+        assert_eq!(info.id, "alpha");
+        assert!(registry.is_enabled("alpha").expect("enabled"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import type {
   PermissionPrompt,
+  PluginInstallStatus,
   PluginPermissionInfo,
   PluginRuntimeStatus
 } from "../../../entities/plugin/model/plugin-types";
@@ -110,6 +111,10 @@ export const createPlugins = (deps: PluginDependencies) => {
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [permissionPrompt, setPermissionPrompt] =
     createSignal<PermissionPrompt | null>(null);
+  const [installPath, setInstallPath] = createSignal("");
+  const [installStatus, setInstallStatus] =
+    createSignal<PluginInstallStatus | null>(null);
+  const [installing, setInstalling] = createSignal(false);
 
   const findPlugin = (pluginId: string) =>
     plugins().find((plugin) => plugin.id === pluginId) ?? null;
@@ -202,18 +207,64 @@ export const createPlugins = (deps: PluginDependencies) => {
     setPermissionPrompt(null);
   };
 
+  const clearInstallStatus = () => {
+    setInstallStatus(null);
+  };
+
+  const installPlugin = async () => {
+    const path = installPath().trim();
+    if (!path) {
+      setInstallStatus({
+        state: "error",
+        message: "Select a plugin folder to install."
+      });
+      return;
+    }
+    if (!deps.isTauri()) {
+      setInstallStatus({
+        state: "error",
+        message: "Plugin installs require the desktop app."
+      });
+      return;
+    }
+    setInstalling(true);
+    setInstallStatus(null);
+    try {
+      await deps.invoke("install_plugin_command", { path });
+      setInstallStatus({
+        state: "success",
+        message: "Plugin installed."
+      });
+      setInstallPath("");
+      await loadPlugins();
+    } catch (error) {
+      console.error("Failed to install plugin", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to install plugin.";
+      setInstallStatus({ state: "error", message });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return {
     plugins,
     pluginStatus,
     pluginError,
     pluginBusy,
     permissionPrompt,
+    installPath,
+    installStatus,
+    installing,
     setPluginError,
     loadPlugins,
     loadPluginRuntime,
     requestGrantPermission,
     grantPermission,
     denyPermission,
+    clearInstallStatus,
+    installPlugin,
+    setInstallPath,
     findPlugin,
     hasPermission
   };
