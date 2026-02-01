@@ -196,11 +196,16 @@ export const EditorPane = (props: EditorPaneProps) => {
     start: number;
     end: number;
   } | null>(null);
+  const [dragBox, setDragBox] = createSignal<{
+    top: number;
+    height: number;
+  } | null>(null);
   const supportsPointer =
     typeof window !== "undefined" && "PointerEvent" in window;
   let selecting = false;
   let selectionAnchor = -1;
   let selectionPointerId: number | null = null;
+  let dragStartClientY: number | null = null;
   const inputRefs = new Map<string, HTMLTextAreaElement>();
   const caretPositions = new Map<string, { start: number; end: number }>();
   const previewCache = new Map<string, { title: string; blocks: string[] }>();
@@ -223,6 +228,31 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
     return { heights, offsets, totalHeight: offset };
   });
+
+  const clearSelection = () => {
+    setSelectionRange(null);
+    setDragBox(null);
+    selecting = false;
+    selectionPointerId = null;
+    selectionAnchor = -1;
+    dragStartClientY = null;
+  };
+
+  const setSelectionRangeValue = (start: number, end: number, anchor = start) => {
+    setSelectionRange({ start, end });
+    selectionAnchor = anchor;
+  };
+
+  const updateDragBox = (startY: number, currentY: number) => {
+    if (!editorRef) return;
+    const rect = editorRef.getBoundingClientRect();
+    const topRaw = Math.min(startY, currentY) - rect.top;
+    const bottomRaw = Math.max(startY, currentY) - rect.top;
+    const top = Math.max(0, Math.min(rect.height, topRaw));
+    const bottom = Math.max(0, Math.min(rect.height, bottomRaw));
+    const height = Math.max(2, bottom - top);
+    setDragBox({ top, height });
+  };
 
   const isSelectionStartTarget = (target: EventTarget | null) => {
     const el = target instanceof HTMLElement ? target : null;
@@ -272,6 +302,26 @@ export const EditorPane = (props: EditorPaneProps) => {
     return indexFromClientY(clientY);
   };
 
+  const applyShiftSelection = (targetIndex: number) => {
+    if (targetIndex < 0) return;
+    let anchorIndex = selectionAnchor;
+    if (anchorIndex < 0) {
+      const active = activeId();
+      if (active) {
+        const activeIndex = findIndexById(active);
+        if (activeIndex >= 0) {
+          anchorIndex = activeIndex;
+        }
+      }
+    }
+    if (anchorIndex < 0) {
+      anchorIndex = targetIndex;
+    }
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    setSelectionRangeValue(start, end, anchorIndex);
+  };
+
   const setSelectionFromIndex = (index: number) => {
     if (selectionAnchor < 0 || index < 0) return;
     const start = Math.min(selectionAnchor, index);
@@ -281,11 +331,17 @@ export const EditorPane = (props: EditorPaneProps) => {
     );
   };
 
-  const beginSelection = (index: number, pointerId: number | null) => {
+  const beginSelection = (
+    index: number,
+    pointerId: number | null,
+    clientY: number
+  ) => {
     selectionAnchor = index;
     selecting = true;
     selectionPointerId = pointerId;
+    dragStartClientY = clientY;
     setSelectionRange({ start: index, end: index });
+    updateDragBox(clientY, clientY);
   };
 
   const endSelection = (pointerId?: number | null) => {
@@ -299,17 +355,23 @@ export const EditorPane = (props: EditorPaneProps) => {
     }
     selecting = false;
     selectionPointerId = null;
-    selectionAnchor = -1;
+    dragStartClientY = null;
+    setDragBox(null);
+    const rangeValue = selectionRange();
+    selectionAnchor = rangeValue ? rangeValue.start : -1;
   };
 
   const handlePointerDown = (event: PointerEvent) => {
     if (!supportsPointer) return;
     if (event.button !== 0) return;
+    if (!event.shiftKey && selectionRange()) {
+      clearSelection();
+    }
     if (!isSelectionStartTarget(event.target)) return;
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     event.preventDefault();
-    beginSelection(index, event.pointerId);
+    beginSelection(index, event.pointerId, event.clientY);
   };
 
   const handlePointerMove = (event: PointerEvent) => {
@@ -323,6 +385,9 @@ export const EditorPane = (props: EditorPaneProps) => {
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     setSelectionFromIndex(index);
+    if (dragStartClientY !== null) {
+      updateDragBox(dragStartClientY, event.clientY);
+    }
   };
 
   const handlePointerUp = (event: PointerEvent) => {
@@ -333,11 +398,14 @@ export const EditorPane = (props: EditorPaneProps) => {
   const handleMouseDown = (event: MouseEvent) => {
     if (selecting || selectionPointerId !== null) return;
     if (event.button !== 0) return;
+    if (!event.shiftKey && selectionRange()) {
+      clearSelection();
+    }
     if (!isSelectionStartTarget(event.target)) return;
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     event.preventDefault();
-    beginSelection(index, null);
+    beginSelection(index, null, event.clientY);
   };
 
   const handleMouseMove = (event: MouseEvent) => {
@@ -345,11 +413,22 @@ export const EditorPane = (props: EditorPaneProps) => {
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     setSelectionFromIndex(index);
+    if (dragStartClientY !== null) {
+      updateDragBox(dragStartClientY, event.clientY);
+    }
   };
 
   const handleMouseUp = () => {
     if (selectionPointerId !== null) return;
     endSelection();
+  };
+
+  const handleBodyClick = (event: MouseEvent) => {
+    if (!selectionRange()) return;
+    if (event.shiftKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest(".block")) return;
+    clearSelection();
   };
   const blockObserver =
     typeof ResizeObserver === "function"
@@ -409,6 +488,11 @@ export const EditorPane = (props: EditorPaneProps) => {
     blocks.slice(range().start, range().end)
   );
 
+  const selectionCount = createMemo(() => {
+    const rangeValue = selectionRange();
+    return rangeValue ? rangeValue.end - rangeValue.start + 1 : 0;
+  });
+
   onMount(() => {
     if (!editorRef) return;
     setViewportHeight(editorRef.clientHeight);
@@ -460,6 +544,19 @@ export const EditorPane = (props: EditorPaneProps) => {
       }
       window.removeEventListener("mousemove", handleMouseMoveWindow);
       window.removeEventListener("mouseup", handleMouseUpWindow);
+    });
+  });
+
+  onMount(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (!selectionRange()) return;
+      event.preventDefault();
+      clearSelection();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    onCleanup(() => {
+      window.removeEventListener("keydown", handleKeyDown);
     });
   });
 
@@ -536,10 +633,7 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   createEffect(() => {
     activePageUid();
-    setSelectionRange(null);
-    selecting = false;
-    selectionPointerId = null;
-    selectionAnchor = -1;
+    clearSelection();
   });
 
   const insertBlockAfter = (index: number, indent: number) => {
@@ -582,6 +676,68 @@ export const EditorPane = (props: EditorPaneProps) => {
     setActiveId(clone.id);
     setFocusedId(clone.id);
     setJumpTarget({ id: clone.id, caret: "end" });
+  };
+
+  const duplicateSelection = () => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return;
+    const slice = blocks.slice(rangeValue.start, rangeValue.end + 1);
+    if (slice.length === 0) return;
+    const clones = slice.map((block) =>
+      createNewBlock(block.text, block.indent)
+    );
+    const insertIndex = rangeValue.end + 1;
+    setBlocks(
+      produce((draft) => {
+        draft.splice(insertIndex, 0, ...clones);
+      })
+    );
+    scheduleSave();
+    setSelectionRangeValue(
+      insertIndex,
+      insertIndex + clones.length - 1,
+      insertIndex
+    );
+  };
+
+  const removeSelection = () => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return;
+    const count = rangeValue.end - rangeValue.start + 1;
+    if (count <= 0) return;
+    const nextTarget = blocks[rangeValue.end + 1] ?? blocks[rangeValue.start - 1];
+    if (count >= blocks.length) {
+      const replacement = createNewBlock("", 0);
+      setBlocks([replacement]);
+      scheduleSave();
+      clearSelection();
+      focusBlock(replacement.id, "start");
+      return;
+    }
+    setBlocks(
+      produce((draft) => {
+        draft.splice(rangeValue.start, count);
+      })
+    );
+    scheduleSave();
+    clearSelection();
+    if (nextTarget) {
+      focusBlock(nextTarget.id, "start");
+    }
+  };
+
+  const adjustSelectionIndent = (delta: number) => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return;
+    setBlocks(
+      produce((draft) => {
+        for (let i = rangeValue.start; i <= rangeValue.end; i += 1) {
+          const nextIndent = Math.max(0, draft[i].indent + delta);
+          draft[i].indent = nextIndent;
+        }
+      })
+    );
+    scheduleSave();
   };
 
   const moveFocus = (index: number, direction: -1 | 1) => {
@@ -1278,6 +1434,43 @@ export const EditorPane = (props: EditorPaneProps) => {
           <div class="editor-pane__count">{blocks.length} blocks</div>
         </div>
         <div class="editor-pane__actions">
+          <Show when={selectionRange()}>
+            <div class="editor-pane__selection">
+              <span class="editor-pane__selection-count">
+                {selectionCount()} selected
+              </span>
+              <div class="editor-pane__selection-actions">
+                <button
+                  class="editor-pane__action"
+                  type="button"
+                  onClick={duplicateSelection}
+                >
+                  Duplicate
+                </button>
+                <button
+                  class="editor-pane__action"
+                  type="button"
+                  onClick={() => adjustSelectionIndent(1)}
+                >
+                  Indent
+                </button>
+                <button
+                  class="editor-pane__action"
+                  type="button"
+                  onClick={() => adjustSelectionIndent(-1)}
+                >
+                  Outdent
+                </button>
+                <button
+                  class="editor-pane__action"
+                  type="button"
+                  onClick={removeSelection}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </Show>
           <button
             class="editor-pane__action"
             onClick={requestRename}
@@ -1292,7 +1485,19 @@ export const EditorPane = (props: EditorPaneProps) => {
         ref={editorRef}
         onPointerDown={handlePointerDown}
         onMouseDown={handleMouseDown}
+        onClick={handleBodyClick}
       >
+        <Show when={dragBox()}>
+          {(box) => (
+            <div
+              class="block-selection-box"
+              style={{
+                top: `${box().top}px`,
+                height: `${box().height}px`
+              }}
+            />
+          )}
+        </Show>
         <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
           <div
             class="virtual-list"
@@ -1376,6 +1581,9 @@ export const EditorPane = (props: EditorPaneProps) => {
                         style={{ display: isEditing() ? "block" : "none" }}
                         aria-hidden={!isEditing()}
                         onFocus={() => {
+                          if (selectionRange()) {
+                            clearSelection();
+                          }
                           setActiveId(block.id);
                           setFocusedId(block.id);
                         }}
@@ -1445,7 +1653,14 @@ export const EditorPane = (props: EditorPaneProps) => {
                       <div
                         class="block__display"
                         style={{ display: isEditing() ? "none" : "block" }}
-                        onClick={() => {
+                        onClick={(event) => {
+                          if (event.shiftKey) {
+                            applyShiftSelection(blockIndex());
+                            return;
+                          }
+                          if (selectionRange()) {
+                            clearSelection();
+                          }
                           const preserve =
                             activeId() === block.id &&
                             caretPositions.has(block.id);
