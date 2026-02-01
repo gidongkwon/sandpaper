@@ -23,6 +23,7 @@ import { deriveVaultKey } from "@sandpaper/crypto";
 import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/model/block-types";
 import { makeBlock } from "../entities/block/model/make-block";
 import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
+import { BacklinksToggle } from "../widgets/backlinks/backlinks-toggle";
 import { CapturePane } from "../widgets/capture/capture-pane";
 import { EditorPane } from "../widgets/editor/editor-pane";
 import { UnlinkedReferencesPane } from "../widgets/discovery/unlinked-references-pane";
@@ -35,6 +36,7 @@ import { SettingsModal } from "../widgets/settings/settings-modal";
 import { PagesPane } from "../widgets/sidebar/pages-pane";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
 import { Topbar } from "../widgets/topbar/topbar";
+import { EditorWorkspace } from "../widgets/workspace/editor-workspace";
 import { CommandPalette } from "../features/command-palette/ui/command-palette";
 import type {
   BacklinkEntry,
@@ -1048,6 +1050,7 @@ function MainPage() {
   let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
   let saveRequestId = 0;
+  let pendingSavePageUid: string | null = null;
   const markSaved = () => {
     setAutosaveError(null);
     setAutosaveStamp(stampNow());
@@ -1105,6 +1108,7 @@ function MainPage() {
 
   const scheduleSave = () => {
     const pageUid = resolvePageUid(activePageUid());
+    pendingSavePageUid = pageUid;
     const snapshot = untrack(() => snapshotBlocks(blocks));
     const payload = snapshot.map((block) => toPayload(block));
     const title = untrack(() => pageTitle());
@@ -1117,6 +1121,7 @@ function MainPage() {
       void (async () => {
         const success = await persistBlocks(pageUid, payload, title, snapshot);
         if (requestId !== saveRequestId) return;
+        pendingSavePageUid = null;
         if (success) {
           markSaved();
         } else {
@@ -1126,6 +1131,16 @@ function MainPage() {
     }, 400);
     scheduleShadowWrite(pageUid);
     markSaving();
+  };
+
+  const cancelPendingSave = (pageUid: string) => {
+    if (pendingSavePageUid !== pageUid) return;
+    if (saveTimeout) {
+      window.clearTimeout(saveTimeout);
+      saveTimeout = undefined;
+    }
+    saveRequestId += 1;
+    pendingSavePageUid = null;
   };
 
   const stampNow = () =>
@@ -1990,6 +2005,7 @@ function MainPage() {
         const { updated, changed } = updateBlocks(page.blocks);
         if (!changed) return;
         setLocalPages(page.uid, "blocks", updated);
+        cancelPendingSave(resolvePageUid(page.uid));
         if (page.uid === currentUid) {
           setBlocks(updated as Block[]);
         }
@@ -3063,53 +3079,56 @@ function MainPage() {
           />
         }
       >
-        <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
-          <SidebarPanel
-            open={sidebarOpen}
-            sectionJump={SectionJumpLink}
-            footerLabel={() => activeVault()?.name ?? "Default"}
-          >
-            <SearchPane
-              searchInputRef={(el) => {
-                searchInputRef = el;
-              }}
-              query={searchQuery}
-              setQuery={setSearchQuery}
-              filter={searchFilter}
-              setFilter={setSearchFilter}
-              commitTerm={commitSearchTerm}
-              history={searchHistory}
-              applyTerm={applySearchTerm}
-              results={filteredSearchResults}
-              renderHighlight={renderSearchHighlight}
-              onResultSelect={(block) => {
-                setActiveId(block.id);
-                setJumpTarget({ id: block.id, caret: "start" });
-              }}
+        <EditorWorkspace
+          sidebarOpen={sidebarOpen}
+          backlinksOpen={backlinksOpen}
+          sidebar={
+            <SidebarPanel
+              open={sidebarOpen}
+              sectionJump={SectionJumpLink}
+              footerLabel={() => activeVault()?.name ?? "Default"}
             >
-              <UnlinkedReferencesPane
-                query={searchQuery}
-                references={unlinkedReferences}
-                onLink={linkUnlinkedReference}
-              />
-              <PagesPane
-                pages={pages}
-                activePageUid={activePageUid}
-                resolvePageUid={resolvePageUid}
-                onSwitch={switchPage}
-                pageMessage={pageMessage}
-                onCreate={() => {
-                  const title = prompt("New page title:");
-                  if (title?.trim()) {
-                    setNewPageTitle(title.trim());
-                    void createPage();
-                  }
+              <SearchPane
+                searchInputRef={(el) => {
+                  searchInputRef = el;
                 }}
-              />
-            </SearchPane>
-          </SidebarPanel>
-
-          <main class={`main-pane ${backlinksOpen() ? "has-panel" : ""}`} role="main">
+                query={searchQuery}
+                setQuery={setSearchQuery}
+                filter={searchFilter}
+                setFilter={setSearchFilter}
+                commitTerm={commitSearchTerm}
+                history={searchHistory}
+                applyTerm={applySearchTerm}
+                results={filteredSearchResults}
+                renderHighlight={renderSearchHighlight}
+                onResultSelect={(block) => {
+                  setActiveId(block.id);
+                  setJumpTarget({ id: block.id, caret: "start" });
+                }}
+              >
+                <UnlinkedReferencesPane
+                  query={searchQuery}
+                  references={unlinkedReferences}
+                  onLink={linkUnlinkedReference}
+                />
+                <PagesPane
+                  pages={pages}
+                  activePageUid={activePageUid}
+                  resolvePageUid={resolvePageUid}
+                  onSwitch={switchPage}
+                  pageMessage={pageMessage}
+                  onCreate={() => {
+                    const title = prompt("New page title:");
+                    if (title?.trim()) {
+                      setNewPageTitle(title.trim());
+                      void createPage();
+                    }
+                  }}
+                />
+              </SearchPane>
+            </SidebarPanel>
+          }
+          editor={
             <div class="main-pane__editor">
               <SectionJump id="editor" label="Editor" />
               <EditorPane
@@ -3147,48 +3166,41 @@ function MainPage() {
                 scrollMeter={scrollMeter}
               />
             </div>
-
-            {/* Backlinks toggle button */}
-            <button
-              class={`backlinks-toggle ${backlinksOpen() ? "is-active" : ""} ${totalBacklinks() > 0 ? "has-links" : ""}`}
-              onClick={() => setBacklinksOpen(prev => !prev)}
-              aria-label={backlinksOpen() ? "Hide backlinks" : "Show backlinks"}
-              title={`${totalBacklinks()} backlinks`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-              </svg>
-              <Show when={totalBacklinks() > 0}>
-                <span class="backlinks-toggle__badge">{totalBacklinks()}</span>
-              </Show>
-            </button>
-
-            {/* Backlinks side panel */}
-            <BacklinksPanel
-              open={backlinksOpen}
-              onClose={() => setBacklinksOpen(false)}
-              sectionJump={SectionJumpLink}
-              activePageBacklinks={activePageBacklinks}
-              activeBacklinks={activeBacklinks}
-              activeBlock={activeBlock}
-              pageTitle={pageTitle}
-              groupedPageBacklinks={groupedPageBacklinks}
-              supportsMultiPane={supportsMultiPane}
-              openPageBacklinkInPane={openPageBacklinkInPane}
-              openPageBacklink={openPageBacklink}
-              formatBacklinkSnippet={formatBacklinkSnippet}
-              onBlockBacklinkSelect={(entry) => {
-                setActiveId(entry.id);
-                setJumpTarget({ id: entry.id, caret: "start" });
-              }}
-            />
+          }
+          backlinks={
+            <>
+              <BacklinksToggle
+                open={backlinksOpen}
+                total={totalBacklinks}
+                onToggle={() => setBacklinksOpen((prev) => !prev)}
+              />
+              <BacklinksPanel
+                open={backlinksOpen}
+                onClose={() => setBacklinksOpen(false)}
+                sectionJump={SectionJumpLink}
+                activePageBacklinks={activePageBacklinks}
+                activeBacklinks={activeBacklinks}
+                activeBlock={activeBlock}
+                pageTitle={pageTitle}
+                groupedPageBacklinks={groupedPageBacklinks}
+                supportsMultiPane={supportsMultiPane}
+                openPageBacklinkInPane={openPageBacklinkInPane}
+                openPageBacklink={openPageBacklink}
+                formatBacklinkSnippet={formatBacklinkSnippet}
+                onBlockBacklinkSelect={(entry) => {
+                  setActiveId(entry.id);
+                  setJumpTarget({ id: entry.id, caret: "start" });
+                }}
+              />
+            </>
+          }
+          pluginPanel={
             <PluginPanelWidget
               panel={activePanel}
               onClose={() => setActivePanel(null)}
             />
-          </main>
-        </div>
+          }
+        />
       </Show>
 
       {/* Command Palette */}
