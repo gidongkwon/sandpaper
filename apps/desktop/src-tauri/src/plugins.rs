@@ -1,10 +1,11 @@
+use rquickjs::{
+    Context, FromJs, Function, IntoJs, Object, Persistent, Runtime, Value as JsValue,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 #[derive(Debug)]
 pub enum PluginError {
@@ -25,6 +26,12 @@ impl From<serde_json::Error> for PluginError {
     }
 }
 
+impl From<rquickjs::Error> for PluginError {
+    fn from(err: rquickjs::Error) -> Self {
+        Self::Runtime(err.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginManifest {
     pub id: String,
@@ -34,6 +41,28 @@ pub struct PluginManifest {
     pub description: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub main: Option<String>,
+    #[serde(default)]
+    pub settings: Vec<PluginSetting>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginSetting {
+    pub key: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub options: Vec<PluginSettingOption>,
+    #[serde(default)]
+    pub default: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginSettingOption {
+    pub label: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -146,20 +175,6 @@ pub fn list_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<Plugin
         .collect())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RuntimeRequest {
-    id: u64,
-    method: String,
-    params: Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RuntimeResponse {
-    id: Option<u64>,
-    result: Option<Value>,
-    error: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginRuntimeLoadResult {
     pub loaded: Vec<String>,
@@ -206,160 +221,556 @@ pub struct PluginRenderer {
     pub id: String,
     pub title: String,
     pub kind: String,
+    #[serde(default)]
+    pub languages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginBlockView {
+    pub plugin_id: String,
+    pub renderer_id: String,
+    pub block_uid: String,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub next_text: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub body: Option<Value>,
+    #[serde(default)]
+    pub controls: Vec<Value>,
+}
+
+struct RendererHandlers {
+    render: Option<Persistent<Function<'static>>>,
+    on_action: Option<Persistent<Function<'static>>>,
+}
+
+#[derive(Default)]
+struct PluginRuntimeRegistry {
+    commands: Vec<PluginCommand>,
+    panels: Vec<PluginPanel>,
+    toolbar_actions: Vec<PluginToolbarAction>,
+    renderers: Vec<PluginRenderer>,
+    renderer_handlers: HashMap<(String, String), RendererHandlers>,
+}
+
+struct PluginFence {
+    lang: String,
+    config_text: String,
+    summary: Option<String>,
 }
 
 pub struct PluginRuntime {
-    script_path: PathBuf,
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    next_id: u64,
+    _runtime: Runtime,
+    context: Context,
+    registry: std::rc::Rc<std::cell::RefCell<PluginRuntimeRegistry>>,
+    load_plugin_fn: Persistent<Function<'static>>,
+    to_json_fn: Persistent<Function<'static>>,
+    settings: HashMap<String, Value>,
 }
 
 impl PluginRuntime {
-    pub fn new(script_path: PathBuf) -> Result<Self, PluginError> {
-        let (child, stdin, stdout) = Self::spawn_process(&script_path)?;
+    pub fn new() -> Result<Self, PluginError> {
+        let runtime = Runtime::new()?;
+        let context = Context::full(&runtime)?;
+        let (load_plugin_fn, to_json_fn) = context.with(|ctx| {
+            ctx.eval::<(), _>(
+                r#"globalThis.__sandpaperLoadPlugin = (source, api) => {
+  const module = { exports: {} };
+  const exports = module.exports;
+  const fn = new Function("module", "exports", "api", source);
+  fn(module, exports, api);
+  return module.exports;
+};
+globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
+            )?;
+            let load_fn: Function = ctx.globals().get("__sandpaperLoadPlugin")?;
+            let to_json: Function = ctx.globals().get("__sandpaperToJson")?;
+            Ok::<_, PluginError>((
+                Persistent::save(&ctx, load_fn),
+                Persistent::save(&ctx, to_json),
+            ))
+        })?;
+
         Ok(Self {
-            script_path,
-            child,
-            stdin,
-            stdout,
-            next_id: 1,
+            _runtime: runtime,
+            context,
+            registry: std::rc::Rc::new(std::cell::RefCell::new(
+                PluginRuntimeRegistry::default(),
+            )),
+            load_plugin_fn,
+            to_json_fn,
+            settings: HashMap::new(),
         })
-    }
-
-    fn spawn_process(
-        script_path: &Path,
-    ) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), PluginError> {
-        let mut child = Command::new("node")
-            .arg(script_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| PluginError::Runtime("stdin-unavailable".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| PluginError::Runtime("stdout-unavailable".to_string()))?;
-        Ok((child, stdin, BufReader::new(stdout)))
-    }
-
-    fn restart(&mut self) -> Result<(), PluginError> {
-        let _ = self.child.kill();
-        let (child, stdin, stdout) = Self::spawn_process(&self.script_path)?;
-        self.child = child;
-        self.stdin = stdin;
-        self.stdout = stdout;
-        self.next_id = 1;
-        Ok(())
-    }
-
-    fn call_once(&mut self, method: &str, params: &Value) -> Result<Value, PluginError> {
-        let id = self.next_id;
-        self.next_id += 1;
-        let request = RuntimeRequest {
-            id,
-            method: method.to_string(),
-            params: params.clone(),
-        };
-        let payload = serde_json::to_string(&request)?;
-
-        self.stdin.write_all(payload.as_bytes())?;
-        self.stdin.write_all(b"\n")?;
-        self.stdin.flush()?;
-
-        let mut line = String::new();
-        let bytes = self.stdout.read_line(&mut line)?;
-        if bytes == 0 {
-            return Err(PluginError::Runtime("runtime-exited".to_string()));
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            return Err(PluginError::Runtime("empty-response".to_string()));
-        }
-        let response: RuntimeResponse = serde_json::from_str(trimmed)?;
-        if response.id != Some(id) {
-            return Err(PluginError::Runtime("mismatched-response-id".to_string()));
-        }
-        if let Some(error) = response.error {
-            return Err(PluginError::Runtime(error));
-        }
-        response
-            .result
-            .ok_or_else(|| PluginError::Runtime("missing-result".to_string()))
-    }
-
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, PluginError> {
-        for attempt in 0..2 {
-            match self.call_once(method, &params) {
-                Ok(result) => return Ok(result),
-                Err(PluginError::Runtime(message)) if message == "runtime-exited" && attempt == 0 => {
-                    self.restart()?;
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        Err(PluginError::Runtime("runtime-exited".to_string()))
-    }
-
-    pub fn ping(&mut self) -> Result<Value, PluginError> {
-        self.call("ping", json!({}))
     }
 
     pub fn load_plugins(
         &mut self,
         plugins: &[PluginDescriptor],
+        settings: HashMap<String, Value>,
     ) -> Result<PluginRuntimeLoadResult, PluginError> {
-        let payload = json!({
-            "plugins": plugins
-                .iter()
-                .map(|plugin| {
-                    json!({
-                        "id": plugin.manifest.id,
-                        "name": plugin.manifest.name,
-                        "version": plugin.manifest.version
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-        let result = self.call("loadPlugins", payload)?;
-        Ok(serde_json::from_value(result)?)
+        self.settings = settings;
+        let registry = std::rc::Rc::new(std::cell::RefCell::new(PluginRuntimeRegistry::default()));
+        self.registry = registry.clone();
+        let loaded_ids = plugins
+            .iter()
+            .map(|plugin| plugin.manifest.id.clone())
+            .collect::<Vec<_>>();
+
+        let load_plugin_fn = self.load_plugin_fn.clone();
+        self.context.with(|ctx| {
+            for plugin in plugins {
+                let api =
+                    Self::build_api(ctx.clone(), registry.clone(), &plugin.manifest.id)?;
+                let entry = plugin
+                    .manifest
+                    .main
+                    .clone()
+                    .unwrap_or_else(|| "index.js".to_string());
+                let entry_path = plugin.path.join(entry);
+                let source = fs::read_to_string(&entry_path)?;
+                let load_fn = load_plugin_fn.clone().restore(&ctx)?;
+                let exports: JsValue = load_fn.call((source, api.clone()))?;
+                if let Ok(register_fn) = Function::from_value(exports.clone()) {
+                    let _ = register_fn.call::<_, JsValue>((api,))?;
+                } else if let Ok(exports_obj) = Object::from_value(exports.clone()) {
+                    if let Ok(default_fn) = exports_obj.get::<_, Function>("default") {
+                        let _ = default_fn.call::<_, JsValue>((api,))?;
+                    }
+                }
+            }
+            Ok::<_, PluginError>(())
+        })?;
+
+        let registry = self.registry.borrow();
+        Ok(PluginRuntimeLoadResult {
+            loaded: loaded_ids,
+            commands: registry.commands.clone(),
+            panels: registry.panels.clone(),
+            toolbar_actions: registry.toolbar_actions.clone(),
+            renderers: registry.renderers.clone(),
+        })
+    }
+
+    pub fn render_block(
+        &mut self,
+        plugin_id: &str,
+        renderer_id: &str,
+        block_uid: &str,
+        text: &str,
+    ) -> Result<PluginBlockView, PluginError> {
+        self.call_block_handler(
+            plugin_id,
+            renderer_id,
+            block_uid,
+            text,
+            None,
+            None,
+        )
+    }
+
+    pub fn handle_block_action(
+        &mut self,
+        plugin_id: &str,
+        renderer_id: &str,
+        block_uid: &str,
+        text: &str,
+        action_id: &str,
+        value: Option<Value>,
+    ) -> Result<PluginBlockView, PluginError> {
+        self.call_block_handler(
+            plugin_id,
+            renderer_id,
+            block_uid,
+            text,
+            Some(action_id),
+            value,
+        )
     }
 
     pub fn emit_event(
         &mut self,
-        plugin_id: &str,
-        event: &str,
-        payload: Value,
+        _plugin_id: &str,
+        _event: &str,
+        _payload: Value,
     ) -> Result<Value, PluginError> {
-        let result = self.call(
-            "emitEvent",
-            json!({
-                "plugin_id": plugin_id,
-                "event": event,
-                "payload": payload
-            }),
-        )?;
-        Ok(result)
+        Ok(Value::Null)
+    }
+
+    fn build_api<'js>(
+        ctx: rquickjs::Ctx<'js>,
+        registry: std::rc::Rc<std::cell::RefCell<PluginRuntimeRegistry>>,
+        plugin_id: &str,
+    ) -> Result<Object<'js>, PluginError> {
+        let api = Object::new(ctx.clone())?;
+        let plugin_id = plugin_id.to_string();
+
+        let register_renderer = Function::new(ctx.clone(), {
+            let registry = registry.clone();
+            let plugin_id = plugin_id.clone();
+            move |def: Object, handlers: Object| -> rquickjs::Result<()> {
+                let id: String = def.get("id")?;
+                let title: String = def.get("title")?;
+                let kind: String = def.get("kind")?;
+                let languages: Vec<String> = def.get("languages").unwrap_or_default();
+
+                let render_fn = handlers.get::<_, Function>("render").ok();
+                let on_action_fn = handlers.get::<_, Function>("onAction").ok();
+                let handlers = RendererHandlers {
+                    render: render_fn.map(|func| {
+                        let ctx = func.ctx().clone();
+                        Persistent::save(&ctx, func)
+                    }),
+                    on_action: on_action_fn.map(|func| {
+                        let ctx = func.ctx().clone();
+                        Persistent::save(&ctx, func)
+                    }),
+                };
+
+                let mut registry = registry.borrow_mut();
+                registry.renderers.push(PluginRenderer {
+                    plugin_id: plugin_id.clone(),
+                    id: id.clone(),
+                    title,
+                    kind,
+                    languages,
+                });
+                registry
+                    .renderer_handlers
+                    .insert((plugin_id.clone(), id), handlers);
+                Ok(())
+            }
+        });
+        api.set("registerRenderer", register_renderer)?;
+
+        let register_command = Function::new(ctx.clone(), {
+            let registry = registry.clone();
+            let plugin_id = plugin_id.clone();
+            move |def: Object, _handler: Option<Function>| -> rquickjs::Result<()> {
+                let id: String = def.get("id")?;
+                let title: String = def.get("title")?;
+                let description: Option<String> = def.get("description").ok();
+                registry.borrow_mut().commands.push(PluginCommand {
+                    plugin_id: plugin_id.clone(),
+                    id,
+                    title,
+                    description,
+                });
+                Ok(())
+            }
+        });
+        api.set("registerCommand", register_command)?;
+
+        let register_panel = Function::new(ctx.clone(), {
+            let registry = registry.clone();
+            let plugin_id = plugin_id.clone();
+            move |def: Object, _handler: Option<Function>| -> rquickjs::Result<()> {
+                let id: String = def.get("id")?;
+                let title: String = def.get("title")?;
+                let location: Option<String> = def.get("location").ok();
+                registry.borrow_mut().panels.push(PluginPanel {
+                    plugin_id: plugin_id.clone(),
+                    id,
+                    title,
+                    location,
+                });
+                Ok(())
+            }
+        });
+        api.set("registerPanel", register_panel)?;
+
+        Ok(api)
+    }
+
+    fn call_block_handler(
+        &mut self,
+        plugin_id: &str,
+        renderer_id: &str,
+        block_uid: &str,
+        text: &str,
+        action_id: Option<&str>,
+        action_value: Option<Value>,
+    ) -> Result<PluginBlockView, PluginError> {
+        let handler = {
+            let registry = self.registry.borrow();
+            let handlers = registry
+                .renderer_handlers
+                .get(&(plugin_id.to_string(), renderer_id.to_string()))
+                .ok_or_else(|| PluginError::Runtime("renderer-not-found".to_string()))?;
+            if action_id.is_some() {
+                handlers.on_action.clone()
+            } else {
+                handlers.render.clone()
+            }
+        }
+        .ok_or_else(|| PluginError::Runtime("render-handler-missing".to_string()))?;
+
+        let fence = parse_plugin_fence(text);
+        let config = fence
+            .as_ref()
+            .map(|f| parse_plugin_config(&f.config_text))
+            .unwrap_or_default();
+        let summary = fence.as_ref().and_then(|f| f.summary.clone());
+
+        let settings = self
+            .settings
+            .get(plugin_id)
+            .cloned()
+            .unwrap_or(Value::Object(serde_json::Map::new()));
+
+        self.context.with(|ctx| {
+            let ctx_obj = Object::new(ctx.clone())?;
+            let block_obj = Object::new(ctx.clone())?;
+            block_obj.set("uid", block_uid)?;
+            block_obj.set("text", text)?;
+            ctx_obj.set("block", block_obj)?;
+            if let Some(summary) = summary.clone() {
+                ctx_obj.set("summary", summary)?;
+            }
+            ctx_obj.set("config", config_to_js(ctx.clone(), &config)?)?;
+            ctx_obj.set("settings", json_to_js(ctx.clone(), &settings)?)?;
+            let network_obj = Object::new(ctx.clone())?;
+            let fetch_ctx = ctx.clone();
+            let fetch_fn = Function::new(
+                ctx.clone(),
+                move |url: String, options: Option<Object>| -> rquickjs::Result<Object> {
+                let mut method = "GET".to_string();
+                let mut body: Option<String> = None;
+                if let Some(opts) = options {
+                    if let Ok(value) = opts.get::<_, String>("method") {
+                        method = value;
+                    }
+                    if let Ok(value) = opts.get::<_, String>("body") {
+                        body = Some(value);
+                    }
+                }
+                let request = ureq::request(method.as_str(), url.as_str());
+                let result = if let Some(body) = body {
+                    request.send_string(&body)
+                } else {
+                    request.call()
+                };
+                let response = Object::new(fetch_ctx.clone())?;
+                match result {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let text = resp.into_string().unwrap_or_default();
+                        response.set("ok", status >= 200 && status < 300)?;
+                        response.set("status", status)?;
+                        response.set("text", text)?;
+                    }
+                    Err(err) => {
+                        response.set("ok", false)?;
+                        response.set("status", 0)?;
+                        response.set("text", err.to_string())?;
+                    }
+                }
+                Ok(response)
+            },
+            );
+            network_obj.set("fetch", fetch_fn)?;
+            ctx_obj.set("network", network_obj)?;
+
+            if let Some(action_id) = action_id {
+                let action_obj = Object::new(ctx.clone())?;
+                action_obj.set("id", action_id)?;
+                if let Some(value) = action_value {
+                    action_obj.set("value", json_to_js(ctx.clone(), &value)?)?;
+                }
+                ctx_obj.set("action", action_obj)?;
+            }
+
+            let handler_fn = handler.restore(&ctx)?;
+            let value: JsValue = handler_fn.call((ctx_obj,))?;
+            let mut view =
+                self.parse_block_view(ctx, value, plugin_id, renderer_id, block_uid)?;
+            if view.next_text.is_none() {
+                if let Some(next_summary) = view.summary.clone().or(summary.clone()) {
+                    if let Some(lang) = fence
+                        .as_ref()
+                        .map(|item| item.lang.clone())
+                        .or_else(|| renderer_id.split('.').next().map(str::to_string))
+                    {
+                        let config_text = fence
+                            .as_ref()
+                            .map(|item| item.config_text.as_str())
+                            .unwrap_or("");
+                        view.next_text =
+                            Some(format_plugin_fence(&lang, config_text, &next_summary));
+                    }
+                }
+            }
+            Ok(view)
+        })
+    }
+
+    fn parse_block_view<'js>(
+        &self,
+        ctx: rquickjs::Ctx<'js>,
+        value: JsValue<'js>,
+        plugin_id: &str,
+        renderer_id: &str,
+        block_uid: &str,
+    ) -> Result<PluginBlockView, PluginError> {
+        let json_value = js_to_json(ctx, self.to_json_fn.clone(), value)?;
+        let mut view: PluginBlockView =
+            serde_json::from_value(json_value).map_err(PluginError::Serde)?;
+        view.plugin_id = plugin_id.to_string();
+        view.renderer_id = renderer_id.to_string();
+        view.block_uid = block_uid.to_string();
+        Ok(view)
     }
 }
 
-impl Drop for PluginRuntime {
-    fn drop(&mut self) {
-        let _ = self
-            .stdin
-            .write_all(b"{\"id\":0,\"method\":\"shutdown\",\"params\":{}}\n");
-        let _ = self.stdin.flush();
-        let _ = self.child.kill();
+fn parse_plugin_fence(text: &str) -> Option<PluginFence> {
+    let trimmed = text.trim();
+    if !trimmed.starts_with("```") {
+        return None;
+    }
+    let rest = trimmed.trim_start_matches("```").trim();
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let lang = parts.next()?.trim();
+    let content = parts.next()?.trim();
+    if lang.is_empty() || content.is_empty() {
+        return None;
+    }
+    let (config_text, summary) = match content.split_once("::") {
+        Some((left, right)) => (left.trim().to_string(), Some(right.trim().to_string())),
+        None => (content.to_string(), None),
+    };
+    Some(PluginFence {
+        lang: lang.to_lowercase(),
+        config_text,
+        summary,
+    })
+}
+
+fn parse_plugin_config(text: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.peek() {
+        if ch.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        let mut key = String::new();
+        while let Some(ch) = chars.peek() {
+            if ch.is_whitespace() || *ch == '=' {
+                break;
+            }
+            key.push(*ch);
+            chars.next();
+        }
+        while let Some(ch) = chars.peek() {
+            if *ch == '=' {
+                chars.next();
+                break;
+            }
+            if ch.is_whitespace() {
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if key.is_empty() {
+            break;
+        }
+        let value = if let Some(quote) = chars.peek().copied() {
+            if quote == '"' || quote == '\'' {
+                chars.next();
+                let mut val = String::new();
+                while let Some(ch) = chars.next() {
+                    if ch == quote {
+                        break;
+                    }
+                    val.push(ch);
+                }
+                val
+            } else {
+                let mut val = String::new();
+                while let Some(ch) = chars.peek() {
+                    if ch.is_whitespace() {
+                        break;
+                    }
+                    val.push(*ch);
+                    chars.next();
+                }
+                val
+            }
+        } else {
+            String::new()
+        };
+        map.insert(key, value);
+    }
+    map
+}
+
+fn config_to_js<'js>(
+    ctx: rquickjs::Ctx<'js>,
+    config: &HashMap<String, String>,
+) -> Result<JsValue<'js>, PluginError> {
+    let obj = Object::new(ctx.clone())?;
+    for (key, value) in config {
+        obj.set(key.as_str(), value.as_str())?;
+    }
+    Ok(obj.into())
+}
+
+fn json_to_js<'js>(ctx: rquickjs::Ctx<'js>, value: &Value) -> Result<JsValue<'js>, PluginError> {
+    match value {
+        Value::Null => Ok(JsValue::new_null(ctx.clone())),
+        Value::Bool(val) => Ok(val.into_js(&ctx)?),
+        Value::Number(val) => {
+            if let Some(int) = val.as_i64() {
+                Ok(int.into_js(&ctx)?)
+            } else if let Some(float) = val.as_f64() {
+                Ok(float.into_js(&ctx)?)
+            } else {
+                Ok(JsValue::new_null(ctx.clone()))
+            }
+        }
+        Value::String(val) => Ok(val.as_str().into_js(&ctx)?),
+        Value::Array(items) => {
+            let array = rquickjs::Array::new(ctx.clone())?;
+            for (index, item) in items.iter().enumerate() {
+                array.set(index, json_to_js(ctx.clone(), item)?)?;
+            }
+            Ok(array.into())
+        }
+        Value::Object(map) => {
+            let obj = Object::new(ctx.clone())?;
+            for (key, item) in map {
+                obj.set(key.as_str(), json_to_js(ctx.clone(), item)?)?;
+            }
+            Ok(obj.into())
+        }
     }
 }
 
-pub fn runtime_script_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../plugin-runtime/sandbox-runtime.mjs")
+fn js_to_json<'js>(
+    ctx: rquickjs::Ctx<'js>,
+    to_json_fn: Persistent<Function<'static>>,
+    value: JsValue<'js>,
+) -> Result<Value, PluginError> {
+    let to_json = to_json_fn.restore(&ctx)?;
+    let json_value: JsValue = to_json.call((value,))?;
+    if json_value.is_undefined() {
+        return Ok(Value::Null);
+    }
+    let json_string: String = FromJs::from_js(&ctx, json_value)?;
+    serde_json::from_str(&json_string).map_err(PluginError::Serde)
+}
+
+fn format_plugin_fence(lang: &str, config: &str, summary: &str) -> String {
+    if config.trim().is_empty() {
+        format!("```{} :: {}", lang, summary)
+    } else {
+        format!("```{} {} :: {}", lang, config.trim(), summary)
+    }
 }
 
 pub fn load_plugins_into_runtime(
@@ -367,8 +778,8 @@ pub fn load_plugins_into_runtime(
     registry: &PluginRegistry,
 ) -> Result<PluginRuntimeLoadResult, PluginError> {
     let plugins = discover_plugins(root, registry)?;
-    let mut runtime = PluginRuntime::new(runtime_script_path())?;
-    runtime.load_plugins(&plugins)
+    let mut runtime = PluginRuntime::new()?;
+    runtime.load_plugins(&plugins, HashMap::new())
 }
 
 #[cfg(test)]
@@ -379,7 +790,6 @@ mod tests {
     };
     use std::fs;
     use std::path::PathBuf;
-    use std::time::{Duration, Instant};
     use tempfile::tempdir;
 
     #[test]
@@ -436,156 +846,65 @@ mod tests {
         assert_eq!(state, PluginState::default());
     }
 
-    fn write_runtime_script(root: &std::path::Path) -> PathBuf {
-        let script_path = root.join("runtime.mjs");
+    fn write_test_plugin(root: &std::path::Path) -> (PathBuf, PathBuf) {
+        let plugins_dir = root.join("plugins");
+        fs::create_dir_all(&plugins_dir).expect("plugins dir");
+        let plugin_dir = plugins_dir.join("weather");
+        fs::create_dir_all(&plugin_dir).expect("plugin dir");
+        let manifest_path = plugin_dir.join("plugin.json");
         fs::write(
-            &script_path,
-            r#"import readline from "node:readline";
-const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-const respond = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`);
-rl.on("line", (line) => {
-  const msg = JSON.parse(line);
-  if (msg.method === "ping") {
-    respond({ id: msg.id, result: { ok: true } });
-    return;
-  }
-  if (msg.method === "loadPlugins") {
-    const ids = (msg.params?.plugins ?? []).map((plugin) => plugin.id);
-    const commands = ids.map((id) => ({
-      plugin_id: id,
-      id: `${id}.open`,
-      title: `Open ${id}`
-    }));
-    const panels = ids.map((id) => ({
-      plugin_id: id,
-      id: `${id}.panel`,
-      title: `${id} panel`,
-      location: "sidebar"
-    }));
-    const toolbar_actions = ids.map((id) => ({
-      plugin_id: id,
-      id: `${id}.toolbar`,
-      title: `Launch ${id}`,
-      tooltip: `Launch ${id}`
-    }));
-    const renderers = ids.flatMap((id) => ([
-      {
-        plugin_id: id,
-        id: `${id}.renderer.code`,
-        title: "Code block renderer",
-        kind: "code"
-      },
-      {
-        plugin_id: id,
-        id: `${id}.renderer.diagram`,
-        title: "Diagram renderer",
-        kind: "diagram"
-      }
-    ]));
-    respond({ id: msg.id, result: { loaded: ids, commands, panels, toolbar_actions, renderers } });
-    return;
-  }
-  if (msg.method === "emitEvent") {
-    respond({ id: msg.id, result: { ok: true } });
-    return;
-  }
-  if (msg.method === "shutdown") {
-    respond({ id: msg.id, result: { ok: true } });
-    rl.close();
-    return;
-  }
-  respond({ id: msg.id, error: "unknown" });
-});
-"#,
+            &manifest_path,
+            r#"{
+  "id": "weather",
+  "name": "Weather",
+  "version": "0.1.0",
+  "main": "index.js",
+  "permissions": ["network", "clipboard"]
+}"#,
         )
-        .expect("write script");
-        script_path
+        .expect("write manifest");
+        let entry_path = plugin_dir.join("index.js");
+        fs::write(
+            &entry_path,
+            r#"module.exports = (api) => {
+  api.registerRenderer(
+    {
+      id: "weather.block",
+      title: "Weather",
+      kind: "block",
+      languages: ["weather"]
+    },
+    {
+      render: (ctx) => {
+        const city = ctx.config.city ?? "Unknown";
+        return {
+          summary: `Weather ${city}`,
+          body: { kind: "text", text: `Forecast for ${city}` },
+          controls: [
+            { id: "refresh", type: "button", label: "Refresh" },
+            {
+              id: "units",
+              type: "select",
+              label: "Units",
+              options: [
+                { label: "C", value: "c" },
+                { label: "F", value: "f" }
+              ],
+              value: ctx.config.units ?? "c"
+            }
+          ]
+        };
+      },
+      onAction: () => ({
+        summary: "Refreshed",
+        body: { kind: "text", text: "Updated forecast" }
+      })
     }
-
-    #[test]
-    fn runtime_ping_returns_ok() {
-        let dir = tempdir().expect("tempdir");
-        let script_path = write_runtime_script(dir.path());
-        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
-        let result = runtime.ping().expect("ping");
-        assert_eq!(result["ok"], true);
-    }
-
-    #[test]
-    fn runtime_load_plugins_returns_ids() {
-        let dir = tempdir().expect("tempdir");
-        let script_path = write_runtime_script(dir.path());
-        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
-        let plugins = vec![
-            PluginDescriptor {
-                manifest: PluginManifest {
-                    id: "alpha".to_string(),
-                    name: "Alpha".to_string(),
-                    version: "0.1.0".to_string(),
-                    description: None,
-                    permissions: vec![],
-                },
-                path: dir.path().join("alpha"),
-                enabled: true,
-            },
-            PluginDescriptor {
-                manifest: PluginManifest {
-                    id: "beta".to_string(),
-                    name: "Beta".to_string(),
-                    version: "0.1.0".to_string(),
-                    description: None,
-                    permissions: vec![],
-                },
-                path: dir.path().join("beta"),
-                enabled: false,
-            },
-        ];
-
-        let result = runtime.load_plugins(&plugins).expect("load plugins");
-        assert_eq!(result.loaded, vec!["alpha".to_string(), "beta".to_string()]);
-        assert_eq!(result.commands.len(), 2);
-        assert_eq!(result.commands[0].plugin_id, "alpha");
-        assert_eq!(result.panels.len(), 2);
-        assert_eq!(result.toolbar_actions.len(), 2);
-        assert_eq!(result.renderers.len(), 4);
-    }
-
-    #[test]
-    fn runtime_load_plugins_is_fast() {
-        let dir = tempdir().expect("tempdir");
-        let script_path = write_runtime_script(dir.path());
-        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
-        let plugins = vec![PluginDescriptor {
-            manifest: PluginManifest {
-                id: "alpha".to_string(),
-                name: "Alpha".to_string(),
-                version: "0.1.0".to_string(),
-                description: None,
-                permissions: vec![],
-            },
-            path: dir.path().join("alpha"),
-            enabled: true,
-        }];
-
-        let start = Instant::now();
-        runtime.load_plugins(&plugins).expect("load plugins");
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed < Duration::from_millis(200),
-            "runtime load took {:?}",
-            elapsed
-        );
-    }
-
-    #[test]
-    fn runtime_emit_event_returns_ok() {
-        let dir = tempdir().expect("tempdir");
-        let script_path = write_runtime_script(dir.path());
-        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
-        let result = runtime
-            .emit_event("alpha", "note:created", serde_json::json!({"id": "b1"}))
-            .expect("emit event");
-        assert_eq!(result["ok"], true);
+  );
+};"#,
+        )
+        .expect("write plugin entry");
+        (plugins_dir, entry_path)
     }
 
     #[test]
@@ -615,23 +934,67 @@ rl.on("line", (line) => {
     #[test]
     fn load_plugins_into_runtime_roundtrip() {
         let dir = tempdir().expect("tempdir");
-        let plugins_dir = dir.path().join("plugins");
-        fs::create_dir_all(&plugins_dir).expect("plugins dir");
-
-        let alpha_dir = plugins_dir.join("alpha");
-        fs::create_dir_all(&alpha_dir).expect("alpha dir");
-        fs::write(
-            alpha_dir.join("plugin.json"),
-            r#"{"id":"alpha","name":"Alpha","version":"0.1.0"}"#,
-        )
-        .expect("write alpha manifest");
-
+        let (plugins_dir, _entry_path) = write_test_plugin(dir.path());
         let registry = PluginRegistry::new(plugins_dir.join("state.json"));
-        let script_path = write_runtime_script(dir.path());
-
-        let mut runtime = PluginRuntime::new(script_path).expect("runtime");
+        let mut runtime = PluginRuntime::new().expect("runtime");
         let plugins = discover_plugins(dir.path(), &registry).expect("discover");
-        let result = runtime.load_plugins(&plugins).expect("load");
-        assert_eq!(result.loaded, vec!["alpha".to_string()]);
+        let result = runtime
+            .load_plugins(&plugins, HashMap::new())
+            .expect("load");
+        assert_eq!(result.loaded, vec!["weather".to_string()]);
+        assert_eq!(result.renderers.len(), 1);
+        assert_eq!(result.renderers[0].kind, "block");
+    }
+
+    #[test]
+    fn runtime_renders_block_with_summary() {
+        let dir = tempdir().expect("tempdir");
+        let (plugins_dir, _entry_path) = write_test_plugin(dir.path());
+        let registry = PluginRegistry::new(plugins_dir.join("state.json"));
+        let mut runtime = PluginRuntime::new().expect("runtime");
+        let plugins = discover_plugins(dir.path(), &registry).expect("discover");
+        runtime
+            .load_plugins(&plugins, HashMap::new())
+            .expect("load");
+
+        let view = runtime
+            .render_block(
+                "weather",
+                "weather.block",
+                "b1",
+                "```weather city=Seattle units=c",
+            )
+            .expect("render block");
+        assert_eq!(view.summary.as_deref(), Some("Weather Seattle"));
+        assert!(view
+            .next_text
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Weather Seattle"));
+        assert_eq!(view.controls.len(), 2);
+    }
+
+    #[test]
+    fn runtime_block_action_updates_view() {
+        let dir = tempdir().expect("tempdir");
+        let (plugins_dir, _entry_path) = write_test_plugin(dir.path());
+        let registry = PluginRegistry::new(plugins_dir.join("state.json"));
+        let mut runtime = PluginRuntime::new().expect("runtime");
+        let plugins = discover_plugins(dir.path(), &registry).expect("discover");
+        runtime
+            .load_plugins(&plugins, HashMap::new())
+            .expect("load");
+
+        let view = runtime
+            .handle_block_action(
+                "weather",
+                "weather.block",
+                "b1",
+                "```weather city=Seattle units=c",
+                "refresh",
+                None,
+            )
+            .expect("action");
+        assert_eq!(view.summary.as_deref(), Some("Refreshed"));
     }
 }

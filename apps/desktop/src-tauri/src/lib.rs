@@ -10,13 +10,14 @@ use aes_gcm::aead::{Aead, KeyInit};
 use base64::Engine;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::mpsc;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
-    discover_plugins, list_plugins, runtime_script_path, PluginCommand, PluginDescriptor,
-    PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeLoadResult,
+    discover_plugins, list_plugins, PluginBlockView, PluginCommand, PluginDescriptor, PluginInfo,
+    PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeLoadResult,
     PluginToolbarAction,
 };
 
@@ -202,36 +203,207 @@ struct PluginRuntimeStatus {
     renderers: Vec<PluginRenderer>,
 }
 
+enum PluginRuntimeRequest {
+    LoadPlugins {
+        plugins: Vec<PluginDescriptor>,
+        settings: HashMap<String, Value>,
+        reply: mpsc::Sender<Result<PluginRuntimeLoadResult, plugins::PluginError>>,
+    },
+    RenderBlock {
+        plugin_id: String,
+        renderer_id: String,
+        block_uid: String,
+        text: String,
+        reply: mpsc::Sender<Result<PluginBlockView, plugins::PluginError>>,
+    },
+    BlockAction {
+        plugin_id: String,
+        renderer_id: String,
+        block_uid: String,
+        text: String,
+        action_id: String,
+        value: Option<Value>,
+        reply: mpsc::Sender<Result<PluginBlockView, plugins::PluginError>>,
+    },
+    EmitEvent {
+        plugin_id: String,
+        event: String,
+        payload: Value,
+        reply: mpsc::Sender<Result<Value, plugins::PluginError>>,
+    },
+}
+
 struct RuntimeState {
-    script_path: PathBuf,
-    runtime: Mutex<Option<PluginRuntime>>,
+    sender: mpsc::Sender<PluginRuntimeRequest>,
 }
 
 impl RuntimeState {
-    fn new(script_path: PathBuf) -> Self {
-        Self {
-            script_path,
-            runtime: Mutex::new(None),
-        }
+    fn new() -> Self {
+        let (sender, receiver) = mpsc::channel::<PluginRuntimeRequest>();
+        std::thread::spawn(move || {
+            let mut runtime: Option<PluginRuntime> = None;
+            for request in receiver {
+                match request {
+                    PluginRuntimeRequest::LoadPlugins {
+                        plugins,
+                        settings,
+                        reply,
+                    } => {
+                        let result = Self::with_runtime(&mut runtime, |runtime| {
+                            runtime.load_plugins(&plugins, settings)
+                        });
+                        let _ = reply.send(result);
+                    }
+                    PluginRuntimeRequest::RenderBlock {
+                        plugin_id,
+                        renderer_id,
+                        block_uid,
+                        text,
+                        reply,
+                    } => {
+                        let result = Self::with_runtime(&mut runtime, |runtime| {
+                            runtime.render_block(&plugin_id, &renderer_id, &block_uid, &text)
+                        });
+                        let _ = reply.send(result);
+                    }
+                    PluginRuntimeRequest::BlockAction {
+                        plugin_id,
+                        renderer_id,
+                        block_uid,
+                        text,
+                        action_id,
+                        value,
+                        reply,
+                    } => {
+                        let result = Self::with_runtime(&mut runtime, |runtime| {
+                            runtime.handle_block_action(
+                                &plugin_id,
+                                &renderer_id,
+                                &block_uid,
+                                &text,
+                                &action_id,
+                                value,
+                            )
+                        });
+                        let _ = reply.send(result);
+                    }
+                    PluginRuntimeRequest::EmitEvent {
+                        plugin_id,
+                        event,
+                        payload,
+                        reply,
+                    } => {
+                        let result = Self::with_runtime(&mut runtime, |runtime| {
+                            runtime.emit_event(&plugin_id, &event, payload)
+                        });
+                        let _ = reply.send(result);
+                    }
+                }
+            }
+        });
+        Self { sender }
     }
 
-    fn with_runtime<F, R>(&self, f: F) -> Result<R, String>
+    fn with_runtime<F, R>(
+        runtime: &mut Option<PluginRuntime>,
+        f: F,
+    ) -> Result<R, plugins::PluginError>
     where
         F: FnOnce(&mut PluginRuntime) -> Result<R, plugins::PluginError>,
     {
-        let mut guard = self
-            .runtime
-            .lock()
-            .map_err(|_| "runtime-lock-poisoned".to_string())?;
-        if guard.is_none() {
-            *guard = Some(PluginRuntime::new(self.script_path.clone()).map_err(|err| {
-                format!("{:?}", err)
-            })?);
+        if runtime.is_none() {
+            *runtime = Some(PluginRuntime::new()?);
         }
-        match guard.as_mut() {
-            Some(runtime) => f(runtime).map_err(|err| format!("{:?}", err)),
-            None => Err("runtime-unavailable".to_string()),
+        match runtime.as_mut() {
+            Some(runtime) => f(runtime),
+            None => Err(plugins::PluginError::Runtime("runtime-unavailable".to_string())),
         }
+    }
+
+    fn load_plugins(
+        &self,
+        plugins: Vec<PluginDescriptor>,
+        settings: HashMap<String, Value>,
+    ) -> Result<PluginRuntimeLoadResult, String> {
+        let (reply, recv) = mpsc::channel();
+        self.sender
+            .send(PluginRuntimeRequest::LoadPlugins {
+                plugins,
+                settings,
+                reply,
+            })
+            .map_err(|_| "runtime-unavailable".to_string())?;
+        recv.recv()
+            .map_err(|_| "runtime-disconnected".to_string())?
+            .map_err(|err| format!("{:?}", err))
+    }
+
+    fn render_block(
+        &self,
+        plugin_id: String,
+        renderer_id: String,
+        block_uid: String,
+        text: String,
+    ) -> Result<PluginBlockView, String> {
+        let (reply, recv) = mpsc::channel();
+        self.sender
+            .send(PluginRuntimeRequest::RenderBlock {
+                plugin_id,
+                renderer_id,
+                block_uid,
+                text,
+                reply,
+            })
+            .map_err(|_| "runtime-unavailable".to_string())?;
+        recv.recv()
+            .map_err(|_| "runtime-disconnected".to_string())?
+            .map_err(|err| format!("{:?}", err))
+    }
+
+    fn handle_block_action(
+        &self,
+        plugin_id: String,
+        renderer_id: String,
+        block_uid: String,
+        text: String,
+        action_id: String,
+        value: Option<Value>,
+    ) -> Result<PluginBlockView, String> {
+        let (reply, recv) = mpsc::channel();
+        self.sender
+            .send(PluginRuntimeRequest::BlockAction {
+                plugin_id,
+                renderer_id,
+                block_uid,
+                text,
+                action_id,
+                value,
+                reply,
+            })
+            .map_err(|_| "runtime-unavailable".to_string())?;
+        recv.recv()
+            .map_err(|_| "runtime-disconnected".to_string())?
+            .map_err(|err| format!("{:?}", err))
+    }
+
+    fn emit_event(
+        &self,
+        plugin_id: String,
+        event: String,
+        payload: Value,
+    ) -> Result<Value, String> {
+        let (reply, recv) = mpsc::channel();
+        self.sender
+            .send(PluginRuntimeRequest::EmitEvent {
+                plugin_id,
+                event,
+                payload,
+                reply,
+            })
+            .map_err(|_| "runtime-unavailable".to_string())?;
+        recv.recv()
+            .map_err(|_| "runtime-disconnected".to_string())?
+            .map_err(|err| format!("{:?}", err))
     }
 }
 
@@ -738,6 +910,50 @@ fn decrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String
     cipher
         .decrypt(nonce, ciphertext.as_ref())
         .map_err(|_| "sync-decrypt-failed".to_string())
+}
+
+fn encrypt_plugin_settings(key_b64: &str, settings: &Value) -> Result<String, String> {
+    let payload =
+        serde_json::to_vec(settings).map_err(|err| format!("{:?}", err))?;
+    let encrypted = encrypt_sync_payload(key_b64, &payload)?;
+    String::from_utf8(encrypted).map_err(|err| format!("{:?}", err))
+}
+
+fn decrypt_plugin_settings(key_b64: &str, payload: &str) -> Result<Value, String> {
+    let decrypted = decrypt_sync_payload(key_b64, payload.as_bytes())?;
+    serde_json::from_slice(&decrypted).map_err(|err| format!("{:?}", err))
+}
+
+fn plugin_settings_key(plugin_id: &str) -> String {
+    format!("plugin.settings.{plugin_id}")
+}
+
+fn set_plugin_settings(
+    db: &Database,
+    plugin_id: &str,
+    settings: &Value,
+) -> Result<(), String> {
+    let key = get_vault_key_b64(db)?
+        .ok_or_else(|| "vault-key-missing".to_string())?;
+    let encrypted = encrypt_plugin_settings(&key, settings)?;
+    db.set_kv(&plugin_settings_key(plugin_id), &encrypted)
+        .map_err(|err| format!("{:?}", err))
+}
+
+fn get_plugin_settings(
+    db: &Database,
+    plugin_id: &str,
+) -> Result<Option<Value>, String> {
+    let stored = db
+        .get_kv(&plugin_settings_key(plugin_id))
+        .map_err(|err| format!("{:?}", err))?;
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    let key = get_vault_key_b64(db)?
+        .ok_or_else(|| "vault-key-missing".to_string())?;
+    let decrypted = decrypt_plugin_settings(&key, &stored)?;
+    Ok(Some(decrypted))
 }
 
 fn decode_sync_payload(db: &Database, payload: &[u8]) -> Result<Vec<u8>, String> {
@@ -1494,6 +1710,13 @@ fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRunti
         }
     }
 
+    let mut settings_by_plugin: HashMap<String, Value> = HashMap::new();
+    for plugin in &allowed {
+        if let Ok(Some(settings)) = get_plugin_settings(&db, &plugin.manifest.id) {
+            settings_by_plugin.insert(plugin.manifest.id.clone(), settings);
+        }
+    }
+
     let loaded = if allowed.is_empty() {
         PluginRuntimeLoadResult {
             loaded: Vec::new(),
@@ -1503,7 +1726,7 @@ fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRunti
             renderers: Vec::new(),
         }
     } else {
-        state.with_runtime(|runtime| runtime.load_plugins(&allowed))?
+        state.load_plugins(allowed, settings_by_plugin)?
     };
 
     Ok(PluginRuntimeStatus {
@@ -1571,7 +1794,43 @@ fn emit_plugin_event(
     payload: Value,
     state: tauri::State<RuntimeState>,
 ) -> Result<Value, String> {
-    state.with_runtime(|runtime| runtime.emit_event(&plugin_id, &event, payload))
+    state.emit_event(plugin_id, event, payload)
+}
+
+#[tauri::command]
+fn plugin_render_block(
+    plugin_id: String,
+    renderer_id: String,
+    block_uid: String,
+    text: String,
+    state: tauri::State<RuntimeState>,
+) -> Result<PluginBlockView, String> {
+    state.render_block(plugin_id, renderer_id, block_uid, text)
+}
+
+#[tauri::command]
+fn plugin_block_action(
+    plugin_id: String,
+    renderer_id: String,
+    block_uid: String,
+    text: String,
+    action_id: String,
+    value: Option<Value>,
+    state: tauri::State<RuntimeState>,
+) -> Result<PluginBlockView, String> {
+    state.handle_block_action(plugin_id, renderer_id, block_uid, text, action_id, value)
+}
+
+#[tauri::command]
+fn get_plugin_settings_command(plugin_id: String) -> Result<Option<Value>, String> {
+    let db = open_active_database()?;
+    get_plugin_settings(&db, &plugin_id)
+}
+
+#[tauri::command]
+fn set_plugin_settings_command(plugin_id: String, settings: Value) -> Result<(), String> {
+    let db = open_active_database()?;
+    set_plugin_settings(&db, &plugin_id, &settings)
 }
 
 #[tauri::command]
@@ -1582,7 +1841,7 @@ fn read_text_file(path: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(RuntimeState::new(runtime_script_path()))
+        .manage(RuntimeState::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -1623,6 +1882,10 @@ pub fn run() {
             plugin_read_page,
             plugin_write_page,
             emit_plugin_event,
+            plugin_render_block,
+            plugin_block_action,
+            get_plugin_settings_command,
+            set_plugin_settings_command,
             read_text_file
         ])
         .run(tauri::generate_context!())
@@ -2093,5 +2356,33 @@ mod tests {
             .decrypt(nonce, ciphertext.as_ref())
             .expect("decrypt");
         assert_eq!(decrypted, payload);
+    }
+
+    #[test]
+    fn plugin_settings_encrypts_and_roundtrips() {
+        let db = Database::new_in_memory().expect("db");
+        db.run_migrations().expect("migrations");
+        let key_bytes = [9u8; 32];
+        let key_b64 = base64::engine::general_purpose::STANDARD.encode(key_bytes);
+        db.set_kv("vault.key.b64", &key_b64).expect("store key");
+
+        let settings = serde_json::json!({
+            "apiKey": "secret-key",
+            "units": "c"
+        });
+        set_plugin_settings(&db, "weather", &settings).expect("set settings");
+        let loaded = get_plugin_settings(&db, "weather")
+            .expect("get settings")
+            .expect("settings");
+        assert_eq!(loaded, settings);
+
+        let stored = db
+            .get_kv("plugin.settings.weather")
+            .expect("raw settings")
+            .unwrap_or_default();
+        assert!(
+            !stored.contains("secret-key"),
+            "settings should not be stored in plain text"
+        );
     }
 }
