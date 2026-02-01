@@ -1,4 +1,4 @@
-import { render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createSignal, untrack } from "solid-js";
 import { createStore } from "solid-js/store";
 import { vi } from "vitest";
@@ -130,5 +130,78 @@ describe("EditorPane", () => {
     );
     expect(untrack(() => blocks[25].text)).toBe("Block 26");
     expect(scheduleSave).not.toHaveBeenCalled();
+  });
+
+  it("selects a range when dragging across blocks", async () => {
+    const baseBlocks = makeBlocks(8);
+    const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const blockEls = Array.from(
+      container.querySelectorAll<HTMLElement>(".block")
+    );
+    expect(blockEls.length).toBeGreaterThan(4);
+
+    fireEvent.mouseDown(blockEls[1], { button: 0, clientY: 10 });
+    fireEvent.mouseMove(blockEls[4], { clientY: 60 });
+    fireEvent.mouseUp(window);
+
+    const selected = Array.from(
+      container.querySelectorAll<HTMLElement>(".block.is-selected")
+    );
+    expect(selected.map((node) => node.dataset.blockId)).toEqual([
+      "b2",
+      "b3",
+      "b4",
+      "b5"
+    ]);
   });
 });

@@ -192,6 +192,15 @@ export const EditorPane = (props: EditorPaneProps) => {
   const [blockHeights, setBlockHeights] = createStore<Record<string, number>>(
     {}
   );
+  const [selectionRange, setSelectionRange] = createSignal<{
+    start: number;
+    end: number;
+  } | null>(null);
+  const supportsPointer =
+    typeof window !== "undefined" && "PointerEvent" in window;
+  let selecting = false;
+  let selectionAnchor = -1;
+  let selectionPointerId: number | null = null;
   const inputRefs = new Map<string, HTMLTextAreaElement>();
   const caretPositions = new Map<string, { start: number; end: number }>();
   const previewCache = new Map<string, { title: string; blocks: string[] }>();
@@ -214,6 +223,134 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
     return { heights, offsets, totalHeight: offset };
   });
+
+  const isSelectionStartTarget = (target: EventTarget | null) => {
+    const el = target instanceof HTMLElement ? target : null;
+    if (!el) return false;
+    if (
+      el.closest(
+        "textarea, input, button, select, a, .block__display, .block__input"
+      )
+    ) {
+      return false;
+    }
+    return Boolean(el.closest(".block"));
+  };
+
+  const indexFromClientY = (clientY: number) => {
+    if (!editorRef) return -1;
+    const metrics = rowMetrics();
+    if (metrics.offsets.length === 0) return -1;
+    const rect = editorRef.getBoundingClientRect();
+    const relativeY = clientY - rect.top + editorRef.scrollTop;
+    const clamped = Math.max(
+      0,
+      Math.min(metrics.totalHeight - 1, relativeY)
+    );
+    let low = 0;
+    let high = metrics.offsets.length - 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const offset = metrics.offsets[mid] ?? 0;
+      if (offset <= clamped) {
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return Math.max(0, Math.min(metrics.offsets.length - 1, low - 1));
+  };
+
+  const resolveIndexFromEvent = (target: EventTarget | null, clientY: number) => {
+    const el = target instanceof HTMLElement ? target : null;
+    const blockEl = el?.closest<HTMLElement>(".block");
+    const blockId = blockEl?.dataset.blockId;
+    if (blockId) {
+      const index = findIndexById(blockId);
+      if (index >= 0) return index;
+    }
+    return indexFromClientY(clientY);
+  };
+
+  const setSelectionFromIndex = (index: number) => {
+    if (selectionAnchor < 0 || index < 0) return;
+    const start = Math.min(selectionAnchor, index);
+    const end = Math.max(selectionAnchor, index);
+    setSelectionRange((prev) =>
+      prev && prev.start === start && prev.end === end ? prev : { start, end }
+    );
+  };
+
+  const beginSelection = (index: number, pointerId: number | null) => {
+    selectionAnchor = index;
+    selecting = true;
+    selectionPointerId = pointerId;
+    setSelectionRange({ start: index, end: index });
+  };
+
+  const endSelection = (pointerId?: number | null) => {
+    if (!selecting) return;
+    if (
+      selectionPointerId !== null &&
+      typeof pointerId === "number" &&
+      pointerId !== selectionPointerId
+    ) {
+      return;
+    }
+    selecting = false;
+    selectionPointerId = null;
+    selectionAnchor = -1;
+  };
+
+  const handlePointerDown = (event: PointerEvent) => {
+    if (!supportsPointer) return;
+    if (event.button !== 0) return;
+    if (!isSelectionStartTarget(event.target)) return;
+    const index = resolveIndexFromEvent(event.target, event.clientY);
+    if (index < 0) return;
+    event.preventDefault();
+    beginSelection(index, event.pointerId);
+  };
+
+  const handlePointerMove = (event: PointerEvent) => {
+    if (!supportsPointer || !selecting) return;
+    if (
+      selectionPointerId !== null &&
+      event.pointerId !== selectionPointerId
+    ) {
+      return;
+    }
+    const index = resolveIndexFromEvent(event.target, event.clientY);
+    if (index < 0) return;
+    setSelectionFromIndex(index);
+  };
+
+  const handlePointerUp = (event: PointerEvent) => {
+    if (!supportsPointer) return;
+    endSelection(event.pointerId);
+  };
+
+  const handleMouseDown = (event: MouseEvent) => {
+    if (selecting || selectionPointerId !== null) return;
+    if (event.button !== 0) return;
+    if (!isSelectionStartTarget(event.target)) return;
+    const index = resolveIndexFromEvent(event.target, event.clientY);
+    if (index < 0) return;
+    event.preventDefault();
+    beginSelection(index, null);
+  };
+
+  const handleMouseMove = (event: MouseEvent) => {
+    if (!selecting || selectionPointerId !== null) return;
+    const index = resolveIndexFromEvent(event.target, event.clientY);
+    if (index < 0) return;
+    setSelectionFromIndex(index);
+  };
+
+  const handleMouseUp = () => {
+    if (selectionPointerId !== null) return;
+    endSelection();
+  };
   const blockObserver =
     typeof ResizeObserver === "function"
       ? new ResizeObserver((entries) => {
@@ -300,6 +437,32 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
   });
 
+  onMount(() => {
+    const handlePointerMoveWindow = (event: PointerEvent) =>
+      handlePointerMove(event);
+    const handlePointerUpWindow = (event: PointerEvent) => handlePointerUp(event);
+    const handleMouseMoveWindow = (event: MouseEvent) => handleMouseMove(event);
+    const handleMouseUpWindow = () => handleMouseUp();
+
+    if (supportsPointer) {
+      window.addEventListener("pointermove", handlePointerMoveWindow);
+      window.addEventListener("pointerup", handlePointerUpWindow);
+      window.addEventListener("pointercancel", handlePointerUpWindow);
+    }
+    window.addEventListener("mousemove", handleMouseMoveWindow);
+    window.addEventListener("mouseup", handleMouseUpWindow);
+
+    onCleanup(() => {
+      if (supportsPointer) {
+        window.removeEventListener("pointermove", handlePointerMoveWindow);
+        window.removeEventListener("pointerup", handlePointerUpWindow);
+        window.removeEventListener("pointercancel", handlePointerUpWindow);
+      }
+      window.removeEventListener("mousemove", handleMouseMoveWindow);
+      window.removeEventListener("mouseup", handleMouseUpWindow);
+    });
+  });
+
   const scrollToIndex = (index: number) => {
     if (!editorRef || viewportHeight() === 0) return;
     const metrics = rowMetrics();
@@ -369,6 +532,14 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (findIndexById(target.id) < 0) return;
     focusBlock(target.id, target.caret);
     setJumpTarget(null);
+  });
+
+  createEffect(() => {
+    activePageUid();
+    setSelectionRange(null);
+    selecting = false;
+    selectionPointerId = null;
+    selectionAnchor = -1;
   });
 
   const insertBlockAfter = (index: number, indent: number) => {
@@ -1116,7 +1287,12 @@ export const EditorPane = (props: EditorPaneProps) => {
           </button>
         </div>
       </div>
-      <div class="editor-pane__body" ref={editorRef}>
+      <div
+        class="editor-pane__body"
+        ref={editorRef}
+        onPointerDown={handlePointerDown}
+        onMouseDown={handleMouseDown}
+      >
         <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
           <div
             class="virtual-list"
@@ -1129,6 +1305,12 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const diagramPreview = () => getDiagramPreview(block.text);
                 const pluginRenderer = () => getPluginBlockRenderer(block.text);
                 const isEditing = () => focusedId() === block.id;
+                const isSelected = () => {
+                  const rangeValue = selectionRange();
+                  if (!rangeValue) return false;
+                  const idx = blockIndex();
+                  return idx >= rangeValue.start && idx <= rangeValue.end;
+                };
                 const updateBlockText = (blockId: string, nextText: string) => {
                   const index = findIndexById(blockId);
                   if (index < 0) return;
@@ -1168,7 +1350,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                   <div
                     class={`block ${activeId() === block.id ? "is-active" : ""} ${
                       highlightedBlockId() === block.id ? "is-highlighted" : ""
-                    }`}
+                    } ${isSelected() ? "is-selected" : ""}`}
                     ref={observeBlock}
                     data-block-id={block.id}
                     style={{

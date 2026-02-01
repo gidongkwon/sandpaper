@@ -1291,6 +1291,12 @@ button:disabled {
   animation: block-highlight 1.5s ease-out;
 }
 
+.block.is-selected:not(.is-highlighted) {
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding-right: var(--space-1);
+}
+
 .block__body {
   flex: 1;
   display: flex;
