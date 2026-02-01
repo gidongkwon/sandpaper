@@ -13,6 +13,9 @@ vi.mock("../../../features/command-palette/ui/command-palette", () => ({
 vi.mock("../../../widgets/settings/settings-modal", () => ({
   SettingsModal: () => <div data-testid="settings-modal" />
 }));
+vi.mock("../../../widgets/notifications/notification-panel", () => ({
+  NotificationPanel: () => <div data-testid="notification-panel" />
+}));
 vi.mock("../../../widgets/permissions/permission-prompt-modal", () => ({
   PermissionPromptModal: () => <div data-testid="permission-prompt" />
 }));
@@ -39,6 +42,7 @@ describe("MainPageOverlays", () => {
         value,
         setValue
       },
+      notifications: {} as MainPageContextValue["overlays"]["notifications"],
       permissionPrompt: {} as MainPageContextValue["overlays"]["permissionPrompt"]
     } satisfies MainPageContextValue["overlays"];
 

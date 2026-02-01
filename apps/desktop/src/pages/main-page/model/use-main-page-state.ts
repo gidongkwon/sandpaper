@@ -1,4 +1,4 @@
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -9,6 +9,7 @@ import { deriveVaultKey } from "@sandpaper/crypto";
 import type { Block, BlockPayload } from "../../../entities/block/model/block-types";
 import { makeBlock } from "../../../entities/block/model/make-block";
 import { createAutosave } from "../../../features/autosave/model/use-autosave";
+import { createNotifications } from "../../../features/notifications/model/use-notifications";
 import { createPluginActions } from "../../../features/plugins/model/use-plugin-actions";
 import { createPlugins } from "../../../features/plugins/model/use-plugins";
 import { createSync } from "../../../features/sync/model/use-sync";
@@ -109,6 +110,7 @@ export const createMainPageState = () => {
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  const [notificationsOpen, setNotificationsOpen] = createSignal(false);
   const [settingsTab, setSettingsTab] = createSignal<
     "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
   >("general");
@@ -127,7 +129,29 @@ export const createMainPageState = () => {
     typeof window !== "undefined" &&
     Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
 
-  const pluginsApi = createPlugins({ isTauri, invoke });
+  const notificationsApi = createNotifications();
+  const {
+    notifications,
+    unreadCount: notificationUnreadCount,
+    addNotification,
+    markAllRead: markAllNotificationsRead,
+    clearAll: clearNotifications,
+    dismiss: dismissNotification
+  } = notificationsApi;
+
+  const notifyPluginError = (message: string) => {
+    addNotification({
+      title: "Plugin error",
+      message,
+      kind: "error"
+    });
+  };
+
+  const pluginsApi = createPlugins({
+    isTauri,
+    invoke,
+    onRuntimeError: notifyPluginError
+  });
   const {
     plugins,
     pluginStatus,
@@ -180,6 +204,12 @@ export const createMainPageState = () => {
       if (perfEnabled()) {
         setScrollFps(fps);
       }
+    }
+  });
+
+  createEffect(() => {
+    if (notificationsOpen()) {
+      markAllNotificationsRead();
     }
   });
 
@@ -942,6 +972,14 @@ export const createMainPageState = () => {
         value: pageDialogValue,
         setValue: setPageDialogValue
       },
+      notifications: {
+        open: notificationsOpen,
+        onClose: () => setNotificationsOpen(false),
+        notifications,
+        onMarkAllRead: markAllNotificationsRead,
+        onClear: clearNotifications,
+        onDismiss: dismissNotification
+      },
       permissionPrompt: {
         prompt: permissionPrompt,
         onDeny: denyPermission,
@@ -952,6 +990,8 @@ export const createMainPageState = () => {
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev);
   const openSettings = () => setSettingsOpen(true);
+  const toggleNotifications = () =>
+    setNotificationsOpen((prev) => !prev);
 
   return {
     context: mainPageContext,
@@ -971,6 +1011,9 @@ export const createMainPageState = () => {
       autosaveError,
       autosaved,
       autosaveStamp,
+      notificationsOpen,
+      notificationCount: notificationUnreadCount,
+      onOpenNotifications: toggleNotifications,
       onOpenSettings: openSettings
     }
   };

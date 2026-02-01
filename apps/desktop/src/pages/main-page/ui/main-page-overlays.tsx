@@ -1,5 +1,6 @@
 import { CommandPalette } from "../../../features/command-palette/ui/command-palette";
 import { ConfirmDialog } from "../../../shared/ui/confirm-dialog";
+import { NotificationPanel } from "../../../widgets/notifications/notification-panel";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
 import { useMainPageContext } from "../model/main-page-context";
@@ -10,6 +11,7 @@ export const MainPageOverlays = () => {
   return (
     <>
       <CommandPalette {...overlays.commandPalette} />
+      <NotificationPanel {...overlays.notifications} />
       <SettingsModal {...overlays.settings} />
       <ConfirmDialog
         open={overlays.pageDialog.open}

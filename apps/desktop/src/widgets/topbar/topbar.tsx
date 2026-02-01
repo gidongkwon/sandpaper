@@ -1,4 +1,4 @@
-import type { Accessor, Setter } from "solid-js";
+import { Show, type Accessor, type Setter } from "solid-js";
 import type { SyncStatus } from "../../entities/sync/model/sync-types";
 import type { Mode } from "../../shared/model/mode";
 import { IconButton } from "../../shared/ui/icon-button";
@@ -14,6 +14,9 @@ type TopbarProps = {
   autosaveError: Accessor<string | null>;
   autosaved: Accessor<boolean>;
   autosaveStamp: Accessor<string | null>;
+  notificationsOpen: Accessor<boolean>;
+  notificationCount: Accessor<number>;
+  onOpenNotifications: () => void;
   onOpenSettings: () => void;
 };
 
@@ -67,6 +70,23 @@ export const Topbar = (props: TopbarProps) => {
           {props.autosaveError() ??
             (props.autosaved() ? `Saved ${props.autosaveStamp() ?? ""}` : "Saving...")}
         </span>
+        <IconButton
+          class="topbar__notifications"
+          label="Open notifications"
+          aria-haspopup="dialog"
+          aria-expanded={props.notificationsOpen()}
+          onClick={() => props.onOpenNotifications()}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          <Show when={props.notificationCount() > 0}>
+            <span class="topbar__notification-badge">
+              {props.notificationCount()}
+            </span>
+          </Show>
+        </IconButton>
         <IconButton
           class="topbar__settings"
           label="Open settings"

@@ -16,6 +16,7 @@ import { EditorPane } from "../../../widgets/editor/editor-pane";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { PluginPanelWidget } from "../../../widgets/plugins/plugin-panel";
 import { ReviewPane } from "../../../widgets/review/review-pane";
+import { NotificationPanel } from "../../../widgets/notifications/notification-panel";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
 import { SidebarContent } from "../../../widgets/sidebar/sidebar-content";
 import type { Mode } from "../../../shared/model/mode";
@@ -62,6 +63,7 @@ export type MainPageOverlaysState = {
   commandPalette: PropsOf<typeof CommandPalette>;
   settings: PropsOf<typeof SettingsModal>;
   pageDialog: PageDialogState;
+  notifications: PropsOf<typeof NotificationPanel>;
   permissionPrompt: PropsOf<typeof PermissionPromptModal>;
 };
 

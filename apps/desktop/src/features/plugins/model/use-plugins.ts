@@ -8,6 +8,7 @@ import type {
 export type PluginDependencies = {
   isTauri: () => boolean;
   invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
+  onRuntimeError?: (message: string) => void;
 };
 
 const fallbackPlugins: PluginPermissionInfo[] = [
@@ -145,9 +146,10 @@ export const createPlugins = (deps: PluginDependencies) => {
       setPluginStatus(status);
     } catch (error) {
       console.error("Failed to load plugins", error);
-      setPluginError(
-        error instanceof Error ? error.message : "Failed to load plugins."
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to load plugins.";
+      setPluginError(message);
+      deps.onRuntimeError?.(message);
     } finally {
       setPluginBusy(false);
     }
@@ -168,9 +170,10 @@ export const createPlugins = (deps: PluginDependencies) => {
       setPlugins(remote);
     } catch (error) {
       console.error("Failed to load plugins", error);
-      setPluginError(
-        error instanceof Error ? error.message : "Failed to load plugins."
-      );
+      const message =
+        error instanceof Error ? error.message : "Failed to load plugins.";
+      setPluginError(message);
+      deps.onRuntimeError?.(message);
     }
 
     await loadPluginRuntime();

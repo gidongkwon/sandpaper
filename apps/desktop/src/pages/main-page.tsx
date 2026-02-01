@@ -24,6 +24,9 @@ function MainPage() {
           autosaveError={topbar.autosaveError}
           autosaved={topbar.autosaved}
           autosaveStamp={topbar.autosaveStamp}
+          notificationsOpen={topbar.notificationsOpen}
+          notificationCount={topbar.notificationCount}
+          onOpenNotifications={topbar.onOpenNotifications}
           onOpenSettings={topbar.onOpenSettings}
         />
 

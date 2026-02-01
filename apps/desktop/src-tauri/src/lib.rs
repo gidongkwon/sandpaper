@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
+use tauri::Manager;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
@@ -1958,6 +1959,13 @@ pub fn run() {
         .manage(RuntimeState::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if let Some(state) = window.app_handle().try_state::<RuntimeState>() {
+                    state.shutdown();
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             list_vaults,
@@ -2002,8 +2010,18 @@ pub fn run() {
             set_plugin_settings_command,
             read_text_file
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit { .. }
+            ) {
+                if let Some(state) = app_handle.try_state::<RuntimeState>() {
+                    state.shutdown();
+                }
+            }
+        });
 }
 
 #[cfg(test)]
