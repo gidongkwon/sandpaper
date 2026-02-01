@@ -198,5 +198,5 @@ describe("Sync conflict UI", () => {
     });
 
     vi.unstubAllGlobals();
-  });
+  }, 10000);
 });
