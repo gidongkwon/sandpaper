@@ -17,10 +17,10 @@ use tauri::Manager;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
-    check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, PluginBlockView,
-    PluginCommand, PluginDescriptor, PluginInfo, PluginPanel, PluginRegistry, PluginRenderer,
-    PluginRuntime, PluginRuntimeError, PluginRuntimeLoadResult, PluginSettingsSchema,
-    PluginToolbarAction,
+    check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, remove_plugin,
+    update_plugin, PluginBlockView, PluginCommand, PluginDescriptor, PluginInfo, PluginPanel,
+    PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeError, PluginRuntimeLoadResult,
+    PluginSettingsSchema, PluginToolbarAction,
 };
 
 #[derive(Debug, Serialize)]
@@ -1112,6 +1112,11 @@ fn get_plugin_settings(
     Ok(Some(decrypted))
 }
 
+fn clear_plugin_settings(db: &Database, plugin_id: &str) -> Result<(), String> {
+    db.delete_kv(&plugin_settings_key(plugin_id))
+        .map_err(|err| format!("{:?}", err))
+}
+
 fn decode_sync_payload(db: &Database, payload: &[u8]) -> Result<Vec<u8>, String> {
     let value: serde_json::Value = match serde_json::from_slice(payload) {
         Ok(value) => value,
@@ -1847,6 +1852,33 @@ fn install_plugin_command(path: String) -> Result<PluginPermissionInfo, String> 
 }
 
 #[tauri::command]
+fn update_plugin_command(plugin_id: String) -> Result<PluginPermissionInfo, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let registry = plugin_registry_for_vault(&vault_path);
+    let db = open_active_database()?;
+    let plugin = update_plugin(&vault_path, &registry, &plugin_id)
+        .map_err(|err| format!("{:?}", err))?;
+    let mut entries =
+        list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
+    entries
+        .pop()
+        .ok_or_else(|| "Failed to update plugin.".to_string())
+}
+
+#[tauri::command]
+fn remove_plugin_command(plugin_id: String) -> Result<(), String> {
+    let vault_path = resolve_active_vault_path()?;
+    let registry = plugin_registry_for_vault(&vault_path);
+    let db = open_active_database()?;
+    remove_plugin(&vault_path, &registry, &plugin_id)
+        .map_err(|err| format!("{:?}", err))?;
+    db.clear_plugin_permissions(&plugin_id)
+        .map_err(|err| format!("{:?}", err))?;
+    clear_plugin_settings(&db, &plugin_id)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRuntimeStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let registry = plugin_registry_for_vault(&vault_path);
@@ -2071,6 +2103,8 @@ pub fn run() {
             export_markdown,
             list_plugins_command,
             install_plugin_command,
+            update_plugin_command,
+            remove_plugin_command,
             load_plugins_command,
             get_plugin_runtime_error_command,
             grant_plugin_permission,

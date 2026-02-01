@@ -226,6 +226,8 @@ pub struct PluginInfo {
 pub struct PluginState {
     #[serde(default)]
     pub enabled: HashMap<String, bool>,
+    #[serde(default)]
+    pub install_sources: HashMap<String, String>,
 }
 
 pub struct PluginRegistry {
@@ -257,6 +259,48 @@ impl PluginRegistry {
     pub fn set_enabled(&self, plugin_id: &str, enabled: bool) -> Result<PluginState, PluginError> {
         let mut state = self.load_state()?;
         state.enabled.insert(plugin_id.to_string(), enabled);
+        self.save_state(&state)?;
+        Ok(state)
+    }
+
+    pub fn set_install_source(
+        &self,
+        plugin_id: &str,
+        source: &str,
+    ) -> Result<PluginState, PluginError> {
+        let mut state = self.load_state()?;
+        state
+            .install_sources
+            .insert(plugin_id.to_string(), source.to_string());
+        self.save_state(&state)?;
+        Ok(state)
+    }
+
+    pub fn get_install_source(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Option<String>, PluginError> {
+        let state = self.load_state()?;
+        Ok(state.install_sources.get(plugin_id).cloned())
+    }
+
+    pub fn clear_install_source(
+        &self,
+        plugin_id: &str,
+    ) -> Result<PluginState, PluginError> {
+        let mut state = self.load_state()?;
+        state.install_sources.remove(plugin_id);
+        self.save_state(&state)?;
+        Ok(state)
+    }
+
+    pub fn remove_plugin_state(
+        &self,
+        plugin_id: &str,
+    ) -> Result<PluginState, PluginError> {
+        let mut state = self.load_state()?;
+        state.enabled.remove(plugin_id);
+        state.install_sources.remove(plugin_id);
         self.save_state(&state)?;
         Ok(state)
     }
@@ -360,6 +404,11 @@ pub fn install_plugin(
         return Err(PluginError::Runtime("plugin-id-invalid".into()));
     }
 
+    let source_path = source_dir
+        .canonicalize()
+        .unwrap_or_else(|_| source_dir.to_path_buf())
+        .to_string_lossy()
+        .to_string();
     let plugins_dir = root.join("plugins");
     fs::create_dir_all(&plugins_dir)?;
     let dest_dir = plugins_dir.join(&manifest.id);
@@ -379,6 +428,7 @@ pub fn install_plugin(
         copy_dir_recursive(source_dir, &dest_dir)?;
         registry.set_enabled(&manifest.id, true)?;
     }
+    registry.set_install_source(&manifest.id, source_path.as_str())?;
 
     let settings_schema = resolve_settings_schema(&manifest);
     Ok(PluginInfo {
@@ -391,6 +441,89 @@ pub fn install_plugin(
         enabled: true,
         path: dest_dir.to_string_lossy().to_string(),
     })
+}
+
+pub fn update_plugin(
+    root: &Path,
+    registry: &PluginRegistry,
+    plugin_id: &str,
+) -> Result<PluginInfo, PluginError> {
+    let source = registry
+        .get_install_source(plugin_id)?
+        .ok_or_else(|| PluginError::Runtime("plugin-update-source-missing".into()))?;
+    let source_dir = PathBuf::from(source);
+    if !source_dir.exists() {
+        return Err(PluginError::Runtime("plugin-update-source-missing".into()));
+    }
+    if !source_dir.is_dir() {
+        return Err(PluginError::Runtime(
+            "plugin-update-source-not-directory".into(),
+        ));
+    }
+
+    let manifest_path = source_dir.join("plugin.json");
+    if !manifest_path.exists() {
+        return Err(PluginError::Runtime("plugin-manifest-missing".into()));
+    }
+    let raw = fs::read_to_string(&manifest_path)?;
+    let manifest = parse_plugin_manifest(&raw)?;
+    if manifest.id != plugin_id {
+        return Err(PluginError::Runtime("plugin-update-id-mismatch".into()));
+    }
+    check_manifest_compatibility(&manifest)?;
+
+    let plugins_dir = root.join("plugins");
+    fs::create_dir_all(&plugins_dir)?;
+    let dest_dir = plugins_dir.join(plugin_id);
+    let same_dir = dest_dir
+        .canonicalize()
+        .ok()
+        .zip(source_dir.canonicalize().ok())
+        .map(|(dest, source)| dest == source)
+        .unwrap_or(false);
+    if !same_dir {
+        if dest_dir.exists() {
+            fs::remove_dir_all(&dest_dir)?;
+        }
+        copy_dir_recursive(&source_dir, &dest_dir)?;
+    }
+
+    let enabled = registry.is_enabled(plugin_id)?;
+    let source_path = source_dir
+        .canonicalize()
+        .unwrap_or_else(|_| source_dir.clone())
+        .to_string_lossy()
+        .to_string();
+    registry.set_install_source(plugin_id, source_path.as_str())?;
+    if enabled {
+        registry.set_enabled(plugin_id, true)?;
+    }
+
+    let settings_schema = resolve_settings_schema(&manifest);
+    Ok(PluginInfo {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        permissions: manifest.permissions,
+        settings_schema,
+        enabled,
+        path: dest_dir.to_string_lossy().to_string(),
+    })
+}
+
+pub fn remove_plugin(
+    root: &Path,
+    registry: &PluginRegistry,
+    plugin_id: &str,
+) -> Result<(), PluginError> {
+    let plugins_dir = root.join("plugins");
+    let dest_dir = plugins_dir.join(plugin_id);
+    if dest_dir.exists() {
+        fs::remove_dir_all(&dest_dir)?;
+    }
+    registry.remove_plugin_state(plugin_id)?;
+    Ok(())
 }
 
 pub fn parse_plugin_manifest(raw: &str) -> Result<PluginManifest, PluginError> {
@@ -1565,7 +1698,8 @@ pub fn load_plugins_into_runtime(
 mod tests {
     use super::{
         check_manifest_compatibility, discover_plugins, install_plugin, list_plugins,
-        parse_plugin_manifest, PluginRegistry, PluginRuntime, PluginState,
+        parse_plugin_manifest, remove_plugin, update_plugin, PluginRegistry, PluginRuntime,
+        PluginState,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -1793,6 +1927,29 @@ mod tests {
         plugins_dir
     }
 
+    fn write_source_plugin(root: &std::path::Path, id: &str, entry: &str) -> PathBuf {
+        let source_root = root.join("source");
+        fs::create_dir_all(&source_root).expect("source root");
+        let plugin_dir = source_root.join(id);
+        fs::create_dir_all(&plugin_dir).expect("plugin dir");
+        let manifest_path = plugin_dir.join("plugin.json");
+        fs::write(
+            &manifest_path,
+            format!(
+                r#"{{
+  "id": "{id}",
+  "name": "Source {id}",
+  "version": "0.1.0",
+  "main": "index.js"
+}}"#
+            ),
+        )
+        .expect("write manifest");
+        let entry_path = plugin_dir.join("index.js");
+        fs::write(&entry_path, entry).expect("write entry");
+        plugin_dir
+    }
+
     #[test]
     fn list_plugins_maps_manifest_fields() {
         let dir = tempdir().expect("tempdir");
@@ -1838,6 +1995,63 @@ mod tests {
         assert!(dest_dir.join("index.js").exists());
         assert_eq!(info.id, "alpha");
         assert!(registry.is_enabled("alpha").expect("enabled"));
+    }
+
+    #[test]
+    fn registry_tracks_install_source() {
+        let dir = tempdir().expect("tempdir");
+        let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
+
+        registry
+            .set_install_source("alpha", "/tmp/alpha")
+            .expect("set source");
+        let stored = registry
+            .get_install_source("alpha")
+            .expect("get source");
+        assert_eq!(stored.as_deref(), Some("/tmp/alpha"));
+
+        registry
+            .clear_install_source("alpha")
+            .expect("clear source");
+        let stored = registry
+            .get_install_source("alpha")
+            .expect("get source after clear");
+        assert!(stored.is_none());
+    }
+
+    #[test]
+    fn update_plugin_reinstalls_from_source() {
+        let dir = tempdir().expect("tempdir");
+        let source_dir = write_source_plugin(dir.path(), "alpha", "// v1\n");
+        let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
+        install_plugin(dir.path(), &registry, &source_dir).expect("install");
+
+        fs::write(source_dir.join("index.js"), "// v2\n").expect("update source");
+
+        update_plugin(dir.path(), &registry, "alpha").expect("update");
+        let dest_path = dir.path().join("plugins").join("alpha").join("index.js");
+        let dest_contents = fs::read_to_string(dest_path).expect("read dest");
+        assert!(dest_contents.contains("v2"));
+    }
+
+    #[test]
+    fn remove_plugin_deletes_folder_and_state() {
+        let dir = tempdir().expect("tempdir");
+        let source_dir = write_source_plugin(dir.path(), "alpha", "// v1\n");
+        let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
+        install_plugin(dir.path(), &registry, &source_dir).expect("install");
+
+        let dest_path = dir.path().join("plugins").join("alpha");
+        assert!(dest_path.exists());
+
+        remove_plugin(dir.path(), &registry, "alpha").expect("remove");
+
+        assert!(!dest_path.exists());
+        assert!(!registry.is_enabled("alpha").expect("enabled"));
+        assert!(registry
+            .get_install_source("alpha")
+            .expect("get source")
+            .is_none());
     }
 
     #[test]

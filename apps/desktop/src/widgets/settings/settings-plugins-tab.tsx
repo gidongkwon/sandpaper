@@ -15,6 +15,11 @@ type PluginSettingsStatus = {
   message?: string;
 };
 
+type PluginManageStatus = {
+  state: "idle" | "working" | "success" | "error";
+  message?: string;
+};
+
 type SettingsPluginsProps = {
   error: Accessor<string | null>;
   errorDetails: Accessor<PluginRuntimeError | null>;
@@ -31,7 +36,10 @@ type SettingsPluginsProps = {
   installStatus: Accessor<PluginInstallStatus | null>;
   installing: Accessor<boolean>;
   installPlugin: () => void | Promise<void>;
+  updatePlugin: (pluginId: string) => void | Promise<void>;
+  removePlugin: (pluginId: string) => void | Promise<void>;
   clearInstallStatus: () => void;
+  manageStatus: Accessor<Record<string, PluginManageStatus | null>>;
   settings: Accessor<Record<string, Record<string, unknown>>>;
   settingsDirty: Accessor<Record<string, boolean>>;
   settingsStatus: Accessor<Record<string, PluginSettingsStatus | null>>;
@@ -255,6 +263,45 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                       )}
                     </For>
                   </div>
+                </Show>
+                <div class="settings-plugin__actions">
+                  <button
+                    class="settings-action"
+                    type="button"
+                    onClick={() => void props.plugins.updatePlugin(plugin.id)}
+                    disabled={
+                      props.plugins.busy() ||
+                      props.plugins.manageStatus()[plugin.id]?.state === "working"
+                    }
+                  >
+                    {props.plugins.manageStatus()[plugin.id]?.state === "working"
+                      ? "Updating..."
+                      : "Update"}
+                  </button>
+                  <button
+                    class="settings-action is-danger"
+                    type="button"
+                    onClick={() => void props.plugins.removePlugin(plugin.id)}
+                    disabled={
+                      props.plugins.busy() ||
+                      props.plugins.manageStatus()[plugin.id]?.state === "working"
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+                <Show when={props.plugins.manageStatus()[plugin.id]?.message}>
+                  {(message) => (
+                    <div
+                      class={`settings-message ${
+                        props.plugins.manageStatus()[plugin.id]?.state === "error"
+                          ? "is-error"
+                          : "is-success"
+                      }`}
+                    >
+                      {message()}
+                    </div>
+                  )}
                 </Show>
               </div>
             )}

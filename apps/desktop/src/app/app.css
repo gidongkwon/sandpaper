@@ -2827,6 +2827,18 @@ button:disabled {
   background: var(--accent-hover);
 }
 
+.settings-action.is-danger {
+  background: var(--error-soft);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.settings-action.is-danger:hover {
+  background: var(--error);
+  border-color: var(--error);
+  color: white;
+}
+
 .settings-message {
   padding: var(--space-2) var(--space-2-5);
   background: var(--warning-soft);
@@ -3152,6 +3164,13 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+}
+
+.settings-plugin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1-5);
 }
 
 .settings-plugin--settings {

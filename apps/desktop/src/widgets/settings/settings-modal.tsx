@@ -37,6 +37,11 @@ type PluginSettingsStatus = {
   message?: string;
 };
 
+type PluginManageStatus = {
+  state: "idle" | "working" | "success" | "error";
+  message?: string;
+};
+
 type SettingsModalProps = {
   open: Accessor<boolean>;
   onClose: () => void;
@@ -117,7 +122,10 @@ type SettingsModalProps = {
     installStatus: Accessor<PluginInstallStatus | null>;
     installing: Accessor<boolean>;
     installPlugin: () => void | Promise<void>;
+    updatePlugin: (pluginId: string) => void | Promise<void>;
+    removePlugin: (pluginId: string) => void | Promise<void>;
     clearInstallStatus: () => void;
+    manageStatus: Accessor<Record<string, PluginManageStatus | null>>;
     settings: Accessor<Record<string, Record<string, unknown>>>;
     settingsDirty: Accessor<Record<string, boolean>>;
     settingsStatus: Accessor<Record<string, PluginSettingsStatus | null>>;

@@ -692,6 +692,14 @@ impl Database {
         rows.collect()
     }
 
+    pub fn clear_plugin_permissions(&self, plugin_id: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM plugin_perms WHERE plugin_id = ?1",
+            params![plugin_id],
+        )?;
+        Ok(())
+    }
+
     pub fn set_kv(&self, key: &str, value: &str) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT INTO kv (key, value) VALUES (?1, ?2)
@@ -705,6 +713,11 @@ impl Database {
         self.conn
             .query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| row.get(0))
             .optional()
+    }
+
+    pub fn delete_kv(&self, key: &str) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM kv WHERE key = ?1", [key])?;
+        Ok(())
     }
 
     pub fn insert_edge(
@@ -1214,6 +1227,25 @@ mod tests {
     }
 
     #[test]
+    fn clear_plugin_permissions_removes_all_entries() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.grant_plugin_permission("alpha", "fs")
+            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "network")
+            .expect("grant network");
+
+        db.clear_plugin_permissions("alpha")
+            .expect("clear perms");
+
+        let permissions = db
+            .list_plugin_permissions("alpha")
+            .expect("list permissions");
+        assert!(permissions.is_empty());
+    }
+
+    #[test]
     fn list_pages_returns_sorted_titles() {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
@@ -1235,6 +1267,19 @@ mod tests {
             .expect("set kv");
         let loaded = db.get_kv("export.last").expect("get kv");
         assert_eq!(loaded, Some("2026-01-31".to_string()));
+    }
+
+    #[test]
+    fn delete_kv_removes_entry() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        db.set_kv("export.last", "2026-01-31")
+            .expect("set kv");
+        db.delete_kv("export.last").expect("delete kv");
+
+        let loaded = db.get_kv("export.last").expect("get kv");
+        assert!(loaded.is_none());
     }
 
     #[test]

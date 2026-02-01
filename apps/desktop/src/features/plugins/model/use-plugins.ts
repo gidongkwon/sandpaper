@@ -110,6 +110,11 @@ type PluginSettingsStatus = {
   message?: string;
 };
 
+type PluginManageStatus = {
+  state: "idle" | "working" | "success" | "error";
+  message?: string;
+};
+
 const DEV_MODE_STORAGE_KEY = "sandpaper:plugin-dev-mode";
 
 export const createPlugins = (deps: PluginDependencies) => {
@@ -134,6 +139,9 @@ export const createPlugins = (deps: PluginDependencies) => {
   >({});
   const [pluginSettingsStatus, setPluginSettingsStatus] = createSignal<
     Record<string, PluginSettingsStatus | null>
+  >({});
+  const [pluginManageStatus, setPluginManageStatus] = createSignal<
+    Record<string, PluginManageStatus | null>
   >({});
   const initialDevMode =
     typeof window === "undefined"
@@ -175,6 +183,16 @@ export const createPlugins = (deps: PluginDependencies) => {
     setPluginSettingsDirty((current) => ({
       ...current,
       [pluginId]: dirty
+    }));
+  };
+
+  const updatePluginManageStatus = (
+    pluginId: string,
+    status: PluginManageStatus | null
+  ) => {
+    setPluginManageStatus((current) => ({
+      ...current,
+      [pluginId]: status
     }));
   };
 
@@ -345,6 +363,60 @@ export const createPlugins = (deps: PluginDependencies) => {
     }
   };
 
+  const updatePlugin = async (pluginId: string) => {
+    if (!deps.isTauri()) {
+      updatePluginManageStatus(pluginId, {
+        state: "error",
+        message: "Plugin updates require the desktop app."
+      });
+      return;
+    }
+    updatePluginManageStatus(pluginId, { state: "working" });
+    try {
+      await deps.invoke("update_plugin_command", {
+        pluginId,
+        plugin_id: pluginId
+      });
+      updatePluginManageStatus(pluginId, {
+        state: "success",
+        message: "Plugin updated."
+      });
+      await loadPlugins();
+    } catch (error) {
+      console.error("Failed to update plugin", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to update plugin.";
+      updatePluginManageStatus(pluginId, { state: "error", message });
+    }
+  };
+
+  const removePlugin = async (pluginId: string) => {
+    if (!deps.isTauri()) {
+      updatePluginManageStatus(pluginId, {
+        state: "error",
+        message: "Plugin removal requires the desktop app."
+      });
+      return;
+    }
+    updatePluginManageStatus(pluginId, { state: "working" });
+    try {
+      await deps.invoke("remove_plugin_command", {
+        pluginId,
+        plugin_id: pluginId
+      });
+      updatePluginManageStatus(pluginId, {
+        state: "success",
+        message: "Plugin removed."
+      });
+      await loadPlugins();
+    } catch (error) {
+      console.error("Failed to remove plugin", error);
+      const message =
+        error instanceof Error ? error.message : "Failed to remove plugin.";
+      updatePluginManageStatus(pluginId, { state: "error", message });
+    }
+  };
+
   const updatePluginSetting = (
     pluginId: string,
     key: string,
@@ -426,6 +498,7 @@ export const createPlugins = (deps: PluginDependencies) => {
     installPath,
     installStatus,
     installing,
+    pluginManageStatus,
     pluginSettings,
     pluginSettingsDirty,
     pluginSettingsStatus,
@@ -438,6 +511,8 @@ export const createPlugins = (deps: PluginDependencies) => {
     denyPermission,
     clearInstallStatus,
     installPlugin,
+    updatePlugin,
+    removePlugin,
     setInstallPath,
     findPlugin,
     hasPermission,

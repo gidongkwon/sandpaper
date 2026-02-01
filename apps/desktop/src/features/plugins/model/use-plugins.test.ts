@@ -141,4 +141,86 @@ describe("createPlugins", () => {
 
     dispose?.();
   });
+
+  it("updates a plugin and reloads the list", async () => {
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "update_plugin_command") return null;
+      if (command === "list_plugins_command") return [];
+      if (command === "load_plugins_command") {
+        return {
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        };
+      }
+      throw new Error(`Unexpected command ${command}`);
+    });
+    let dispose: (() => void) | undefined;
+    let api: ReturnType<typeof createPlugins> | undefined;
+
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      api = createPlugins({
+        isTauri: () => true,
+        invoke
+      });
+    });
+
+    if (!api) throw new Error("Plugins API not initialized");
+
+    await api.updatePlugin("alpha");
+
+    expect(invoke).toHaveBeenCalledWith("update_plugin_command", {
+      pluginId: "alpha",
+      plugin_id: "alpha"
+    });
+    expect(invoke).toHaveBeenCalledWith("list_plugins_command");
+    expect(invoke).toHaveBeenCalledWith("load_plugins_command");
+
+    dispose?.();
+  });
+
+  it("removes a plugin and reloads the list", async () => {
+    const invoke = vi.fn(async (command: string) => {
+      if (command === "remove_plugin_command") return null;
+      if (command === "list_plugins_command") return [];
+      if (command === "load_plugins_command") {
+        return {
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        };
+      }
+      throw new Error(`Unexpected command ${command}`);
+    });
+    let dispose: (() => void) | undefined;
+    let api: ReturnType<typeof createPlugins> | undefined;
+
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      api = createPlugins({
+        isTauri: () => true,
+        invoke
+      });
+    });
+
+    if (!api) throw new Error("Plugins API not initialized");
+
+    await api.removePlugin("alpha");
+
+    expect(invoke).toHaveBeenCalledWith("remove_plugin_command", {
+      pluginId: "alpha",
+      plugin_id: "alpha"
+    });
+    expect(invoke).toHaveBeenCalledWith("list_plugins_command");
+    expect(invoke).toHaveBeenCalledWith("load_plugins_command");
+
+    dispose?.();
+  });
 });
