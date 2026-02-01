@@ -1,5 +1,7 @@
 import { For, Show, type Accessor, type JSX, type Setter } from "solid-js";
 import type { SearchResult } from "../../entities/search/model/search-types";
+import { Chip } from "../../shared/ui/chip";
+import { EmptyState } from "../../shared/ui/empty-state";
 
 type SearchPaneProps = {
   searchInputRef?: (el: HTMLInputElement) => void;
@@ -40,24 +42,24 @@ export const SearchPane = (props: SearchPaneProps) => {
           />
         </div>
         <div class="sidebar__filters">
-          <button
-            class={`chip ${props.filter() === "all" ? "is-active" : ""}`}
+          <Chip
+            active={props.filter() === "all"}
             onClick={() => props.setFilter("all")}
           >
             All
-          </button>
-          <button
-            class={`chip ${props.filter() === "links" ? "is-active" : ""}`}
+          </Chip>
+          <Chip
+            active={props.filter() === "links"}
             onClick={() => props.setFilter("links")}
           >
             Links
-          </button>
-          <button
-            class={`chip ${props.filter() === "tasks" ? "is-active" : ""}`}
+          </Chip>
+          <Chip
+            active={props.filter() === "tasks"}
             onClick={() => props.setFilter("tasks")}
           >
             Tasks
-          </button>
+          </Chip>
         </div>
       </div>
 
@@ -92,7 +94,9 @@ export const SearchPane = (props: SearchPaneProps) => {
             <div class="sidebar__results">
               <Show
                 when={props.results().length > 0}
-                fallback={<div class="sidebar__empty">No matches found</div>}
+                fallback={
+                  <EmptyState class="sidebar__empty" message="No matches found" />
+                }
               >
                 <For each={props.results()}>
                   {(block) => (

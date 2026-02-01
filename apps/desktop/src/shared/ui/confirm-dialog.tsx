@@ -1,4 +1,5 @@
 import { Show, createUniqueId, type Accessor, type JSX } from "solid-js";
+import { Button } from "./button";
 
 type ConfirmDialogProps = {
   open: Accessor<boolean>;
@@ -42,16 +43,16 @@ export const ConfirmDialog = (props: ConfirmDialogProps) => {
             {props.children}
           </div>
           <div class="modal__actions">
-            <button class="modal__button" onClick={() => props.onCancel()}>
+            <Button class="modal__button" onClick={() => props.onCancel()}>
               {props.cancelLabel ?? "Cancel"}
-            </button>
-            <button
+            </Button>
+            <Button
               class="modal__button is-primary"
               onClick={() => props.onConfirm()}
               disabled={confirmDisabled()}
             >
               {props.confirmLabel ?? "Confirm"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { CaretPosition } from "../../../shared/model/position";
+import { EmptyState } from "../../../shared/ui/empty-state";
 
 type LinkPreviewProps = {
   open: boolean;
@@ -46,7 +47,12 @@ export const LinkPreview = (props: LinkPreviewProps) => {
             >
               <Show
                 when={props.blocks.length > 0}
-                fallback={<div class="wikilink-preview__empty">No content yet.</div>}
+                fallback={
+                  <EmptyState
+                    class="wikilink-preview__empty"
+                    message="No content yet."
+                  />
+                }
               >
                 <For each={props.blocks}>
                   {(blockText) => (

@@ -4,6 +4,7 @@ import type {
   ReviewQueueSummary,
   ReviewTemplate
 } from "../../entities/review/model/review-types";
+import { EmptyState } from "../../shared/ui/empty-state";
 
 type ReviewPaneProps = {
   summary: Accessor<ReviewQueueSummary>;
@@ -44,10 +45,10 @@ export const ReviewPane = (props: ReviewPaneProps) => (
       <Show
         when={props.items().length > 0}
         fallback={
-          <div class="review__empty">
+          <EmptyState class="review__empty">
             <div>Nothing due yet.</div>
             <div>Tag blocks for review from the editor.</div>
-          </div>
+          </EmptyState>
         }
       >
         <For each={props.items()}>

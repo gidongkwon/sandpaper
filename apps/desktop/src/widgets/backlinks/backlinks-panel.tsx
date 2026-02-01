@@ -1,6 +1,7 @@
 import { For, Show, type Accessor, type Component } from "solid-js";
 import type { Block } from "../../entities/block/model/block-types";
 import type { BacklinkEntry } from "../../entities/page/model/backlink-types";
+import { EmptyState } from "../../shared/ui/empty-state";
 import { IconButton } from "../../shared/ui/icon-button";
 
 type BacklinksPanelProps = {
@@ -51,7 +52,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
             (props.activeBlock() && props.activeBacklinks().length > 0)
           }
           fallback={
-            <div class="backlinks-panel__empty">
+            <EmptyState class="backlinks-panel__empty">
               <div class="backlinks-panel__empty-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
@@ -62,7 +63,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
               <span>
                 Use <code>((block-id))</code> or <code>[[Page]]</code> to create links
               </span>
-            </div>
+            </EmptyState>
           }
         >
           <Show when={props.activePageBacklinks().length > 0}>

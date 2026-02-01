@@ -1,5 +1,6 @@
 import { Show, type Accessor } from "solid-js";
 import type { PermissionPrompt } from "../../entities/plugin/model/plugin-types";
+import { Button } from "../../shared/ui/button";
 
 type PermissionPromptModalProps = {
   prompt: Accessor<PermissionPrompt | null>;
@@ -23,12 +24,12 @@ export const PermissionPromptModal = (props: PermissionPromptModalProps) => {
               </p>
             </div>
             <div class="modal__actions">
-              <button class="modal__button" onClick={() => props.onDeny()}>
+              <Button class="modal__button" onClick={() => props.onDeny()}>
                 Deny
-              </button>
-              <button class="modal__button is-primary" onClick={() => props.onAllow()}>
+              </Button>
+              <Button class="modal__button is-primary" onClick={() => props.onAllow()}>
                 Allow
-              </button>
+              </Button>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { For, Show, type Accessor, type Setter } from "solid-js";
+import { EmptyState } from "../../../shared/ui/empty-state";
 
 type CommandPaletteItem = {
   id: string;
@@ -69,7 +70,9 @@ export const CommandPalette = (props: CommandPaletteProps) => {
           <div class="command-palette__list" role="listbox" aria-label="Command results">
             <Show
               when={props.commands().length > 0}
-              fallback={<div class="command-palette__empty">No matches</div>}
+              fallback={
+                <EmptyState class="command-palette__empty" message="No matches" />
+              }
             >
               <For each={props.commands()}>
                 {(command, index) => (

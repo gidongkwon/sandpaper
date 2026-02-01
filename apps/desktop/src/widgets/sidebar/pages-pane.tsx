@@ -1,5 +1,6 @@
 import { For, Show, type Accessor } from "solid-js";
 import type { PageSummary } from "../../entities/page/model/page-types";
+import { EmptyState } from "../../shared/ui/empty-state";
 import { IconButton } from "../../shared/ui/icon-button";
 
 type PagesPaneProps = {
@@ -33,7 +34,7 @@ export const PagesPane = (props: PagesPaneProps) => {
       <div class="page-list">
         <Show
           when={props.pages().length > 0}
-          fallback={<div class="page-list__empty">No pages yet</div>}
+          fallback={<EmptyState class="page-list__empty" message="No pages yet" />}
         >
           <For each={props.pages()}>
             {(page) => (
