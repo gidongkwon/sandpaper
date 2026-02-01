@@ -1,5 +1,6 @@
 const DEFAULT_COUNT = 5;
 const MAX_COUNT = 20;
+const ONE_DAY_SECONDS = 24 * 60 * 60;
 
 const clampCount = (value) => {
   if (!Number.isFinite(value) || value <= 0) return DEFAULT_COUNT;
@@ -51,7 +52,8 @@ const buildView = (ctx) => {
     return {
       summary: formatSummary(topIds.length),
       body: { kind: "list", items },
-      controls: [{ id: "refresh", type: "button", label: "Refresh" }]
+      controls: [{ id: "refresh", type: "button", label: "Refresh" }],
+      cache: { ttlSeconds: ONE_DAY_SECONDS }
     };
   } catch (error) {
     return {
