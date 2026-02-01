@@ -123,6 +123,7 @@ type SettingsModalProps = {
 };
 
 export const SettingsModal = (props: SettingsModalProps) => {
+  // These props are stable objects/accessors; destructuring is safe and avoids verbose prop chains.
   /* eslint-disable solid/reactivity */
   const vault = props.vault;
   const sync = props.sync;

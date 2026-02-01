@@ -30,6 +30,7 @@ import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
+import { PluginBlockPreview } from "../plugins/plugin-block-preview";
 import {
   INLINE_MARKDOWN_PATTERN,
   parseInlineFence,
@@ -105,6 +106,7 @@ type EditorPaneProps = {
   snapshotBlocks: (source: Block[]) => Block[];
   pageTitle: Accessor<string>;
   renderersByKind: Accessor<Map<string, PluginRenderer>>;
+  blockRenderersByLang: Accessor<Map<string, PluginRenderer>>;
   perfEnabled: Accessor<boolean>;
   scrollMeter: { notifyScroll: () => void };
 };
@@ -113,6 +115,7 @@ const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
 
 export const EditorPane = (props: EditorPaneProps) => {
+  // Props here are accessors/handlers; destructuring keeps the render readable without breaking reactivity.
   /* eslint-disable solid/reactivity */
   const blocks = props.blocks;
   const setBlocks = props.setBlocks;
@@ -144,6 +147,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   const snapshotBlocks = props.snapshotBlocks;
   const pageTitle = props.pageTitle;
   const renderersByKind = props.renderersByKind;
+  const blockRenderersByLang = props.blockRenderersByLang;
   const perfEnabled = props.perfEnabled;
   const scrollMeter = props.scrollMeter;
   /* eslint-enable solid/reactivity */
@@ -881,6 +885,12 @@ export const EditorPane = (props: EditorPaneProps) => {
     };
   };
 
+  const getPluginBlockRenderer = (text: string) => {
+    const fence = parseInlineFence(text);
+    if (!fence) return null;
+    return blockRenderersByLang().get(fence.lang) ?? null;
+  };
+
   const renderInlineMarkdown = (text: string): Array<string | JSX.Element> => {
     const nodes: Array<string | JSX.Element> = [];
     let cursor = 0;
@@ -1117,8 +1127,25 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const blockIndex = () => range().start + index();
                 const codePreview = () => getCodePreview(block.text);
                 const diagramPreview = () => getDiagramPreview(block.text);
+                const pluginRenderer = () => getPluginBlockRenderer(block.text);
                 const isEditing = () => focusedId() === block.id;
+                const updateBlockText = (nextText: string) => {
+                  if (nextText === block.text) return;
+                  setBlocks(blockIndex(), "text", nextText);
+                  scheduleSave();
+                };
                 const displayContent = () => {
+                  const plugin = pluginRenderer();
+                  if (plugin) {
+                    return (
+                      <PluginBlockPreview
+                        block={block}
+                        renderer={plugin}
+                        isTauri={isTauri}
+                        onUpdateText={updateBlockText}
+                      />
+                    );
+                  }
                   const code = codePreview();
                   if (code) {
                     return renderCodePreview(code, block.id);
@@ -1243,6 +1270,16 @@ export const EditorPane = (props: EditorPaneProps) => {
                       >
                         {displayContent()}
                       </div>
+                      <Show when={isEditing() && pluginRenderer()}>
+                        {(renderer) => (
+                          <PluginBlockPreview
+                            block={block}
+                            renderer={renderer()}
+                            isTauri={isTauri}
+                            onUpdateText={updateBlockText}
+                          />
+                        )}
+                      </Show>
                       <Show when={isEditing() && codePreview()}>
                         {(preview) => renderCodePreview(preview(), block.id)}
                       </Show>
