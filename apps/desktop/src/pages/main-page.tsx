@@ -9,6 +9,7 @@ import { deriveVaultKey } from "@sandpaper/crypto";
 import type { Block, BlockPayload } from "../entities/block/model/block-types";
 import { makeBlock } from "../entities/block/model/make-block";
 import { createAutosave } from "../features/autosave/model/use-autosave";
+import { createPluginActions } from "../features/plugins/model/use-plugin-actions";
 import { createPlugins } from "../features/plugins/model/use-plugins";
 import { createSync } from "../features/sync/model/use-sync";
 import { createVaultLoaders } from "../features/vault/model/use-vault-loaders";
@@ -16,11 +17,7 @@ import type {
   LocalPageRecord,
   PageSummary
 } from "../entities/page/model/page-types";
-import type {
-  PluginCommand,
-  PluginPanel,
-  PluginRenderer
-} from "../entities/plugin/model/plugin-types";
+import type { PluginPanel, PluginRenderer } from "../entities/plugin/model/plugin-types";
 import type {
   ReviewQueueItem,
   ReviewQueueSummary
@@ -54,6 +51,10 @@ import { createSearchState } from "./main-page/model/use-search";
 import { createTypeScale } from "./main-page/model/use-type-scale";
 import { createVaultKeyState } from "./main-page/model/use-vault-key";
 import { createVaultState } from "./main-page/model/use-vaults";
+import {
+  MainPageProvider,
+  type MainPageContextValue
+} from "./main-page/model/main-page-context";
 import { MainPageOverlays } from "./main-page/ui/main-page-overlays";
 import { MainPageWorkspace } from "./main-page/ui/main-page-workspace";
 
@@ -552,55 +553,24 @@ function MainPage() {
     linkUnlinkedReference
   } = backlinksState;
 
-  const openPanel = (panel: PluginPanel) => {
-    if (!hasPermission(panel.plugin_id, "ui")) {
-      const plugin = findPlugin(panel.plugin_id);
-      if (plugin) requestGrantPermission(plugin, "ui");
-      return;
-    }
-    setActivePanel(panel);
-  };
-
-  const runPluginCommand = async (command: PluginCommand) => {
-    if (!hasPermission(command.plugin_id, "data.write")) {
-      const plugin = findPlugin(command.plugin_id);
-      if (plugin) requestGrantPermission(plugin, "data.write");
-      return;
-    }
-
-    const text = `Plugin action: ${command.title}`;
-    const newBlock = makeBlock(makeRandomId(), text, 0);
-    const nextBlocks = [newBlock, ...blocks];
-    setBlocks(
-      produce((draft) => {
-        draft.unshift(newBlock);
-      })
-    );
-    scheduleSave();
-    setCommandStatus(`Ran ${command.id}`);
-
-    if (!isTauri()) return;
-
-    try {
-      const pageUid = resolvePageUid(activePageUid());
-      await invoke("plugin_write_page", {
-        pluginId: command.plugin_id,
-        plugin_id: command.plugin_id,
-        pageUid,
-        page_uid: pageUid,
-        blocks: nextBlocks.map((block) => ({
-          uid: block.id,
-          text: block.text,
-          indent: block.indent
-        }))
-      });
-    } catch (error) {
-      console.error("Plugin command failed", error);
-      setPluginError(
-        error instanceof Error ? error.message : "Plugin command failed."
-      );
-    }
-  };
+  const pluginActions = createPluginActions({
+    isTauri,
+    invoke,
+    hasPermission,
+    findPlugin,
+    requestGrantPermission,
+    setActivePanel,
+    setCommandStatus,
+    setPluginError,
+    blocks: () => blocks,
+    setBlocks,
+    scheduleSave,
+    activePageUid,
+    resolvePageUid,
+    makeRandomId,
+    makeBlock
+  });
+  const { openPanel, runPluginCommand } = pluginActions;
 
   const { SectionJump, SectionJumpLink, focusEditorSection } = createSectionJump({
     mode,
@@ -730,271 +700,278 @@ function MainPage() {
     }, 1500);
   };
 
-  return (
-    <div class="app">
-      <PerfHud enabled={perfEnabled} stats={perfStats} scrollFps={scrollFps} />
-
-      <Topbar
-        sidebarOpen={sidebarOpen}
-        toggleSidebar={() => setSidebarOpen((prev) => !prev)}
-        mode={mode}
-        setMode={setMode}
-        syncStatus={syncStatus}
-        syncStateLabel={syncStateLabel}
-        syncStateDetail={syncStateDetail}
-        autosaveError={autosaveError}
-        autosaved={autosaved}
-        autosaveStamp={autosaveStamp}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
-
-      <MainPageWorkspace
-        mode={mode}
-        sidebarOpen={sidebarOpen}
-        backlinksOpen={backlinksOpen}
-        sectionJump={{ SectionJump, SectionJumpLink }}
-        sidebar={{
-          footerLabel: () => activeVault()?.name ?? "Default",
-          search: {
-            inputRef: (el) => {
-              searchInputRef = el;
-            },
-            query: searchQuery,
-            setQuery: setSearchQuery,
-            filter: searchFilter,
-            setFilter: setSearchFilter,
-            commitTerm: commitSearchTerm,
-            history: searchHistory,
-            applyTerm: applySearchTerm,
-            results: filteredSearchResults,
-            renderHighlight: renderSearchHighlight,
-            onResultSelect: (block) => {
-              setActiveId(block.id);
-              setJumpTarget({ id: block.id, caret: "start" });
-            }
+  const mainPageContext: MainPageContextValue = {
+    workspace: {
+      mode,
+      sidebarOpen,
+      backlinksOpen,
+      sectionJump: { SectionJump, SectionJumpLink },
+      sidebar: {
+        footerLabel: () => activeVault()?.name ?? "Default",
+        search: {
+          inputRef: (el) => {
+            searchInputRef = el;
           },
-          unlinked: {
-            query: searchQuery,
-            references: unlinkedReferences,
-            onLink: linkUnlinkedReference
-          },
-          pages: {
-            pages,
-            activePageUid,
-            resolvePageUid,
-            onSwitch: switchPage,
-            pageMessage,
-            onCreate: () => {
-              openNewPageDialog();
-            }
+          query: searchQuery,
+          setQuery: setSearchQuery,
+          filter: searchFilter,
+          setFilter: setSearchFilter,
+          commitTerm: commitSearchTerm,
+          history: searchHistory,
+          applyTerm: applySearchTerm,
+          results: filteredSearchResults,
+          renderHighlight: renderSearchHighlight,
+          onResultSelect: (block) => {
+            setActiveId(block.id);
+            setJumpTarget({ id: block.id, caret: "start" });
           }
-        }}
-        editor={{
-          blocks,
-          setBlocks,
-          activeId,
-          setActiveId,
-          focusedId,
-          setFocusedId,
-          highlightedBlockId,
-          jumpTarget,
-          setJumpTarget,
-          createNewBlock,
-          scheduleSave,
-          recordLatency,
-          addReviewItem,
-          pageBusy,
-          renameTitle,
-          setRenameTitle,
-          renamePage,
+        },
+        unlinked: {
+          query: searchQuery,
+          references: unlinkedReferences,
+          onLink: linkUnlinkedReference
+        },
+        pages: {
           pages,
           activePageUid,
           resolvePageUid,
-          setNewPageTitle,
-          createPage,
-          switchPage,
-          createPageFromLink,
-          isTauri,
-          localPages,
-          saveLocalPageSnapshot,
-          snapshotBlocks,
-          pageTitle,
-          renderersByKind,
-          perfEnabled,
-          scrollMeter
-        }}
-        backlinksToggle={{
-          open: backlinksOpen,
-          total: totalBacklinks,
-          onToggle: () => setBacklinksOpen((prev) => !prev)
-        }}
-        backlinks={{
-          open: backlinksOpen,
-          onClose: () => setBacklinksOpen(false),
-          sectionJump: SectionJumpLink,
-          activePageBacklinks,
-          activeBacklinks,
-          activeBlock,
-          pageTitle,
-          groupedPageBacklinks,
-          supportsMultiPane,
-          openPageBacklinkInPane,
-          openPageBacklink,
-          formatBacklinkSnippet,
-          onBlockBacklinkSelect: (entry) => {
-            setActiveId(entry.id);
-            setJumpTarget({ id: entry.id, caret: "start" });
+          onSwitch: switchPage,
+          pageMessage,
+          onCreate: () => {
+            openNewPageDialog();
           }
-        }}
-        pluginPanel={{
-          panel: activePanel,
-          onClose: () => setActivePanel(null)
-        }}
-        capture={{
-          text: captureText,
-          setText: setCaptureText,
-          onCapture: addCapture
-        }}
-        review={{
-          summary: reviewSummary,
-          items: reviewItems,
-          busy: reviewBusy,
-          message: reviewMessage,
-          templates: reviewTemplates,
-          selectedTemplate: selectedReviewTemplate,
-          setSelectedTemplate: setSelectedReviewTemplate,
-          formatReviewDate,
-          onAction: handleReviewAction,
-          onCreateTemplate: createReviewTemplate,
-          isTauri,
-          activeId,
-          onAddCurrent: addReviewItem
-        }}
-      />
+        }
+      },
+      editor: {
+        blocks,
+        setBlocks,
+        activeId,
+        setActiveId,
+        focusedId,
+        setFocusedId,
+        highlightedBlockId,
+        jumpTarget,
+        setJumpTarget,
+        createNewBlock,
+        scheduleSave,
+        recordLatency,
+        addReviewItem,
+        pageBusy,
+        renameTitle,
+        setRenameTitle,
+        renamePage,
+        pages,
+        activePageUid,
+        resolvePageUid,
+        setNewPageTitle,
+        createPage,
+        switchPage,
+        createPageFromLink,
+        isTauri,
+        localPages,
+        saveLocalPageSnapshot,
+        snapshotBlocks,
+        pageTitle,
+        renderersByKind,
+        perfEnabled,
+        scrollMeter
+      },
+      backlinksToggle: {
+        open: backlinksOpen,
+        total: totalBacklinks,
+        onToggle: () => setBacklinksOpen((prev) => !prev)
+      },
+      backlinks: {
+        open: backlinksOpen,
+        onClose: () => setBacklinksOpen(false),
+        sectionJump: SectionJumpLink,
+        activePageBacklinks,
+        activeBacklinks,
+        activeBlock,
+        pageTitle,
+        groupedPageBacklinks,
+        supportsMultiPane,
+        openPageBacklinkInPane,
+        openPageBacklink,
+        formatBacklinkSnippet,
+        onBlockBacklinkSelect: (entry) => {
+          setActiveId(entry.id);
+          setJumpTarget({ id: entry.id, caret: "start" });
+        }
+      },
+      pluginPanel: {
+        panel: activePanel,
+        onClose: () => setActivePanel(null)
+      },
+      capture: {
+        text: captureText,
+        setText: setCaptureText,
+        onCapture: addCapture
+      },
+      review: {
+        summary: reviewSummary,
+        items: reviewItems,
+        busy: reviewBusy,
+        message: reviewMessage,
+        templates: reviewTemplates,
+        selectedTemplate: selectedReviewTemplate,
+        setSelectedTemplate: setSelectedReviewTemplate,
+        formatReviewDate,
+        onAction: handleReviewAction,
+        onCreateTemplate: createReviewTemplate,
+        isTauri,
+        activeId,
+        onAddCurrent: addReviewItem
+      }
+    },
+    overlays: {
+      commandPalette: {
+        open: paletteOpen,
+        onClose: closeCommandPalette,
+        query: paletteQuery,
+        setQuery: setPaletteQuery,
+        inputRef: registerPaletteInput,
+        commands: filteredPaletteCommands,
+        activeIndex: paletteIndex,
+        setActiveIndex: setPaletteIndex,
+        moveIndex: movePaletteIndex,
+        onRun: runPaletteCommand
+      },
+      settings: {
+        open: settingsOpen,
+        onClose: () => setSettingsOpen(false),
+        tab: settingsTab,
+        setTab: setSettingsTab,
+        isTauri,
+        typeScale: {
+          value: typeScale.typeScale,
+          set: typeScale.setTypeScale,
+          min: typeScale.min,
+          max: typeScale.max,
+          step: typeScale.step,
+          defaultPosition: typeScale.defaultPosition
+        },
+        vault: {
+          active: activeVault,
+          list: vaults,
+          applyActiveVault,
+          formOpen: vaultFormOpen,
+          setFormOpen: setVaultFormOpen,
+          newName: newVaultName,
+          setNewName: setNewVaultName,
+          newPath: newVaultPath,
+          setNewPath: setNewVaultPath,
+          create: createVault,
+          shadowPendingCount,
+          keyStatus: vaultKeyStatus,
+          passphrase: vaultPassphrase,
+          setPassphrase: setVaultPassphrase,
+          keyBusy: vaultKeyBusy,
+          setKey: setVaultKey,
+          keyMessage: vaultKeyMessage
+        },
+        sync: {
+          status: syncStatus,
+          stateLabel: syncStateLabel,
+          stateDetail: syncStateDetail,
+          serverUrl: syncServerUrl,
+          setServerUrl: setSyncServerUrl,
+          vaultIdInput: syncVaultIdInput,
+          setVaultIdInput: setSyncVaultIdInput,
+          deviceIdInput: syncDeviceIdInput,
+          setDeviceIdInput: setSyncDeviceIdInput,
+          busy: syncBusy,
+          connected: syncConnected,
+          connect: connectSync,
+          syncNow: syncNow,
+          message: syncMessage,
+          config: syncConfig,
+          log: syncLog,
+          copyLog: copySyncLog,
+          conflicts: syncConflicts,
+          resolveConflict: resolveSyncConflict,
+          startMerge: startSyncConflictMerge,
+          cancelMerge: cancelSyncConflictMerge,
+          mergeId: syncConflictMergeId,
+          mergeDrafts: syncConflictMergeDrafts,
+          setMergeDrafts: setSyncConflictMergeDrafts,
+          getConflictPageTitle: getConflictPageTitle
+        },
+        plugins: {
+          error: pluginError,
+          loadRuntime: loadPluginRuntime,
+          busy: pluginBusy,
+          list: plugins,
+          commandStatus: commandStatus,
+          status: pluginStatus,
+          requestGrant: requestGrantPermission,
+          runCommand: runPluginCommand,
+          openPanel: openPanel
+        },
+        importExport: {
+          importText,
+          setImportText,
+          importStatus,
+          setImportStatus,
+          importing,
+          importMarkdown,
+          exporting,
+          exportMarkdown,
+          exportStatus,
+          offlineExporting,
+          exportOfflineArchive,
+          offlineExportStatus,
+          offlineImporting,
+          importOfflineArchive,
+          offlineImportFile,
+          setOfflineImportFile,
+          offlineImportStatus,
+          setOfflineImportStatus
+        }
+      },
+      pageDialog: {
+        open: pageDialogOpen,
+        title: pageDialogTitle,
+        confirmLabel: pageDialogConfirmLabel,
+        confirmDisabled: pageDialogDisabled,
+        onConfirm: confirmPageDialog,
+        onCancel: closePageDialog,
+        mode: pageDialogMode,
+        value: pageDialogValue,
+        setValue: setPageDialogValue
+      },
+      permissionPrompt: {
+        prompt: permissionPrompt,
+        onDeny: denyPermission,
+        onAllow: grantPermission
+      }
+    }
+  };
 
-      <MainPageOverlays
-        commandPalette={{
-          open: paletteOpen,
-          onClose: closeCommandPalette,
-          query: paletteQuery,
-          setQuery: setPaletteQuery,
-          inputRef: registerPaletteInput,
-          commands: filteredPaletteCommands,
-          activeIndex: paletteIndex,
-          setActiveIndex: setPaletteIndex,
-          moveIndex: movePaletteIndex,
-          onRun: runPaletteCommand
-        }}
-        settings={{
-          open: settingsOpen,
-          onClose: () => setSettingsOpen(false),
-          tab: settingsTab,
-          setTab: setSettingsTab,
-          isTauri,
-          typeScale: {
-            value: typeScale.typeScale,
-            set: typeScale.setTypeScale,
-            min: typeScale.min,
-            max: typeScale.max,
-            step: typeScale.step,
-            defaultPosition: typeScale.defaultPosition
-          },
-          vault: {
-            active: activeVault,
-            list: vaults,
-            applyActiveVault,
-            formOpen: vaultFormOpen,
-            setFormOpen: setVaultFormOpen,
-            newName: newVaultName,
-            setNewName: setNewVaultName,
-            newPath: newVaultPath,
-            setNewPath: setNewVaultPath,
-            create: createVault,
-            shadowPendingCount,
-            keyStatus: vaultKeyStatus,
-            passphrase: vaultPassphrase,
-            setPassphrase: setVaultPassphrase,
-            keyBusy: vaultKeyBusy,
-            setKey: setVaultKey,
-            keyMessage: vaultKeyMessage
-          },
-          sync: {
-            status: syncStatus,
-            stateLabel: syncStateLabel,
-            stateDetail: syncStateDetail,
-            serverUrl: syncServerUrl,
-            setServerUrl: setSyncServerUrl,
-            vaultIdInput: syncVaultIdInput,
-            setVaultIdInput: setSyncVaultIdInput,
-            deviceIdInput: syncDeviceIdInput,
-            setDeviceIdInput: setSyncDeviceIdInput,
-            busy: syncBusy,
-            connected: syncConnected,
-            connect: connectSync,
-            syncNow: syncNow,
-            message: syncMessage,
-            config: syncConfig,
-            log: syncLog,
-            copyLog: copySyncLog,
-            conflicts: syncConflicts,
-            resolveConflict: resolveSyncConflict,
-            startMerge: startSyncConflictMerge,
-            cancelMerge: cancelSyncConflictMerge,
-            mergeId: syncConflictMergeId,
-            mergeDrafts: syncConflictMergeDrafts,
-            setMergeDrafts: setSyncConflictMergeDrafts,
-            getConflictPageTitle: getConflictPageTitle
-          },
-          plugins: {
-            error: pluginError,
-            loadRuntime: loadPluginRuntime,
-            busy: pluginBusy,
-            list: plugins,
-            commandStatus: commandStatus,
-            status: pluginStatus,
-            requestGrant: requestGrantPermission,
-            runCommand: runPluginCommand,
-            openPanel: openPanel
-          },
-          importExport: {
-            importText,
-            setImportText,
-            importStatus,
-            setImportStatus,
-            importing,
-            importMarkdown,
-            exporting,
-            exportMarkdown,
-            exportStatus,
-            offlineExporting,
-            exportOfflineArchive,
-            offlineExportStatus,
-            offlineImporting,
-            importOfflineArchive,
-            offlineImportFile,
-            setOfflineImportFile,
-            offlineImportStatus,
-            setOfflineImportStatus
-          }
-        }}
-        pageDialog={{
-          open: pageDialogOpen,
-          title: pageDialogTitle,
-          confirmLabel: pageDialogConfirmLabel,
-          confirmDisabled: pageDialogDisabled,
-          onConfirm: confirmPageDialog,
-          onCancel: closePageDialog,
-          mode: pageDialogMode,
-          value: pageDialogValue,
-          setValue: setPageDialogValue
-        }}
-        permissionPrompt={{
-          prompt: permissionPrompt,
-          onDeny: denyPermission,
-          onAllow: grantPermission
-        }}
-      />
-    </div>
+  return (
+    <MainPageProvider value={mainPageContext}>
+      <div class="app">
+        <PerfHud enabled={perfEnabled} stats={perfStats} scrollFps={scrollFps} />
+
+        <Topbar
+          sidebarOpen={sidebarOpen}
+          toggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          mode={mode}
+          setMode={setMode}
+          syncStatus={syncStatus}
+          syncStateLabel={syncStateLabel}
+          syncStateDetail={syncStateDetail}
+          autosaveError={autosaveError}
+          autosaved={autosaved}
+          autosaveStamp={autosaveStamp}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+
+        <MainPageWorkspace />
+
+        <MainPageOverlays />
+      </div>
+    </MainPageProvider>
   );
 }
 

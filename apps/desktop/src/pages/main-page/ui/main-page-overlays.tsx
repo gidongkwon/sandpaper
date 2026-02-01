@@ -1,57 +1,39 @@
-import type { Accessor, Setter } from "solid-js";
 import { CommandPalette } from "../../../features/command-palette/ui/command-palette";
 import { ConfirmDialog } from "../../../shared/ui/confirm-dialog";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
-import type { PageDialogMode } from "../model/page-dialog-utils";
+import { useMainPageContext } from "../model/main-page-context";
 
-type PropsOf<T> = T extends (props: infer P) => unknown ? P : never;
+export const MainPageOverlays = () => {
+  const { overlays } = useMainPageContext();
 
-type PageDialogProps = {
-  open: Accessor<boolean>;
-  title: Accessor<string>;
-  confirmLabel: Accessor<string>;
-  confirmDisabled: Accessor<boolean>;
-  onConfirm: () => void;
-  onCancel: () => void;
-  mode: Accessor<PageDialogMode>;
-  value: Accessor<string>;
-  setValue: Setter<string>;
-};
-
-type MainPageOverlaysProps = {
-  commandPalette: PropsOf<typeof CommandPalette>;
-  settings: PropsOf<typeof SettingsModal>;
-  pageDialog: PageDialogProps;
-  permissionPrompt: PropsOf<typeof PermissionPromptModal>;
-};
-
-export const MainPageOverlays = (props: MainPageOverlaysProps) => {
   return (
     <>
-      <CommandPalette {...props.commandPalette} />
-      <SettingsModal {...props.settings} />
+      <CommandPalette {...overlays.commandPalette} />
+      <SettingsModal {...overlays.settings} />
       <ConfirmDialog
-        open={props.pageDialog.open}
-        title={props.pageDialog.title()}
-        confirmLabel={props.pageDialog.confirmLabel()}
-        onConfirm={props.pageDialog.onConfirm}
-        onCancel={props.pageDialog.onCancel}
-        confirmDisabled={props.pageDialog.confirmDisabled}
+        open={overlays.pageDialog.open}
+        title={overlays.pageDialog.title()}
+        confirmLabel={overlays.pageDialog.confirmLabel()}
+        onConfirm={overlays.pageDialog.onConfirm}
+        onCancel={overlays.pageDialog.onCancel}
+        confirmDisabled={overlays.pageDialog.confirmDisabled}
       >
         <input
           class="modal__input"
           type="text"
           placeholder={
-            props.pageDialog.mode() === "rename"
+            overlays.pageDialog.mode() === "rename"
               ? "Page title"
               : "New page title"
           }
-          value={props.pageDialog.value()}
-          onInput={(event) => props.pageDialog.setValue(event.currentTarget.value)}
+          value={overlays.pageDialog.value()}
+          onInput={(event) =>
+            overlays.pageDialog.setValue(event.currentTarget.value)
+          }
         />
       </ConfirmDialog>
-      <PermissionPromptModal {...props.permissionPrompt} />
+      <PermissionPromptModal {...overlays.permissionPrompt} />
     </>
   );
 };
