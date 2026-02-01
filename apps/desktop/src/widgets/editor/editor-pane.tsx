@@ -1129,10 +1129,10 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const diagramPreview = () => getDiagramPreview(block.text);
                 const pluginRenderer = () => getPluginBlockRenderer(block.text);
                 const isEditing = () => focusedId() === block.id;
-                const updateBlockText = (nextText: string) => {
-                  if (nextText === block.text) return;
-                  const index = findIndexById(block.id);
+                const updateBlockText = (blockId: string, nextText: string) => {
+                  const index = findIndexById(blockId);
                   if (index < 0) return;
+                  if (blocks[index]?.text === nextText) return;
                   setBlocks(index, "text", nextText);
                   scheduleSave();
                 };

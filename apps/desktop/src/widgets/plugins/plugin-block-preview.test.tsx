@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", async (importOriginal) => {
@@ -267,5 +268,73 @@ describe("PluginBlockPreview", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(onUpdateText).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale render results when block id changes", async () => {
+    const resolvers: Array<(value: unknown) => void> = [];
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const onUpdateText = vi.fn();
+    const renderer = {
+      plugin_id: "hn-top",
+      id: "hn-top.block",
+      title: "Hacker News Top",
+      kind: "block",
+      languages: ["hn-top"]
+    };
+
+    const [block, setBlock] = createSignal({
+      id: "b1",
+      text: "```hn-top count=5 :: Loading HN top",
+      indent: 0
+    });
+
+    render(() => (
+      <PluginBlockPreview
+        block={block()}
+        renderer={renderer}
+        isTauri={() => true}
+        onUpdateText={onUpdateText}
+      />
+    ));
+
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1));
+
+    setBlock({
+      id: "b2",
+      text: "```hn-top count=5 :: Loading HN top",
+      indent: 0
+    });
+
+    await waitFor(() => expect(vi.mocked(invoke)).toHaveBeenCalledTimes(2));
+
+    resolvers[0]?.({
+      plugin_id: "hn-top",
+      renderer_id: "hn-top.block",
+      block_uid: "b1",
+      body: { kind: "list", items: ["Story 1"] },
+      next_text: "```hn-top count=5 :: Updated"
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onUpdateText).not.toHaveBeenCalled();
+
+    resolvers[1]?.({
+      plugin_id: "hn-top",
+      renderer_id: "hn-top.block",
+      block_uid: "b2",
+      body: { kind: "list", items: ["Story 2"] },
+      next_text: "```hn-top count=5 :: Updated 2"
+    });
+
+    await waitFor(() =>
+      expect(onUpdateText).toHaveBeenCalledWith("b2", "```hn-top count=5 :: Updated 2")
+    );
   });
 });

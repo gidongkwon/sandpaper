@@ -20,7 +20,7 @@ type PluginBlockPreviewProps = {
   block: Block;
   renderer: PluginRenderer;
   isTauri: () => boolean;
-  onUpdateText: (nextText: string) => void;
+  onUpdateText: (blockId: string, nextText: string) => void;
 };
 
 type PluginBlockCacheEntry = {
@@ -95,15 +95,16 @@ const storeCachedView = (key: string, view: PluginBlockView) => {
 };
 
 const applyNextText = (
+  blockId: string,
   current: string,
   nextText: string | null | undefined,
-  onUpdateText: (value: string) => void,
+  onUpdateText: (blockId: string, value: string) => void,
   onSkipNextRender: (value: string) => void
 ) => {
   if (!nextText) return;
   if (nextText === current) return;
   onSkipNextRender(nextText);
-  onUpdateText(nextText);
+  onUpdateText(blockId, nextText);
 };
 
 const renderBody = (body: PluginBlockView["body"]) => {
@@ -192,27 +193,38 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
   const [skipNextRender, setSkipNextRender] = createSignal<string | null>(null);
   let mounted = true;
   let requestToken = 0;
-  const nextRequestToken = () => {
+  let activeRequestKey = "";
+  const makeRequestKey = (blockId: string, text: string) =>
+    `${blockId}::${props.renderer.id}::${text}`;
+  const makeSkipKey = (blockId: string, text: string) =>
+    `${blockId}::${text}`;
+  const nextRequestToken = (key: string) => {
     requestToken += 1;
+    activeRequestKey = key;
     return requestToken;
   };
-  const isActive = (token: number) => mounted && token === requestToken;
+  const isActive = (token: number, key: string) =>
+    mounted && token === requestToken && key === activeRequestKey;
 
   const loadView = async () => {
     if (!props.isTauri()) return;
-    const token = nextRequestToken();
-    const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
+    const blockId = props.block.id;
+    const blockText = props.block.text;
+    const requestKey = makeRequestKey(blockId, blockText);
+    const token = nextRequestToken(requestKey);
+    const key = cacheKeyFor(props.renderer, blockId, blockText);
     const cached = readCachedView(key);
     if (cached) {
-      if (!isActive(token)) return;
+      if (!isActive(token, requestKey)) return;
       setError(null);
       setView(cached);
       setLoading(false);
       applyNextText(
-        props.block.text,
+        blockId,
+        blockText,
         cached.next_text,
         props.onUpdateText,
-        (value) => setSkipNextRender(value)
+        (value) => setSkipNextRender(makeSkipKey(blockId, value))
       );
       return;
     }
@@ -225,33 +237,30 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         plugin_id: props.renderer.plugin_id,
         rendererId: props.renderer.id,
         renderer_id: props.renderer.id,
-        blockUid: props.block.id,
-        block_uid: props.block.id,
-        text: props.block.text
+        blockUid: blockId,
+        block_uid: blockId,
+        text: blockText
       });
-      if (!isActive(token)) return;
+      if (!isActive(token, requestKey)) return;
       setView(result);
       storeCachedView(key, result);
-      if (result.next_text && result.next_text !== props.block.text) {
-        const nextKey = cacheKeyFor(
-          props.renderer,
-          props.block.id,
-          result.next_text
-        );
+      if (result.next_text && result.next_text !== blockText) {
+        const nextKey = cacheKeyFor(props.renderer, blockId, result.next_text);
         storeCachedView(nextKey, result);
       }
       applyNextText(
-        props.block.text,
+        blockId,
+        blockText,
         result.next_text,
         props.onUpdateText,
-        (value) => setSkipNextRender(value)
+        (value) => setSkipNextRender(makeSkipKey(blockId, value))
       );
     } catch (err) {
-      if (!isActive(token)) return;
+      if (!isActive(token, requestKey)) return;
       console.error("Failed to render plugin block", err);
       setError(err instanceof Error ? err.message : "Failed to render block.");
     } finally {
-      if (isActive(token)) {
+      if (isActive(token, requestKey)) {
         setLoading(false);
       }
     }
@@ -259,7 +268,10 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
 
   const runAction = async (controlId: string, value?: string) => {
     if (!props.isTauri()) return;
-    const token = nextRequestToken();
+    const blockId = props.block.id;
+    const blockText = props.block.text;
+    const requestKey = makeRequestKey(blockId, blockText);
+    const token = nextRequestToken(requestKey);
     setLoading(true);
     setError(null);
     try {
@@ -268,37 +280,34 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         plugin_id: props.renderer.plugin_id,
         rendererId: props.renderer.id,
         renderer_id: props.renderer.id,
-        blockUid: props.block.id,
-        block_uid: props.block.id,
-        text: props.block.text,
+        blockUid: blockId,
+        block_uid: blockId,
+        text: blockText,
         actionId: controlId,
         action_id: controlId,
         value
       });
-      if (!isActive(token)) return;
+      if (!isActive(token, requestKey)) return;
       setView(result);
-      const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
+      const key = cacheKeyFor(props.renderer, blockId, blockText);
       storeCachedView(key, result);
-      if (result.next_text && result.next_text !== props.block.text) {
-        const nextKey = cacheKeyFor(
-          props.renderer,
-          props.block.id,
-          result.next_text
-        );
+      if (result.next_text && result.next_text !== blockText) {
+        const nextKey = cacheKeyFor(props.renderer, blockId, result.next_text);
         storeCachedView(nextKey, result);
       }
       applyNextText(
-        props.block.text,
+        blockId,
+        blockText,
         result.next_text,
         props.onUpdateText,
-        (value) => setSkipNextRender(value)
+        (value) => setSkipNextRender(makeSkipKey(blockId, value))
       );
     } catch (err) {
-      if (!isActive(token)) return;
+      if (!isActive(token, requestKey)) return;
       console.error("Failed to run plugin action", err);
       setError(err instanceof Error ? err.message : "Failed to run action.");
     } finally {
-      if (isActive(token)) {
+      if (isActive(token, requestKey)) {
         setLoading(false);
       }
     }
@@ -306,13 +315,27 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
 
   createEffect(
     on(
-      () => [props.block.text, props.renderer.id],
+      () => props.block.id,
+      () => {
+        setView(null);
+        setError(null);
+        setLoading(false);
+        setSkipNextRender(null);
+      }
+    )
+  );
+
+  createEffect(
+    on(
+      () => [props.block.id, props.block.text, props.renderer.id],
       () => {
         if (!props.isTauri()) {
           setView(null);
           return;
         }
-        if (skipNextRender() && props.block.text === skipNextRender()) {
+        if (
+          skipNextRender() === makeSkipKey(props.block.id, props.block.text)
+        ) {
           setSkipNextRender(null);
           return;
         }
