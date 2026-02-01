@@ -1,6 +1,5 @@
 import { createMemo, onCleanup, type Accessor, type Component, type Setter } from "solid-js";
-
-type Mode = "quick-capture" | "editor" | "review";
+import type { Mode } from "../../shared/model/mode";
 
 type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
 

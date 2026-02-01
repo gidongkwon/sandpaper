@@ -75,6 +75,7 @@ import type {
 } from "../entities/sync/model/sync-types";
 import type { VaultConfig, VaultKeyStatus, VaultRecord } from "../entities/vault/model/vault-types";
 import type { MarkdownExportStatus } from "../shared/model/markdown-export-types";
+import type { Mode } from "../shared/model/mode";
 import {
   buildDefaultBlocks,
   buildEmptyBlocks,
@@ -91,8 +92,6 @@ import {
 } from "../shared/lib/perf/perf";
 import { replaceWikilinksInText } from "../shared/lib/links/replace-wikilinks";
 import { escapeRegExp } from "../shared/lib/string/escape-regexp";
-
-type Mode = "quick-capture" | "editor" | "review";
 
 type CommandPaletteItem = {
   id: string;

@@ -1,6 +1,5 @@
 import { Show, type Accessor, type Component, type JSX } from "solid-js";
-
-type Mode = "quick-capture" | "editor" | "review";
+import type { Mode } from "../../shared/model/mode";
 
 type FocusPanelProps = {
   mode: Accessor<Mode>;

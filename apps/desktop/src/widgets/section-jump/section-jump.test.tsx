@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal, type Accessor } from "solid-js";
 import { vi } from "vitest";
+import type { Mode } from "../../shared/model/mode";
 import { createSectionJump } from "./section-jump";
 
 describe("createSectionJump", () => {
@@ -19,7 +20,7 @@ describe("createSectionJump", () => {
     const user = userEvent.setup();
 
     render(() => {
-      const [mode] = createSignal<"quick-capture" | "editor" | "review">("editor");
+      const [mode] = createSignal<Mode>("editor");
       const [sidebarOpenSignal, setSidebarOpenSignal] = createSignal(false);
       const [backlinksOpen] = createSignal(false);
       const [activeId] = createSignal<string | null>(null);
@@ -51,7 +52,7 @@ describe("createSectionJump", () => {
 
   it("tabs between available sections", () => {
     render(() => {
-      const [mode] = createSignal<"quick-capture" | "editor" | "review">("editor");
+      const [mode] = createSignal<Mode>("editor");
       const [sidebarOpen] = createSignal(true);
       const [backlinksOpen] = createSignal(false);
       const [activeId] = createSignal<string | null>(null);

@@ -1,8 +1,7 @@
 import type { Accessor, Setter } from "solid-js";
 import type { SyncStatus } from "../../entities/sync/model/sync-types";
+import type { Mode } from "../../shared/model/mode";
 import { IconButton } from "../../shared/ui/icon-button";
-
-type Mode = "quick-capture" | "editor" | "review";
 
 type TopbarProps = {
   sidebarOpen: Accessor<boolean>;
