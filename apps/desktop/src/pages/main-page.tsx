@@ -1,5 +1,4 @@
 import {
-  For,
   Show,
   createEffect,
   createMemo,
@@ -27,12 +26,16 @@ import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
 import { CapturePane } from "../widgets/capture/capture-pane";
 import { EditorPane } from "../widgets/editor/editor-pane";
 import { UnlinkedReferencesPane } from "../widgets/discovery/unlinked-references-pane";
+import { FocusPanel } from "../widgets/focus-panel/focus-panel";
+import { PerfHud } from "../widgets/perf/perf-hud";
+import { PluginPanelWidget } from "../widgets/plugins/plugin-panel";
 import { ReviewPane } from "../widgets/review/review-pane";
 import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
 import { PagesPane } from "../widgets/sidebar/pages-pane";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
 import { Topbar } from "../widgets/topbar/topbar";
+import { CommandPalette } from "../features/command-palette/ui/command-palette";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -3011,23 +3014,7 @@ function MainPage() {
 
   return (
     <div class="app">
-      {perfEnabled() && (
-        <aside class="perf-hud">
-          <div class="perf-hud__title">Perf</div>
-          <div class="perf-hud__row">
-            Input p50 <span>{perfStats().p50?.toFixed(1) ?? "--"}ms</span>
-          </div>
-          <div class="perf-hud__row">
-            Input p95 <span>{perfStats().p95?.toFixed(1) ?? "--"}ms</span>
-          </div>
-          <div class="perf-hud__row">
-            Scroll <span>{scrollFps()} fps</span>
-          </div>
-          <div class="perf-hud__row">
-            Samples <span>{perfStats().count}</span>
-          </div>
-        </aside>
-      )}
+      <PerfHud enabled={perfEnabled} stats={perfStats} scrollFps={scrollFps} />
 
       <Topbar
         sidebarOpen={sidebarOpen}
@@ -3046,38 +3033,34 @@ function MainPage() {
       <Show
         when={mode() === "editor"}
         fallback={
-          <section class="focus-panel">
-            <SectionJump
-              id={mode() === "quick-capture" ? "capture" : "review"}
-              label={mode() === "quick-capture" ? "Capture" : "Review"}
-            />
-            <Show
-              when={mode() === "quick-capture"}
-              fallback={
-                <ReviewPane
-                  summary={reviewSummary}
-                  items={reviewItems}
-                  busy={reviewBusy}
-                  message={reviewMessage}
-                  templates={reviewTemplates}
-                  selectedTemplate={selectedReviewTemplate}
-                  setSelectedTemplate={setSelectedReviewTemplate}
-                  formatReviewDate={formatReviewDate}
-                  onAction={handleReviewAction}
-                  onCreateTemplate={createReviewTemplate}
-                  isTauri={isTauri}
-                  activeId={activeId}
-                  onAddCurrent={addReviewItem}
-                />
-              }
-            >
+          <FocusPanel
+            mode={mode}
+            sectionJump={SectionJumpLink}
+            capture={
               <CapturePane
                 text={captureText}
                 setText={setCaptureText}
                 onCapture={addCapture}
               />
-            </Show>
-          </section>
+            }
+            review={
+              <ReviewPane
+                summary={reviewSummary}
+                items={reviewItems}
+                busy={reviewBusy}
+                message={reviewMessage}
+                templates={reviewTemplates}
+                selectedTemplate={selectedReviewTemplate}
+                setSelectedTemplate={setSelectedReviewTemplate}
+                formatReviewDate={formatReviewDate}
+                onAction={handleReviewAction}
+                onCreateTemplate={createReviewTemplate}
+                isTauri={isTauri}
+                activeId={activeId}
+                onAddCurrent={addReviewItem}
+              />
+            }
+          />
         }
       >
         <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
@@ -3200,118 +3183,32 @@ function MainPage() {
                 setJumpTarget({ id: entry.id, caret: "start" });
               }}
             />
-            <Show when={activePanel()}>
-              {(panel) => (
-                <section class="plugin-panel">
-                  <div class="plugin-panel__header">
-                    <div>
-                      <div class="plugin-panel__title">Active panel</div>
-                      <div class="plugin-panel__meta">
-                        {panel().title} · {panel().id}
-                      </div>
-                    </div>
-                    <button
-                      class="plugin-panel__close"
-                      onClick={() => setActivePanel(null)}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div class="plugin-panel__body">
-                    <div class="plugin-panel__content">
-                      Sandboxed panel placeholder for {panel().plugin_id}.
-                    </div>
-                  </div>
-                </section>
-              )}
-            </Show>
+            <PluginPanelWidget
+              panel={activePanel}
+              onClose={() => setActivePanel(null)}
+            />
           </main>
         </div>
       </Show>
 
       {/* Command Palette */}
-      <Show when={paletteOpen()}>
-        <div
-          class="modal-backdrop"
-          onClick={(event) =>
-            event.target === event.currentTarget && closeCommandPalette()
+      <CommandPalette
+        open={paletteOpen}
+        onClose={closeCommandPalette}
+        query={paletteQuery}
+        setQuery={setPaletteQuery}
+        inputRef={(el) => {
+          paletteInputRef = el;
+          if (paletteOpen()) {
+            queueMicrotask(() => el.focus());
           }
-        >
-          <div
-            class="command-palette"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command palette"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div class="command-palette__title">Command palette</div>
-            <input
-              ref={(el) => {
-                paletteInputRef = el;
-                if (paletteOpen()) {
-                  queueMicrotask(() => el.focus());
-                }
-              }}
-              class="command-palette__input"
-              type="search"
-              placeholder="Search commands..."
-              value={paletteQuery()}
-              onInput={(event) => setPaletteQuery(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  movePaletteIndex(1);
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  movePaletteIndex(-1);
-                  return;
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void runPaletteCommand(
-                    filteredPaletteCommands()[paletteIndex()]
-                  );
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  closeCommandPalette();
-                }
-              }}
-            />
-            <div class="command-palette__list" role="listbox" aria-label="Command results">
-              <Show
-                when={filteredPaletteCommands().length > 0}
-                fallback={<div class="command-palette__empty">No matches</div>}
-              >
-                <For each={filteredPaletteCommands()}>
-                  {(command, index) => (
-                    <button
-                      class={`command-palette__item ${
-                        index() === paletteIndex() ? "is-active" : ""
-                      }`}
-                      type="button"
-                      role="option"
-                      aria-selected={index() === paletteIndex()}
-                      onMouseEnter={() => setPaletteIndex(index())}
-                      onClick={() => void runPaletteCommand(command)}
-                    >
-                      <span>{command.label}</span>
-                      <Show when={command.hint}>
-                        {(hint) => (
-                          <span class="command-palette__hint">{hint()}</span>
-                        )}
-                      </Show>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </div>
-      </Show>
+        }}
+        commands={filteredPaletteCommands}
+        activeIndex={paletteIndex}
+        setActiveIndex={setPaletteIndex}
+        moveIndex={movePaletteIndex}
+        onRun={runPaletteCommand}
+      />
 
       {/* Settings Modal */}
       <SettingsModal
