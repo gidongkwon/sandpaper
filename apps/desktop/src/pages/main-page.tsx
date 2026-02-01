@@ -25,7 +25,11 @@ import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/m
 import { makeBlock } from "../entities/block/model/make-block";
 import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
 import { EditorPane } from "../widgets/editor/editor-pane";
+import { UnlinkedReferencesPane } from "../widgets/discovery/unlinked-references-pane";
+import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
+import { PagesPane } from "../widgets/sidebar/pages-pane";
+import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -3235,200 +3239,50 @@ function MainPage() {
         }
       >
         <div class={`workspace ${sidebarOpen() ? "" : "sidebar-collapsed"}`}>
-          <aside class={`sidebar ${sidebarOpen() ? "is-open" : ""}`}>
-            <Show when={sidebarOpen()}>
-              <SectionJump id="sidebar" label="Sidebar" />
-            </Show>
-            <div class="sidebar__header">
-              <div class="sidebar__search">
-                <svg class="sidebar__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="11" cy="11" r="7" />
-                  <line x1="21" y1="21" x2="16" y2="16" />
-                </svg>
-                <input
-                  ref={searchInputRef}
-                  class="sidebar__input"
-                  type="search"
-                  placeholder="Search..."
-                  value={searchQuery()}
-                  onInput={(event) => setSearchQuery(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      commitSearchTerm(event.currentTarget.value);
-                    }
-                  }}
-                />
-              </div>
-              <div class="sidebar__filters">
-                <button
-                  class={`chip ${searchFilter() === "all" ? "is-active" : ""}`}
-                  onClick={() => setSearchFilter("all")}
-                >
-                  All
-                </button>
-                <button
-                  class={`chip ${searchFilter() === "links" ? "is-active" : ""}`}
-                  onClick={() => setSearchFilter("links")}
-                >
-                  Links
-                </button>
-                <button
-                  class={`chip ${searchFilter() === "tasks" ? "is-active" : ""}`}
-                  onClick={() => setSearchFilter("tasks")}
-                >
-                  Tasks
-                </button>
-              </div>
-            </div>
-
-            <div class="sidebar__content">
-              <Show when={searchHistory().length > 0}>
-                <div class="sidebar__section">
-                  <div class="sidebar__section-header">
-                    <span class="sidebar__section-title">Recent searches</span>
-                    <span class="sidebar__section-count">
-                      {searchHistory().length}
-                    </span>
-                  </div>
-                  <div class="search-history">
-                    <For each={searchHistory()}>
-                      {(term) => (
-                        <button
-                          class="search-history__item"
-                          aria-label={`Recent search ${term}`}
-                          onClick={() => applySearchTerm(term)}
-                        >
-                          {term}
-                        </button>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-              <Show when={searchQuery().trim().length > 0}>
-                <div class="sidebar__section">
-                  <div class="sidebar__section-header">
-                    <span class="sidebar__section-title">Results</span>
-                    <span class="sidebar__section-count">{filteredSearchResults().length}</span>
-                  </div>
-                  <div class="sidebar__results">
-                    <Show
-                      when={filteredSearchResults().length > 0}
-                      fallback={<div class="sidebar__empty">No matches found</div>}
-                    >
-                      <For each={filteredSearchResults()}>
-                        {(block) => (
-                          <button
-                            class="result"
-                            onClick={() => {
-                              setActiveId(block.id);
-                              setJumpTarget({ id: block.id, caret: "start" });
-                            }}
-                          >
-                            <div class="result__text">
-                              {renderSearchHighlight(block.text || "Untitled")}
-                            </div>
-                          </button>
-                        )}
-                      </For>
-                    </Show>
-                  </div>
-                </div>
-              </Show>
-
-              <Show
-                when={
-                  searchQuery().trim().length === 0 &&
-                  unlinkedReferences().length > 0
-                }
-              >
-                <div class="sidebar__section">
-                  <div class="sidebar__section-header">
-                    <span class="sidebar__section-title">Unlinked references</span>
-                    <span class="sidebar__section-count">
-                      {unlinkedReferences().length}
-                    </span>
-                  </div>
-                  <div class="unlinked-list">
-                    <For each={unlinkedReferences()}>
-                      {(ref) => (
-                        <div class="unlinked-item">
-                          <div class="unlinked-item__title">{ref.pageTitle}</div>
-                          <div class="unlinked-item__snippet">{ref.snippet}</div>
-                          <button
-                            class="unlinked-item__action"
-                            type="button"
-                            onClick={() => linkUnlinkedReference(ref)}
-                          >
-                            Link it
-                          </button>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-
-              <div class="sidebar__section">
-                <div class="sidebar__section-header">
-                  <span class="sidebar__section-title">Pages</span>
-                  <button
-                    class="sidebar__section-action"
-                    onClick={() => {
-                      const title = prompt("New page title:");
-                      if (title?.trim()) {
-                        setNewPageTitle(title.trim());
-                        void createPage();
-                      }
-                    }}
-                    aria-label="Create new page"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </button>
-                </div>
-                <Show when={pageMessage()}>
-                  {(message) => <div class="page-message">{message()}</div>}
-                </Show>
-                <div class="page-list">
-                  <Show
-                    when={pages().length > 0}
-                    fallback={<div class="page-list__empty">No pages yet</div>}
-                  >
-                    <For each={pages()}>
-                      {(page) => (
-                        <button
-                          class={`page-item ${
-                            page.uid === resolvePageUid(activePageUid())
-                              ? "is-active"
-                              : ""
-                          }`}
-                          onClick={() => switchPage(page.uid)}
-                          aria-label={`Open ${page.title || "Untitled"}`}
-                        >
-                          <svg class="page-item__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14,2 14,8 20,8" />
-                          </svg>
-                          <div class="page-item__content">
-                            <div class="page-item__title">
-                              {page.title || "Untitled"}
-                            </div>
-                          </div>
-                        </button>
-                      )}
-                    </For>
-                  </Show>
-                </div>
-              </div>
-            </div>
-
-            <div class="sidebar__footer">
-              <span>{activeVault()?.name ?? "Default"}</span>
-            </div>
-          </aside>
+          <SidebarPanel
+            open={sidebarOpen}
+            sectionJump={SectionJumpLink}
+            footerLabel={() => activeVault()?.name ?? "Default"}
+          >
+            <SearchPane
+              searchInputRef={(el) => {
+                searchInputRef = el;
+              }}
+              query={searchQuery}
+              setQuery={setSearchQuery}
+              filter={searchFilter}
+              setFilter={setSearchFilter}
+              commitTerm={commitSearchTerm}
+              history={searchHistory}
+              applyTerm={applySearchTerm}
+              results={filteredSearchResults}
+              renderHighlight={renderSearchHighlight}
+              onResultSelect={(block) => {
+                setActiveId(block.id);
+                setJumpTarget({ id: block.id, caret: "start" });
+              }}
+            >
+              <UnlinkedReferencesPane
+                query={searchQuery}
+                references={unlinkedReferences}
+                onLink={linkUnlinkedReference}
+              />
+              <PagesPane
+                pages={pages}
+                activePageUid={activePageUid}
+                resolvePageUid={resolvePageUid}
+                onSwitch={switchPage}
+                pageMessage={pageMessage}
+                onCreate={() => {
+                  const title = prompt("New page title:");
+                  if (title?.trim()) {
+                    setNewPageTitle(title.trim());
+                    void createPage();
+                  }
+                }}
+              />
+            </SearchPane>
+          </SidebarPanel>
 
           <main class={`main-pane ${backlinksOpen() ? "has-panel" : ""}`} role="main">
             <div class="main-pane__editor">

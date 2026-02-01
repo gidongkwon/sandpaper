@@ -1,6 +1,7 @@
 import { For, Show, type Accessor, type Component } from "solid-js";
 import type { Block } from "../../entities/block/model/block-types";
 import type { BacklinkEntry } from "../../entities/page/model/backlink-types";
+import { IconButton } from "../../shared/ui/icon-button";
 
 type BacklinksPanelProps = {
   open: Accessor<boolean>;
@@ -32,16 +33,16 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
           </svg>
           Backlinks
         </div>
-        <button
+        <IconButton
           class="backlinks-panel__close"
+          label="Close backlinks"
           onClick={() => props.onClose()}
-          aria-label="Close backlinks"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
-        </button>
+        </IconButton>
       </div>
       <div class="backlinks-panel__body">
         <Show

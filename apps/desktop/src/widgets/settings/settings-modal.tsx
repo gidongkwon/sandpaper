@@ -7,6 +7,7 @@ import type { SyncConfig, SyncConflict, SyncLogEntry, SyncStatus } from "../../e
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import { ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
+import { IconButton } from "../../shared/ui/icon-button";
 
 type SettingsTab = "general" | "vault" | "sync" | "plugins" | "permissions" | "import";
 
@@ -302,16 +303,16 @@ export const SettingsModal = (props: SettingsModalProps) => {
         >
           <div class="settings-modal__header">
             <h2 id="settings-title">Settings</h2>
-            <button
+            <IconButton
               class="settings-modal__close"
+              label="Close settings"
               onClick={() => props.onClose()}
-              aria-label="Close settings"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
-            </button>
+            </IconButton>
           </div>
           <div class="settings-modal__body">
             <nav class="settings-nav">

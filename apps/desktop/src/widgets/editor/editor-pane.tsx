@@ -21,7 +21,10 @@ import type {
 import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import type { CodeFence } from "../../shared/model/markdown-types";
 import type { CaretPosition } from "../../shared/model/position";
-import { SLASH_COMMANDS } from "../../features/editor/model/slash-commands";
+import { BlockActions } from "../../features/editor/ui/block-actions";
+import { LinkPreview } from "../../features/editor/ui/link-preview";
+import { SlashMenu } from "../../features/editor/ui/slash-menu";
+import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
@@ -1076,40 +1079,11 @@ export const EditorPane = (props: EditorPaneProps) => {
                       "--i": `${blockIndex()}`
                     }}
                   >
-                    <div class="block__actions">
-                      <button
-                        class="block__action"
-                        onClick={() => addReviewFromBlock(block)}
-                        title="Add to review"
-                        aria-label="Add to review"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      </button>
-                      <button
-                        class="block__action"
-                        onClick={() => linkToPageFromBlock(block, blockIndex())}
-                        title="Link to page"
-                        aria-label="Link to page"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                        </svg>
-                      </button>
-                      <button
-                        class="block__action"
-                        onClick={() => duplicateBlockAt(blockIndex())}
-                        title="Duplicate block"
-                        aria-label="Duplicate block"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <rect x="9" y="9" width="13" height="13" rx="2" />
-                          <rect x="2" y="2" width="13" height="13" rx="2" />
-                        </svg>
-                      </button>
-                    </div>
+                    <BlockActions
+                      onAddReview={() => addReviewFromBlock(block)}
+                      onLinkToPage={() => linkToPageFromBlock(block, blockIndex())}
+                      onDuplicate={() => duplicateBlockAt(blockIndex())}
+                    />
                     <span class="block__bullet" aria-hidden="true" />
                     <div class="block__body">
                       <textarea
@@ -1216,139 +1190,32 @@ export const EditorPane = (props: EditorPaneProps) => {
             </For>
           </div>
         </div>
-        <Show when={slashMenu().open && slashMenu().position}>
-          {(position) => (
-            <div
-              class="slash-menu"
-              style={{
-                left: `${position().x}px`,
-                top: `${position().y}px`
-              }}
-            >
-              <div class="slash-menu__title">Commands</div>
-              <div class="slash-menu__list">
-                <For each={SLASH_COMMANDS}>
-                  {(command) => (
-                    <button
-                      class="slash-menu__item"
-                      onClick={() => applySlashCommand(command.id)}
-                      type="button"
-                    >
-                      {command.label}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </div>
-          )}
-        </Show>
-        <Show when={wikilinkMenu().open && wikilinkMenu().position}>
-          {(position) => (
-            <div
-              class="wikilink-menu"
-              role="listbox"
-              aria-label="Wikilink suggestions"
-              style={{
-                left: `${position().x}px`,
-                top: `${position().y}px`
-              }}
-            >
-              <div class="wikilink-menu__title">Link suggestions</div>
-              <div class="wikilink-menu__list">
-                <For each={wikilinkMatches()}>
-                  {(page) => {
-                    const label = page.title || "Untitled";
-                    const insertTitle = page.title || page.uid;
-                    return (
-                      <button
-                        class="wikilink-menu__item"
-                        type="button"
-                        aria-label={label}
-                        onClick={() => applyWikilinkSuggestion(insertTitle)}
-                      >
-                        <span class="wikilink-menu__label">{label}</span>
-                        <Show
-                          when={
-                            resolvePageUid(page.uid) ===
-                            resolvePageUid(activePageUid())
-                          }
-                        >
-                          <span class="wikilink-menu__meta">Current</span>
-                        </Show>
-                      </button>
-                    );
-                  }}
-                </For>
-                <Show when={wikilinkCreateLabel()}>
-                  {(label) => (
-                    <button
-                      class="wikilink-menu__item wikilink-menu__item--create"
-                      type="button"
-                      onClick={() =>
-                        applyWikilinkSuggestion(wikilinkQuery(), true)
-                      }
-                    >
-                      {label()}
-                    </button>
-                  )}
-                </Show>
-              </div>
-            </div>
-          )}
-        </Show>
-        <Show when={linkPreview().open && linkPreview().position}>
-          {(position) => (
-            <div
-              class="wikilink-preview"
-              role="dialog"
-              aria-label="Link preview"
-              style={{
-                left: `${position().x}px`,
-                top: `${position().y}px`
-              }}
-              onMouseEnter={() => cancelLinkPreviewClose()}
-              onMouseLeave={() => scheduleLinkPreviewClose()}
-            >
-              <div class="wikilink-preview__header">
-                <div class="wikilink-preview__title">
-                  {linkPreview().title || "Untitled"}
-                </div>
-                <button
-                  class="wikilink-preview__open"
-                  type="button"
-                  onClick={() => void openPageByTitle(linkPreview().title)}
-                >
-                  Open
-                </button>
-              </div>
-              <div class="wikilink-preview__body">
-                <Show
-                  when={!linkPreview().loading}
-                  fallback={
-                    <div class="wikilink-preview__loading">
-                      Loading preview...
-                    </div>
-                  }
-                >
-                  <Show
-                    when={linkPreview().blocks.length > 0}
-                    fallback={
-                      <div class="wikilink-preview__empty">
-                        No content yet.
-                      </div>
-                    }
-                  >
-                    <For each={linkPreview().blocks}>
-                      {(blockText) => (
-                        <div class="wikilink-preview__block">{blockText}</div>
-                      )}
-                    </For>
-                  </Show>
-                </Show>
-              </div>
-            </div>
-          )}
-        </Show>
+        <SlashMenu
+          open={slashMenu().open}
+          position={slashMenu().position}
+          onSelect={applySlashCommand}
+        />
+        <WikilinkMenu
+          open={wikilinkMenu().open}
+          position={wikilinkMenu().position}
+          matches={wikilinkMatches()}
+          activePageUid={activePageUid()}
+          resolvePageUid={resolvePageUid}
+          createLabel={wikilinkCreateLabel()}
+          query={wikilinkQuery()}
+          onSelect={(title) => applyWikilinkSuggestion(title)}
+          onCreate={(title) => applyWikilinkSuggestion(title, true)}
+        />
+        <LinkPreview
+          open={linkPreview().open}
+          position={linkPreview().position}
+          title={linkPreview().title}
+          blocks={linkPreview().blocks}
+          loading={linkPreview().loading}
+          onOpen={() => void openPageByTitle(linkPreview().title)}
+          onMouseEnter={() => cancelLinkPreviewClose()}
+          onMouseLeave={() => scheduleLinkPreviewClose()}
+        />
       </div>
     </section>
   );
