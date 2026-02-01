@@ -13,7 +13,6 @@ import {
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import mermaid from "mermaid";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
   buildBacklinks,
@@ -23,19 +22,74 @@ import {
   serializePageToMarkdown
 } from "@sandpaper/core-model";
 import { deriveVaultKey } from "@sandpaper/crypto";
+import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/model/block-types";
+import { makeBlock } from "../entities/block/model/make-block";
+import { SLASH_COMMANDS } from "../features/editor/model/slash-commands";
+import type {
+  BacklinkEntry,
+  PageBacklinkRecord,
+  PageLinkBlock,
+  UnlinkedReference
+} from "../entities/page/model/backlink-types";
+import type {
+  LocalPageRecord,
+  PageBlocksResponse,
+  PageSummary
+} from "../entities/page/model/page-types";
+import type {
+  PluginCommand,
+  PluginPanel,
+  PluginPermissionInfo,
+  PluginRenderer,
+  PluginRuntimeStatus,
+  PermissionPrompt
+} from "../entities/plugin/model/plugin-types";
+import type {
+  ReviewQueueItem,
+  ReviewQueueSummary,
+  ReviewTemplate
+} from "../entities/review/model/review-types";
+import type { SearchResult } from "../entities/search/model/search-types";
+import type {
+  SyncApplyResult,
+  SyncConfig,
+  SyncConflict,
+  SyncLogEntry,
+  SyncOpEnvelope,
+  SyncServerPullResponse,
+  SyncServerPushResponse,
+  SyncStatus
+} from "../entities/sync/model/sync-types";
+import type { VaultConfig, VaultKeyStatus, VaultRecord } from "../entities/vault/model/vault-types";
+import type { MarkdownExportStatus } from "../shared/model/markdown-export-types";
+import type { CodeFence } from "../shared/model/markdown-types";
+import type { CaretPosition } from "../shared/model/position";
+import {
+  buildDefaultBlocks,
+  buildEmptyBlocks,
+  buildSeedBlocks,
+  getSeedCount
+} from "../shared/lib/blocks/block-seeds";
+import { copyToClipboard } from "../shared/lib/clipboard/copy-to-clipboard";
+import { DIAGRAM_LANGS, ensureMermaid } from "../shared/lib/diagram/mermaid";
+import { makeLocalId, makeRandomId } from "../shared/lib/id/id-factory";
+import {
+  INLINE_MARKDOWN_PATTERN,
+  parseInlineFence,
+  parseInlineLinkToken,
+  parseMarkdownList,
+  parseWikilinkToken
+} from "../shared/lib/markdown/inline-parser";
+import { normalizePageUid } from "../shared/lib/page/normalize-page-uid";
 import {
   createFpsMeter,
   createPerfTracker,
   type PerfStats
-} from "./editor/perf";
-import { getVirtualRange } from "./editor/virtual-list";
-import "./app.css";
-
-type Block = {
-  id: string;
-  text: string;
-  indent: number;
-};
+} from "../shared/lib/perf/perf";
+import { replaceWikilinksInText } from "../shared/lib/links/replace-wikilinks";
+import { escapeRegExp } from "../shared/lib/string/escape-regexp";
+import { getCaretPosition } from "../shared/lib/textarea/get-caret-position";
+import { getVirtualRange } from "../shared/lib/virtual-list/virtual-list";
 
 type Mode = "quick-capture" | "editor" | "review";
 
@@ -53,23 +107,6 @@ type CommandPaletteItem = {
   action: () => void | Promise<void>;
 };
 
-type VaultRecord = {
-  id: string;
-  name: string;
-  path: string;
-};
-
-type PageSummary = {
-  uid: string;
-  title: string;
-};
-
-type LocalPageRecord = {
-  uid: string;
-  title: string;
-  blocks: Block[];
-};
-
 type OfflineExportManifest = {
   version: number;
   exported_at: string;
@@ -79,239 +116,12 @@ type OfflineExportManifest = {
   pages: Array<{ uid: string; title: string; file: string }>;
 };
 
-type VaultConfig = {
-  active_id?: string | null;
-  vaults: VaultRecord[];
-};
-
-type VaultKeyStatus = {
-  configured: boolean;
-  kdf: string | null;
-  iterations: number | null;
-  salt_b64: string | null;
-};
-
-type SyncConfig = {
-  server_url: string | null;
-  vault_id: string | null;
-  device_id: string | null;
-  key_fingerprint: string | null;
-  last_push_cursor: number;
-  last_pull_cursor: number;
-};
-
-type SyncStatus = {
-  state: "idle" | "syncing" | "offline" | "error";
-  pending_ops: number;
-  last_synced_at: string | null;
-  last_error: string | null;
-  last_push_count: number;
-  last_pull_count: number;
-  last_apply_count: number;
-};
-
-type SyncLogEntry = {
-  id: string;
-  at: string;
-  action: "push" | "pull";
-  count: number;
-  status: "ok" | "error";
-  detail?: string | null;
-};
-
-type SyncOpEnvelope = {
-  cursor: number;
-  op_id: string;
-  payload: string;
-};
-
-type SyncServerPushResponse = {
-  accepted: number;
-  cursor: number | null;
-};
-
-type SyncServerPullResponse = {
-  ops: {
-    cursor: number;
-    opId: string;
-    payload: string;
-    deviceId: string;
-    createdAt: number;
-  }[];
-  nextCursor: number;
-};
-
-type SyncApplyResult = {
-  pages: string[];
-  applied: number;
-  conflicts?: SyncConflict[];
-};
-
-type SyncConflict = {
-  op_id: string;
-  page_uid: string;
-  block_uid: string;
-  local_text: string;
-  remote_text: string;
-};
-
-type ReviewQueueSummary = {
-  due_count: number;
-  next_due_at: number | null;
-};
-
-type ReviewQueueItem = {
-  id: number;
-  page_uid: string;
-  block_uid: string;
-  added_at: number;
-  due_at: number;
-  template?: string | null;
-  status: string;
-  last_reviewed_at: number | null;
-  text: string;
-};
-
-type ReviewTemplate = {
-  id: string;
-  title: string;
-  description: string;
-};
-
-type SearchResult = {
-  id: string;
-  text: string;
-};
-
-type BlockSearchResult = {
-  id: number;
-  uid: string;
-  text: string;
-};
-
-type BlockPayload = {
-  uid: string;
-  text: string;
-  indent: number;
-};
-
-type PageBlocksResponse = {
-  page_uid: string;
-  title: string;
-  blocks: BlockPayload[];
-};
-
-type BacklinkEntry = {
-  id: string;
-  text: string;
-  pageUid?: string;
-  pageTitle?: string;
-};
-
-type UnlinkedReference = {
-  pageTitle: string;
-  pageUid: string;
-  blockId: string;
-  blockIndex: number;
-  snippet: string;
-};
-
-type PageLinkBlock = {
-  id: string;
-  text: string;
-  pageUid: string;
-  pageTitle: string;
-};
-
-type PageBacklinkRecord = {
-  block_uid: string;
-  text: string;
-  page_uid: string;
-  page_title: string;
-};
-
-type MarkdownExportStatus = {
-  path: string;
-  pages: number;
-};
-
-type PluginPermissionInfo = {
-  id: string;
-  name: string;
-  version: string;
-  description?: string | null;
-  permissions: string[];
-  enabled: boolean;
-  path: string;
-  granted_permissions: string[];
-  missing_permissions: string[];
-};
-
-type PluginBlockInfo = {
-  id: string;
-  reason: string;
-  missing_permissions: string[];
-};
-
-type PluginRuntimeStatus = {
-  loaded: string[];
-  blocked: PluginBlockInfo[];
-  commands: PluginCommand[];
-  panels: PluginPanel[];
-  toolbar_actions: PluginToolbarAction[];
-  renderers: PluginRenderer[];
-};
-
-type PluginCommand = {
-  plugin_id: string;
-  id: string;
-  title: string;
-  description?: string | null;
-};
-
-type PluginPanel = {
-  plugin_id: string;
-  id: string;
-  title: string;
-  location?: string | null;
-};
-
-type PluginToolbarAction = {
-  plugin_id: string;
-  id: string;
-  title: string;
-  tooltip?: string | null;
-};
-
-type PluginRenderer = {
-  plugin_id: string;
-  id: string;
-  title: string;
-  kind: string;
-};
-
-type CodeFence = {
-  lang: string;
-  content: string;
-};
-
-type PermissionPrompt = {
-  pluginId: string;
-  pluginName: string;
-  permission: string;
-};
-
-type SlashMenuPosition = {
-  x: number;
-  y: number;
-};
-
 type SlashMenuState = {
   open: boolean;
   blockId: string | null;
   blockIndex: number;
   slashIndex: number;
-  position: SlashMenuPosition | null;
+  position: CaretPosition | null;
 };
 
 type WikilinkMenuState = {
@@ -322,19 +132,18 @@ type WikilinkMenuState = {
   rangeEnd: number;
   hasClosing: boolean;
   query: string;
-  position: SlashMenuPosition | null;
+  position: CaretPosition | null;
 };
 
 type LinkPreviewState = {
   open: boolean;
-  position: SlashMenuPosition | null;
+  position: CaretPosition | null;
   pageUid: string | null;
   title: string;
   blocks: string[];
   loading: boolean;
 };
 
-let nextId = 1;
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
 const DEFAULT_PAGE_UID = "inbox";
@@ -348,239 +157,6 @@ const TYPE_SCALE_DEFAULT_POSITION = `${(
   100
 ).toFixed(2)}%`;
 
-const makeLocalId = () => `b${nextId++}`;
-const makeRandomId = () => globalThis.crypto?.randomUUID?.() ?? makeLocalId();
-
-const normalizePageUid = (value: string) => {
-  let output = "";
-  let wasDash = false;
-  for (const ch of value) {
-    if (/^[A-Za-z0-9]$/.test(ch)) {
-      output += ch.toLowerCase();
-      wasDash = false;
-    } else if (!wasDash) {
-      output += "-";
-      wasDash = true;
-    }
-  }
-  const trimmed = output.replace(/^-+|-+$/g, "");
-  return trimmed || "page";
-};
-
-const makeBlock = (id: string, text = "", indent = 0): Block => ({
-  id,
-  text,
-  indent
-});
-
-const DIAGRAM_LANGS = new Set(["mermaid", "diagram"]);
-
-type MarkdownList = {
-  type: "ul" | "ol";
-  items: string[];
-};
-
-const parseInlineFence = (text: string): CodeFence | null => {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("```")) return null;
-  const rest = trimmed.slice(3).trim();
-  if (!rest) return null;
-  const [lang, ...codeParts] = rest.split(/\s+/);
-  if (!lang || codeParts.length === 0) return null;
-  return {
-    lang: lang.toLowerCase(),
-    content: codeParts.join(" ")
-  };
-};
-
-const INLINE_MARKDOWN_PATTERN =
-  /(\[\[[^\]]+?\]\]|\[[^\]]+?\]\([^)]+?\)|`[^`]+`|\*\*[^*]+?\*\*|~~[^~]+?~~|\*[^*]+?\*)/g;
-
-const ORDERED_LIST_PATTERN = /^\s*\d+\.\s+(.+)$/;
-const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
-
-const SLASH_COMMANDS = [
-  { id: "link", label: "Link to page" },
-  { id: "date", label: "Insert date" },
-  { id: "task", label: "Convert to task" }
-] as const;
-
-const getCaretPosition = (
-  textarea: HTMLTextAreaElement,
-  position: number
-): SlashMenuPosition => {
-  const style = window.getComputedStyle(textarea);
-  const mirror = document.createElement("div");
-  mirror.style.position = "absolute";
-  mirror.style.visibility = "hidden";
-  mirror.style.whiteSpace = "pre-wrap";
-  mirror.style.wordBreak = "break-word";
-  mirror.style.left = "-9999px";
-  mirror.style.top = "0";
-  mirror.style.padding = style.padding;
-  mirror.style.border = style.border;
-  mirror.style.boxSizing = style.boxSizing;
-  mirror.style.fontFamily = style.fontFamily;
-  mirror.style.fontSize = style.fontSize;
-  mirror.style.fontWeight = style.fontWeight;
-  mirror.style.letterSpacing = style.letterSpacing;
-  mirror.style.lineHeight = style.lineHeight;
-  mirror.style.width = `${textarea.clientWidth}px`;
-  mirror.textContent = textarea.value.slice(0, Math.max(0, position));
-
-  const marker = document.createElement("span");
-  marker.textContent = textarea.value.slice(position) || ".";
-  mirror.appendChild(marker);
-  document.body.appendChild(mirror);
-
-  const markerRect = marker.getBoundingClientRect();
-  const mirrorRect = mirror.getBoundingClientRect();
-  document.body.removeChild(mirror);
-
-  const textareaRect = textarea.getBoundingClientRect();
-  const rawLineHeight = parseFloat(style.lineHeight || "");
-  const lineHeight = Number.isFinite(rawLineHeight) ? rawLineHeight : 16;
-  const offsetX = markerRect.left - mirrorRect.left;
-  const offsetY = markerRect.top - mirrorRect.top;
-
-  return {
-    x: textareaRect.left + offsetX - textarea.scrollLeft,
-    y: textareaRect.top + offsetY - textarea.scrollTop + lineHeight
-  };
-};
-
-const parseWikilinkToken = (token: string) => {
-  if (!token.startsWith("[[") || !token.endsWith("]]")) return null;
-  const raw = token.slice(2, -2).trim();
-  if (!raw) return null;
-  const [beforeAlias, alias] = raw.split("|");
-  const [beforeHeading] = beforeAlias.split("#");
-  const target = beforeHeading.trim();
-  if (!target) return null;
-  const label = (alias ?? beforeAlias).trim() || target;
-  return { target, label };
-};
-
-const parseInlineLinkToken = (token: string) => {
-  const match = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-  if (!match) return null;
-  const label = match[1]?.trim() ?? "";
-  const href = match[2]?.trim() ?? "";
-  if (!label || !href) return null;
-  if (href.toLowerCase().startsWith("javascript:")) return null;
-  return { label, href };
-};
-
-const parseMarkdownList = (text: string): MarkdownList | null => {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  if (lines.length < 2) return null;
-  const orderedMatches = lines.map((line) => line.match(ORDERED_LIST_PATTERN));
-  const isOrdered = orderedMatches.every(Boolean);
-  const unorderedMatches = lines.map((line) =>
-    line.match(UNORDERED_LIST_PATTERN)
-  );
-  const isUnordered = unorderedMatches.every(Boolean);
-  if (!isOrdered && !isUnordered) return null;
-  const items = (isOrdered ? orderedMatches : unorderedMatches).map(
-    (match) => (match?.[1] ?? "").trim()
-  );
-  return {
-    type: isOrdered ? "ol" : "ul",
-    items
-  };
-};
-
-let mermaidInitialized = false;
-
-const ensureMermaid = () => {
-  if (!mermaidInitialized) {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict"
-    });
-    mermaidInitialized = true;
-  }
-  return mermaid;
-};
-
-const replaceWikilinksInText = (
-  text: string,
-  fromTitle: string,
-  toTitle: string
-) => {
-  const normalizedFrom = normalizePageUid(fromTitle);
-  const normalizedTo = normalizePageUid(toTitle);
-  if (!normalizedFrom || normalizedFrom === normalizedTo) return text;
-  return text.replace(/\[\[[^\]]+?\]\]/g, (token) => {
-    const inner = token.slice(2, -2);
-    const raw = inner.trim();
-    if (!raw) return token;
-    const [targetPart, aliasPart] = raw.split("|");
-    const [targetBase, headingPart] = targetPart.split("#");
-    const targetTitle = targetBase.trim();
-    if (!targetTitle) return token;
-    if (normalizePageUid(targetTitle) !== normalizedFrom) return token;
-    const nextTarget = toTitle.trim() || targetTitle;
-    const headingSuffix = headingPart ? `#${headingPart.trim()}` : "";
-    const aliasSuffix = aliasPart ? `|${aliasPart.trim()}` : "";
-    return `[[${nextTarget}${headingSuffix}${aliasSuffix}]]`;
-  });
-};
-
-const escapeRegExp = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const MAX_SEED_BLOCKS = 200_000;
-
-const buildSeedBlocks = (idFactory: () => string, count: number): Block[] => {
-  const core = [
-    { text: "Sandpaper outline prototype", indent: 0 },
-    { text: "Enter to add a block", indent: 1 },
-    { text: "Tab to indent, Shift+Tab to outdent", indent: 1 },
-    { text: "Backspace on empty removes the block", indent: 1 }
-  ];
-  const total = Math.max(1, Math.min(count, MAX_SEED_BLOCKS));
-  const fillerCount = Math.max(0, total - core.length);
-  const filler = Array.from({ length: fillerCount }, (_, index) => ({
-    text: `Draft line ${index + 1}`,
-    indent: index % 3
-  }));
-
-  return [...core, ...filler]
-    .slice(0, total)
-    .map(({ text, indent }) => makeBlock(idFactory(), text, indent));
-};
-
-const getSeedCount = (): number | null => {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("seed");
-  if (!raw) return null;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.floor(parsed);
-};
-
-const buildDefaultBlocks = (idFactory: () => string): Block[] => {
-  const core = [
-    { text: "Sandpaper outline prototype", indent: 0 },
-    { text: "Enter to add a block", indent: 1 },
-    { text: "Tab to indent, Shift+Tab to outdent", indent: 1 },
-    { text: "Backspace on empty removes the block", indent: 1 }
-  ];
-  const filler = Array.from({ length: 60 }, (_, index) => ({
-    text: `Draft line ${index + 1}`,
-    indent: index % 3
-  }));
-
-  return [...core, ...filler].map(({ text, indent }) =>
-    makeBlock(idFactory(), text, indent)
-  );
-};
-
-const buildEmptyBlocks = (idFactory: () => string): Block[] => [
-  makeBlock(idFactory(), "", 0)
-];
-
 const buildLocalDefaults = () => buildDefaultBlocks(makeLocalId);
 const defaultBlocks = buildLocalDefaults();
 const resolveInitialBlocks = () => {
@@ -591,7 +167,7 @@ const resolveInitialBlocks = () => {
   return defaultBlocks;
 };
 
-function App() {
+function MainPage() {
   const initialBlocks = resolveInitialBlocks();
   const initialBlockSnapshot = initialBlocks.map((block) => ({ ...block }));
   const [blocks, setBlocks] = createStore<Block[]>([
@@ -1779,30 +1355,6 @@ function App() {
       ];
       return next.slice(-10);
     });
-  };
-
-  const copyToClipboard = async (content: string) => {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(content);
-        return;
-      } catch (error) {
-        console.warn("Clipboard write failed", error);
-      }
-    }
-    try {
-      const textarea = document.createElement("textarea");
-      textarea.value = content;
-      textarea.setAttribute("readonly", "true");
-      textarea.style.position = "absolute";
-      textarea.style.left = "-9999px";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-    } catch (error) {
-      console.warn("Clipboard fallback failed", error);
-    }
   };
 
   const formatSyncLogLine = (entry: SyncLogEntry) => {
@@ -4066,7 +3618,7 @@ function App() {
     ) => {
       if (slashIndex < 0) return;
       const caret = Math.min(target.value.length, slashIndex + 1);
-      let position: SlashMenuPosition;
+      let position: CaretPosition;
       try {
         position = getCaretPosition(target, caret);
       } catch {
@@ -4165,7 +3717,7 @@ function App() {
       const [targetPart] = inner.split("|");
       const [targetBase] = targetPart.split("#");
       const query = targetBase.trim();
-      let position: SlashMenuPosition;
+      let position: CaretPosition;
       try {
         position = getCaretPosition(target, Math.min(caret, value.length));
       } catch {
@@ -6204,4 +5756,4 @@ function App() {
   );
 }
 
-export default App;
+export default MainPage;

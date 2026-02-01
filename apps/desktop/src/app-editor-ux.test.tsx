@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-import App from "./app";
+import App from "./app/app";
 
 describe("App editor UX", () => {
   beforeEach(() => {

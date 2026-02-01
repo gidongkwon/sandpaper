@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import appCssRaw from "./app.css?raw";
+import appCssRaw from "./app/app.css?raw";
 
 type ThemeVars = Record<string, string>;
 
@@ -67,15 +67,15 @@ describe("App color contrast", () => {
     const cwd = getCwd();
     if (cwd) {
       try {
-        return readFileSync(new URL(`file://${cwd}/src/app.css`), "utf8");
+        return readFileSync(new URL(`file://${cwd}/src/app/app.css`), "utf8");
       } catch {
         return readFileSync(
-          new URL(`file://${cwd}/apps/desktop/src/app.css`),
+          new URL(`file://${cwd}/apps/desktop/src/app/app.css`),
           "utf8"
         );
       }
     }
-    return readFileSync(new URL("./app.css", import.meta.url), "utf8");
+    return readFileSync(new URL("./app/app.css", import.meta.url), "utf8");
   })();
   const lightVars = extractVars(findRootBlock(css));
   const darkVars = extractVars(findDarkRootBlock(css));

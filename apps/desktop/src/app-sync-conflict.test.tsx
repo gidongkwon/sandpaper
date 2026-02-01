@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 });
 
 import { invoke } from "@tauri-apps/api/core";
-import App from "./app";
+import App from "./app/app";
 
 describe("Sync conflict UI", () => {
   beforeEach(() => {
