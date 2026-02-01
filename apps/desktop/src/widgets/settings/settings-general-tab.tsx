@@ -14,6 +14,11 @@ type SettingsGeneralTabProps = {
 };
 
 export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const moveShortcut = isMac ? "Option+Command+Up/Down" : "Alt+Up/Down";
+
   return (
     <>
       <div class="settings-section">
@@ -57,6 +62,20 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
           <span class="settings-value">
             {props.activeVault()?.name ?? "Default"}
           </span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <h3 class="settings-section__title">Keyboard shortcuts</h3>
+        <p class="settings-section__desc">
+          Editor shortcuts for quick block actions.
+        </p>
+        <div class="settings-row">
+          <span class="settings-label">Move block(s) up/down</span>
+          <span class="settings-value">{moveShortcut}</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Insert line break</span>
+          <span class="settings-value">Shift+Enter</span>
         </div>
       </div>
     </>

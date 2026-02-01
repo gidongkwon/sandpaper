@@ -496,7 +496,7 @@ describe("EditorPane", () => {
     fireEvent.click(displays[1]);
     fireEvent.click(displays[2], { shiftKey: true });
 
-    fireEvent.keyDown(window, { key: "ArrowDown", altKey: true });
+    fireEvent.keyDown(window, { key: "ArrowDown", altKey: true, metaKey: true });
     expect(untrack(() => blocks.map((block) => block.id))).toEqual([
       "b1",
       "b4",
@@ -566,7 +566,7 @@ describe("EditorPane", () => {
     if (!textarea) return;
 
     fireEvent.focus(textarea);
-    fireEvent.keyDown(textarea, { key: "ArrowUp", altKey: true });
+    fireEvent.keyDown(textarea, { key: "ArrowUp", altKey: true, metaKey: true });
 
     expect(untrack(() => blocks.map((block) => block.id))).toEqual([
       "b2",

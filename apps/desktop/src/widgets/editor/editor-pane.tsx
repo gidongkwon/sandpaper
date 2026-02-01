@@ -227,6 +227,16 @@ export const EditorPane = (props: EditorPaneProps) => {
   } | null>(null);
   const supportsPointer =
     typeof window !== "undefined" && "PointerEvent" in window;
+  const isMacPlatform =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const isMoveShortcut = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;
+    if (isMacPlatform) {
+      return event.altKey && event.metaKey;
+    }
+    return event.altKey;
+  };
   let selecting = false;
   let selectionAnchor = -1;
   let selectionPointerId: number | null = null;
@@ -763,10 +773,7 @@ export const EditorPane = (props: EditorPaneProps) => {
         return;
       }
 
-      if (
-        event.altKey &&
-        (event.key === "ArrowUp" || event.key === "ArrowDown")
-      ) {
+      if (isMoveShortcut(event)) {
         event.preventDefault();
         moveSelectionBy(event.key === "ArrowUp" ? -1 : 1);
         return;
@@ -1560,10 +1567,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       target.selectionStart === target.value.length &&
       target.selectionEnd === target.value.length;
 
-    if (
-      event.altKey &&
-      (event.key === "ArrowUp" || event.key === "ArrowDown")
-    ) {
+    if (isMoveShortcut(event)) {
       if (!selectionRange()) {
         event.preventDefault();
         moveBlockBy(block.id, event.key === "ArrowUp" ? -1 : 1);
