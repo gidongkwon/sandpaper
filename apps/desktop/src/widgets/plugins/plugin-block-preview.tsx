@@ -29,8 +29,30 @@ export const __clearPluginBlockCache = () => {
   blockViewCache.clear();
 };
 
+const normalizeCacheKeyText = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return text;
+  const rest = trimmed.slice(3).trim();
+  if (!rest) return text;
+  const summaryIndex = rest.indexOf("::");
+  const left = (summaryIndex >= 0 ? rest.slice(0, summaryIndex) : rest).trim();
+  if (!left) return text;
+  const [lang, ...configParts] = left.split(/\s+/);
+  if (!lang) return text;
+  let configText = configParts.join(" ").trim();
+  if (configText) {
+    configText = configText
+      .replace(/(^|\s)cache_ts=("[^"]*"|'[^']*'|\S+)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  return configText ? `${lang.toLowerCase()} ${configText}` : lang.toLowerCase();
+};
+
 const cacheKeyFor = (renderer: PluginRenderer, blockId: string, text: string) =>
-  `${renderer.plugin_id}::${renderer.id}::${blockId}::${text}`;
+  `${renderer.plugin_id}::${renderer.id}::${blockId}::${normalizeCacheKeyText(
+    text
+  )}`;
 
 const resolveCacheTtlMs = (view: PluginBlockView) => {
   const ttlSeconds = view.cache?.ttlSeconds;

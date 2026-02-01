@@ -119,6 +119,58 @@ describe("PluginBlockPreview", () => {
     expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses cached view when cache_ts or summary changes", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      plugin_id: "hn-top",
+      renderer_id: "hn-top.block",
+      block_uid: "b1",
+      cache: { ttlSeconds: 60 },
+      body: {
+        kind: "list",
+        items: ["Story 1"]
+      },
+      next_text:
+        "```hn-top count=5 cache_ttl=60 cache_ts=2026-02-01T00:00:00Z :: HN top 5 at 00:00Z"
+    });
+
+    const renderer = {
+      plugin_id: "hn-top",
+      id: "hn-top.block",
+      title: "Hacker News Top",
+      kind: "block",
+      languages: ["hn-top"]
+    };
+    const onUpdateText = vi.fn();
+
+    const { unmount } = render(() => (
+      <PluginBlockPreview
+        block={{ id: "b1", text: "```hn-top count=5 :: Loading HN top", indent: 0 }}
+        renderer={renderer}
+        isTauri={() => true}
+        onUpdateText={onUpdateText}
+      />
+    ));
+    expect(await screen.findByText("Story 1")).toBeInTheDocument();
+
+    unmount();
+    render(() => (
+      <PluginBlockPreview
+        block={{
+          id: "b1",
+          text:
+            "```hn-top count=5 cache_ttl=60 cache_ts=2026-02-01T01:00:00Z :: HN top 5 at 01:00Z",
+          indent: 0
+        }}
+        renderer={renderer}
+        isTauri={() => true}
+        onUpdateText={onUpdateText}
+      />
+    ));
+
+    expect(await screen.findByText("Story 1")).toBeInTheDocument();
+    expect(vi.mocked(invoke)).toHaveBeenCalledTimes(1);
+  });
+
   it("refetches cached views after the TTL expires", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
