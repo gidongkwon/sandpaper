@@ -1,0 +1,8 @@
+{
+  "id": "hn.top",
+  "name": "Hacker News Top",
+  "version": "0.1.0",
+  "description": "Fetches the top Hacker News stories as a block renderer.",
+  "permissions": ["network"],
+  "main": "hn-top.js"
+}
