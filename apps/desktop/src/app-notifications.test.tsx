@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -89,10 +89,9 @@ describe("Notifications panel", () => {
     fireEvent.click(screen.getByRole("button", { name: /reload plugins/i }));
     fireEvent.click(screen.getByRole("button", { name: /open notifications/i }));
 
-    expect(
-      await screen.findByRole("dialog", { name: /notifications/i })
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: /notifications/i });
+    expect(dialog).toBeInTheDocument();
     expect(await screen.findByText(/plugin error/i)).toBeInTheDocument();
-    expect(screen.getByText(/runtime failed/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/runtime failed/i)).toBeInTheDocument();
   });
 });

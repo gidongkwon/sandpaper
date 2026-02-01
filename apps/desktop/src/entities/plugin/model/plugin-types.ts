@@ -4,6 +4,7 @@ export type PluginPermissionInfo = {
   version: string;
   description?: string | null;
   permissions: string[];
+  settings_schema?: PluginSettingsSchema | null;
   enabled: boolean;
   path: string;
   granted_permissions: string[];
@@ -23,7 +24,7 @@ export type PluginBlockInfo = {
 
 export type PluginRuntimeStatus = {
   loaded: string[];
-  blocked: string[];
+  blocked: PluginBlockInfo[];
   commands: PluginCommand[];
   panels: PluginPanel[];
   toolbar_actions: PluginToolbarAction[];
@@ -57,6 +58,7 @@ export type PluginRenderer = {
   title: string;
   kind: string;
   languages?: string[];
+  permissions?: string[];
 };
 
 export type PluginBlockControl =
@@ -103,10 +105,46 @@ export type PluginBlockView = {
   message?: string | null;
   body?: PluginBlockBody | null;
   controls?: PluginBlockControl[];
+  cache?: PluginBlockCache | null;
 };
 
 export type PermissionPrompt = {
   pluginId: string;
   pluginName: string;
   permission: string;
+};
+
+export type PluginSettingsSchema = {
+  title?: string;
+  description?: string;
+  type?: "object";
+  properties: Record<string, PluginSettingSchema>;
+  required?: string[];
+};
+
+export type PluginSettingSchema = {
+  type?: "string" | "number" | "integer" | "boolean";
+  title?: string;
+  description?: string;
+  default?: string | number | boolean | null;
+  enum?: Array<string | number | boolean>;
+};
+
+export type PluginBlockCache = {
+  ttlSeconds?: number | null;
+  timestamp?: string | null;
+};
+
+export type PluginRuntimeErrorContext = {
+  phase: string;
+  pluginId?: string | null;
+  rendererId?: string | null;
+  blockUid?: string | null;
+  actionId?: string | null;
+};
+
+export type PluginRuntimeError = {
+  message: string;
+  stack?: string | null;
+  context?: PluginRuntimeErrorContext | null;
 };

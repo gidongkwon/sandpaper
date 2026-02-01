@@ -1,8 +1,10 @@
-import { createSignal } from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
+import { applySettingsSchemaDefaults } from "../lib/plugin-settings";
 import type {
   PermissionPrompt,
   PluginInstallStatus,
   PluginPermissionInfo,
+  PluginRuntimeError,
   PluginRuntimeStatus
 } from "../../../entities/plugin/model/plugin-types";
 
@@ -103,11 +105,20 @@ const fallbackPluginStatus: PluginRuntimeStatus = {
   ]
 };
 
+type PluginSettingsStatus = {
+  state: "idle" | "saving" | "success" | "error";
+  message?: string;
+};
+
+const DEV_MODE_STORAGE_KEY = "sandpaper:plugin-dev-mode";
+
 export const createPlugins = (deps: PluginDependencies) => {
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] =
     createSignal<PluginRuntimeStatus | null>(null);
-  const [pluginError, setPluginError] = createSignal<string | null>(null);
+  const [pluginError, setPluginErrorSignal] = createSignal<string | null>(null);
+  const [pluginErrorDetails, setPluginErrorDetails] =
+    createSignal<PluginRuntimeError | null>(null);
   const [pluginBusy, setPluginBusy] = createSignal(false);
   const [permissionPrompt, setPermissionPrompt] =
     createSignal<PermissionPrompt | null>(null);
@@ -115,6 +126,20 @@ export const createPlugins = (deps: PluginDependencies) => {
   const [installStatus, setInstallStatus] =
     createSignal<PluginInstallStatus | null>(null);
   const [installing, setInstalling] = createSignal(false);
+  const [pluginSettings, setPluginSettings] = createSignal<
+    Record<string, Record<string, unknown>>
+  >({});
+  const [pluginSettingsDirty, setPluginSettingsDirty] = createSignal<
+    Record<string, boolean>
+  >({});
+  const [pluginSettingsStatus, setPluginSettingsStatus] = createSignal<
+    Record<string, PluginSettingsStatus | null>
+  >({});
+  const initialDevMode =
+    typeof window === "undefined"
+      ? false
+      : localStorage.getItem(DEV_MODE_STORAGE_KEY) === "1";
+  const [pluginDevMode, setPluginDevMode] = createSignal(initialDevMode);
 
   const findPlugin = (pluginId: string) =>
     plugins().find((plugin) => plugin.id === pluginId) ?? null;
@@ -136,6 +161,66 @@ export const createPlugins = (deps: PluginDependencies) => {
     });
   };
 
+  const updatePluginSettingsStatus = (
+    pluginId: string,
+    status: PluginSettingsStatus | null
+  ) => {
+    setPluginSettingsStatus((current) => ({
+      ...current,
+      [pluginId]: status
+    }));
+  };
+
+  const markPluginSettingsDirty = (pluginId: string, dirty: boolean) => {
+    setPluginSettingsDirty((current) => ({
+      ...current,
+      [pluginId]: dirty
+    }));
+  };
+
+  const loadSettingsForPlugins = async (nextPlugins: PluginPermissionInfo[]) => {
+    if (!Array.isArray(nextPlugins) || nextPlugins.length === 0) return;
+    const nextSettings: Record<string, Record<string, unknown>> = {};
+    for (const plugin of nextPlugins) {
+      const schema = plugin.settings_schema;
+      if (!schema) continue;
+      if (!deps.isTauri()) {
+        nextSettings[plugin.id] = applySettingsSchemaDefaults(schema, {});
+        markPluginSettingsDirty(plugin.id, false);
+        updatePluginSettingsStatus(plugin.id, { state: "idle" });
+        continue;
+      }
+      try {
+        const stored = (await deps.invoke("get_plugin_settings_command", {
+          pluginId: plugin.id,
+          plugin_id: plugin.id
+        })) as Record<string, unknown> | null;
+        nextSettings[plugin.id] = applySettingsSchemaDefaults(schema, stored ?? {});
+        markPluginSettingsDirty(plugin.id, false);
+        updatePluginSettingsStatus(plugin.id, { state: "idle" });
+      } catch (error) {
+        console.error("Failed to load plugin settings", error);
+        updatePluginSettingsStatus(plugin.id, {
+          state: "error",
+          message: "Failed to load settings."
+        });
+      }
+    }
+    if (Object.keys(nextSettings).length > 0) {
+      setPluginSettings((current) => ({
+        ...current,
+        ...nextSettings
+      }));
+    }
+  };
+
+  const setPluginError = (message: string | null) => {
+    setPluginErrorSignal(message);
+    if (!message) {
+      setPluginErrorDetails(null);
+    }
+  };
+
   const loadPluginRuntime = async () => {
     if (!deps.isTauri()) {
       setPluginStatus(fallbackPluginStatus);
@@ -143,6 +228,7 @@ export const createPlugins = (deps: PluginDependencies) => {
     }
 
     setPluginError(null);
+    setPluginErrorDetails(null);
     setPluginBusy(true);
     try {
       const status = (await deps.invoke(
@@ -154,6 +240,15 @@ export const createPlugins = (deps: PluginDependencies) => {
       const message =
         error instanceof Error ? error.message : "Failed to load plugins.";
       setPluginError(message);
+      try {
+        const details = (await deps.invoke(
+          "get_plugin_runtime_error_command"
+        )) as PluginRuntimeError | null;
+        setPluginErrorDetails(details);
+      } catch (detailError) {
+        console.warn("Failed to load plugin error details", detailError);
+        setPluginErrorDetails(null);
+      }
       deps.onRuntimeError?.(message);
     } finally {
       setPluginBusy(false);
@@ -164,6 +259,7 @@ export const createPlugins = (deps: PluginDependencies) => {
     if (!deps.isTauri()) {
       setPlugins(fallbackPlugins);
       setPluginStatus(fallbackPluginStatus);
+      await loadSettingsForPlugins(fallbackPlugins);
       return;
     }
 
@@ -171,8 +267,10 @@ export const createPlugins = (deps: PluginDependencies) => {
     try {
       const remote = (await deps.invoke(
         "list_plugins_command"
-      )) as PluginPermissionInfo[];
-      setPlugins(remote);
+      )) as PluginPermissionInfo[] | null;
+      const normalized = Array.isArray(remote) ? remote : [];
+      setPlugins(normalized);
+      await loadSettingsForPlugins(normalized);
     } catch (error) {
       console.error("Failed to load plugins", error);
       const message =
@@ -247,15 +345,91 @@ export const createPlugins = (deps: PluginDependencies) => {
     }
   };
 
+  const updatePluginSetting = (
+    pluginId: string,
+    key: string,
+    value: unknown
+  ) => {
+    setPluginSettings((current) => ({
+      ...current,
+      [pluginId]: {
+        ...(current[pluginId] ?? {}),
+        [key]: value
+      }
+    }));
+    markPluginSettingsDirty(pluginId, true);
+  };
+
+  const resetPluginSettings = (pluginId: string) => {
+    const plugin = findPlugin(pluginId);
+    if (!plugin?.settings_schema) return;
+    const nextValues = applySettingsSchemaDefaults(plugin.settings_schema, {});
+    setPluginSettings((current) => ({
+      ...current,
+      [pluginId]: nextValues
+    }));
+    markPluginSettingsDirty(pluginId, true);
+    updatePluginSettingsStatus(pluginId, { state: "idle" });
+  };
+
+  const savePluginSettings = async (pluginId: string) => {
+    if (!deps.isTauri()) {
+      updatePluginSettingsStatus(pluginId, {
+        state: "error",
+        message: "Plugin settings require the desktop app."
+      });
+      return;
+    }
+    updatePluginSettingsStatus(pluginId, { state: "saving" });
+    try {
+      const settings = pluginSettings()[pluginId] ?? {};
+      await deps.invoke("set_plugin_settings_command", {
+        pluginId,
+        plugin_id: pluginId,
+        settings
+      });
+      markPluginSettingsDirty(pluginId, false);
+      updatePluginSettingsStatus(pluginId, { state: "success", message: "Saved." });
+    } catch (error) {
+      console.error("Failed to save plugin settings", error);
+      updatePluginSettingsStatus(pluginId, {
+        state: "error",
+        message: "Failed to save settings."
+      });
+    }
+  };
+
+  createEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(DEV_MODE_STORAGE_KEY, pluginDevMode() ? "1" : "0");
+  });
+
+  createEffect(() => {
+    if (!deps.isTauri()) return;
+    if (!pluginDevMode()) return;
+    void loadPlugins();
+    const interval = setInterval(() => {
+      if (!pluginBusy()) {
+        void loadPlugins();
+      }
+    }, 2000);
+    onCleanup(() => clearInterval(interval));
+  });
+
   return {
     plugins,
     pluginStatus,
     pluginError,
+    pluginErrorDetails,
     pluginBusy,
     permissionPrompt,
     installPath,
     installStatus,
     installing,
+    pluginSettings,
+    pluginSettingsDirty,
+    pluginSettingsStatus,
+    pluginDevMode,
     setPluginError,
     loadPlugins,
     loadPluginRuntime,
@@ -266,6 +440,10 @@ export const createPlugins = (deps: PluginDependencies) => {
     installPlugin,
     setInstallPath,
     findPlugin,
-    hasPermission
+    hasPermission,
+    updatePluginSetting,
+    resetPluginSettings,
+    savePluginSettings,
+    setPluginDevMode
   };
 };

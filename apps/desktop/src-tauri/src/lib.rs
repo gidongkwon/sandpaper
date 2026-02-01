@@ -17,9 +17,10 @@ use tauri::Manager;
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
-    discover_plugins, install_plugin, list_plugins, PluginBlockView, PluginCommand,
-    PluginDescriptor, PluginInfo, PluginPanel, PluginRegistry, PluginRenderer, PluginRuntime,
-    PluginRuntimeLoadResult, PluginToolbarAction,
+    check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, PluginBlockView,
+    PluginCommand, PluginDescriptor, PluginInfo, PluginPanel, PluginRegistry, PluginRenderer,
+    PluginRuntime, PluginRuntimeError, PluginRuntimeLoadResult, PluginSettingsSchema,
+    PluginToolbarAction,
 };
 
 #[derive(Debug, Serialize)]
@@ -50,6 +51,7 @@ struct PluginPermissionInfo {
     version: String,
     description: Option<String>,
     permissions: Vec<String>,
+    settings_schema: Option<PluginSettingsSchema>,
     enabled: bool,
     path: String,
     granted_permissions: Vec<String>,
@@ -235,9 +237,12 @@ enum PluginRuntimeRequest {
     Shutdown,
 }
 
-fn set_shared_error(target: &Arc<Mutex<Option<String>>>, message: String) {
+fn set_shared_error(
+    target: &Arc<Mutex<Option<plugins::PluginRuntimeError>>>,
+    message: String,
+) {
     let mut guard = target.lock().unwrap_or_else(|err| err.into_inner());
-    *guard = Some(message);
+    *guard = Some(plugins::PluginRuntimeError::new(message));
 }
 
 fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
@@ -253,13 +258,14 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
 struct RuntimeState {
     sender: mpsc::Sender<PluginRuntimeRequest>,
     thread: Mutex<Option<std::thread::JoinHandle<()>>>,
-    last_error: Arc<Mutex<Option<String>>>,
+    last_error: Arc<Mutex<Option<plugins::PluginRuntimeError>>>,
 }
 
 impl RuntimeState {
     fn new() -> Self {
         let (sender, receiver) = mpsc::channel::<PluginRuntimeRequest>();
-        let last_error = Arc::new(Mutex::new(None));
+        let last_error: Arc<Mutex<Option<plugins::PluginRuntimeError>>> =
+            Arc::new(Mutex::new(None));
         let thread_errors = Arc::clone(&last_error);
         let handle = std::thread::spawn(move || {
             enum ThreadControl {
@@ -367,9 +373,9 @@ impl RuntimeState {
         }
     }
 
-    fn record_error(&self, message: String) {
+    fn record_error(&self, error: plugins::PluginRuntimeError) {
         let mut guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
-        *guard = Some(message);
+        *guard = Some(error);
     }
 
     fn clear_error(&self) {
@@ -377,23 +383,56 @@ impl RuntimeState {
         *guard = None;
     }
 
-    fn last_error(&self) -> Option<String> {
+    fn last_error(&self) -> Option<plugins::PluginRuntimeError> {
         let guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
         guard.clone()
     }
 
     fn runtime_error(&self, code: &str) -> String {
         match self.last_error() {
-            Some(last_error) => format!("{code}: {last_error}"),
+            Some(last_error) => format!("{code}: {}", Self::format_runtime_error(&last_error)),
             None => code.to_string(),
         }
     }
 
-    fn describe_plugin_error(err: &plugins::PluginError) -> String {
+    fn format_runtime_error(err: &plugins::PluginRuntimeError) -> String {
+        let context = err
+            .context
+            .as_ref()
+            .map(|ctx| Self::format_error_context(ctx));
+        match context {
+            Some(context) => format!("plugin-error: {} ({})", err.message, context),
+            None => format!("plugin-error: {}", err.message),
+        }
+    }
+
+    fn format_error_context(ctx: &plugins::PluginErrorContext) -> String {
+        let mut parts = Vec::new();
+        parts.push(ctx.phase.clone());
+        if let Some(plugin_id) = ctx.plugin_id.as_ref() {
+            parts.push(format!("plugin={plugin_id}"));
+        }
+        if let Some(renderer_id) = ctx.renderer_id.as_ref() {
+            parts.push(format!("renderer={renderer_id}"));
+        }
+        if let Some(block_uid) = ctx.block_uid.as_ref() {
+            parts.push(format!("block={block_uid}"));
+        }
+        if let Some(action_id) = ctx.action_id.as_ref() {
+            parts.push(format!("action={action_id}"));
+        }
+        parts.join(" ")
+    }
+
+    fn describe_plugin_error(err: &plugins::PluginError) -> plugins::PluginRuntimeError {
         match err {
-            plugins::PluginError::Io(inner) => format!("plugin-error: io: {inner}"),
-            plugins::PluginError::Serde(inner) => format!("plugin-error: serde: {inner}"),
-            plugins::PluginError::Runtime(inner) => format!("plugin-error: {inner}"),
+            plugins::PluginError::Io(inner) => {
+                plugins::PluginRuntimeError::new(format!("io: {inner}"))
+            }
+            plugins::PluginError::Serde(inner) => {
+                plugins::PluginRuntimeError::new(format!("serde: {inner}"))
+            }
+            plugins::PluginError::Runtime(inner) => inner.clone(),
         }
     }
 
@@ -414,8 +453,9 @@ impl RuntimeState {
                 Ok(value)
             }
             Err(err) => {
-                let message = Self::describe_plugin_error(&err);
-                self.record_error(message.clone());
+                let runtime_error = Self::describe_plugin_error(&err);
+                let message = Self::format_runtime_error(&runtime_error);
+                self.record_error(runtime_error);
                 Err(message)
             }
         }
@@ -433,7 +473,7 @@ impl RuntimeState {
         }
         match runtime.as_mut() {
             Some(runtime) => f(runtime),
-            None => Err(plugins::PluginError::Runtime("runtime-unavailable".to_string())),
+            None => Err(plugins::PluginError::Runtime("runtime-unavailable".into())),
         }
     }
 
@@ -684,6 +724,7 @@ fn list_permissions_for_plugins(
             version: plugin.version,
             description: plugin.description,
             permissions: plugin.permissions,
+            settings_schema: plugin.settings_schema,
             enabled: plugin.enabled,
             path: plugin.path,
             granted_permissions: granted,
@@ -1825,6 +1866,15 @@ fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRunti
             continue;
         }
 
+        if check_manifest_compatibility(&plugin.manifest).is_err() {
+            blocked.push(PluginBlockInfo {
+                id: plugin.manifest.id,
+                reason: "incompatible".to_string(),
+                missing_permissions: Vec::new(),
+            });
+            continue;
+        }
+
         let granted = db
             .list_plugin_permissions(&plugin.manifest.id)
             .map_err(|err| format!("{:?}", err))?;
@@ -1867,6 +1917,13 @@ fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRunti
         toolbar_actions: loaded.toolbar_actions,
         renderers: loaded.renderers,
     })
+}
+
+#[tauri::command]
+fn get_plugin_runtime_error_command(
+    state: tauri::State<RuntimeState>,
+) -> Option<PluginRuntimeError> {
+    state.last_error()
 }
 
 #[tauri::command]
@@ -2015,6 +2072,7 @@ pub fn run() {
             list_plugins_command,
             install_plugin_command,
             load_plugins_command,
+            get_plugin_runtime_error_command,
             grant_plugin_permission,
             revoke_plugin_permission,
             plugin_read_page,
@@ -2231,8 +2289,11 @@ mod tests {
             version: "0.0.1".to_string(),
             description: None,
             permissions: Vec::new(),
+            api_version: None,
+            app_version: None,
             main: Some("index.js".to_string()),
             settings: Vec::new(),
+            settings_schema: None,
         };
         PluginDescriptor {
             manifest,
@@ -2283,6 +2344,7 @@ mod tests {
             version: "0.1.0".to_string(),
             description: None,
             permissions: vec!["fs".to_string(), "network".to_string()],
+            settings_schema: None,
             enabled: true,
             path: "/tmp/alpha".to_string(),
         }];

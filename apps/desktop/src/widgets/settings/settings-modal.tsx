@@ -1,6 +1,13 @@
 import { Show, type Accessor, type Setter } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
-import type { PluginCommand, PluginInstallStatus, PluginPanel, PluginPermissionInfo, PluginRuntimeStatus } from "../../entities/plugin/model/plugin-types";
+import type {
+  PluginCommand,
+  PluginInstallStatus,
+  PluginPanel,
+  PluginPermissionInfo,
+  PluginRuntimeError,
+  PluginRuntimeStatus
+} from "../../entities/plugin/model/plugin-types";
 import type { SyncConfig, SyncConflict, SyncLogEntry, SyncStatus } from "../../entities/sync/model/sync-types";
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import type { PageId, VaultId } from "../../shared/model/id-types";
@@ -23,6 +30,11 @@ type ExportStatus = {
   state: "success" | "error";
   message: string;
   preview?: string;
+};
+
+type PluginSettingsStatus = {
+  state: "idle" | "saving" | "success" | "error";
+  message?: string;
 };
 
 type SettingsModalProps = {
@@ -91,6 +103,7 @@ type SettingsModalProps = {
   };
   plugins: {
     error: Accessor<string | null>;
+    errorDetails: Accessor<PluginRuntimeError | null>;
     loadRuntime: () => void | Promise<void>;
     busy: Accessor<boolean>;
     list: Accessor<PluginPermissionInfo[]>;
@@ -105,6 +118,14 @@ type SettingsModalProps = {
     installing: Accessor<boolean>;
     installPlugin: () => void | Promise<void>;
     clearInstallStatus: () => void;
+    settings: Accessor<Record<string, Record<string, unknown>>>;
+    settingsDirty: Accessor<Record<string, boolean>>;
+    settingsStatus: Accessor<Record<string, PluginSettingsStatus | null>>;
+    updateSetting: (pluginId: string, key: string, value: unknown) => void;
+    resetSettings: (pluginId: string) => void;
+    saveSettings: (pluginId: string) => void | Promise<void>;
+    devMode: Accessor<boolean>;
+    setDevMode: (value: boolean) => void;
   };
   importExport: {
     importText: Accessor<string>;

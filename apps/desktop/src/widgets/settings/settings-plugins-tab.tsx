@@ -5,11 +5,19 @@ import type {
   PluginInstallStatus,
   PluginPanel,
   PluginPermissionInfo,
+  PluginRuntimeError,
   PluginRuntimeStatus
 } from "../../entities/plugin/model/plugin-types";
+import { PluginSettingsCard } from "./settings-plugin-settings";
+
+type PluginSettingsStatus = {
+  state: "idle" | "saving" | "success" | "error";
+  message?: string;
+};
 
 type SettingsPluginsProps = {
   error: Accessor<string | null>;
+  errorDetails: Accessor<PluginRuntimeError | null>;
   loadRuntime: () => void | Promise<void>;
   busy: Accessor<boolean>;
   list: Accessor<PluginPermissionInfo[]>;
@@ -24,6 +32,14 @@ type SettingsPluginsProps = {
   installing: Accessor<boolean>;
   installPlugin: () => void | Promise<void>;
   clearInstallStatus: () => void;
+  settings: Accessor<Record<string, Record<string, unknown>>>;
+  settingsDirty: Accessor<Record<string, boolean>>;
+  settingsStatus: Accessor<Record<string, PluginSettingsStatus | null>>;
+  updateSetting: (pluginId: string, key: string, value: unknown) => void;
+  resetSettings: (pluginId: string) => void;
+  saveSettings: (pluginId: string) => void | Promise<void>;
+  devMode: Accessor<boolean>;
+  setDevMode: (value: boolean) => void;
 };
 
 type SettingsPluginsTabProps = {
@@ -33,6 +49,14 @@ type SettingsPluginsTabProps = {
 
 export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
   let pluginFolderPickerRef: HTMLInputElement | undefined;
+  const pluginsWithSettings = () =>
+    props.plugins
+      .list()
+      .filter(
+        (plugin) =>
+          plugin.settings_schema &&
+          Object.keys(plugin.settings_schema.properties ?? {}).length > 0
+      );
 
   const getFolderFromFile = (file: File) => {
     const withPath = file as File & { path?: string; webkitRelativePath?: string };
@@ -87,6 +111,52 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
           </button>
         </div>
       </Show>
+      <Show when={props.plugins.errorDetails()}>
+        {(details) => (
+          <div class="settings-section">
+            <h3 class="settings-section__title">Plugin Error Details</h3>
+            <div class="settings-section__desc">{details().message}</div>
+            <Show when={details().context}>
+              {(context) => (
+                <div class="settings-error-context">
+                  <span>Phase: {context().phase}</span>
+                  <Show when={context().pluginId}>
+                    {(value) => <span>Plugin: {value()}</span>}
+                  </Show>
+                  <Show when={context().rendererId}>
+                    {(value) => <span>Renderer: {value()}</span>}
+                  </Show>
+                  <Show when={context().blockUid}>
+                    {(value) => <span>Block: {value()}</span>}
+                  </Show>
+                  <Show when={context().actionId}>
+                    {(value) => <span>Action: {value()}</span>}
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={details().stack}>
+              {(stack) => (
+                <pre class="settings-error-stack">{stack()}</pre>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
+      <div class="settings-section">
+        <h3 class="settings-section__title">Developer Mode</h3>
+        <p class="settings-section__desc">
+          Auto-reload plugins every few seconds while you iterate locally.
+        </p>
+        <label class="settings-row settings-row--checkbox">
+          <span class="settings-label">Auto reload plugins</span>
+          <input
+            type="checkbox"
+            checked={props.plugins.devMode()}
+            onChange={(event) => props.plugins.setDevMode(event.currentTarget.checked)}
+          />
+        </label>
+      </div>
       <div class="settings-section">
         <h3 class="settings-section__title">Add plugin</h3>
         <p class="settings-section__desc">
@@ -201,6 +271,35 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
           <div class="settings-message is-success">
             {props.plugins.commandStatus()}
           </div>
+        </Show>
+      </div>
+      <div class="settings-section">
+        <h3 class="settings-section__title">Plugin Settings</h3>
+        <Show
+          when={pluginsWithSettings().length > 0}
+          fallback={
+            <p class="settings-section__desc">
+              No plugin settings available.
+            </p>
+          }
+        >
+          <For each={pluginsWithSettings()}>
+            {(plugin) => (
+              <PluginSettingsCard
+                plugin={plugin}
+                schema={plugin.settings_schema!}
+                values={props.plugins.settings()[plugin.id] ?? {}}
+                dirty={Boolean(props.plugins.settingsDirty()[plugin.id])}
+                busy={props.plugins.busy()}
+                status={props.plugins.settingsStatus()[plugin.id] ?? null}
+                onChange={(key, value) =>
+                  props.plugins.updateSetting(plugin.id, key, value)
+                }
+                onReset={() => props.plugins.resetSettings(plugin.id)}
+                onSave={() => void props.plugins.saveSettings(plugin.id)}
+              />
+            )}
+          </For>
         </Show>
       </div>
       <div class="settings-section">

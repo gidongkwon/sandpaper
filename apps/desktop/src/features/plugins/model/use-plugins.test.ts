@@ -1,8 +1,12 @@
 import { createRoot } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlugins } from "./use-plugins";
 
 describe("createPlugins", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
   it("loads fallback plugins and exposes permissions", async () => {
     const invoke = vi.fn();
     let dispose: (() => void) | undefined;
@@ -69,6 +73,71 @@ describe("createPlugins", () => {
     expect(invoke).toHaveBeenCalledWith("list_plugins_command");
     expect(invoke).toHaveBeenCalledWith("load_plugins_command");
     expect(api.installStatus()?.state).toBe("success");
+
+    dispose?.();
+  });
+
+  it("loads plugin settings from schema defaults and stored values", async () => {
+    const invoke = vi.fn(async (command: string, payload?: Record<string, unknown>) => {
+      if (command === "list_plugins_command") {
+        return [
+          {
+            id: "alpha",
+            name: "Alpha",
+            version: "0.1.0",
+            description: null,
+            permissions: [],
+            enabled: true,
+            path: "/tmp/alpha",
+            granted_permissions: [],
+            missing_permissions: [],
+            settings_schema: {
+              type: "object",
+              properties: {
+                units: { type: "string", default: "c" }
+              }
+            }
+          }
+        ];
+      }
+      if (command === "load_plugins_command") {
+        return {
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        };
+      }
+      if (command === "get_plugin_settings_command") {
+        if (payload?.pluginId === "alpha" || payload?.plugin_id === "alpha") {
+          return { units: "f" };
+        }
+        return null;
+      }
+      throw new Error(`Unexpected command ${command}`);
+    });
+    let dispose: (() => void) | undefined;
+    let api: ReturnType<typeof createPlugins> | undefined;
+
+    createRoot((cleanup) => {
+      dispose = cleanup;
+      api = createPlugins({
+        isTauri: () => true,
+        invoke
+      });
+    });
+
+    if (!api) throw new Error("Plugins API not initialized");
+
+    await api.loadPlugins();
+
+    expect(api.pluginSettings().alpha.units).toBe("f");
+    expect(invoke).toHaveBeenCalledWith("get_plugin_settings_command", {
+      pluginId: "alpha",
+      plugin_id: "alpha"
+    });
 
     dispose?.();
   });

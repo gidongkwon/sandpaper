@@ -69,7 +69,8 @@ module.exports = (api) => {
       id: "hn-top.block",
       title: "Hacker News Top",
       kind: "block",
-      languages: ["hn-top"]
+      languages: ["hn-top"],
+      permissions: ["network"]
     },
     {
       render: buildView,

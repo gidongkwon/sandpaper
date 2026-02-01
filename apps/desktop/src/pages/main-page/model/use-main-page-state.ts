@@ -156,11 +156,16 @@ export const createMainPageState = () => {
     plugins,
     pluginStatus,
     pluginError,
+    pluginErrorDetails,
     pluginBusy,
     permissionPrompt,
     installPath,
     installStatus,
     installing,
+    pluginSettings,
+    pluginSettingsDirty,
+    pluginSettingsStatus,
+    pluginDevMode,
     setPluginError,
     clearInstallStatus,
     loadPlugins,
@@ -171,7 +176,11 @@ export const createMainPageState = () => {
     installPlugin,
     setInstallPath,
     findPlugin,
-    hasPermission
+    hasPermission,
+    updatePluginSetting,
+    resetPluginSettings,
+    savePluginSettings,
+    setPluginDevMode
   } = pluginsApi;
 
   const renderersByKind = createMemo(() => {
@@ -937,6 +946,7 @@ export const createMainPageState = () => {
         },
         plugins: {
           error: pluginError,
+          errorDetails: pluginErrorDetails,
           loadRuntime: loadPluginRuntime,
           busy: pluginBusy,
           list: plugins,
@@ -950,7 +960,15 @@ export const createMainPageState = () => {
           installStatus,
           installing,
           installPlugin,
-          clearInstallStatus
+          clearInstallStatus,
+          settings: pluginSettings,
+          settingsDirty: pluginSettingsDirty,
+          settingsStatus: pluginSettingsStatus,
+          devMode: pluginDevMode,
+          updateSetting: updatePluginSetting,
+          resetSettings: resetPluginSettings,
+          saveSettings: savePluginSettings,
+          setDevMode: setPluginDevMode
         },
         importExport: {
           importText,
