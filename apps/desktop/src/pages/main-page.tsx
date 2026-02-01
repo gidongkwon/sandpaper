@@ -12,7 +12,6 @@ import {
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
   buildBacklinks,
@@ -24,7 +23,9 @@ import {
 import { deriveVaultKey } from "@sandpaper/crypto";
 import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/model/block-types";
 import { makeBlock } from "../entities/block/model/make-block";
-import { SLASH_COMMANDS } from "../features/editor/model/slash-commands";
+import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
+import { EditorPane } from "../widgets/editor/editor-pane";
+import { SettingsModal } from "../widgets/settings/settings-modal";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -62,8 +63,6 @@ import type {
 } from "../entities/sync/model/sync-types";
 import type { VaultConfig, VaultKeyStatus, VaultRecord } from "../entities/vault/model/vault-types";
 import type { MarkdownExportStatus } from "../shared/model/markdown-export-types";
-import type { CodeFence } from "../shared/model/markdown-types";
-import type { CaretPosition } from "../shared/model/position";
 import {
   buildDefaultBlocks,
   buildEmptyBlocks,
@@ -71,15 +70,7 @@ import {
   getSeedCount
 } from "../shared/lib/blocks/block-seeds";
 import { copyToClipboard } from "../shared/lib/clipboard/copy-to-clipboard";
-import { DIAGRAM_LANGS, ensureMermaid } from "../shared/lib/diagram/mermaid";
 import { makeLocalId, makeRandomId } from "../shared/lib/id/id-factory";
-import {
-  INLINE_MARKDOWN_PATTERN,
-  parseInlineFence,
-  parseInlineLinkToken,
-  parseMarkdownList,
-  parseWikilinkToken
-} from "../shared/lib/markdown/inline-parser";
 import { normalizePageUid } from "../shared/lib/page/normalize-page-uid";
 import {
   createFpsMeter,
@@ -88,8 +79,6 @@ import {
 } from "../shared/lib/perf/perf";
 import { replaceWikilinksInText } from "../shared/lib/links/replace-wikilinks";
 import { escapeRegExp } from "../shared/lib/string/escape-regexp";
-import { getCaretPosition } from "../shared/lib/textarea/get-caret-position";
-import { getVirtualRange } from "../shared/lib/virtual-list/virtual-list";
 
 type Mode = "quick-capture" | "editor" | "review";
 
@@ -116,36 +105,6 @@ type OfflineExportManifest = {
   pages: Array<{ uid: string; title: string; file: string }>;
 };
 
-type SlashMenuState = {
-  open: boolean;
-  blockId: string | null;
-  blockIndex: number;
-  slashIndex: number;
-  position: CaretPosition | null;
-};
-
-type WikilinkMenuState = {
-  open: boolean;
-  blockId: string | null;
-  blockIndex: number;
-  rangeStart: number;
-  rangeEnd: number;
-  hasClosing: boolean;
-  query: string;
-  position: CaretPosition | null;
-};
-
-type LinkPreviewState = {
-  open: boolean;
-  position: CaretPosition | null;
-  pageUid: string | null;
-  title: string;
-  blocks: string[];
-  loading: boolean;
-};
-
-const ROW_HEIGHT = 44;
-const OVERSCAN = 6;
 const DEFAULT_PAGE_UID = "inbox";
 const TYPE_SCALE_MIN = 0.8;
 const TYPE_SCALE_MAX = 1.4;
@@ -204,32 +163,6 @@ function MainPage() {
     id: string;
     caret: "start" | "end" | "preserve";
   } | null>(null);
-  const [slashMenu, setSlashMenu] = createSignal<SlashMenuState>({
-    open: false,
-    blockId: null,
-    blockIndex: -1,
-    slashIndex: -1,
-    position: null
-  });
-  const [wikilinkMenu, setWikilinkMenu] = createSignal<WikilinkMenuState>({
-    open: false,
-    blockId: null,
-    blockIndex: -1,
-    rangeStart: -1,
-    rangeEnd: -1,
-    hasClosing: false,
-    query: "",
-    position: null
-  });
-  const [linkPreview, setLinkPreview] = createSignal<LinkPreviewState>({
-    open: false,
-    position: null,
-    pageUid: null,
-    title: "",
-    blocks: [],
-    loading: false
-  });
-  const previewCache = new Map<string, { title: string; blocks: string[] }>();
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
   const [vaultFormOpen, setVaultFormOpen] = createSignal(false);
@@ -334,9 +267,6 @@ function MainPage() {
     p95: null
   });
   const [scrollFps, setScrollFps] = createSignal(0);
-  let vaultFolderPickerRef: HTMLInputElement | undefined;
-  let markdownFilePickerRef: HTMLInputElement | undefined;
-  let offlineArchivePickerRef: HTMLInputElement | undefined;
   let paletteInputRef: HTMLInputElement | undefined;
 
   const renderersByKind = createMemo(() => {
@@ -628,26 +558,6 @@ function MainPage() {
   const totalBacklinks = createMemo(
     () => activeBacklinks().length + activePageBacklinks().length
   );
-
-  const wikilinkQuery = createMemo(() => wikilinkMenu().query.trim());
-  const wikilinkMatches = createMemo(() => {
-    const query = wikilinkQuery().toLowerCase();
-    const entries = pages();
-    if (!query) return entries;
-    return entries.filter((page) =>
-      (page.title || page.uid).toLowerCase().includes(query)
-    );
-  });
-  const wikilinkCreateLabel = createMemo(() => {
-    const query = wikilinkQuery();
-    if (!query) return null;
-    const normalized = normalizePageUid(query);
-    const exists = pages().some(
-      (page) => normalizePageUid(page.uid || page.title) === normalized
-    );
-    if (exists) return null;
-    return `Create page "${query}"`;
-  });
 
   const getPageBacklinkSource = (entry: BacklinkEntry) => {
     const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
@@ -1243,7 +1153,6 @@ function MainPage() {
 
   let saveTimeout: number | undefined;
   let highlightTimeout: number | undefined;
-  let previewCloseTimeout: number | undefined;
   let saveRequestId = 0;
   const markSaved = () => {
     setAutosaveError(null);
@@ -1495,62 +1404,6 @@ function MainPage() {
   const getConflictPageTitle = (pageUid: string) =>
     pages().find((page) => page.uid === resolvePageUid(pageUid))?.title ??
     pageUid;
-
-  const SyncConflictDiagram = () => {
-    const [svg, setSvg] = createSignal<string | null>(null);
-    const [error, setError] = createSignal<string | null>(null);
-    let containerRef: HTMLDivElement | undefined;
-    let renderToken = 0;
-
-    createEffect(() => {
-      const token = (renderToken += 1);
-      setSvg(null);
-      setError(null);
-      const content = `flowchart LR\n  L[Local edit] --> C{Conflict}\n  R[Remote edit] --> C\n  C --> M[Merged result]`;
-
-      void (async () => {
-        try {
-          const engine = ensureMermaid();
-          const result = await engine.render(
-            `mermaid-sync-${makeRandomId()}`,
-            content
-          );
-          if (token !== renderToken) return;
-          setSvg(result.svg ?? "");
-          if (result.bindFunctions && containerRef) {
-            Promise.resolve().then(() => {
-              if (token !== renderToken) return;
-              result.bindFunctions?.(containerRef);
-            });
-          }
-        } catch {
-          if (token !== renderToken) return;
-          setError("Conflict diagram unavailable.");
-        }
-      })();
-    });
-
-    return (
-      <div class="sync-conflict-diagram">
-        <Show
-          when={svg()}
-          fallback={
-            <div class="sync-conflict-diagram__fallback">
-              {error() ?? "Rendering conflict diagram..."}
-            </div>
-          }
-        >
-          {(value) => (
-            <div
-              ref={containerRef}
-              class="sync-conflict-diagram__svg"
-              innerHTML={value() ?? ""}
-            />
-          )}
-        </Show>
-      </div>
-    );
-  };
 
   const loadBlocks = async (pageUid = activePageUid()) => {
     const resolvedUid = resolvePageUid(pageUid);
@@ -2599,6 +2452,27 @@ function MainPage() {
     }
   };
 
+  const readBinaryFile = async (file: File) => {
+    if (typeof file.arrayBuffer === "function") {
+      const buffer = await file.arrayBuffer();
+      return new Uint8Array(buffer);
+    }
+    if (typeof FileReader !== "undefined") {
+      const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+      return new Uint8Array(buffer);
+    }
+    if (typeof file.text === "function") {
+      const text = await file.text();
+      return new TextEncoder().encode(text);
+    }
+    return new Uint8Array();
+  };
+
   const importOfflineArchive = async () => {
     if (offlineImporting()) return;
     const file = offlineImportFile();
@@ -2686,7 +2560,6 @@ function MainPage() {
         message: `Imported ${imported} page${imported === 1 ? "" : "s"}.`
       });
       setOfflineImportFile(null);
-      if (offlineArchivePickerRef) offlineArchivePickerRef.value = "";
     } catch (error) {
       console.error("Offline import failed", error);
       setOfflineImportStatus({
@@ -3018,132 +2891,6 @@ function MainPage() {
     markSaved();
   };
 
-  const getFolderFromFile = (file: File) => {
-    const withPath = file as File & { path?: string; webkitRelativePath?: string };
-    if (withPath.path) return withPath.path;
-    if (withPath.webkitRelativePath) {
-      return withPath.webkitRelativePath.split("/")[0] || "";
-    }
-    return file.name.replace(/\.[^/.]+$/, "");
-  };
-
-  const readTextFile = async (file: File) => {
-    if (typeof file.text === "function") {
-      return file.text();
-    }
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ""));
-      reader.onerror = () => reject(reader.error ?? new Error("read-failed"));
-      reader.readAsText(file);
-    });
-  };
-
-  const readBinaryFile = async (file: File) => {
-    if (typeof file.arrayBuffer === "function") {
-      try {
-        const buffer = await file.arrayBuffer();
-        if (buffer.byteLength > 0 || file.size === 0) {
-          return new Uint8Array(buffer);
-        }
-      } catch {
-        // fall through to FileReader
-      }
-    }
-    return await new Promise<Uint8Array>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (!reader.result) {
-          reject(new Error("read-failed"));
-          return;
-        }
-        resolve(new Uint8Array(reader.result as ArrayBuffer));
-      };
-      reader.onerror = () => reject(reader.error ?? new Error("read-failed"));
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  const openVaultFolderPicker = async () => {
-    if (isTauri()) {
-      const selection = await openDialog({
-        directory: true,
-        multiple: false
-      });
-      if (typeof selection === "string") {
-        setNewVaultPath(selection);
-      }
-      return;
-    }
-    vaultFolderPickerRef?.click();
-  };
-
-  const openMarkdownFilePicker = async () => {
-    if (isTauri()) {
-      const selection = await openDialog({
-        multiple: false,
-        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }]
-      });
-      const picked =
-        typeof selection === "string" ? selection : selection?.[0] ?? null;
-      if (!picked) return;
-      try {
-        const text = (await invoke("read_text_file", { path: picked })) as string;
-        setImportText(text);
-        setImportStatus(null);
-      } catch (error) {
-        console.error("Failed to read import file", error);
-        setImportStatus({
-          state: "error",
-          message: "Failed to read the selected file."
-        });
-      }
-      return;
-    }
-    markdownFilePickerRef?.click();
-  };
-
-  const openOfflineArchivePicker = () => {
-    offlineArchivePickerRef?.click();
-  };
-
-  const handleVaultFolderPick = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    const nextPath = getFolderFromFile(file);
-    if (nextPath) {
-      setNewVaultPath(nextPath);
-    }
-    input.value = "";
-  };
-
-  const handleMarkdownFilePick = async (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    try {
-      const text = await readTextFile(file);
-      setImportText(text);
-      setImportStatus(null);
-    } catch (error) {
-      console.error("Failed to read import file", error);
-      setImportStatus({
-        state: "error",
-        message: "Failed to read the selected file."
-      });
-    } finally {
-      input.value = "";
-    }
-  };
-
-  const handleOfflineArchivePick = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    setOfflineImportFile(file);
-    setOfflineImportStatus(null);
-  };
-
   // Apply typography scale to document
   createEffect(() => {
     document.documentElement.style.setProperty("--type-scale", String(typeScale()));
@@ -3189,9 +2936,6 @@ function MainPage() {
       }
       if (highlightTimeout) {
         window.clearTimeout(highlightTimeout);
-      }
-      if (previewCloseTimeout) {
-        window.clearTimeout(previewCloseTimeout);
       }
       void shadowWriter.flush();
       shadowWriter.dispose();
@@ -3370,1172 +3114,9 @@ function MainPage() {
     );
   };
 
-  const EditorPane = (props: { title: string }) => {
-    const [scrollTop, setScrollTop] = createSignal(0);
-    const [viewportHeight, setViewportHeight] = createSignal(0);
-    const [copiedBlockId, setCopiedBlockId] = createSignal<string | null>(null);
-    const [blockHeights, setBlockHeights] = createStore<Record<string, number>>(
-      {}
-    );
-    const inputRefs = new Map<string, HTMLTextAreaElement>();
-    const caretPositions = new Map<string, { start: number; end: number }>();
-    let editorRef: HTMLDivElement | undefined;
-    let copyTimeout: number | undefined;
-    const effectiveViewport = createMemo(() =>
-      viewportHeight() === 0 ? 560 : viewportHeight()
-    );
-    const rowMetrics = createMemo(() => {
-      const heights = blocks.map((block) =>
-        Math.max(ROW_HEIGHT, blockHeights[block.id] ?? ROW_HEIGHT)
-      );
-      let offset = 0;
-      const offsets = heights.map((height) => {
-        const current = offset;
-        offset += height;
-        return current;
-      });
-      return { heights, offsets, totalHeight: offset };
-    });
-    const blockObserver =
-      typeof ResizeObserver === "function"
-        ? new ResizeObserver((entries) => {
-            for (const entry of entries) {
-              const target = entry.target as HTMLElement;
-              const id = target.dataset.blockId;
-              if (!id) continue;
-              const nextHeight = Math.max(
-                ROW_HEIGHT,
-                Math.round(entry.contentRect.height)
-              );
-              const prevHeight = blockHeights[id] ?? ROW_HEIGHT;
-              if (nextHeight === prevHeight) continue;
-              const index = findIndexById(id);
-              if (index >= 0 && index < range().start && editorRef) {
-                editorRef.scrollTop += nextHeight - prevHeight;
-              }
-              setBlockHeights(id, nextHeight);
-            }
-          })
-        : null;
-
-    const observeBlock = (el: HTMLDivElement | undefined) => {
-      if (!el || !blockObserver) return;
-      blockObserver.observe(el);
-      onCleanup(() => {
-        blockObserver.unobserve(el);
-      });
-    };
-
-    onCleanup(() => {
-      if (copyTimeout) {
-        window.clearTimeout(copyTimeout);
-      }
-      blockObserver?.disconnect();
-    });
-
-    const range = createMemo(() => {
-      const metrics = rowMetrics();
-      return getVirtualRange({
-        count: blocks.length,
-        rowHeight: ROW_HEIGHT,
-        rowHeights: metrics.heights,
-        rowOffsets: metrics.offsets,
-        totalHeight: metrics.totalHeight,
-        overscan: OVERSCAN,
-        scrollTop: scrollTop(),
-        viewportHeight: effectiveViewport()
-      });
-    });
-
-    const visibleBlocks = createMemo(() =>
-      blocks.slice(range().start, range().end)
-    );
-
-    onMount(() => {
-      if (!editorRef) return;
-      setViewportHeight(editorRef.clientHeight);
-      setScrollTop(editorRef.scrollTop);
-      if (!activeId() && blocks.length > 0) {
-        setActiveId(blocks[0].id);
-      }
-
-      const handleScroll = () => {
-        setScrollTop(editorRef?.scrollTop ?? 0);
-        if (perfEnabled()) {
-          scrollMeter.notifyScroll();
-        }
-      };
-      editorRef.addEventListener("scroll", handleScroll);
-
-      const resizeObserver = new ResizeObserver(() => {
-        if (!editorRef) return;
-        setViewportHeight(editorRef.clientHeight);
-      });
-      resizeObserver.observe(editorRef);
-
-      onCleanup(() => {
-        editorRef?.removeEventListener("scroll", handleScroll);
-        resizeObserver.disconnect();
-      });
-    });
-
-    const scrollToIndex = (index: number) => {
-      if (!editorRef || viewportHeight() === 0) return;
-      const metrics = rowMetrics();
-      const top = metrics.offsets[index] ?? index * ROW_HEIGHT;
-      const height = metrics.heights[index] ?? ROW_HEIGHT;
-      const bottom = top + height;
-      const viewTop = editorRef.scrollTop;
-      const viewBottom = viewTop + viewportHeight();
-      if (top < viewTop) {
-        editorRef.scrollTop = top;
-      } else if (bottom > viewBottom) {
-        editorRef.scrollTop = bottom - viewportHeight();
-      }
-    };
-
-    const findIndexById = (id: string) =>
-      blocks.findIndex((block) => block.id === id);
-
-    const storeSelection = (
-      id: string,
-      el: HTMLTextAreaElement | null | undefined,
-      force = false
-    ) => {
-      if (!el) return;
-      const isFocused = document.activeElement === el || focusedId() === id;
-      if (!force && !isFocused) return;
-      caretPositions.set(id, {
-        start: el.selectionStart ?? 0,
-        end: el.selectionEnd ?? 0
-      });
-    };
-
-    const focusBlock = (
-      id: string,
-      caret: "start" | "end" | "preserve" = "end"
-    ) => {
-      const index = findIndexById(id);
-      if (index >= 0) scrollToIndex(index);
-      setActiveId(id);
-      setFocusedId(id);
-      requestAnimationFrame(() => {
-        const el = inputRefs.get(id);
-        if (!el) return;
-        el.focus();
-        if (caret === "start") {
-          el.setSelectionRange(0, 0);
-          return;
-        }
-        if (caret === "end") {
-          const pos = el.value.length;
-          el.setSelectionRange(pos, pos);
-          return;
-        }
-        const stored = caretPositions.get(id);
-        if (stored) {
-          el.setSelectionRange(stored.start, stored.end);
-          return;
-        }
-        const pos = el.value.length;
-        el.setSelectionRange(pos, pos);
-      });
-    };
-
-    createEffect(() => {
-      const target = jumpTarget();
-      if (!target) return;
-      if (findIndexById(target.id) < 0) return;
-      focusBlock(target.id, target.caret);
-      setJumpTarget(null);
-    });
-
-    const insertBlockAfter = (index: number, indent: number) => {
-      const block = createNewBlock("", indent);
-      setBlocks(
-        produce((draft) => {
-          draft.splice(index + 1, 0, block);
-        })
-      );
-      scheduleSave();
-      focusBlock(block.id, "start");
-    };
-
-    const duplicateBlockAt = (index: number) => {
-      const source = blocks[index];
-      if (!source) return;
-      const clone = createNewBlock(source.text, source.indent);
-      setBlocks(
-        produce((draft) => {
-          draft.splice(index + 1, 0, clone);
-        })
-      );
-      scheduleSave();
-      focusBlock(clone.id, "end");
-    };
-
-    const removeBlockAt = (index: number) => {
-      if (blocks.length === 1) return;
-      const prev = blocks[index - 1];
-      const next = blocks[index + 1];
-      const removed = blocks[index];
-      setBlocks(
-        produce((draft) => {
-          draft.splice(index, 1);
-        })
-      );
-      if (removed) {
-        caretPositions.delete(removed.id);
-      }
-      scheduleSave();
-      const target = next ?? prev;
-      if (target) focusBlock(target.id);
-    };
-
-    const moveFocus = (index: number, direction: -1 | 1) => {
-      const nextIndex = index + direction;
-      const target = blocks[nextIndex];
-      if (!target) return;
-      focusBlock(target.id, direction === -1 ? "end" : "start");
-    };
-
-    const addReviewFromBlock = (block: Block) => {
-      if (!block.id) return;
-      void addReviewItem(block.id);
-    };
-
-    const closeSlashMenu = () => {
-      setSlashMenu((prev) =>
-        prev.open ? { ...prev, open: false, position: null } : prev
-      );
-    };
-
-    const openSlashMenu = (
-      block: Block,
-      index: number,
-      target: HTMLTextAreaElement,
-      slashIndex: number
-    ) => {
-      if (slashIndex < 0) return;
-      const caret = Math.min(target.value.length, slashIndex + 1);
-      let position: CaretPosition;
-      try {
-        position = getCaretPosition(target, caret);
-      } catch {
-        position = { x: 0, y: 0 };
-      }
-      setSlashMenu({
-        open: true,
-        blockId: block.id,
-        blockIndex: index,
-        slashIndex,
-        position
-      });
-      setWikilinkMenu((prev) =>
-        prev.open ? { ...prev, open: false, position: null } : prev
-      );
-    };
-
-    const applySlashCommand = (commandId: string) => {
-      const state = slashMenu();
-      if (!state.blockId || state.blockIndex < 0 || state.slashIndex < 0) {
-        return;
-      }
-      const index = state.blockIndex;
-      const block = blocks[index];
-      if (!block || block.id !== state.blockId) {
-        closeSlashMenu();
-        return;
-      }
-      const text = block.text;
-      const before = text.slice(0, state.slashIndex);
-      const after = text.slice(state.slashIndex + 1);
-      let nextText = text;
-      let nextCaret = before.length;
-
-      if (commandId === "link") {
-        const insertText = "[[Page]]";
-        nextText = `${before}${insertText}${after}`;
-        nextCaret = before.length + insertText.length;
-      }
-
-      if (commandId === "date") {
-        const insertText = new Date().toISOString().slice(0, 10);
-        nextText = `${before}${insertText}${after}`;
-        nextCaret = before.length + insertText.length;
-      }
-
-      if (commandId === "task") {
-        const cleaned = `${before}${after}`.trimStart();
-        const prefix = cleaned.startsWith("- [ ] ") || cleaned.startsWith("- [x] ")
-          ? ""
-          : "- [ ] ";
-        nextText = `${prefix}${cleaned}`;
-        nextCaret = nextText.length;
-      }
-
-      setBlocks(index, "text", nextText);
-      scheduleSave();
-      closeSlashMenu();
-      requestAnimationFrame(() => {
-        const input = inputRefs.get(block.id);
-        if (!input) return;
-        input.focus();
-        input.setSelectionRange(nextCaret, nextCaret);
-        storeSelection(block.id, input, true);
-      });
-    };
-
-    const closeWikilinkMenu = () => {
-      setWikilinkMenu((prev) =>
-        prev.open ? { ...prev, open: false, position: null } : prev
-      );
-    };
-
-    const updateWikilinkMenu = (
-      block: Block,
-      index: number,
-      target: HTMLTextAreaElement
-    ) => {
-      const value = target.value;
-      const start = value.lastIndexOf("[[");
-      if (start < 0) {
-        closeWikilinkMenu();
-        return;
-      }
-      const caretRaw = target.selectionStart ?? value.length;
-      const caret = caretRaw === 0 ? value.length : caretRaw;
-      const closeIndex = value.indexOf("]]", start + 2);
-      const hasClosing = closeIndex !== -1;
-      if (hasClosing && closeIndex < caret) {
-        closeWikilinkMenu();
-        return;
-      }
-      const inner = hasClosing
-        ? value.slice(start + 2, closeIndex)
-        : value.slice(start + 2);
-      const [targetPart] = inner.split("|");
-      const [targetBase] = targetPart.split("#");
-      const query = targetBase.trim();
-      let position: CaretPosition;
-      try {
-        position = getCaretPosition(target, Math.min(caret, value.length));
-      } catch {
-        position = { x: 0, y: 0 };
-      }
-      setWikilinkMenu({
-        open: true,
-        blockId: block.id,
-        blockIndex: index,
-        rangeStart: start,
-        rangeEnd: hasClosing ? closeIndex + 2 : value.length,
-        hasClosing,
-        query,
-        position
-      });
-      closeSlashMenu();
-    };
-
-    const applyWikilinkSuggestion = (title: string, create = false) => {
-      const state = wikilinkMenu();
-      if (!state.blockId || state.blockIndex < 0 || state.rangeStart < 0) {
-        return;
-      }
-      const block = blocks[state.blockIndex];
-      if (!block || block.id !== state.blockId) {
-        closeWikilinkMenu();
-        return;
-      }
-      const text = block.text;
-      const before = text.slice(0, state.rangeStart);
-      const inner = text.slice(
-        state.rangeStart + 2,
-        state.rangeEnd - (state.hasClosing ? 2 : 0)
-      );
-      const after = text.slice(state.rangeEnd);
-      const [targetPart, aliasPart] = inner.split("|");
-      const [, headingPart] = targetPart.split("#");
-      const headingSuffix = headingPart ? `#${headingPart.trim()}` : "";
-      const aliasSuffix = aliasPart ? `|${aliasPart.trim()}` : "";
-      const nextInner = `${title.trim()}${headingSuffix}${aliasSuffix}`;
-      const nextText = `${before}[[${nextInner}]]${after}`;
-      setBlocks(state.blockIndex, "text", nextText);
-      scheduleSave();
-      closeWikilinkMenu();
-      if (create) {
-        void createPageFromLink(title);
-      }
-      requestAnimationFrame(() => {
-        const input = inputRefs.get(block.id);
-        if (!input) return;
-        const caret = before.length + 2 + nextInner.length + 2;
-        input.focus();
-        input.setSelectionRange(caret, caret);
-        storeSelection(block.id, input, true);
-      });
-    };
-
-    const findPageByTitle = (title: string) => {
-      const normalized = normalizePageUid(title);
-      return (
-        pages().find((page) => normalizePageUid(page.uid) === normalized) ??
-        pages().find(
-          (page) => page.title.toLowerCase() === title.toLowerCase()
-        ) ??
-        null
-      );
-    };
-
-    const openPageByTitle = async (title: string) => {
-      const existing = findPageByTitle(title);
-      if (existing) {
-        await switchPage(existing.uid);
-        return;
-      }
-      setNewPageTitle(title);
-      await createPage();
-    };
-
-    const linkToPageFromBlock = async (block: Block, index: number) => {
-      const response = prompt("Link to page", "");
-      if (response === null) return;
-      const title = response.trim();
-      if (!title) return;
-      const link = `[[${title}]]`;
-      const separator = block.text.trim().length ? " " : "";
-      const nextText = `${block.text}${separator}${link}`;
-      setBlocks(index, "text", nextText);
-      if (!isTauri()) {
-        const snapshot = snapshotBlocks(blocks);
-        if (snapshot[index]) {
-          snapshot[index].text = nextText;
-        }
-        saveLocalPageSnapshot(activePageUid(), pageTitle(), snapshot);
-      }
-      scheduleSave();
-
-      await openPageByTitle(title);
-    };
-
-    const closeLinkPreview = () => {
-      setLinkPreview((prev) =>
-        prev.open ? { ...prev, open: false, position: null } : prev
-      );
-    };
-
-    const cancelLinkPreviewClose = () => {
-      if (previewCloseTimeout) {
-        window.clearTimeout(previewCloseTimeout);
-        previewCloseTimeout = undefined;
-      }
-    };
-
-    const scheduleLinkPreviewClose = () => {
-      cancelLinkPreviewClose();
-      previewCloseTimeout = window.setTimeout(() => {
-        closeLinkPreview();
-      }, 120);
-    };
-
-    const loadPreviewBlocks = async (pageUid: string) => {
-      if (!isTauri()) {
-        const local = localPages[pageUid];
-        return (
-          local?.blocks.map((block) => block.text).filter(Boolean).slice(0, 2) ??
-          []
-        );
-      }
-      try {
-        const response = (await invoke("load_page_blocks", {
-          pageUid,
-          page_uid: pageUid
-        })) as PageBlocksResponse;
-        return response.blocks
-          .map((block) => block.text)
-          .filter((text) => text.trim().length > 0)
-          .slice(0, 2);
-      } catch (error) {
-        console.error("Failed to load link preview", error);
-        return [];
-      }
-    };
-
-    const openLinkPreview = async (
-      targetTitle: string,
-      anchor: HTMLElement
-    ) => {
-      cancelLinkPreviewClose();
-      const resolved = findPageByTitle(targetTitle);
-      const pageUid = resolvePageUid(resolved?.uid ?? targetTitle);
-      const rect = anchor.getBoundingClientRect();
-      const position = {
-        x: rect.left,
-        y: rect.bottom + 8
-      };
-      const cached = previewCache.get(pageUid);
-      if (cached) {
-        setLinkPreview({
-          open: true,
-          position,
-          pageUid,
-          title: cached.title,
-          blocks: cached.blocks,
-          loading: false
-        });
-        return;
-      }
-      setLinkPreview({
-        open: true,
-        position,
-        pageUid,
-        title: resolved?.title ?? targetTitle,
-        blocks: [],
-        loading: true
-      });
-      const blocks = await loadPreviewBlocks(pageUid);
-      const title = resolved?.title ?? targetTitle;
-      previewCache.set(pageUid, { title, blocks });
-      setLinkPreview((prev) => ({
-        ...prev,
-        blocks,
-        loading: false
-      }));
-    };
-
-    const handleKeyDown = (block: Block, index: number, event: KeyboardEvent) => {
-      const target = event.currentTarget as HTMLTextAreaElement;
-      const atStart = target.selectionStart === 0 && target.selectionEnd === 0;
-      const atEnd =
-        target.selectionStart === target.value.length &&
-        target.selectionEnd === target.value.length;
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        storeSelection(block.id, target, true);
-        target.blur();
-        return;
-      }
-
-      if (event.key === "/") {
-        requestAnimationFrame(() => {
-          const value = target.value;
-          const slashIndex = value.lastIndexOf("/");
-          const isSlash = slashIndex === value.length - 1;
-          if (isSlash) {
-            openSlashMenu(block, index, target, slashIndex);
-          }
-        });
-      }
-
-      if (event.key === "Enter") {
-        event.preventDefault();
-        recordLatency("insert");
-        insertBlockAfter(index, block.indent);
-        return;
-      }
-
-      if (event.key === "Tab") {
-        event.preventDefault();
-        recordLatency("indent");
-        const delta = event.shiftKey ? -1 : 1;
-        const nextIndent = Math.max(0, block.indent + delta);
-        setBlocks(index, "indent", nextIndent);
-        scheduleSave();
-        return;
-      }
-
-      if (event.key === "Backspace" && block.text.length === 0) {
-        event.preventDefault();
-        recordLatency("delete");
-        removeBlockAt(index);
-        return;
-      }
-
-      if (event.key === "ArrowUp" && atStart) {
-        event.preventDefault();
-        moveFocus(index, -1);
-        return;
-      }
-
-      if (event.key === "ArrowDown" && atEnd) {
-        event.preventDefault();
-        moveFocus(index, 1);
-      }
-    };
-
-    const getCodePreview = (text: string) => {
-      const renderer = renderersByKind().get("code");
-      if (!renderer) return null;
-      const fence = parseInlineFence(text);
-      if (!fence || DIAGRAM_LANGS.has(fence.lang)) return null;
-      return {
-        renderer,
-        ...fence
-      };
-    };
-
-    const getDiagramPreview = (text: string) => {
-      const renderer = renderersByKind().get("diagram");
-      if (!renderer) return null;
-      const fence = parseInlineFence(text);
-      if (!fence || !DIAGRAM_LANGS.has(fence.lang)) return null;
-      return {
-        renderer,
-        ...fence
-      };
-    };
-
-    const renderInlineMarkdown = (text: string): Array<string | JSX.Element> => {
-      const nodes: Array<string | JSX.Element> = [];
-      let cursor = 0;
-      for (const match of text.matchAll(INLINE_MARKDOWN_PATTERN)) {
-        const index = match.index ?? 0;
-        if (index > cursor) {
-          nodes.push(text.slice(cursor, index));
-        }
-        const token = match[0];
-        if (token.startsWith("[[")) {
-          const parsed = parseWikilinkToken(token);
-          if (parsed) {
-            nodes.push(
-              <button
-                type="button"
-                class="wikilink"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  void openPageByTitle(parsed.target);
-                }}
-                onMouseEnter={(event) =>
-                  void openLinkPreview(parsed.target, event.currentTarget)
-                }
-                onMouseLeave={() => scheduleLinkPreviewClose()}
-                onFocus={(event) =>
-                  void openLinkPreview(parsed.target, event.currentTarget)
-                }
-                onBlur={() => scheduleLinkPreviewClose()}
-              >
-                {parsed.label}
-              </button>
-            );
-          } else {
-            nodes.push(token);
-          }
-        } else if (token.startsWith("[")) {
-          const parsed = parseInlineLinkToken(token);
-          if (parsed) {
-            nodes.push(
-              <a
-                href={parsed.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="inline-link"
-              >
-                {parsed.label}
-              </a>
-            );
-          } else {
-            nodes.push(token);
-          }
-        } else if (token.startsWith("`")) {
-          nodes.push(<code>{token.slice(1, -1)}</code>);
-        } else if (token.startsWith("**")) {
-          nodes.push(<strong>{token.slice(2, -2)}</strong>);
-        } else if (token.startsWith("~~")) {
-          nodes.push(<del>{token.slice(2, -2)}</del>);
-        } else if (token.startsWith("*")) {
-          nodes.push(<em>{token.slice(1, -1)}</em>);
-        } else {
-          nodes.push(token);
-        }
-        cursor = index + token.length;
-      }
-      if (cursor < text.length) {
-        nodes.push(text.slice(cursor));
-      }
-      return nodes;
-    };
-
-    const renderCodePreview = (
-      code: CodeFence & { renderer: PluginRenderer },
-      blockId: string
-    ) => (
-      <div class="block-renderer block-renderer--code">
-        <div class="block-renderer__header">
-          <div class="block-renderer__heading">
-            <div class="block-renderer__title">Code preview</div>
-            <div class="block-renderer__meta">
-              <span class="block-renderer__badge">
-                {code.lang.toUpperCase()}
-              </span>
-              <span>{code.renderer.title}</span>
-            </div>
-          </div>
-          <button
-            class="block-renderer__copy"
-            type="button"
-            aria-label="Copy code"
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void copyToClipboard(code.content);
-              setCopiedBlockId(blockId);
-              if (copyTimeout) {
-                window.clearTimeout(copyTimeout);
-              }
-              copyTimeout = window.setTimeout(() => {
-                setCopiedBlockId(null);
-              }, 1200);
-            }}
-          >
-            {copiedBlockId() === blockId ? "Copied" : "Copy"}
-          </button>
-        </div>
-        <pre class="block-renderer__content">
-          <code>{code.content}</code>
-        </pre>
-      </div>
-    );
-
-    const DiagramPreview = (props: {
-      diagram: CodeFence & { renderer: PluginRenderer };
-    }) => {
-      const [svg, setSvg] = createSignal<string | null>(null);
-      const [error, setError] = createSignal<string | null>(null);
-      let containerRef: HTMLDivElement | undefined;
-      let renderToken = 0;
-
-      createEffect(() => {
-        const content = props.diagram.content.trim();
-        const token = (renderToken += 1);
-        setSvg(null);
-        setError(null);
-
-        if (!content) {
-          setError("Unable to render diagram preview.");
-          return;
-        }
-
-        void (async () => {
-          try {
-            const engine = ensureMermaid();
-            const result = await engine.render(
-              `mermaid-${makeRandomId()}`,
-              content
-            );
-            if (token !== renderToken) return;
-            setSvg(result.svg ?? "");
-            if (result.bindFunctions && containerRef) {
-              Promise.resolve().then(() => {
-                if (token !== renderToken) return;
-                result.bindFunctions?.(containerRef);
-              });
-            }
-          } catch {
-            if (token !== renderToken) return;
-            setSvg(null);
-            setError("Unable to render diagram preview.");
-          }
-        })();
-      });
-
-      return (
-        <div class="block-renderer block-renderer--diagram">
-          <div class="block-renderer__title">Diagram preview</div>
-          <div class="block-renderer__meta">
-            {props.diagram.renderer.title} · {props.diagram.lang}
-          </div>
-          <div class="block-renderer__diagram">
-            <Show
-              when={svg()}
-              fallback={
-                <Show
-                  when={error()}
-                  fallback={
-                    <div class="diagram-loading">Rendering diagram...</div>
-                  }
-                >
-                  <div class="diagram-error">{error()}</div>
-                </Show>
-              }
-            >
-              {(value) => (
-                <div
-                  ref={containerRef}
-                  class="diagram-svg"
-                  innerHTML={value() ?? ""}
-                />
-              )}
-            </Show>
-          </div>
-          <pre class="block-renderer__content">
-            <code>{props.diagram.content}</code>
-          </pre>
-        </div>
-      );
-    };
-
-    const renderMarkdownDisplay = (text: string): JSX.Element => {
-      const list = parseMarkdownList(text);
-      if (list) {
-        const items = (
-          <For each={list.items}>
-            {(item) => <li>{renderInlineMarkdown(item)}</li>}
-          </For>
-        );
-        if (list.type === "ol") {
-          return <ol class="markdown-list">{items}</ol>;
-        }
-        return <ul class="markdown-list">{items}</ul>;
-      }
-      return <span>{renderInlineMarkdown(text)}</span>;
-    };
-
-    const requestRename = () => {
-      const currentTitle = renameTitle().trim() || props.title;
-      const nextTitle = prompt("Rename page", currentTitle);
-      if (nextTitle === null) return;
-      const trimmed = nextTitle.trim();
-      if (!trimmed || trimmed === currentTitle) return;
-      setRenameTitle(trimmed);
-      void renamePage();
-    };
-
-    return (
-      <section class="editor-pane">
-        <div class="editor-pane__header">
-          <div class="editor-pane__title-group">
-            <div class="editor-pane__title">{props.title}</div>
-            <div class="editor-pane__count">{blocks.length} blocks</div>
-          </div>
-          <div class="editor-pane__actions">
-            <button
-              class="editor-pane__action"
-              onClick={requestRename}
-              disabled={pageBusy()}
-            >
-              {pageBusy() ? "Renaming..." : "Rename"}
-            </button>
-          </div>
-        </div>
-        <div class="editor-pane__body" ref={editorRef}>
-          <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
-            <div
-              class="virtual-list"
-              style={{ transform: `translateY(${range().offset}px)` }}
-            >
-              <For each={visibleBlocks()}>
-                {(block, index) => {
-                  const blockIndex = () => range().start + index();
-                  const codePreview = () => getCodePreview(block.text);
-                  const diagramPreview = () => getDiagramPreview(block.text);
-                  const isEditing = () => focusedId() === block.id;
-                  const displayContent = () => {
-                    const code = codePreview();
-                    if (code) {
-                      return renderCodePreview(code, block.id);
-                    }
-                    const diagram = diagramPreview();
-                    if (diagram) {
-                      return <DiagramPreview diagram={diagram} />;
-                    }
-                    const trimmed = block.text.trim();
-                    if (!trimmed) {
-                      return (
-                        <span class="block__placeholder">Write something...</span>
-                      );
-                    }
-                    return renderMarkdownDisplay(block.text);
-                  };
-                  return (
-                    <div
-                      class={`block ${activeId() === block.id ? "is-active" : ""} ${
-                        highlightedBlockId() === block.id ? "is-highlighted" : ""
-                      }`}
-                      ref={observeBlock}
-                      data-block-id={block.id}
-                      style={{
-                        "margin-left": `${block.indent * 24}px`,
-                        "--i": `${blockIndex()}`
-                      }}
-                    >
-                      <div class="block__actions">
-                        <button
-                          class="block__action"
-                          onClick={() => addReviewFromBlock(block)}
-                          title="Add to review"
-                          aria-label="Add to review"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 5v14M5 12h14" />
-                          </svg>
-                        </button>
-                        <button
-                          class="block__action"
-                          onClick={() => linkToPageFromBlock(block, blockIndex())}
-                          title="Link to page"
-                          aria-label="Link to page"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                          </svg>
-                        </button>
-                        <button
-                          class="block__action"
-                          onClick={() => duplicateBlockAt(blockIndex())}
-                          title="Duplicate block"
-                          aria-label="Duplicate block"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="9" y="9" width="13" height="13" rx="2" />
-                            <rect x="2" y="2" width="13" height="13" rx="2" />
-                          </svg>
-                        </button>
-                      </div>
-                      <span class="block__bullet" aria-hidden="true" />
-                      <div class="block__body">
-                        <textarea
-                          ref={(el) => inputRefs.set(block.id, el)}
-                          class="block__input"
-                          rows={1}
-                          data-block-id={block.id}
-                          value={block.text}
-                          placeholder="Write something..."
-                          spellcheck={true}
-                          style={{ display: isEditing() ? "block" : "none" }}
-                          aria-hidden={!isEditing()}
-                          onFocus={() => {
-                            setActiveId(block.id);
-                            setFocusedId(block.id);
-                          }}
-                          onBlur={(event) => {
-                            storeSelection(block.id, event.currentTarget, true);
-                            setFocusedId(null);
-                            if (slashMenu().open && slashMenu().blockId === block.id) {
-                              window.setTimeout(() => {
-                                closeSlashMenu();
-                              }, 0);
-                            }
-                            if (
-                              wikilinkMenu().open &&
-                              wikilinkMenu().blockId === block.id
-                            ) {
-                              window.setTimeout(() => {
-                                closeWikilinkMenu();
-                              }, 0);
-                            }
-                          }}
-                          onInput={(event) => {
-                            recordLatency("input");
-                            setBlocks(blockIndex(), "text", event.currentTarget.value);
-                            scheduleSave();
-                            storeSelection(block.id, event.currentTarget);
-                            const value = event.currentTarget.value;
-                            const slashIndex = value.lastIndexOf("/");
-                            const isSlash = slashIndex === value.length - 1;
-                            if (isSlash) {
-                              openSlashMenu(
-                                block,
-                                blockIndex(),
-                                event.currentTarget,
-                                slashIndex
-                              );
-                            } else if (
-                              slashMenu().open &&
-                              slashMenu().blockId === block.id
-                            ) {
-                              closeSlashMenu();
-                            }
-                            updateWikilinkMenu(
-                              block,
-                              blockIndex(),
-                              event.currentTarget
-                            );
-                          }}
-                          onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
-                          onKeyUp={(event) => {
-                            storeSelection(block.id, event.currentTarget);
-                            if (event.key === "/") {
-                              const value = event.currentTarget.value;
-                              const slashIndex = value.lastIndexOf("/");
-                              const isSlash = slashIndex === value.length - 1;
-                              if (isSlash) {
-                                openSlashMenu(
-                                  block,
-                                  blockIndex(),
-                                  event.currentTarget,
-                                  slashIndex
-                                );
-                              }
-                            }
-                          }}
-                          onSelect={(event) => storeSelection(block.id, event.currentTarget)}
-                        />
-                        <div
-                          class="block__display"
-                          style={{ display: isEditing() ? "none" : "block" }}
-                          onClick={() => {
-                            const preserve =
-                              activeId() === block.id &&
-                              caretPositions.has(block.id);
-                            focusBlock(block.id, preserve ? "preserve" : "end");
-                          }}
-                        >
-                          {displayContent()}
-                        </div>
-                        <Show when={isEditing() && codePreview()}>
-                          {(preview) => renderCodePreview(preview(), block.id)}
-                        </Show>
-                        <Show when={isEditing() && diagramPreview()}>
-                          {(preview) => (
-                            <DiagramPreview diagram={preview()} />
-                          )}
-                        </Show>
-                      </div>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          </div>
-          <Show when={slashMenu().open && slashMenu().position}>
-            {(position) => (
-              <div
-                class="slash-menu"
-                style={{
-                  left: `${position().x}px`,
-                  top: `${position().y}px`
-                }}
-              >
-                <div class="slash-menu__title">Commands</div>
-                <div class="slash-menu__list">
-                  <For each={SLASH_COMMANDS}>
-                    {(command) => (
-                      <button
-                        class="slash-menu__item"
-                        onClick={() => applySlashCommand(command.id)}
-                        type="button"
-                      >
-                        {command.label}
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </div>
-            )}
-          </Show>
-          <Show when={wikilinkMenu().open && wikilinkMenu().position}>
-            {(position) => (
-              <div
-                class="wikilink-menu"
-                role="listbox"
-                aria-label="Wikilink suggestions"
-                style={{
-                  left: `${position().x}px`,
-                  top: `${position().y}px`
-                }}
-              >
-                <div class="wikilink-menu__title">Link suggestions</div>
-                <div class="wikilink-menu__list">
-                  <For each={wikilinkMatches()}>
-                    {(page) => {
-                      const label = page.title || "Untitled";
-                      const insertTitle = page.title || page.uid;
-                      return (
-                        <button
-                          class="wikilink-menu__item"
-                          type="button"
-                          aria-label={label}
-                          onClick={() => applyWikilinkSuggestion(insertTitle)}
-                        >
-                          <span class="wikilink-menu__label">{label}</span>
-                          <Show
-                            when={
-                              resolvePageUid(page.uid) ===
-                              resolvePageUid(activePageUid())
-                            }
-                          >
-                            <span class="wikilink-menu__meta">Current</span>
-                          </Show>
-                        </button>
-                      );
-                    }}
-                  </For>
-                  <Show when={wikilinkCreateLabel()}>
-                    {(label) => (
-                      <button
-                        class="wikilink-menu__item wikilink-menu__item--create"
-                        type="button"
-                        onClick={() =>
-                          applyWikilinkSuggestion(wikilinkQuery(), true)
-                        }
-                      >
-                        {label()}
-                      </button>
-                    )}
-                  </Show>
-                </div>
-              </div>
-            )}
-          </Show>
-          <Show when={linkPreview().open && linkPreview().position}>
-            {(position) => (
-              <div
-                class="wikilink-preview"
-                role="dialog"
-                aria-label="Link preview"
-                style={{
-                  left: `${position().x}px`,
-                  top: `${position().y}px`
-                }}
-                onMouseEnter={() => cancelLinkPreviewClose()}
-                onMouseLeave={() => scheduleLinkPreviewClose()}
-              >
-                <div class="wikilink-preview__header">
-                  <div class="wikilink-preview__title">
-                    {linkPreview().title || "Untitled"}
-                  </div>
-                  <button
-                    class="wikilink-preview__open"
-                    type="button"
-                    onClick={() => void openPageByTitle(linkPreview().title)}
-                  >
-                    Open
-                  </button>
-                </div>
-                <div class="wikilink-preview__body">
-                  <Show
-                    when={!linkPreview().loading}
-                    fallback={
-                      <div class="wikilink-preview__loading">
-                        Loading preview...
-                      </div>
-                    }
-                  >
-                    <Show
-                      when={linkPreview().blocks.length > 0}
-                      fallback={
-                        <div class="wikilink-preview__empty">
-                          No content yet.
-                        </div>
-                      }
-                    >
-                      <For each={linkPreview().blocks}>
-                        {(blockText) => (
-                          <div class="wikilink-preview__block">{blockText}</div>
-                        )}
-                      </For>
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-            )}
-          </Show>
-        </div>
-      </section>
-    );
-  };
+  const SectionJumpLink = (props: { id: string; label: string }) => (
+    <SectionJump id={props.id as SectionId} label={props.label} />
+  );
 
   return (
     <div class="app">
@@ -4852,7 +3433,40 @@ function MainPage() {
           <main class={`main-pane ${backlinksOpen() ? "has-panel" : ""}`} role="main">
             <div class="main-pane__editor">
               <SectionJump id="editor" label="Editor" />
-              <EditorPane title={pageTitle()} />
+              <EditorPane
+                blocks={blocks}
+                setBlocks={setBlocks}
+                activeId={activeId}
+                setActiveId={setActiveId}
+                focusedId={focusedId}
+                setFocusedId={setFocusedId}
+                highlightedBlockId={highlightedBlockId}
+                jumpTarget={jumpTarget}
+                setJumpTarget={setJumpTarget}
+                createNewBlock={createNewBlock}
+                scheduleSave={scheduleSave}
+                recordLatency={recordLatency}
+                addReviewItem={addReviewItem}
+                pageBusy={pageBusy}
+                renameTitle={renameTitle}
+                setRenameTitle={setRenameTitle}
+                renamePage={renamePage}
+                pages={pages}
+                activePageUid={activePageUid}
+                resolvePageUid={resolvePageUid}
+                setNewPageTitle={setNewPageTitle}
+                createPage={createPage}
+                switchPage={switchPage}
+                createPageFromLink={createPageFromLink}
+                isTauri={isTauri}
+                localPages={localPages}
+                saveLocalPageSnapshot={saveLocalPageSnapshot}
+                snapshotBlocks={snapshotBlocks}
+                pageTitle={pageTitle}
+                renderersByKind={renderersByKind}
+                perfEnabled={perfEnabled}
+                scrollMeter={scrollMeter}
+              />
             </div>
 
             {/* Backlinks toggle button */}
@@ -4872,122 +3486,24 @@ function MainPage() {
             </button>
 
             {/* Backlinks side panel */}
-            <aside class={`backlinks-panel ${backlinksOpen() ? "is-open" : ""}`}>
-              <Show when={backlinksOpen()}>
-                <SectionJump id="backlinks" label="Backlinks" />
-              </Show>
-              <div class="backlinks-panel__header">
-                <div class="backlinks-panel__title">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                  </svg>
-                  Backlinks
-                </div>
-                <button class="backlinks-panel__close" onClick={() => setBacklinksOpen(false)} aria-label="Close backlinks">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-              <div class="backlinks-panel__body">
-                <Show
-                  when={
-                    activePageBacklinks().length > 0 ||
-                    (activeBlock() && activeBacklinks().length > 0)
-                  }
-                  fallback={
-                    <div class="backlinks-panel__empty">
-                      <div class="backlinks-panel__empty-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                        </svg>
-                      </div>
-                      <p>No backlinks yet</p>
-                      <span>Use <code>((block-id))</code> or <code>[[Page]]</code> to create links</span>
-                    </div>
-                  }
-                >
-                  <Show when={activePageBacklinks().length > 0}>
-                    <div class="backlinks-panel__section">
-                      <div class="backlinks-panel__section-title">Page backlinks</div>
-                      <div class="backlinks-panel__context">
-                        Linked to page <strong>{pageTitle()}</strong>
-                      </div>
-                      <div class="backlinks-panel__groups">
-                        <For each={groupedPageBacklinks()}>
-                          {(group) => (
-                            <div class="backlink-group">
-                              <div class="backlink-group__header">
-                                <div class="backlink-group__title">
-                                  {group.title}
-                                </div>
-                                <Show when={supportsMultiPane}>
-                                  <button
-                                    class="backlink-group__action"
-                                    type="button"
-                                    onClick={() =>
-                                      void openPageBacklinkInPane(group.entries[0])
-                                    }
-                                  >
-                                    Open in pane
-                                  </button>
-                                </Show>
-                              </div>
-                              <div class="backlink-group__list">
-                                <For each={group.entries}>
-                                  {(entry) => (
-                                    <button
-                                      class="backlink-item"
-                                      onClick={() => void openPageBacklink(entry)}
-                                    >
-                                      <div class="backlink-item__text">
-                                        {formatBacklinkSnippet(entry.text || "Untitled")}
-                                      </div>
-                                    </button>
-                                  )}
-                                </For>
-                              </div>
-                            </div>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-                  <Show when={activeBlock()}>
-                    {(block) => (
-                      <Show when={activeBacklinks().length > 0}>
-                        <div class="backlinks-panel__section">
-                          <div class="backlinks-panel__section-title">Block backlinks</div>
-                          <div class="backlinks-panel__context">
-                            Linked to <strong>{block().text.slice(0, 40) || "this block"}{block().text.length > 40 ? "..." : ""}</strong>
-                          </div>
-                          <div class="backlinks-panel__list">
-                            <For each={activeBacklinks()}>
-                              {(entry) => (
-                                <button
-                                  class="backlink-item"
-                                  onClick={() => {
-                                    setActiveId(entry.id);
-                                    setJumpTarget({ id: entry.id, caret: "start" });
-                                  }}
-                                >
-                                  <div class="backlink-item__text">
-                                    {formatBacklinkSnippet(entry.text || "Untitled")}
-                                  </div>
-                                </button>
-                              )}
-                            </For>
-                          </div>
-                        </div>
-                      </Show>
-                    )}
-                  </Show>
-                </Show>
-              </div>
-            </aside>
+            <BacklinksPanel
+              open={backlinksOpen}
+              onClose={() => setBacklinksOpen(false)}
+              sectionJump={SectionJumpLink}
+              activePageBacklinks={activePageBacklinks}
+              activeBacklinks={activeBacklinks}
+              activeBlock={activeBlock}
+              pageTitle={pageTitle}
+              groupedPageBacklinks={groupedPageBacklinks}
+              supportsMultiPane={supportsMultiPane}
+              openPageBacklinkInPane={openPageBacklinkInPane}
+              openPageBacklink={openPageBacklink}
+              formatBacklinkSnippet={formatBacklinkSnippet}
+              onBlockBacklinkSelect={(entry) => {
+                setActiveId(entry.id);
+                setJumpTarget({ id: entry.id, caret: "start" });
+              }}
+            />
             <Show when={activePanel()}>
               {(panel) => (
                 <section class="plugin-panel">
@@ -5102,631 +3618,98 @@ function MainPage() {
       </Show>
 
       {/* Settings Modal */}
-      <Show when={settingsOpen()}>
-        <div class="modal-backdrop" onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}>
-          <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <div class="settings-modal__header">
-              <h2 id="settings-title">Settings</h2>
-              <button class="settings-modal__close" onClick={() => setSettingsOpen(false)} aria-label="Close settings">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div class="settings-modal__body">
-              <nav class="settings-nav">
-                <button class={`settings-nav__item ${settingsTab() === "general" ? "is-active" : ""}`} onClick={() => setSettingsTab("general")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
-                  General
-                </button>
-                <button class={`settings-nav__item ${settingsTab() === "vault" ? "is-active" : ""}`} onClick={() => setSettingsTab("vault")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-                  Vault
-                </button>
-                <button class={`settings-nav__item ${settingsTab() === "sync" ? "is-active" : ""}`} onClick={() => setSettingsTab("sync")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
-                  Sync
-                </button>
-                <button class={`settings-nav__item ${settingsTab() === "plugins" ? "is-active" : ""}`} onClick={() => setSettingsTab("plugins")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>
-                  Plugins
-                </button>
-                <button class={`settings-nav__item ${settingsTab() === "permissions" ? "is-active" : ""}`} onClick={() => setSettingsTab("permissions")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 4v5c0 5-3.5 9-7 9s-7-4-7-9V7l7-4z" /><path d="M9 12l2 2 4-4" /></svg>
-                  Permissions
-                </button>
-                <button class={`settings-nav__item ${settingsTab() === "import" ? "is-active" : ""}`} onClick={() => setSettingsTab("import")}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                  Import
-                </button>
-              </nav>
-              <div class="settings-content">
-                <Show when={settingsTab() === "general"}>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Typography</h3>
-                    <p class="settings-section__desc">Adjust the text size across the interface.</p>
-                    <div class="settings-slider">
-                      <div class="settings-slider__header">
-                        <label class="settings-label">Text size</label>
-                        <span class="settings-value">{Math.round(typeScale() * 100)}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        class="settings-slider__input"
-                        min={TYPE_SCALE_MIN}
-                        max={TYPE_SCALE_MAX}
-                        step={TYPE_SCALE_STEP}
-                        value={typeScale()}
-                        onInput={(e) => setTypeScale(parseFloat(e.currentTarget.value))}
-                      />
-                      <div
-                        class="settings-slider__labels"
-                        style={{ "--default-position": TYPE_SCALE_DEFAULT_POSITION }}
-                      >
-                        <span class="settings-slider__label is-min">Compact</span>
-                        <span class="settings-slider__label is-default">Default</span>
-                        <span class="settings-slider__label is-max">Large</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Appearance</h3>
-                    <p class="settings-section__desc">Sandpaper follows your system color scheme.</p>
-                    <div class="settings-row">
-                      <label class="settings-label">Current vault</label>
-                      <span class="settings-value">{activeVault()?.name ?? "Default"}</span>
-                    </div>
-                  </div>
-                </Show>
-                <Show when={settingsTab() === "vault"}>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Active Vault</h3>
-                    <select class="settings-select" value={activeVault()?.id ?? ""} onChange={(e) => applyActiveVault(e.currentTarget.value)}>
-                      <For each={vaults()}>{(vault) => <option value={vault.id}>{vault.name}</option>}</For>
-                    </select>
-                    <button class="settings-action" onClick={() => setVaultFormOpen((p) => !p)}>
-                      {vaultFormOpen() ? "Cancel" : "New vault"}
-                    </button>
-                    <Show when={vaultFormOpen()}>
-                      <div class="settings-form">
-                        <input class="settings-input" type="text" placeholder="Vault name" value={newVaultName()} onInput={(e) => setNewVaultName(e.currentTarget.value)} />
-                        <div class="settings-file-row">
-                          <input class="settings-input" type="text" placeholder="Vault path" value={newVaultPath()} onInput={(e) => setNewVaultPath(e.currentTarget.value)} />
-                          <button class="settings-action" type="button" onClick={openVaultFolderPicker}>
-                            Browse
-                          </button>
-                        </div>
-                        <input
-                          ref={(el) => {
-                            vaultFolderPickerRef = el;
-                            el.setAttribute("webkitdirectory", "");
-                            el.setAttribute("directory", "");
-                          }}
-                          data-testid="vault-folder-picker"
-                          class="settings-file-input"
-                          type="file"
-                          onChange={handleVaultFolderPick}
-                        />
-                        <button class="settings-action is-primary" onClick={createVault}>Create vault</button>
-                      </div>
-                    </Show>
-                    <div class="settings-row">
-                      <label class="settings-label">Shadow write queue</label>
-                      <span
-                        class={`settings-value ${
-                          shadowPendingCount() > 0 ? "is-warning" : "is-success"
-                        }`}
-                      >
-                        {shadowPendingCount()} pending
-                      </span>
-                    </div>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Encryption Key</h3>
-                    <p class="settings-section__desc">{vaultKeyStatus().configured ? `Configured (${vaultKeyStatus().kdf ?? "pbkdf2-sha256"})` : "Set a passphrase to enable E2E encryption."}</p>
-                    <input class="settings-input" type="password" placeholder="Passphrase" value={vaultPassphrase()} onInput={(e) => setVaultPassphrase(e.currentTarget.value)} />
-                    <div class="settings-actions">
-                      <button class="settings-action is-primary" disabled={vaultKeyBusy() || !vaultPassphrase().trim()} onClick={setVaultKey}>
-                        {vaultKeyBusy() ? "Deriving..." : "Set passphrase"}
-                      </button>
-                      <button class="settings-action" onClick={() => setVaultPassphrase("")}>Clear</button>
-                    </div>
-                    <Show when={vaultKeyMessage()}><div class="settings-message">{vaultKeyMessage()}</div></Show>
-                  </div>
-                </Show>
-                <Show when={settingsTab() === "sync"}>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Connection</h3>
-                    <div class="settings-status">
-                      <span class={`settings-status__dot ${syncStatus().state}`} />
-                      <span class="settings-status__label">{syncStateLabel()}</span>
-                    </div>
-                    <p class="settings-section__desc">{syncStateDetail()}</p>
-                    <input class="settings-input" type="text" placeholder="Sync server URL" value={syncServerUrl()} onInput={(e) => setSyncServerUrl(e.currentTarget.value)} />
-                    <input class="settings-input" type="text" placeholder="Vault ID (optional)" value={syncVaultIdInput()} onInput={(e) => setSyncVaultIdInput(e.currentTarget.value)} />
-                    <input class="settings-input" type="text" placeholder="Device ID (optional)" value={syncDeviceIdInput()} onInput={(e) => setSyncDeviceIdInput(e.currentTarget.value)} />
-                    <div class="settings-actions">
-                      <button class="settings-action is-primary" disabled={!isTauri() || syncBusy() || !vaultKeyStatus().configured || !syncServerUrl().trim()} onClick={connectSync}>
-                        {syncBusy() ? "Connecting..." : "Connect"}
-                      </button>
-                      <button class="settings-action" disabled={!isTauri() || syncBusy() || !syncConnected()} onClick={syncNow}>Sync now</button>
-                    </div>
-                    <Show when={syncMessage()}><div class="settings-message">{syncMessage()}</div></Show>
-                  </div>
-                  <Show when={syncConnected()}>
-                    <div class="settings-section">
-                      <h3 class="settings-section__title">Statistics</h3>
-                      <div class="settings-stats">
-                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().pending_ops}</span><span class="settings-stat__label">Queue</span></div>
-                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_push_count}</span><span class="settings-stat__label">Pushed</span></div>
-                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_pull_count}</span><span class="settings-stat__label">Pulled</span></div>
-                        <div class="settings-stat"><span class="settings-stat__value">{syncStatus().last_apply_count}</span><span class="settings-stat__label">Applied</span></div>
-                      </div>
-                      <div class="settings-row"><label class="settings-label">Vault ID</label><code class="settings-code">{syncConfig()?.vault_id}</code></div>
-                      <div class="settings-row"><label class="settings-label">Device ID</label><code class="settings-code">{syncConfig()?.device_id}</code></div>
-                    </div>
-                    <div class="settings-section">
-                      <div class="settings-section__header">
-                        <h3 class="settings-section__title">Activity log</h3>
-                        <button
-                          class="settings-action"
-                          onClick={copySyncLog}
-                          disabled={syncLog().length === 0}
-                        >
-                          Copy log
-                        </button>
-                      </div>
-                      <Show
-                        when={syncLog().length > 0}
-                        fallback={
-                          <p class="settings-section__desc">
-                            No sync activity yet.
-                          </p>
-                        }
-                      >
-                        <div class="sync-log">
-                          <For each={[...syncLog()].reverse()}>
-                            {(entry) => (
-                              <div
-                                class={`sync-log__row ${
-                                  entry.status === "error" ? "is-error" : ""
-                                }`}
-                              >
-                                <span class="sync-log__time">{entry.at}</span>
-                                <span class={`sync-log__action is-${entry.action}`}>
-                                  {entry.action}
-                                </span>
-                                <span class="sync-log__count">
-                                  {entry.count}
-                                </span>
-                                <Show when={entry.detail}>
-                                  <span class="sync-log__detail">
-                                    {entry.detail}
-                                  </span>
-                                </Show>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-                      </Show>
-                    </div>
-                    <Show when={syncConflicts().length > 0}>
-                      <div class="settings-section">
-                        <div class="settings-section__header">
-                          <h3 class="settings-section__title">Sync conflicts</h3>
-                          <span class="sync-conflict-count">
-                            {syncConflicts().length} open
-                          </span>
-                        </div>
-                        <p class="settings-section__desc">
-                          Conflicting edits were detected during sync. Choose a
-                          version or merge the text before continuing.
-                        </p>
-                        <SyncConflictDiagram />
-                        <div class="sync-conflicts">
-                          <For each={syncConflicts()}>
-                            {(conflict) => (
-                              <div class="sync-conflict">
-                                <div class="sync-conflict__header">
-                                  <div>
-                                    <div class="sync-conflict__title">
-                                      {getConflictPageTitle(conflict.page_uid)}
-                                    </div>
-                                    <div class="sync-conflict__meta">
-                                      Block {conflict.block_uid}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div class="sync-conflict__diff">
-                                  <div class="sync-conflict__pane is-local">
-                                    <div class="sync-conflict__label">
-                                      Local
-                                    </div>
-                                    <pre class="sync-conflict__text">
-                                      {conflict.local_text}
-                                    </pre>
-                                  </div>
-                                  <div class="sync-conflict__pane is-remote">
-                                    <div class="sync-conflict__label">
-                                      Remote
-                                    </div>
-                                    <pre class="sync-conflict__text">
-                                      {conflict.remote_text}
-                                    </pre>
-                                  </div>
-                                </div>
-                                <div class="sync-conflict__actions">
-                                  <button
-                                    class="settings-action"
-                                    onClick={() =>
-                                      void resolveSyncConflict(
-                                        conflict,
-                                        "local"
-                                      )
-                                    }
-                                  >
-                                    Use local
-                                  </button>
-                                  <button
-                                    class="settings-action"
-                                    onClick={() =>
-                                      void resolveSyncConflict(
-                                        conflict,
-                                        "remote"
-                                      )
-                                    }
-                                  >
-                                    Use remote
-                                  </button>
-                                  <button
-                                    class="settings-action is-primary"
-                                    onClick={() =>
-                                      startSyncConflictMerge(conflict)
-                                    }
-                                  >
-                                    Merge
-                                  </button>
-                                </div>
-                                <Show
-                                  when={
-                                    syncConflictMergeId() === conflict.op_id
-                                  }
-                                >
-                                  <div class="sync-conflict__merge">
-                                    <label class="sync-conflict__label">
-                                      Merged
-                                    </label>
-                                    <textarea
-                                      class="sync-conflict__textarea"
-                                      value={
-                                        syncConflictMergeDrafts[
-                                          conflict.op_id
-                                        ] ?? ""
-                                      }
-                                      onInput={(event) =>
-                                        setSyncConflictMergeDrafts(
-                                          conflict.op_id,
-                                          event.currentTarget.value
-                                        )
-                                      }
-                                    />
-                                    <div class="sync-conflict__actions">
-                                      <button
-                                        class="settings-action is-primary"
-                                        onClick={() =>
-                                          void resolveSyncConflict(
-                                            conflict,
-                                            "merge",
-                                            syncConflictMergeDrafts[
-                                              conflict.op_id
-                                            ] ?? ""
-                                          )
-                                        }
-                                      >
-                                        Apply merge
-                                      </button>
-                                      <button
-                                        class="settings-action"
-                                        onClick={cancelSyncConflictMerge}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  </div>
-                                </Show>
-                              </div>
-                            )}
-                          </For>
-                        </div>
-                      </div>
-                    </Show>
-                  </Show>
-                </Show>
-                <Show when={settingsTab() === "plugins"}>
-                  <Show when={pluginError()}>
-                    <div class="settings-banner is-error">
-                      <div>
-                        <div class="settings-banner__title">Plugin error</div>
-                        <div class="settings-banner__message">{pluginError()}</div>
-                      </div>
-                      <button
-                        class="settings-action"
-                        onClick={loadPluginRuntime}
-                        disabled={pluginBusy()}
-                      >
-                        {pluginBusy() ? "Reloading..." : "Reload plugins"}
-                      </button>
-                    </div>
-                  </Show>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Installed Plugins</h3>
-                    <Show when={plugins().length > 0} fallback={<p class="settings-section__desc">No plugins installed.</p>}>
-                      <For each={plugins()}>{(plugin) => (
-                        <div class={`settings-plugin ${plugin.enabled ? "" : "is-disabled"}`}>
-                          <div class="settings-plugin__info">
-                            <span class="settings-plugin__name">{plugin.name}</span>
-                            <span class="settings-plugin__version">{plugin.version}</span>
-                          </div>
-                          <Show when={plugin.description}><p class="settings-plugin__desc">{plugin.description}</p></Show>
-                          <Show when={plugin.missing_permissions.length > 0}>
-                            <div class="settings-plugin__permissions">
-                              <For each={plugin.missing_permissions}>{(perm) => (
-                                <button class="settings-action" onClick={() => requestGrantPermission(plugin, perm)}>Grant {perm}</button>
-                              )}</For>
-                            </div>
-                          </Show>
-                        </div>
-                      )}</For>
-                    </Show>
-                    <button class="settings-action is-primary" onClick={loadPluginRuntime} disabled={pluginBusy()}>
-                      {pluginBusy() ? "Loading..." : "Reload plugins"}
-                    </button>
-                    <Show when={commandStatus()}><div class="settings-message is-success">{commandStatus()}</div></Show>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Plugin Commands</h3>
-                    <Show
-                      when={(pluginStatus()?.commands ?? []).length > 0}
-                      fallback={<p class="settings-section__desc">No plugin commands available.</p>}
-                    >
-                      <For each={pluginStatus()?.commands ?? []}>
-                        {(command) => (
-                          <div class="settings-row">
-                            <div>
-                              <div class="settings-value">{command.title}</div>
-                              <Show when={command.description}>
-                                <div class="settings-label">{command.description}</div>
-                              </Show>
-                            </div>
-                            <button
-                              class="settings-action"
-                              onClick={() => runPluginCommand(command)}
-                              disabled={pluginBusy()}
-                            >
-                              Run
-                            </button>
-                          </div>
-                        )}
-                      </For>
-                    </Show>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Plugin Panels</h3>
-                    <Show
-                      when={(pluginStatus()?.panels ?? []).length > 0}
-                      fallback={<p class="settings-section__desc">No plugin panels available.</p>}
-                    >
-                      <For each={pluginStatus()?.panels ?? []}>
-                        {(panel) => (
-                          <div class="settings-row">
-                            <div>
-                              <div class="settings-value">{panel.title}</div>
-                              <Show when={panel.location}>
-                                <div class="settings-label">{panel.location}</div>
-                              </Show>
-                            </div>
-                            <button
-                              class="settings-action"
-                              onClick={() => openPanel(panel)}
-                              disabled={pluginBusy()}
-                            >
-                              Open
-                            </button>
-                          </div>
-                        )}
-                      </For>
-                    </Show>
-                  </div>
-                </Show>
-                <Show when={settingsTab() === "permissions"}>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Permission Audit</h3>
-                    <p class="settings-section__desc">
-                      Review required permissions, missing grants, and unused grants.
-                    </p>
-                    <div class="settings-permission-legend">
-                      <span class="settings-permission is-granted">Granted</span>
-                      <span class="settings-permission is-missing">Missing</span>
-                      <span class="settings-permission is-unused">Unused</span>
-                    </div>
-                    <Show
-                      when={plugins().length > 0}
-                      fallback={<p class="settings-section__desc">No plugins installed.</p>}
-                    >
-                      <For each={plugins()}>
-                        {(plugin) => {
-                          const missing = plugin.missing_permissions;
-                          const unused = plugin.granted_permissions.filter(
-                            (perm) => !plugin.permissions.includes(perm)
-                          );
-                          const orderedPermissions = [
-                            ...plugin.permissions,
-                            ...unused
-                          ];
-                          const showPermissions = orderedPermissions.length > 0;
-                          return (
-                            <div class="settings-permission-card">
-                              <div class="settings-permission-header">
-                                <span class="settings-permission-name">
-                                  {plugin.name}
-                                </span>
-                                <span class="settings-permission-version">
-                                  {plugin.version}
-                                </span>
-                              </div>
-                              <Show when={plugin.description}>
-                                <p class="settings-section__desc">
-                                  {plugin.description}
-                                </p>
-                              </Show>
-                              <Show
-                                when={showPermissions}
-                                fallback={
-                                  <p class="settings-section__desc">
-                                    No permissions requested.
-                                  </p>
-                                }
-                              >
-                                <div class="settings-permission-list">
-                                  <For each={orderedPermissions}>
-                                    {(perm) => (
-                                      <span
-                                        class={`settings-permission ${
-                                          missing.includes(perm)
-                                            ? "is-missing"
-                                            : unused.includes(perm)
-                                              ? "is-unused"
-                                              : "is-granted"
-                                        }`}
-                                      >
-                                        {perm}
-                                      </span>
-                                    )}
-                                  </For>
-                                </div>
-                              </Show>
-                              <Show when={missing.length > 0}>
-                                <p class="settings-permission-note is-missing">
-                                  Missing: {missing.join(", ")}
-                                </p>
-                              </Show>
-                              <Show when={unused.length > 0}>
-                                <p class="settings-permission-note is-unused">
-                                  Unused grants: {unused.join(", ")}
-                                </p>
-                              </Show>
-                            </div>
-                          );
-                        }}
-                      </For>
-                    </Show>
-                  </div>
-                </Show>
-                <Show when={settingsTab() === "import"}>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Import Markdown</h3>
-                    <p class="settings-section__desc">Paste shadow Markdown to create or update a page.</p>
-                    <textarea class="settings-textarea" rows={5} placeholder="Paste markdown here..." value={importText()} onInput={(e) => setImportText(e.currentTarget.value)} />
-                    <div class="settings-actions">
-                      <button class="settings-action" type="button" onClick={openMarkdownFilePicker}>
-                        Choose file
-                      </button>
-                      <button class="settings-action is-primary" onClick={importMarkdown} disabled={importing()}>{importing() ? "Importing..." : "Import"}</button>
-                      <button class="settings-action" onClick={() => { setImportText(""); setImportStatus(null); }}>Clear</button>
-                    </div>
-                    <input
-                      ref={(el) => {
-                        markdownFilePickerRef = el;
-                      }}
-                      data-testid="markdown-file-picker"
-                      class="settings-file-input"
-                      type="file"
-                      accept=".md,text/markdown"
-                      onChange={(event) => void handleMarkdownFilePick(event)}
-                    />
-                    <Show when={importStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Export Markdown</h3>
-                    <p class="settings-section__desc">Export all pages as read-only Markdown with stable block IDs.</p>
-                    <button class="settings-action is-primary" onClick={exportMarkdown} disabled={exporting()}>{exporting() ? "Exporting..." : "Export all pages"}</button>
-                    <Show when={exportStatus()}>{(s) => <div class={`settings-message ${s().state === "success" ? "is-success" : "is-error"}`}>{s().message}</div>}</Show>
-                    <Show when={exportStatus()?.preview}>{(preview) => <pre class="settings-preview"><code>{preview()}</code></pre>}</Show>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Offline backup</h3>
-                    <p class="settings-section__desc">Export a zip archive with pages and assets for offline restore.</p>
-                    <button
-                      class="settings-action is-primary"
-                      onClick={exportOfflineArchive}
-                      disabled={offlineExporting()}
-                    >
-                      {offlineExporting() ? "Exporting..." : "Export offline archive"}
-                    </button>
-                    <Show when={offlineExportStatus()}>
-                      {(s) => (
-                        <div
-                          class={`settings-message ${
-                            s().state === "success" ? "is-success" : "is-error"
-                          }`}
-                        >
-                          {s().message}
-                        </div>
-                      )}
-                    </Show>
-                  </div>
-                  <div class="settings-section">
-                    <h3 class="settings-section__title">Offline restore</h3>
-                    <p class="settings-section__desc">Import a zip archive to restore pages and assets.</p>
-                    <div class="settings-actions">
-                      <button class="settings-action" type="button" onClick={openOfflineArchivePicker}>
-                        Choose archive
-                      </button>
-                      <button
-                        class="settings-action is-primary"
-                        onClick={importOfflineArchive}
-                        disabled={offlineImporting()}
-                      >
-                        {offlineImporting() ? "Importing..." : "Import archive"}
-                      </button>
-                      <Show when={offlineImportFile()}>
-                        {(file) => (
-                          <span class="settings-value">
-                            {file().name}
-                          </span>
-                        )}
-                      </Show>
-                    </div>
-                    <input
-                      ref={(el) => {
-                        offlineArchivePickerRef = el;
-                      }}
-                      data-testid="offline-archive-picker"
-                      class="settings-file-input"
-                      type="file"
-                      accept=".zip,application/zip"
-                      onChange={(event) => handleOfflineArchivePick(event)}
-                    />
-                    <Show when={offlineImportStatus()}>
-                      {(s) => (
-                        <div
-                          class={`settings-message ${
-                            s().state === "success" ? "is-success" : "is-error"
-                          }`}
-                        >
-                          {s().message}
-                        </div>
-                      )}
-                    </Show>
-                  </div>
-                </Show>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Show>
-
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        tab={settingsTab}
+        setTab={setSettingsTab}
+        isTauri={isTauri}
+        typeScale={{
+          value: typeScale,
+          set: setTypeScale,
+          min: TYPE_SCALE_MIN,
+          max: TYPE_SCALE_MAX,
+          step: TYPE_SCALE_STEP,
+          defaultPosition: TYPE_SCALE_DEFAULT_POSITION
+        }}
+        vault={{
+          active: activeVault,
+          list: vaults,
+          applyActiveVault,
+          formOpen: vaultFormOpen,
+          setFormOpen: setVaultFormOpen,
+          newName: newVaultName,
+          setNewName: setNewVaultName,
+          newPath: newVaultPath,
+          setNewPath: setNewVaultPath,
+          create: createVault,
+          shadowPendingCount,
+          keyStatus: vaultKeyStatus,
+          passphrase: vaultPassphrase,
+          setPassphrase: setVaultPassphrase,
+          keyBusy: vaultKeyBusy,
+          setKey: setVaultKey,
+          keyMessage: vaultKeyMessage
+        }}
+        sync={{
+          status: syncStatus,
+          stateLabel: syncStateLabel,
+          stateDetail: syncStateDetail,
+          serverUrl: syncServerUrl,
+          setServerUrl: setSyncServerUrl,
+          vaultIdInput: syncVaultIdInput,
+          setVaultIdInput: setSyncVaultIdInput,
+          deviceIdInput: syncDeviceIdInput,
+          setDeviceIdInput: setSyncDeviceIdInput,
+          busy: syncBusy,
+          connected: syncConnected,
+          connect: connectSync,
+          syncNow: syncNow,
+          message: syncMessage,
+          config: syncConfig,
+          log: syncLog,
+          copyLog: copySyncLog,
+          conflicts: syncConflicts,
+          resolveConflict: resolveSyncConflict,
+          startMerge: startSyncConflictMerge,
+          cancelMerge: cancelSyncConflictMerge,
+          mergeId: syncConflictMergeId,
+          mergeDrafts: syncConflictMergeDrafts,
+          setMergeDrafts: setSyncConflictMergeDrafts,
+          getConflictPageTitle: getConflictPageTitle
+        }}
+        plugins={{
+          error: pluginError,
+          loadRuntime: loadPluginRuntime,
+          busy: pluginBusy,
+          list: plugins,
+          commandStatus: commandStatus,
+          status: pluginStatus,
+          requestGrant: requestGrantPermission,
+          runCommand: runPluginCommand,
+          openPanel: openPanel
+        }}
+        importExport={{
+          importText,
+          setImportText,
+          importStatus,
+          setImportStatus,
+          importing,
+          importMarkdown,
+          exporting,
+          exportMarkdown,
+          exportStatus,
+          offlineExporting,
+          exportOfflineArchive,
+          offlineExportStatus,
+          offlineImporting,
+          importOfflineArchive,
+          offlineImportFile,
+          setOfflineImportFile,
+          offlineImportStatus,
+          setOfflineImportStatus
+        }}
+      />
       <Show when={permissionPrompt()}>
         {(prompt) => (
           <div class="modal-backdrop" role="presentation">
