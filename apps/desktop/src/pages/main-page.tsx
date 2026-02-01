@@ -2,24 +2,20 @@ import {
   Show,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   onCleanup,
-  onMount,
-  type JSX
+  onMount
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
-  buildBacklinks,
-  buildWikilinkBacklinks,
   createShadowWriter,
   parseMarkdownPage,
   serializePageToMarkdown
 } from "@sandpaper/core-model";
 import { deriveVaultKey } from "@sandpaper/crypto";
-import type { Block, BlockPayload, BlockSearchResult } from "../entities/block/model/block-types";
+import type { Block, BlockPayload } from "../entities/block/model/block-types";
 import { makeBlock } from "../entities/block/model/make-block";
 import { BacklinksPanel } from "../widgets/backlinks/backlinks-panel";
 import { BacklinksToggle } from "../widgets/backlinks/backlinks-toggle";
@@ -43,12 +39,6 @@ import { createVaultLoaders } from "../features/vault/model/use-vault-loaders";
 import { createSync } from "../features/sync/model/use-sync";
 import { ConfirmDialog } from "../shared/ui/confirm-dialog";
 import type {
-  BacklinkEntry,
-  PageBacklinkRecord,
-  PageLinkBlock,
-  UnlinkedReference
-} from "../entities/page/model/backlink-types";
-import type {
   LocalPageRecord,
   PageBlocksResponse,
   PageSummary
@@ -63,7 +53,6 @@ import type {
   ReviewQueueSummary,
   ReviewTemplate
 } from "../entities/review/model/review-types";
-import type { SearchResult } from "../entities/search/model/search-types";
 import type { VaultConfig, VaultKeyStatus, VaultRecord } from "../entities/vault/model/vault-types";
 import type { MarkdownExportStatus } from "../shared/model/markdown-export-types";
 import type { Mode } from "../shared/model/mode";
@@ -82,7 +71,12 @@ import {
   type PerfStats
 } from "../shared/lib/perf/perf";
 import { replaceWikilinksInText } from "../shared/lib/links/replace-wikilinks";
-import { escapeRegExp } from "../shared/lib/string/escape-regexp";
+import {
+  formatDailyNoteTitle,
+  resolveUniqueLocalPageUid
+} from "./main-page/model/page-utils";
+import { createSearchState } from "./main-page/model/use-search";
+import { createBacklinksState } from "./main-page/model/use-backlinks";
 
 type CommandPaletteItem = {
   id: string;
@@ -144,11 +138,6 @@ function MainPage() {
     null
   );
   const [mode, setMode] = createSignal<Mode>("editor");
-  const [searchQuery, setSearchQuery] = createSignal("");
-  const [searchFilter, setSearchFilter] = createSignal<
-    "all" | "links" | "tasks" | "pinned"
-  >("all");
-  const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal("");
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
@@ -284,264 +273,31 @@ function MainPage() {
     }
   });
 
-  const localSearch = (query: string): SearchResult[] => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return [];
-    return blocks
-      .filter((block) => block.text.toLowerCase().includes(normalized))
-      .slice(0, 12)
-      .map((block) => ({ id: block.id, text: block.text }));
-  };
+  let searchInputRef: HTMLInputElement | undefined;
 
-  const localResults = createMemo<SearchResult[]>(() => {
-    const trimmed = searchQuery().trim();
-    if (!trimmed) return [];
-    return localSearch(trimmed);
+  const searchHistoryKey = createMemo(() => {
+    const vaultId = activeVault()?.id ?? "default";
+    return `sandpaper:search-history:${vaultId}`;
   });
 
-  const [remoteResults] = createResource(
+  const searchState = createSearchState({
+    blocks: () => blocks,
+    isTauri,
+    invoke,
+    historyKey: searchHistoryKey,
+    focusInput: () => searchInputRef?.focus()
+  });
+  const {
     searchQuery,
-    async (query) => {
-      const trimmed = query.trim();
-      if (!trimmed) return [];
-      if (!isTauri()) return [];
-
-      try {
-        const remote = (await invoke("search_blocks", { query: trimmed })) as
-          | BlockSearchResult[]
-          | null;
-        if (remote && remote.length > 0) {
-          return remote.map((block) => ({ id: block.uid, text: block.text }));
-        }
-      } catch (error) {
-        console.error("Search failed", error);
-      }
-
-      return [];
-    },
-    { initialValue: [] }
-  );
-
-  const searchResults = createMemo<SearchResult[]>(() =>
-    isTauri() ? remoteResults() : localResults()
-  );
-
-  const backlinksMap = createMemo(() =>
-    buildBacklinks(
-      blocks.map((block) => ({
-        id: block.id,
-        text: block.text
-      }))
-    )
-  );
-
-  const pageLinkBlocks = createMemo<PageLinkBlock[]>(() => {
-    if (!isTauri()) {
-      const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
-      const currentTitle = pageTitle();
-      const currentBlocks = blocks.map((block) => ({
-        id: block.id,
-        text: block.text,
-        pageUid: currentUid,
-        pageTitle: currentTitle
-      }));
-      const otherBlocks = Object.values(localPages).flatMap((page) => {
-        if (page.uid === currentUid) return [];
-        return page.blocks.map((block) => ({
-          id: block.id,
-          text: block.text,
-          pageUid: page.uid,
-          pageTitle: page.title
-        }));
-      });
-      return [...currentBlocks, ...otherBlocks];
-    }
-    const activeUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
-    const activeTitle = pageTitle();
-    return blocks.map((block) => ({
-      id: block.id,
-      text: block.text,
-      pageUid: activeUid,
-      pageTitle: activeTitle
-    }));
-  });
-
-  const pageLinkBlocksById = createMemo(() => {
-    const map = new Map<string, PageLinkBlock>();
-    pageLinkBlocks().forEach((block) => {
-      map.set(block.id, block);
-    });
-    return map;
-  });
-
-  const pageBacklinksMap = createMemo(() =>
-    buildWikilinkBacklinks(pageLinkBlocks(), normalizePageUid)
-  );
-
-  const [remotePageBacklinks] = createResource(
-    activePageUid,
-    async (pageUid) => {
-      if (!isTauri()) return [];
-      const resolved = normalizePageUid(pageUid || DEFAULT_PAGE_UID);
-      try {
-        return (await invoke("list_page_wikilink_backlinks", {
-          pageUid: resolved,
-          page_uid: resolved
-        })) as PageBacklinkRecord[];
-      } catch (error) {
-        console.error("Failed to load page backlinks", error);
-        return [];
-      }
-    },
-    { initialValue: [] }
-  );
-
-  const activeBlock = createMemo(
-    () => blocks.find((block) => block.id === activeId()) ?? null
-  );
-
-  const activeBacklinks = createMemo<BacklinkEntry[]>(() => {
-    const active = activeId();
-    if (!active) return [];
-    const linked = backlinksMap()[active] ?? [];
-    return linked
-      .map((id) => blocks.find((block) => block.id === id))
-      .filter((block): block is Block => Boolean(block))
-      .map((block) => ({ id: block.id, text: block.text || "Untitled" }));
-  });
-
-  const activePageBacklinks = createMemo<BacklinkEntry[]>(() => {
-    if (isTauri()) {
-      return remotePageBacklinks().map((entry) => ({
-        id: entry.block_uid,
-        text: entry.text || "Untitled",
-        pageUid: entry.page_uid,
-        pageTitle: entry.page_title
-      }));
-    }
-    const pageUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
-    const linked = pageBacklinksMap()[pageUid] ?? [];
-    const lookup = pageLinkBlocksById();
-    return linked
-      .map((id) => lookup.get(id))
-      .filter((block): block is PageLinkBlock => Boolean(block))
-      .map((block) => ({
-        id: block.id,
-        text: block.text || "Untitled",
-        pageUid: block.pageUid,
-        pageTitle: block.pageTitle
-      }));
-  });
-
-  const totalBacklinks = createMemo(
-    () => activeBacklinks().length + activePageBacklinks().length
-  );
-
-  const getPageBacklinkSource = (entry: BacklinkEntry) => {
-    const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
-    const sourceUid = normalizePageUid(entry.pageUid || currentUid);
-    if (sourceUid === currentUid) return "This page";
-    return entry.pageTitle || "Untitled page";
-  };
-
-  const formatBacklinkSnippet = (text: string) => {
-    const normalized = text.replace(/\s+/g, " ").trim();
-    if (!normalized) return "Untitled";
-    if (normalized.length <= 80) return normalized;
-    return `${normalized.slice(0, 80)}...`;
-  };
-
-  const groupedPageBacklinks = createMemo(() => {
-    const groups = new Map<
-      string,
-      { title: string; entries: BacklinkEntry[] }
-    >();
-    activePageBacklinks().forEach((entry) => {
-      const key = normalizePageUid(entry.pageUid || entry.pageTitle || "page");
-      const title = getPageBacklinkSource(entry);
-      if (!groups.has(key)) {
-        groups.set(key, { title, entries: [] });
-      }
-      groups.get(key)?.entries.push(entry);
-    });
-    return Array.from(groups.values()).sort((a, b) =>
-      a.title.localeCompare(b.title)
-    );
-  });
-
-  const openPageBacklink = async (entry: BacklinkEntry) => {
-    const targetPage = entry.pageUid ?? activePageUid();
-    if (!targetPage) return;
-    const currentUid = normalizePageUid(activePageUid() || DEFAULT_PAGE_UID);
-    const targetUid = normalizePageUid(targetPage);
-    if (targetUid !== currentUid) {
-      await switchPage(targetPage);
-    }
-    setActiveId(entry.id);
-    setJumpTarget({ id: entry.id, caret: "start" });
-  };
-
-  const supportsMultiPane = false;
-
-  const openPageBacklinkInPane = async (entry: BacklinkEntry) => {
-    if (!supportsMultiPane) return;
-    await openPageBacklink(entry);
-  };
-
-  const filteredSearchResults = createMemo<SearchResult[]>(() => {
-    const results = searchResults();
-    if (searchFilter() === "all") return results;
-    if (searchFilter() === "links") {
-      return results.filter(
-        (result) => result.text.includes("((") || result.text.includes("[[")
-      );
-    }
-    if (searchFilter() === "tasks") {
-      return results.filter((result) => /\[\s?[xX ]\s?\]/.test(result.text));
-    }
-    if (searchFilter() === "pinned") {
-      return results.filter((result) => result.text.toLowerCase().includes("#pin"));
-    }
-    return results;
-  });
-
-  const commitSearchTerm = (term: string) => {
-    const trimmed = term.trim();
-    if (!trimmed) return;
-    const normalized = trimmed.toLowerCase();
-    setSearchHistory((prev) => {
-      const next = [trimmed, ...prev.filter((item) => item.toLowerCase() !== normalized)];
-      return next.slice(0, 5);
-    });
-  };
-
-  const applySearchTerm = (term: string) => {
-    setSearchQuery(term);
-    searchInputRef?.focus();
-  };
-
-  const renderSearchHighlight = (text: string): Array<string | JSX.Element> | string => {
-    const query = searchQuery().trim();
-    if (!query) return text;
-    const escaped = escapeRegExp(query);
-    if (!escaped) return text;
-    const regex = new RegExp(escaped, "gi");
-    const nodes: Array<string | JSX.Element> = [];
-    let lastIndex = 0;
-    for (const match of text.matchAll(regex)) {
-      const index = match.index ?? 0;
-      if (index > lastIndex) {
-        nodes.push(text.slice(lastIndex, index));
-      }
-      nodes.push(<mark class="search-highlight">{match[0]}</mark>);
-      lastIndex = index + match[0].length;
-    }
-    if (nodes.length === 0) return text;
-    if (lastIndex < text.length) {
-      nodes.push(text.slice(lastIndex));
-    }
-    return nodes;
-  };
+    setSearchQuery,
+    searchFilter,
+    setSearchFilter,
+    searchHistory,
+    filteredSearchResults,
+    commitSearchTerm,
+    applySearchTerm,
+    renderSearchHighlight
+  } = searchState;
 
   const shadowWriter = createShadowWriter({
     resolvePath: (pageId) => pageId,
@@ -559,55 +315,6 @@ function MainPage() {
   const resolvePageUid = (value: string) =>
     normalizePageUid(value || DEFAULT_PAGE_UID);
 
-  const stripWikilinks = (text: string) => text.replace(/\[\[[^\]]+?\]\]/g, "");
-
-  const unlinkedReferences = createMemo<UnlinkedReference[]>(() => {
-    const currentUid = resolvePageUid(activePageUid());
-    const availablePages = pages().filter(
-      (page) =>
-        page.title &&
-        resolvePageUid(page.uid) !== currentUid &&
-        page.title.trim().length > 0
-    );
-    if (availablePages.length === 0) return [];
-    const refs: UnlinkedReference[] = [];
-    const seen = new Set<string>();
-    blocks.forEach((block, index) => {
-      const source = stripWikilinks(block.text);
-      if (!source.trim()) return;
-      availablePages.forEach((page) => {
-        const title = page.title?.trim();
-        if (!title) return;
-        const key = `${block.id}:${page.uid}`;
-        if (seen.has(key)) return;
-        const pattern = new RegExp(escapeRegExp(title), "i");
-        if (pattern.test(source)) {
-          seen.add(key);
-          refs.push({
-            pageTitle: title,
-            pageUid: page.uid,
-            blockId: block.id,
-            blockIndex: index,
-            snippet: formatBacklinkSnippet(source)
-          });
-        }
-      });
-    });
-    return refs.slice(0, 12);
-  });
-
-  const linkUnlinkedReference = (ref: UnlinkedReference) => {
-    const block = blocks[ref.blockIndex];
-    if (!block || block.id !== ref.blockId) return;
-    const pattern = new RegExp(escapeRegExp(ref.pageTitle), "i");
-    const nextText = block.text.replace(pattern, `[[${ref.pageTitle}]]`);
-    if (nextText === block.text) return;
-    setBlocks(ref.blockIndex, "text", nextText);
-    scheduleSave();
-    setActiveId(ref.blockId);
-    setJumpTarget({ id: ref.blockId, caret: "end" });
-  };
-
   const snapshotBlocks = (source: Block[]) =>
     source.map((block) => ({ ...block }));
 
@@ -618,33 +325,6 @@ function MainPage() {
       blocks: snapshotBlocks(items)
     });
   };
-
-  const searchHistoryKey = createMemo(() => {
-    const vaultId = activeVault()?.id ?? "default";
-    return `sandpaper:search-history:${vaultId}`;
-  });
-
-  createEffect(() => {
-    const key = searchHistoryKey();
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem(key);
-    if (!stored) {
-      setSearchHistory([]);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(stored);
-      setSearchHistory(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setSearchHistory([]);
-    }
-  });
-
-  createEffect(() => {
-    const key = searchHistoryKey();
-    if (typeof window === "undefined") return;
-    localStorage.setItem(key, JSON.stringify(searchHistory()));
-  });
 
   const persistActivePage = async (pageUid: string) => {
     const resolved = resolvePageUid(pageUid);
@@ -885,6 +565,37 @@ function MainPage() {
     scheduleShadowWrite
   } = autosave;
 
+  const backlinksState = createBacklinksState({
+    blocks: () => blocks,
+    setBlocks,
+    pages,
+    localPages,
+    activePageUid,
+    activeId,
+    pageTitle,
+    isTauri,
+    invoke,
+    resolvePageUid,
+    scheduleSave,
+    setActiveId,
+    setJumpTarget,
+    switchPage,
+    defaultPageUid: DEFAULT_PAGE_UID
+  });
+  const {
+    activeBlock,
+    activeBacklinks,
+    activePageBacklinks,
+    groupedPageBacklinks,
+    totalBacklinks,
+    supportsMultiPane,
+    openPageBacklink,
+    openPageBacklinkInPane,
+    formatBacklinkSnippet,
+    unlinkedReferences,
+    linkUnlinkedReference
+  } = backlinksState;
+
   const vaultLoaders = createVaultLoaders({
     isTauri,
     invoke,
@@ -1062,26 +773,9 @@ function MainPage() {
     }
   };
 
-  const resolveUniqueLocalPageUid = (title: string) => {
-    const base = resolvePageUid(title);
-    let candidate = base;
-    let counter = 2;
-    while (localPages[candidate]) {
-      candidate = `${base}-${counter}`;
-      counter += 1;
-    }
-    return candidate;
-  };
-
-  const formatDailyNoteTitle = () =>
-    new Intl.DateTimeFormat("en-CA", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit"
-    }).format(new Date());
 
   const ensureDailyNote = async () => {
-    const title = formatDailyNoteTitle();
+      const title = formatDailyNoteTitle();
     const dailyUid = resolvePageUid(title);
     if (!dailyUid) return;
 
@@ -1098,7 +792,7 @@ function MainPage() {
           payload: { title }
         });
       } else {
-        const uid = resolveUniqueLocalPageUid(title);
+        const uid = resolveUniqueLocalPageUid(title, localPages, resolvePageUid);
         const seeded = buildEmptyBlocks(makeLocalId);
         saveLocalPageSnapshot(uid, title, seeded);
       }
@@ -1124,7 +818,7 @@ function MainPage() {
         })) as PageSummary;
         await loadPages();
       } else {
-        const uid = resolveUniqueLocalPageUid(title);
+        const uid = resolveUniqueLocalPageUid(title, localPages, resolvePageUid);
         const seeded = buildEmptyBlocks(makeLocalId);
         saveLocalPageSnapshot(uid, title, seeded);
         created = { uid, title };
@@ -1154,7 +848,7 @@ function MainPage() {
         })) as PageSummary;
         await loadPages();
       } else {
-        const uid = resolveUniqueLocalPageUid(trimmed);
+        const uid = resolveUniqueLocalPageUid(trimmed, localPages, resolvePageUid);
         const seeded = buildEmptyBlocks(makeLocalId);
         saveLocalPageSnapshot(uid, trimmed, seeded);
         created = { uid, title: trimmed };
@@ -1718,8 +1412,6 @@ function MainPage() {
       );
     }
   };
-
-  let searchInputRef: HTMLInputElement | undefined;
 
   const { SectionJump, SectionJumpLink, focusEditorSection } = createSectionJump({
     mode,
