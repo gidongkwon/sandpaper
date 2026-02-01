@@ -227,8 +227,11 @@ pub struct PluginRenderer {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginBlockView {
+    #[serde(default)]
     pub plugin_id: String,
+    #[serde(default)]
     pub renderer_id: String,
+    #[serde(default)]
     pub block_uid: String,
     #[serde(default)]
     pub summary: Option<String>,
@@ -265,12 +268,12 @@ struct PluginFence {
 }
 
 pub struct PluginRuntime {
-    _runtime: Runtime,
-    context: Context,
     registry: std::rc::Rc<std::cell::RefCell<PluginRuntimeRegistry>>,
     load_plugin_fn: Persistent<Function<'static>>,
     to_json_fn: Persistent<Function<'static>>,
     settings: HashMap<String, Value>,
+    context: Context,
+    _runtime: Runtime,
 }
 
 impl PluginRuntime {
@@ -785,9 +788,9 @@ pub fn load_plugins_into_runtime(
 #[cfg(test)]
 mod tests {
     use super::{
-        discover_plugins, list_plugins, PluginDescriptor, PluginManifest, PluginRegistry,
-        PluginRuntime, PluginState,
+        discover_plugins, list_plugins, PluginRegistry, PluginRuntime, PluginState,
     };
+    use std::collections::HashMap;
     use std::fs;
     use std::path::PathBuf;
     use tempfile::tempdir;

@@ -12,7 +12,7 @@ use rand_core::RngCore;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use vaults::{VaultConfig, VaultRecord, VaultStore};
 use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use plugins::{
@@ -231,77 +231,193 @@ enum PluginRuntimeRequest {
         payload: Value,
         reply: mpsc::Sender<Result<Value, plugins::PluginError>>,
     },
+    Shutdown,
+}
+
+fn set_shared_error(target: &Arc<Mutex<Option<String>>>, message: String) {
+    let mut guard = target.lock().unwrap_or_else(|err| err.into_inner());
+    *guard = Some(message);
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(text) = payload.downcast_ref::<&str>() {
+        text.to_string()
+    } else if let Some(text) = payload.downcast_ref::<String>() {
+        text.clone()
+    } else {
+        "unknown panic".to_string()
+    }
 }
 
 struct RuntimeState {
     sender: mpsc::Sender<PluginRuntimeRequest>,
+    thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+    last_error: Arc<Mutex<Option<String>>>,
 }
 
 impl RuntimeState {
     fn new() -> Self {
         let (sender, receiver) = mpsc::channel::<PluginRuntimeRequest>();
-        std::thread::spawn(move || {
+        let last_error = Arc::new(Mutex::new(None));
+        let thread_errors = Arc::clone(&last_error);
+        let handle = std::thread::spawn(move || {
+            enum ThreadControl {
+                Continue,
+                Shutdown,
+            }
             let mut runtime: Option<PluginRuntime> = None;
-            for request in receiver {
-                match request {
-                    PluginRuntimeRequest::LoadPlugins {
-                        plugins,
-                        settings,
-                        reply,
-                    } => {
-                        let result = Self::with_runtime(&mut runtime, |runtime| {
-                            runtime.load_plugins(&plugins, settings)
-                        });
-                        let _ = reply.send(result);
+            loop {
+                let request = match receiver.recv() {
+                    Ok(request) => request,
+                    Err(_) => break,
+                };
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    match request {
+                        PluginRuntimeRequest::LoadPlugins {
+                            plugins,
+                            settings,
+                            reply,
+                        } => {
+                            let result = Self::with_runtime(&mut runtime, |runtime| {
+                                runtime.load_plugins(&plugins, settings)
+                            });
+                            let _ = reply.send(result);
+                            ThreadControl::Continue
+                        }
+                        PluginRuntimeRequest::RenderBlock {
+                            plugin_id,
+                            renderer_id,
+                            block_uid,
+                            text,
+                            reply,
+                        } => {
+                            let result = Self::with_runtime(&mut runtime, |runtime| {
+                                runtime.render_block(&plugin_id, &renderer_id, &block_uid, &text)
+                            });
+                            let _ = reply.send(result);
+                            ThreadControl::Continue
+                        }
+                        PluginRuntimeRequest::BlockAction {
+                            plugin_id,
+                            renderer_id,
+                            block_uid,
+                            text,
+                            action_id,
+                            value,
+                            reply,
+                        } => {
+                            let result = Self::with_runtime(&mut runtime, |runtime| {
+                                runtime.handle_block_action(
+                                    &plugin_id,
+                                    &renderer_id,
+                                    &block_uid,
+                                    &text,
+                                    &action_id,
+                                    value,
+                                )
+                            });
+                            let _ = reply.send(result);
+                            ThreadControl::Continue
+                        }
+                        PluginRuntimeRequest::EmitEvent {
+                            plugin_id,
+                            event,
+                            payload,
+                            reply,
+                        } => {
+                            let result = Self::with_runtime(&mut runtime, |runtime| {
+                                runtime.emit_event(&plugin_id, &event, payload)
+                            });
+                            let _ = reply.send(result);
+                            ThreadControl::Continue
+                        }
+                        PluginRuntimeRequest::Shutdown => ThreadControl::Shutdown,
                     }
-                    PluginRuntimeRequest::RenderBlock {
-                        plugin_id,
-                        renderer_id,
-                        block_uid,
-                        text,
-                        reply,
-                    } => {
-                        let result = Self::with_runtime(&mut runtime, |runtime| {
-                            runtime.render_block(&plugin_id, &renderer_id, &block_uid, &text)
-                        });
-                        let _ = reply.send(result);
-                    }
-                    PluginRuntimeRequest::BlockAction {
-                        plugin_id,
-                        renderer_id,
-                        block_uid,
-                        text,
-                        action_id,
-                        value,
-                        reply,
-                    } => {
-                        let result = Self::with_runtime(&mut runtime, |runtime| {
-                            runtime.handle_block_action(
-                                &plugin_id,
-                                &renderer_id,
-                                &block_uid,
-                                &text,
-                                &action_id,
-                                value,
-                            )
-                        });
-                        let _ = reply.send(result);
-                    }
-                    PluginRuntimeRequest::EmitEvent {
-                        plugin_id,
-                        event,
-                        payload,
-                        reply,
-                    } => {
-                        let result = Self::with_runtime(&mut runtime, |runtime| {
-                            runtime.emit_event(&plugin_id, &event, payload)
-                        });
-                        let _ = reply.send(result);
+                }));
+
+                match result {
+                    Ok(ThreadControl::Continue) => {}
+                    Ok(ThreadControl::Shutdown) => break,
+                    Err(panic) => {
+                        set_shared_error(
+                            &thread_errors,
+                            format!("runtime-panicked: {}", panic_message(panic)),
+                        );
+                        break;
                     }
                 }
             }
         });
-        Self { sender }
+        Self {
+            sender,
+            thread: Mutex::new(Some(handle)),
+            last_error,
+        }
+    }
+
+    fn shutdown(&self) {
+        let mut handle = self.thread.lock().unwrap_or_else(|err| err.into_inner());
+        if handle.is_none() {
+            return;
+        }
+        let _ = self.sender.send(PluginRuntimeRequest::Shutdown);
+        if let Some(handle) = handle.take() {
+            let _ = handle.join();
+        }
+    }
+
+    fn record_error(&self, message: String) {
+        let mut guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        *guard = Some(message);
+    }
+
+    fn clear_error(&self) {
+        let mut guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        *guard = None;
+    }
+
+    fn last_error(&self) -> Option<String> {
+        let guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        guard.clone()
+    }
+
+    fn runtime_error(&self, code: &str) -> String {
+        match self.last_error() {
+            Some(last_error) => format!("{code}: {last_error}"),
+            None => code.to_string(),
+        }
+    }
+
+    fn describe_plugin_error(err: &plugins::PluginError) -> String {
+        match err {
+            plugins::PluginError::Io(inner) => format!("plugin-error: io: {inner}"),
+            plugins::PluginError::Serde(inner) => format!("plugin-error: serde: {inner}"),
+            plugins::PluginError::Runtime(inner) => format!("plugin-error: {inner}"),
+        }
+    }
+
+    fn request<T>(
+        &self,
+        request: PluginRuntimeRequest,
+        recv: mpsc::Receiver<Result<T, plugins::PluginError>>,
+    ) -> Result<T, String> {
+        self.sender
+            .send(request)
+            .map_err(|_| self.runtime_error("runtime-unavailable"))?;
+        let result = recv
+            .recv()
+            .map_err(|_| self.runtime_error("runtime-disconnected"))?;
+        match result {
+            Ok(value) => {
+                self.clear_error();
+                Ok(value)
+            }
+            Err(err) => {
+                let message = Self::describe_plugin_error(&err);
+                self.record_error(message.clone());
+                Err(message)
+            }
+        }
     }
 
     fn with_runtime<F, R>(
@@ -326,16 +442,14 @@ impl RuntimeState {
         settings: HashMap<String, Value>,
     ) -> Result<PluginRuntimeLoadResult, String> {
         let (reply, recv) = mpsc::channel();
-        self.sender
-            .send(PluginRuntimeRequest::LoadPlugins {
+        self.request(
+            PluginRuntimeRequest::LoadPlugins {
                 plugins,
                 settings,
                 reply,
-            })
-            .map_err(|_| "runtime-unavailable".to_string())?;
-        recv.recv()
-            .map_err(|_| "runtime-disconnected".to_string())?
-            .map_err(|err| format!("{:?}", err))
+            },
+            recv,
+        )
     }
 
     fn render_block(
@@ -346,18 +460,16 @@ impl RuntimeState {
         text: String,
     ) -> Result<PluginBlockView, String> {
         let (reply, recv) = mpsc::channel();
-        self.sender
-            .send(PluginRuntimeRequest::RenderBlock {
+        self.request(
+            PluginRuntimeRequest::RenderBlock {
                 plugin_id,
                 renderer_id,
                 block_uid,
                 text,
                 reply,
-            })
-            .map_err(|_| "runtime-unavailable".to_string())?;
-        recv.recv()
-            .map_err(|_| "runtime-disconnected".to_string())?
-            .map_err(|err| format!("{:?}", err))
+            },
+            recv,
+        )
     }
 
     fn handle_block_action(
@@ -370,8 +482,8 @@ impl RuntimeState {
         value: Option<Value>,
     ) -> Result<PluginBlockView, String> {
         let (reply, recv) = mpsc::channel();
-        self.sender
-            .send(PluginRuntimeRequest::BlockAction {
+        self.request(
+            PluginRuntimeRequest::BlockAction {
                 plugin_id,
                 renderer_id,
                 block_uid,
@@ -379,11 +491,9 @@ impl RuntimeState {
                 action_id,
                 value,
                 reply,
-            })
-            .map_err(|_| "runtime-unavailable".to_string())?;
-        recv.recv()
-            .map_err(|_| "runtime-disconnected".to_string())?
-            .map_err(|err| format!("{:?}", err))
+            },
+            recv,
+        )
     }
 
     fn emit_event(
@@ -393,17 +503,21 @@ impl RuntimeState {
         payload: Value,
     ) -> Result<Value, String> {
         let (reply, recv) = mpsc::channel();
-        self.sender
-            .send(PluginRuntimeRequest::EmitEvent {
+        self.request(
+            PluginRuntimeRequest::EmitEvent {
                 plugin_id,
                 event,
                 payload,
                 reply,
-            })
-            .map_err(|_| "runtime-unavailable".to_string())?;
-        recv.recv()
-            .map_err(|_| "runtime-disconnected".to_string())?
-            .map_err(|err| format!("{:?}", err))
+            },
+            recv,
+        )
+    }
+}
+
+impl Drop for RuntimeState {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
@@ -1896,16 +2010,18 @@ pub fn run() {
 mod tests {
     use super::{
         apply_sync_ops_to_blocks, backup_before_migration_at, build_markdown_export, build_sync_ops,
-        compute_missing_permissions, encrypt_sync_payload, ensure_plugin_permission,
-        list_permissions_for_plugins, load_sync_config, next_review_due,
-        resolve_review_interval,
+        compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
+        ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
+        load_sync_config, next_review_due, resolve_review_interval, set_plugin_settings,
         sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
-        Database, PageBlocksResponse, PluginInfo, SyncOpPayload,
+        Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
     };
+    use super::plugins::{PluginDescriptor, PluginManifest};
     use aes_gcm::aead::KeyInit;
     use aes_gcm::aead::Aead;
     use base64::Engine;
     use serde_json::Value;
+    use std::collections::HashMap;
     use tempfile::tempdir;
     use chrono::TimeZone;
 
@@ -2070,6 +2186,45 @@ mod tests {
                 "sandpaper-20250104000000.db"
             ]
         );
+    }
+
+    fn build_missing_entry_plugin(root: &std::path::Path) -> PluginDescriptor {
+        let plugin_dir = root.join("plugins").join("broken");
+        std::fs::create_dir_all(&plugin_dir).expect("plugin dir");
+        let manifest = PluginManifest {
+            id: "broken".to_string(),
+            name: "Broken".to_string(),
+            version: "0.0.1".to_string(),
+            description: None,
+            permissions: Vec::new(),
+            main: Some("index.js".to_string()),
+            settings: Vec::new(),
+        };
+        PluginDescriptor {
+            manifest,
+            path: plugin_dir,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn runtime_state_surfaces_last_error_when_unavailable() {
+        let dir = tempdir().expect("tempdir");
+        let plugin = build_missing_entry_plugin(dir.path());
+        let state = RuntimeState::new();
+
+        let error = state
+            .load_plugins(vec![plugin], HashMap::new())
+            .expect_err("load plugins");
+        assert!(error.contains("plugin-error: io"), "error was {error}");
+
+        state.shutdown();
+
+        let error = state
+            .load_plugins(Vec::new(), HashMap::new())
+            .expect_err("runtime unavailable");
+        assert!(error.contains("runtime-unavailable"), "error was {error}");
+        assert!(error.contains("plugin-error"), "error was {error}");
     }
 
     #[test]
