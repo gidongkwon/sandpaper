@@ -53,4 +53,33 @@ describe("PluginBlockPreview", () => {
       })
     );
   });
+
+  it("shows error message when view has no body", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({
+      plugin_id: "hn-top",
+      renderer_id: "hn-top.block",
+      block_uid: "b1",
+      status: "error",
+      message: "Request failed (0): connect failed"
+    });
+
+    render(() => (
+      <PluginBlockPreview
+        block={{ id: "b1", text: "```hn-top count=5 :: Loading HN top", indent: 0 }}
+        renderer={{
+          plugin_id: "hn-top",
+          id: "hn-top.block",
+          title: "Hacker News Top",
+          kind: "block",
+          languages: ["hn-top"]
+        }}
+        isTauri={() => true}
+        onUpdateText={vi.fn()}
+      />
+    ));
+
+    expect(
+      await screen.findByText("Request failed (0): connect failed")
+    ).toBeInTheDocument();
+  });
 });

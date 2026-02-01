@@ -1718,6 +1718,12 @@ button:disabled {
   margin-bottom: var(--space-2);
 }
 
+.plugin-block__summary {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
+}
+
 .plugin-block__text {
   font-size: var(--text-sm);
   color: var(--text-secondary);

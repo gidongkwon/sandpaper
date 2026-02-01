@@ -211,6 +211,22 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
       <Show when={view()}>
         {(resolved) => (
           <>
+            <Show
+              when={
+                !resolved().body &&
+                (resolved().message || resolved().summary)
+              }
+            >
+              <div
+                class={
+                  resolved().status === "error"
+                    ? "plugin-block__error"
+                    : "plugin-block__summary"
+                }
+              >
+                {resolved().message ?? resolved().summary}
+              </div>
+            </Show>
             {renderBody(resolved().body ?? null)}
             <Show when={(resolved().controls ?? []).length > 0}>
               <div class="plugin-block__controls">
