@@ -1137,6 +1137,13 @@ button:disabled {
 
 .editor-pane__title-group {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.editor-pane__title-row {
+  display: flex;
   align-items: baseline;
   gap: var(--space-2);
 }
@@ -1160,6 +1167,44 @@ button:disabled {
   background: var(--bg-tertiary);
   border-radius: var(--radius-xs);
   font-weight: 500;
+}
+
+.editor-pane__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.editor-pane__breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.editor-pane__breadcrumb-button {
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 11px;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.editor-pane__breadcrumb-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-pane__breadcrumb-button.is-current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.editor-pane__breadcrumb-sep {
+  color: var(--text-quaternary);
 }
 
 .editor-pane__actions {
@@ -1188,6 +1233,75 @@ button:disabled {
 .editor-pane__action:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.editor-pane__outline {
+  position: relative;
+}
+
+.editor-outline-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  width: 240px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 6;
+  overflow: hidden;
+}
+
+.editor-outline-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-outline-menu__action {
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.editor-outline-menu__action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-outline-menu__list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-outline-menu__item {
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.editor-outline-menu__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-outline-menu__item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .editor-pane__body {
@@ -1273,6 +1387,30 @@ button:disabled {
   gap: var(--space-2);
   padding: 2px 0;
   padding-left: 24px;
+  --block-indent: 0px;
+}
+
+.block::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--block-indent));
+  top: 0;
+  bottom: 0;
+  width: var(--block-indent);
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent,
+    transparent 23px,
+    var(--border-light) 23px,
+    var(--border-light) 24px
+  );
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.block:hover::before,
+.block.is-active::before {
+  opacity: 0.6;
 }
 
 .block__actions {
@@ -1322,6 +1460,42 @@ button:disabled {
 
 .block__action-float:active {
   transform: scale(0.9);
+}
+
+.block__toggle,
+.block__toggle-spacer {
+  width: 16px;
+  height: 16px;
+  margin-top: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.block__toggle {
+  color: var(--text-quaternary);
+  border-radius: var(--radius-xs);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.block__toggle::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transform: rotate(90deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.block__toggle.is-collapsed::before {
+  transform: rotate(0deg);
+}
+
+.block__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .block__bullet {

@@ -1,6 +1,7 @@
 import { IconButton } from "../../../shared/ui/icon-button";
 
 type BlockActionsProps = {
+  onInsertBelow: () => void;
   onAddReview: () => void;
   onLinkToPage: () => void;
   onDuplicate: () => void;
@@ -9,6 +10,17 @@ type BlockActionsProps = {
 export const BlockActions = (props: BlockActionsProps) => {
   return (
     <div class="block__actions">
+      <IconButton
+        class="block__action"
+        label="Insert block below"
+        title="Insert block below"
+        onClick={props.onInsertBelow}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v8M8 9h8" />
+          <path d="M5 19h14" />
+        </svg>
+      </IconButton>
       <IconButton
         class="block__action"
         label="Add to review"

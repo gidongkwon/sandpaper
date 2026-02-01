@@ -75,6 +75,23 @@ type LinkPreviewState = {
   loading: boolean;
 };
 
+type OutlineItem = {
+  block: Block;
+  index: number;
+  indent: number;
+  parentIndex: number | null;
+  hasChildren: boolean;
+  collapsed: boolean;
+  hidden: boolean;
+};
+
+type OutlineState = {
+  items: OutlineItem[];
+  visible: OutlineItem[];
+  visibleToActual: number[];
+  actualToVisible: number[];
+};
+
 type EditorPaneProps = {
   blocks: Block[];
   setBlocks: SetStoreFunction<Block[]>;
@@ -180,6 +197,10 @@ export const EditorPane = (props: EditorPaneProps) => {
     blocks: [],
     loading: false
   });
+  const [collapsedBlocks, setCollapsedBlocks] = createSignal<Set<string>>(
+    new Set<string>()
+  );
+  const [outlineMenuOpen, setOutlineMenuOpen] = createSignal(false);
   const [dialogOpen, setDialogOpen] = createSignal(false);
   const [dialogMode, setDialogMode] = createSignal<"link" | "rename" | null>(
     null
@@ -220,9 +241,101 @@ export const EditorPane = (props: EditorPaneProps) => {
   const effectiveViewport = createMemo(() =>
     viewportHeight() === 0 ? 560 : viewportHeight()
   );
+  const canUseStorage =
+    typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  const collapsedStorageKey = createMemo(
+    () => `sandpaper:outline:collapsed:${activePageUid()}`
+  );
+  const [collapsedKeyLoaded, setCollapsedKeyLoaded] = createSignal<
+    string | null
+  >(null);
+
+  const loadCollapsedState = (key: string) => {
+    if (!canUseStorage) return [];
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const persistCollapsedState = (key: string, collapsed: Set<string>) => {
+    if (!canUseStorage) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(Array.from(collapsed)));
+    } catch {
+      // Ignore storage failures.
+    }
+  };
+
+  createEffect(() => {
+    const key = collapsedStorageKey();
+    const restored = loadCollapsedState(key);
+    setCollapsedBlocks(new Set<string>(restored));
+    setCollapsedKeyLoaded(key);
+  });
+
+  createEffect(() => {
+    const key = collapsedStorageKey();
+    if (collapsedKeyLoaded() !== key) return;
+    persistCollapsedState(key, collapsedBlocks());
+  });
+
+  const outline = createMemo<OutlineState>(() => {
+    const collapsed = collapsedBlocks();
+    const items: OutlineItem[] = [];
+    const visible: OutlineItem[] = [];
+    const visibleToActual: number[] = [];
+    const actualToVisible = new Array(blocks.length).fill(-1);
+    const stack: number[] = [];
+    const collapsedFlags: boolean[] = [];
+
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      while (
+        stack.length > 0 &&
+        blocks[stack[stack.length - 1]].indent >= block.indent
+      ) {
+        stack.pop();
+        collapsedFlags.pop();
+      }
+      const parentIndex = stack.length > 0 ? stack[stack.length - 1] : null;
+      const ancestorCollapsed =
+        collapsedFlags.length > 0 ? collapsedFlags[collapsedFlags.length - 1] : false;
+      const next = blocks[index + 1];
+      const hasChildren = !!next && next.indent > block.indent;
+      const isCollapsed = hasChildren && collapsed.has(block.id);
+      const item: OutlineItem = {
+        block,
+        index,
+        indent: block.indent,
+        parentIndex,
+        hasChildren,
+        collapsed: isCollapsed,
+        hidden: ancestorCollapsed
+      };
+      items.push(item);
+      if (!ancestorCollapsed) {
+        actualToVisible[index] = visible.length;
+        visible.push(item);
+        visibleToActual.push(index);
+      }
+      if (hasChildren) {
+        stack.push(index);
+        collapsedFlags.push(ancestorCollapsed || isCollapsed);
+      }
+    }
+
+    return { items, visible, visibleToActual, actualToVisible };
+  });
+
   const rowMetrics = createMemo(() => {
-    const heights = blocks.map((block) =>
-      Math.max(ROW_HEIGHT, blockHeights[block.id] ?? ROW_HEIGHT)
+    const visible = outline().visible;
+    const heights = visible.map((item) =>
+      Math.max(ROW_HEIGHT, blockHeights[item.block.id] ?? ROW_HEIGHT)
     );
     let offset = 0;
     const offsets = heights.map((height) => {
@@ -232,6 +345,36 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
     return { heights, offsets, totalHeight: offset };
   });
+
+  const findIndexById = (id: string) =>
+    blocks.findIndex((block) => block.id === id);
+
+  const getVisibleIndexById = (id: string) => {
+    const actualIndex = findIndexById(id);
+    if (actualIndex < 0) return -1;
+    return outline().actualToVisible[actualIndex] ?? -1;
+  };
+
+  const getSelectedActualIndexes = () => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return [];
+    const indices: number[] = [];
+    const map = outline().visibleToActual;
+    for (let i = rangeValue.start; i <= rangeValue.end; i += 1) {
+      const actual = map[i];
+      if (typeof actual === "number") {
+        indices.push(actual);
+      }
+    }
+    return indices;
+  };
+
+  const formatBreadcrumbLabel = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return "Untitled";
+    if (trimmed.length <= 36) return trimmed;
+    return `${trimmed.slice(0, 33)}...`;
+  };
 
   const clearSelection = () => {
     setSelectionRange(null);
@@ -301,7 +444,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     const blockEl = el?.closest<HTMLElement>(".block");
     const blockId = blockEl?.dataset.blockId;
     if (blockId) {
-      const index = findIndexById(blockId);
+      const index = getVisibleIndexById(blockId);
       if (index >= 0) return index;
     }
     return indexFromClientY(clientY);
@@ -313,7 +456,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (anchorIndex < 0) {
       const active = activeId();
       if (active) {
-        const activeIndex = findIndexById(active);
+        const activeIndex = getVisibleIndexById(active);
         if (activeIndex >= 0) {
           anchorIndex = activeIndex;
         }
@@ -438,6 +581,15 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (contextMenu()) {
       setContextMenu(null);
     }
+    if (outlineMenuOpen()) {
+      const target = event.target as HTMLElement | null;
+      if (
+        !target?.closest(".editor-outline-menu") &&
+        !target?.closest(".editor-pane__outline")
+      ) {
+        setOutlineMenuOpen(false);
+      }
+    }
     if (!selectionRange()) return;
     if (event.shiftKey) return;
     const target = event.target as HTMLElement | null;
@@ -468,7 +620,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             );
             const prevHeight = blockHeights[id] ?? ROW_HEIGHT;
             if (nextHeight === prevHeight) continue;
-            const index = findIndexById(id);
+            const index = getVisibleIndexById(id);
             if (index >= 0 && index < range().start && editorRef) {
               editorRef.scrollTop += nextHeight - prevHeight;
             }
@@ -498,7 +650,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   const range = createMemo(() => {
     const metrics = rowMetrics();
     return getVirtualRange({
-      count: blocks.length,
+      count: outline().visible.length,
       rowHeight: ROW_HEIGHT,
       rowHeights: metrics.heights,
       rowOffsets: metrics.offsets,
@@ -510,12 +662,30 @@ export const EditorPane = (props: EditorPaneProps) => {
   });
 
   const visibleBlocks = createMemo(() =>
-    blocks.slice(range().start, range().end)
+    outline().visible.slice(range().start, range().end)
   );
 
   const selectionCount = createMemo(() => {
     const rangeValue = selectionRange();
     return rangeValue ? rangeValue.end - rangeValue.start + 1 : 0;
+  });
+
+  const breadcrumbItems = createMemo(() => {
+    const currentId = focusedId() ?? activeId();
+    if (!currentId) return [] as OutlineItem[];
+    const index = findIndexById(currentId);
+    if (index < 0) return [] as OutlineItem[];
+    const items = outline().items;
+    const chain: OutlineItem[] = [];
+    let current: number | null = index;
+    while (current !== null) {
+      const currentIndex: number = current;
+      const item: OutlineItem | undefined = items[currentIndex];
+      if (!item) break;
+      chain.push(item);
+      current = item.parentIndex;
+    }
+    return chain.reverse();
   });
 
   onMount(() => {
@@ -593,6 +763,15 @@ export const EditorPane = (props: EditorPaneProps) => {
         return;
       }
 
+      if (
+        event.altKey &&
+        (event.key === "ArrowUp" || event.key === "ArrowDown")
+      ) {
+        event.preventDefault();
+        moveSelectionBy(event.key === "ArrowUp" ? -1 : 1);
+        return;
+      }
+
       if (event.key === "Backspace" || event.key === "Delete") {
         event.preventDefault();
         removeSelection();
@@ -613,7 +792,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
   });
 
-  const scrollToIndex = (index: number) => {
+  const scrollToVisibleIndex = (index: number) => {
     if (!editorRef || viewportHeight() === 0) return;
     const metrics = rowMetrics();
     const top = metrics.offsets[index] ?? index * ROW_HEIGHT;
@@ -627,9 +806,6 @@ export const EditorPane = (props: EditorPaneProps) => {
       editorRef.scrollTop = bottom - viewportHeight();
     }
   };
-
-  const findIndexById = (id: string) =>
-    blocks.findIndex((block) => block.id === id);
 
   const storeSelection = (
     id: string,
@@ -650,7 +826,13 @@ export const EditorPane = (props: EditorPaneProps) => {
     caret: "start" | "end" | "preserve" = "end"
   ) => {
     const index = findIndexById(id);
-    if (index >= 0) scrollToIndex(index);
+    if (index >= 0) {
+      expandAncestors(index);
+      const visibleIndex = getVisibleIndexById(id);
+      if (visibleIndex >= 0) {
+        scrollToVisibleIndex(visibleIndex);
+      }
+    }
     setActiveId(id);
     setFocusedId(id);
     requestAnimationFrame(() => {
@@ -687,6 +869,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   createEffect(() => {
     activePageUid();
     clearSelection();
+    setOutlineMenuOpen(false);
   });
 
   const insertBlockAfter = (index: number, indent: number) => {
@@ -734,31 +917,27 @@ export const EditorPane = (props: EditorPaneProps) => {
   const duplicateSelection = () => {
     const rangeValue = selectionRange();
     if (!rangeValue) return;
-    const slice = blocks.slice(rangeValue.start, rangeValue.end + 1);
-    if (slice.length === 0) return;
-    const clones = slice.map((block) =>
-      createNewBlock(block.text, block.indent)
+    const selected = getSelectedActualIndexes();
+    if (selected.length === 0) return;
+    const clones = selected.map((index) =>
+      createNewBlock(blocks[index].text, blocks[index].indent)
     );
-    const insertIndex = rangeValue.end + 1;
+    const insertIndex = selected[selected.length - 1] + 1;
     setBlocks(
       produce((draft) => {
         draft.splice(insertIndex, 0, ...clones);
       })
     );
     scheduleSave();
-    setSelectionRangeValue(
-      insertIndex,
-      insertIndex + clones.length - 1,
-      insertIndex
-    );
+    const startVisible = rangeValue.end + 1;
+    const endVisible = startVisible + clones.length - 1;
+    setSelectionRangeValue(startVisible, endVisible, startVisible);
   };
 
   const removeSelection = () => {
-    const rangeValue = selectionRange();
-    if (!rangeValue) return;
-    const count = rangeValue.end - rangeValue.start + 1;
-    if (count <= 0) return;
-    const nextTarget = blocks[rangeValue.end + 1] ?? blocks[rangeValue.start - 1];
+    const selected = getSelectedActualIndexes();
+    if (selected.length === 0) return;
+    const count = selected.length;
     if (count >= blocks.length) {
       const replacement = createNewBlock("", 0);
       setBlocks([replacement]);
@@ -767,9 +946,26 @@ export const EditorPane = (props: EditorPaneProps) => {
       focusBlock(replacement.id, "start");
       return;
     }
+    const removedIds = new Set(selected.map((index) => blocks[index].id));
+    const firstIndex = selected[0];
+    const lastIndex = selected[selected.length - 1];
+    let nextIndex = lastIndex + 1;
+    while (nextIndex < blocks.length && removedIds.has(blocks[nextIndex].id)) {
+      nextIndex += 1;
+    }
+    let prevIndex = firstIndex - 1;
+    while (prevIndex >= 0 && removedIds.has(blocks[prevIndex].id)) {
+      prevIndex -= 1;
+    }
+    const nextTarget = blocks[nextIndex] ?? blocks[prevIndex];
+
     setBlocks(
       produce((draft) => {
-        draft.splice(rangeValue.start, count);
+        for (let i = draft.length - 1; i >= 0; i -= 1) {
+          if (removedIds.has(draft[i].id)) {
+            draft.splice(i, 1);
+          }
+        }
       })
     );
     scheduleSave();
@@ -780,25 +976,199 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const adjustSelectionIndent = (delta: number) => {
-    const rangeValue = selectionRange();
-    if (!rangeValue) return;
+    const selected = getSelectedActualIndexes();
+    if (selected.length === 0) return;
     setBlocks(
       produce((draft) => {
-        for (let i = rangeValue.start; i <= rangeValue.end; i += 1) {
-          const nextIndent = Math.max(0, draft[i].indent + delta);
-          draft[i].indent = nextIndent;
+        for (const index of selected) {
+          if (!draft[index]) continue;
+          const nextIndent = Math.max(0, draft[index].indent + delta);
+          draft[index].indent = nextIndent;
         }
       })
     );
     scheduleSave();
   };
 
+  const getSubtreeEnd = (startIndex: number) => {
+    if (!blocks[startIndex]) return startIndex;
+    const baseIndent = blocks[startIndex].indent;
+    let end = startIndex;
+    for (let index = startIndex + 1; index < blocks.length; index += 1) {
+      if (blocks[index].indent <= baseIndent) break;
+      end = index;
+    }
+    return end;
+  };
+
+  const moveBlockRange = (start: number, end: number, insertAt: number) => {
+    if (start < 0 || end < start) return;
+    const length = end - start + 1;
+    setBlocks(
+      produce((draft) => {
+        const segment = draft.splice(start, length);
+        const target = Math.max(0, Math.min(insertAt, draft.length));
+        draft.splice(target, 0, ...segment);
+      })
+    );
+    scheduleSave();
+  };
+
+  const restoreSelectionByIds = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const indices = ids
+      .map((id) => getVisibleIndexById(id))
+      .filter((index) => index >= 0)
+      .sort((a, b) => a - b);
+    if (indices.length === 0) return;
+    setSelectionRangeValue(indices[0], indices[indices.length - 1], indices[0]);
+  };
+
+  const moveSelectionBy = (direction: -1 | 1) => {
+    const rangeValue = selectionRange();
+    if (!rangeValue) return false;
+    const selected = getSelectedActualIndexes();
+    if (selected.length === 0) return false;
+    const selectedIds = selected
+      .map((index) => blocks[index]?.id)
+      .filter((id): id is string => Boolean(id));
+    const sorted = [...selected].sort((a, b) => a - b);
+    const start = sorted[0];
+    let end = sorted[sorted.length - 1];
+    for (const index of sorted) {
+      const subtreeEnd = getSubtreeEnd(index);
+      if (subtreeEnd > end) end = subtreeEnd;
+    }
+    if (direction === -1) {
+      const prevVisible = rangeValue.start - 1;
+      if (prevVisible < 0) return false;
+      const prevActual = outline().visibleToActual[prevVisible];
+      if (typeof prevActual !== "number") return false;
+      if (prevActual >= start && prevActual <= end) return false;
+      moveBlockRange(start, end, prevActual);
+      restoreSelectionByIds(selectedIds);
+      return true;
+    }
+    const nextVisible = rangeValue.end + 1;
+    if (nextVisible >= outline().visible.length) return false;
+    const nextActual = outline().visibleToActual[nextVisible];
+    if (typeof nextActual !== "number") return false;
+    const nextEnd = getSubtreeEnd(nextActual);
+    const length = end - start + 1;
+    const insertAt = nextEnd - length + 1;
+    moveBlockRange(start, end, insertAt);
+    restoreSelectionByIds(selectedIds);
+    return true;
+  };
+
+  const moveBlockBy = (blockId: string, direction: -1 | 1) => {
+    const actualIndex = findIndexById(blockId);
+    if (actualIndex < 0) return false;
+    const visibleIndex = getVisibleIndexById(blockId);
+    if (visibleIndex < 0) return false;
+    const start = actualIndex;
+    const end = getSubtreeEnd(actualIndex);
+    if (direction === -1) {
+      const prevVisible = visibleIndex - 1;
+      if (prevVisible < 0) return false;
+      const prevActual = outline().visibleToActual[prevVisible];
+      if (typeof prevActual !== "number") return false;
+      if (prevActual >= start && prevActual <= end) return false;
+      moveBlockRange(start, end, prevActual);
+      focusBlock(blockId, "preserve");
+      return true;
+    }
+    const nextVisible = visibleIndex + 1;
+    if (nextVisible >= outline().visible.length) return false;
+    const nextActual = outline().visibleToActual[nextVisible];
+    if (typeof nextActual !== "number") return false;
+    const nextEnd = getSubtreeEnd(nextActual);
+    const length = end - start + 1;
+    const insertAt = nextEnd - length + 1;
+    moveBlockRange(start, end, insertAt);
+    focusBlock(blockId, "preserve");
+    return true;
+  };
 
   const moveFocus = (index: number, direction: -1 | 1) => {
-    const nextIndex = index + direction;
-    const target = blocks[nextIndex];
+    const visibleIndex = outline().actualToVisible[index] ?? -1;
+    if (visibleIndex < 0) return;
+    const nextVisible = visibleIndex + direction;
+    const nextActual = outline().visibleToActual[nextVisible];
+    if (typeof nextActual !== "number") return;
+    const target = blocks[nextActual];
     if (!target) return;
     focusBlock(target.id, direction === -1 ? "end" : "start");
+  };
+
+  const isDescendantIndex = (parentIndex: number, targetIndex: number) => {
+    if (targetIndex <= parentIndex) return false;
+    const baseIndent = blocks[parentIndex]?.indent ?? 0;
+    for (let index = parentIndex + 1; index < blocks.length; index += 1) {
+      const indent = blocks[index].indent;
+      if (indent <= baseIndent) return false;
+      if (index === targetIndex) return true;
+    }
+    return false;
+  };
+
+  const expandAncestors = (index: number) => {
+    const items = outline().items;
+    let current = items[index]?.parentIndex ?? null;
+    if (current === null) return;
+    const next = new Set<string>(collapsedBlocks());
+    let changed = false;
+    while (current !== null) {
+      const currentIndex: number = current;
+      const item: OutlineItem | undefined = items[currentIndex];
+      if (item && next.has(item.block.id)) {
+        next.delete(item.block.id);
+        changed = true;
+      }
+      current = item?.parentIndex ?? null;
+    }
+    if (changed) {
+      setCollapsedBlocks(next);
+    }
+  };
+
+  const toggleCollapse = (item: OutlineItem) => {
+    if (!item.hasChildren) return;
+    const next = new Set<string>(collapsedBlocks());
+    const isCollapsing = !item.collapsed;
+    if (isCollapsing) {
+      next.add(item.block.id);
+    } else {
+      next.delete(item.block.id);
+    }
+    setCollapsedBlocks(next);
+    clearSelection();
+
+    if (isCollapsing) {
+      const focused = focusedId();
+      if (!focused) return;
+      const focusedIndex = findIndexById(focused);
+      if (focusedIndex >= 0 && isDescendantIndex(item.index, focusedIndex)) {
+        focusBlock(item.block.id, "end");
+      }
+    }
+  };
+
+  const foldToLevel = (level: number) => {
+    const next = new Set<string>();
+    for (const item of outline().items) {
+      if (item.hasChildren && item.indent >= level) {
+        next.add(item.block.id);
+      }
+    }
+    setCollapsedBlocks(next);
+    clearSelection();
+  };
+
+  const unfoldAll = () => {
+    if (collapsedBlocks().size === 0) return;
+    setCollapsedBlocks(new Set<string>());
+    clearSelection();
   };
 
   const addReviewFromBlock = (block: Block) => {
@@ -1190,6 +1560,17 @@ export const EditorPane = (props: EditorPaneProps) => {
       target.selectionStart === target.value.length &&
       target.selectionEnd === target.value.length;
 
+    if (
+      event.altKey &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
+    ) {
+      if (!selectionRange()) {
+        event.preventDefault();
+        moveBlockBy(block.id, event.key === "ArrowUp" ? -1 : 1);
+      }
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       storeSelection(block.id, target, true);
@@ -1209,6 +1590,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     }
 
     if (event.key === "Enter") {
+      if (event.shiftKey) return;
       event.preventDefault();
       recordLatency("insert");
       insertBlockAfter(index, block.indent);
@@ -1484,8 +1866,37 @@ export const EditorPane = (props: EditorPaneProps) => {
     <section class="editor-pane">
       <div class="editor-pane__header">
         <div class="editor-pane__title-group">
-          <div class="editor-pane__title">{pageTitle()}</div>
-          <div class="editor-pane__count">{blocks.length} blocks</div>
+          <div class="editor-pane__title-row">
+            <div class="editor-pane__title">{pageTitle()}</div>
+            <div class="editor-pane__count">{blocks.length} blocks</div>
+          </div>
+          <Show when={breadcrumbItems().length > 1}>
+            <div class="editor-pane__breadcrumb" aria-label="Block breadcrumb">
+              <For each={breadcrumbItems()}>
+                {(item, index) => {
+                  const isLast = () =>
+                    index() === breadcrumbItems().length - 1;
+                  return (
+                    <div class="editor-pane__breadcrumb-item">
+                      <button
+                        class={`editor-pane__breadcrumb-button ${
+                          isLast() ? "is-current" : ""
+                        }`}
+                        type="button"
+                        aria-current={isLast() ? "true" : undefined}
+                        onClick={() => focusBlock(item.block.id, "end")}
+                      >
+                        {formatBreadcrumbLabel(item.block.text)}
+                      </button>
+                      <Show when={!isLast()}>
+                        <span class="editor-pane__breadcrumb-sep">/</span>
+                      </Show>
+                    </div>
+                  );
+                }}
+              </For>
+            </div>
+          </Show>
         </div>
         <div class="editor-pane__actions">
           <Show when={selectionRange()}>
@@ -1532,6 +1943,84 @@ export const EditorPane = (props: EditorPaneProps) => {
           >
             {pageBusy() ? "Renaming..." : "Rename"}
           </button>
+          <div class="editor-pane__outline">
+            <button
+              class="editor-pane__action"
+              type="button"
+              onClick={() => setOutlineMenuOpen((prev) => !prev)}
+            >
+              Outline
+            </button>
+            <Show when={outlineMenuOpen()}>
+              <div
+                class="editor-outline-menu"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div class="editor-outline-menu__section">
+                  <button
+                    class="editor-outline-menu__action"
+                    type="button"
+                    onClick={() => {
+                      foldToLevel(0);
+                      setOutlineMenuOpen(false);
+                    }}
+                  >
+                    Fold all
+                  </button>
+                  <button
+                    class="editor-outline-menu__action"
+                    type="button"
+                    onClick={() => {
+                      foldToLevel(1);
+                      setOutlineMenuOpen(false);
+                    }}
+                  >
+                    Fold to level 1
+                  </button>
+                  <button
+                    class="editor-outline-menu__action"
+                    type="button"
+                    onClick={() => {
+                      foldToLevel(2);
+                      setOutlineMenuOpen(false);
+                    }}
+                  >
+                    Fold to level 2
+                  </button>
+                  <button
+                    class="editor-outline-menu__action"
+                    type="button"
+                    onClick={() => {
+                      unfoldAll();
+                      setOutlineMenuOpen(false);
+                    }}
+                  >
+                    Unfold all
+                  </button>
+                </div>
+                <div class="editor-outline-menu__list">
+                  <For each={outline().visible}>
+                    {(item) => (
+                      <button
+                        class={`editor-outline-menu__item ${
+                          activeId() === item.block.id ? "is-active" : ""
+                        }`}
+                        type="button"
+                        style={{ "padding-left": `${item.indent * 12 + 8}px` }}
+                        onClick={() => {
+                          focusBlock(item.block.id, "end");
+                          setOutlineMenuOpen(false);
+                        }}
+                      >
+                        {formatBreadcrumbLabel(item.block.text)}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+          </div>
         </div>
       </div>
       <div
@@ -1628,8 +2117,10 @@ export const EditorPane = (props: EditorPaneProps) => {
             style={{ transform: `translateY(${range().offset}px)` }}
           >
             <For each={visibleBlocks()}>
-              {(block, index) => {
-                const blockIndex = () => range().start + index();
+              {(item, index) => {
+                const block = item.block;
+                const actualIndex = item.index;
+                const visibleIndex = () => range().start + index();
                 const codePreview = () => getCodePreview(block.text);
                 const diagramPreview = () => getDiagramPreview(block.text);
                 const pluginRenderer = () => getPluginBlockRenderer(block.text);
@@ -1637,7 +2128,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const isSelected = () => {
                   const rangeValue = selectionRange();
                   if (!rangeValue) return false;
-                  const idx = blockIndex();
+                  const idx = visibleIndex();
                   return idx >= rangeValue.start && idx <= rangeValue.end;
                 };
                 const updateBlockText = (blockId: string, nextText: string) => {
@@ -1679,19 +2170,46 @@ export const EditorPane = (props: EditorPaneProps) => {
                   <div
                     class={`block ${activeId() === block.id ? "is-active" : ""} ${
                       highlightedBlockId() === block.id ? "is-highlighted" : ""
-                    } ${isSelected() ? "is-selected" : ""}`}
+                    } ${item.collapsed ? "is-collapsed" : ""} ${
+                      isSelected() ? "is-selected" : ""
+                    }`}
                     ref={observeBlock}
                     data-block-id={block.id}
                     style={{
                       "margin-left": `${block.indent * 24}px`,
-                      "--i": `${blockIndex()}`
+                      "--block-indent": `${block.indent * 24}px`,
+                      "--i": `${visibleIndex()}`
                     }}
                   >
                     <BlockActions
+                      onInsertBelow={() => insertBlockAfter(actualIndex, block.indent)}
                       onAddReview={() => addReviewFromBlock(block)}
-                      onLinkToPage={() => openLinkDialog(block, blockIndex())}
-                      onDuplicate={() => duplicateBlockAt(blockIndex())}
+                      onLinkToPage={() => openLinkDialog(block, actualIndex)}
+                      onDuplicate={() => duplicateBlockAt(actualIndex)}
                     />
+                    <Show
+                      when={item.hasChildren}
+                      fallback={
+                        <span
+                          class="block__toggle-spacer"
+                          aria-hidden="true"
+                        />
+                      }
+                    >
+                      <button
+                        class={`block__toggle ${
+                          item.collapsed ? "is-collapsed" : "is-expanded"
+                        }`}
+                        type="button"
+                        aria-label={item.collapsed ? "Expand block" : "Collapse block"}
+                        aria-expanded={!item.collapsed}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          toggleCollapse(item);
+                        }}
+                      />
+                    </Show>
                     <span class="block__bullet" aria-hidden="true" />
                     <div class="block__body">
                       <textarea
@@ -1730,7 +2248,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                         }}
                         onInput={(event) => {
                           recordLatency("input");
-                          setBlocks(blockIndex(), "text", event.currentTarget.value);
+                          setBlocks(actualIndex, "text", event.currentTarget.value);
                           scheduleSave();
                           storeSelection(block.id, event.currentTarget);
                           const value = event.currentTarget.value;
@@ -1739,7 +2257,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                           if (isSlash) {
                             openSlashMenu(
                               block,
-                              blockIndex(),
+                              actualIndex,
                               event.currentTarget,
                               slashIndex
                             );
@@ -1751,11 +2269,11 @@ export const EditorPane = (props: EditorPaneProps) => {
                           }
                           updateWikilinkMenu(
                             block,
-                            blockIndex(),
+                            actualIndex,
                             event.currentTarget
                           );
                         }}
-                        onKeyDown={(event) => handleKeyDown(block, blockIndex(), event)}
+                        onKeyDown={(event) => handleKeyDown(block, actualIndex, event)}
                         onKeyUp={(event) => {
                           storeSelection(block.id, event.currentTarget);
                           if (event.key === "/") {
@@ -1765,7 +2283,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                             if (isSlash) {
                               openSlashMenu(
                                 block,
-                                blockIndex(),
+                                actualIndex,
                                 event.currentTarget,
                                 slashIndex
                               );
@@ -1779,7 +2297,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                         style={{ display: isEditing() ? "none" : "block" }}
                         onClick={(event) => {
                           if (event.shiftKey) {
-                            applyShiftSelection(blockIndex());
+                            applyShiftSelection(visibleIndex());
                             return;
                           }
                           if (selectionRange()) {
