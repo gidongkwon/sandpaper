@@ -35,6 +35,7 @@ import { SearchPane } from "../widgets/search/search-pane";
 import { SettingsModal } from "../widgets/settings/settings-modal";
 import { PagesPane } from "../widgets/sidebar/pages-pane";
 import { SidebarPanel } from "../widgets/sidebar/sidebar-panel";
+import { createSectionJump } from "../widgets/section-jump/section-jump";
 import { Topbar } from "../widgets/topbar/topbar";
 import { EditorWorkspace } from "../widgets/workspace/editor-workspace";
 import { CommandPalette } from "../features/command-palette/ui/command-palette";
@@ -93,13 +94,6 @@ import { replaceWikilinksInText } from "../shared/lib/links/replace-wikilinks";
 import { escapeRegExp } from "../shared/lib/string/escape-regexp";
 
 type Mode = "quick-capture" | "editor" | "review";
-
-type SectionId =
-  | "sidebar"
-  | "editor"
-  | "backlinks"
-  | "capture"
-  | "review";
 
 type CommandPaletteItem = {
   id: string;
@@ -2531,6 +2525,18 @@ function MainPage() {
     }
   };
 
+  let searchInputRef: HTMLInputElement | undefined;
+
+  const { SectionJump, SectionJumpLink, focusEditorSection } = createSectionJump({
+    mode,
+    sidebarOpen,
+    setSidebarOpen,
+    backlinksOpen,
+    setBacklinksOpen,
+    activeId,
+    getSearchInput: () => searchInputRef
+  });
+
   const openCommandPalette = () => {
     setPaletteOpen(true);
     setPaletteQuery("");
@@ -2880,153 +2886,6 @@ function MainPage() {
       setHighlightedBlockId(null);
     }, 1500);
   };
-
-  let searchInputRef: HTMLInputElement | undefined;
-
-  const sectionJumpRefs = new Map<SectionId, HTMLButtonElement>();
-
-  const sectionOrder = createMemo<SectionId[]>(() => {
-    if (mode() === "editor") {
-      const order: SectionId[] = [];
-      if (sidebarOpen()) {
-        order.push("sidebar");
-      }
-      order.push("editor");
-      if (backlinksOpen()) {
-        order.push("backlinks");
-      }
-      return order;
-    }
-    if (mode() === "quick-capture") {
-      return ["capture"];
-    }
-    if (mode() === "review") {
-      return ["review"];
-    }
-    return ["review"];
-  });
-
-  const focusSectionJump = (id: SectionId) => {
-    const target = sectionJumpRefs.get(id);
-    if (target && document.body.contains(target)) {
-      target.focus();
-    }
-  };
-
-  const focusAdjacentSection = (current: SectionId, delta: number) => {
-    const available = sectionOrder().filter((id) => {
-      const el = sectionJumpRefs.get(id);
-      return !!el && document.body.contains(el);
-    });
-    if (available.length === 0) return;
-    const index = available.indexOf(current);
-    if (index === -1) return;
-    const nextIndex = (index + delta + available.length) % available.length;
-    focusSectionJump(available[nextIndex]);
-  };
-
-  function focusEditorSection() {
-    if (mode() !== "editor") return;
-    const targetId = activeId();
-    if (targetId) {
-      const target = document.querySelector<HTMLElement>(
-        `[data-block-id="${targetId}"] .block__display`
-      );
-      if (target) {
-        target.click();
-        return;
-      }
-    }
-    const fallback = document.querySelector<HTMLElement>(".block__display");
-    fallback?.click();
-  }
-
-  const activateSection = (id: SectionId) => {
-    if (id === "sidebar") {
-      if (!sidebarOpen()) {
-        setSidebarOpen(true);
-      }
-      requestAnimationFrame(() => {
-        searchInputRef?.focus();
-      });
-      return;
-    }
-    if (id === "editor") {
-      focusEditorSection();
-      return;
-    }
-    if (id === "backlinks") {
-      if (!backlinksOpen()) {
-        setBacklinksOpen(true);
-      }
-      requestAnimationFrame(() => {
-        const closeButton = document.querySelector<HTMLButtonElement>(
-          ".backlinks-panel__close"
-        );
-        closeButton?.focus();
-      });
-      return;
-    }
-    if (id === "capture") {
-      requestAnimationFrame(() => {
-        const captureInput = document.querySelector<HTMLTextAreaElement>(
-          ".capture__input"
-        );
-        captureInput?.focus();
-      });
-      return;
-    }
-    if (id === "review") {
-      requestAnimationFrame(() => {
-        const target = document.querySelector<HTMLElement>(
-          ".review-card__button, .review__button, .review-template"
-        );
-        target?.focus();
-      });
-      return;
-    }
-  };
-
-  const handleSectionJumpKeyDown = (id: SectionId, event: KeyboardEvent) => {
-    if (event.key === "Tab") {
-      event.preventDefault();
-      focusAdjacentSection(id, event.shiftKey ? -1 : 1);
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      activateSection(id);
-    }
-  };
-
-  const SectionJump = (props: { id: SectionId; label: string }) => {
-    let buttonRef: HTMLButtonElement | undefined;
-    onCleanup(() => {
-      if (buttonRef) {
-        sectionJumpRefs.delete(props.id);
-      }
-    });
-
-    return (
-      <button
-        ref={(el) => {
-          buttonRef = el;
-          sectionJumpRefs.set(props.id, el);
-        }}
-        class="section-jump"
-        type="button"
-        data-section-jump={props.id}
-        aria-label={`${props.label} section`}
-        onClick={() => activateSection(props.id)}
-        onKeyDown={(event) => handleSectionJumpKeyDown(props.id, event)}
-      >
-        {props.label}
-      </button>
-    );
-  };
-
-  const SectionJumpLink = (props: { id: string; label: string }) => (
-    <SectionJump id={props.id as SectionId} label={props.label} />
-  );
 
   return (
     <div class="app">
