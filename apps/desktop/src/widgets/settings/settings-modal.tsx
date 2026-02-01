@@ -7,6 +7,7 @@ import type { SyncConfig, SyncConflict, SyncLogEntry, SyncStatus } from "../../e
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import { ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
+import type { PageId, VaultId } from "../../shared/model/id-types";
 import { IconButton } from "../../shared/ui/icon-button";
 
 type SettingsTab = "general" | "vault" | "sync" | "plugins" | "permissions" | "import";
@@ -39,7 +40,7 @@ type SettingsModalProps = {
   vault: {
     active: Accessor<VaultRecord | null>;
     list: Accessor<VaultRecord[]>;
-    applyActiveVault: (id: string) => void;
+    applyActiveVault: (id: VaultId) => void;
     formOpen: Accessor<boolean>;
     setFormOpen: Setter<boolean>;
     newName: Accessor<string>;
@@ -84,7 +85,7 @@ type SettingsModalProps = {
     mergeId: Accessor<string | null>;
     mergeDrafts: Record<string, string>;
     setMergeDrafts: SetStoreFunction<Record<string, string>>;
-    getConflictPageTitle: (pageUid: string) => string;
+    getConflictPageTitle: (pageUid: PageId) => string;
   };
   plugins: {
     error: Accessor<string | null>;

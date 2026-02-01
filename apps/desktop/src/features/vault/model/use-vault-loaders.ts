@@ -6,6 +6,7 @@ import type {
   PageBlocksResponse,
   PageSummary
 } from "../../../entities/page/model/page-types";
+import type { PageId } from "../../../shared/model/id-types";
 import type {
   ReviewQueueItem,
   ReviewQueueSummary
@@ -15,14 +16,14 @@ import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 export type VaultLoaderDependencies = {
   isTauri: () => boolean;
   invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
-  localPages: Record<string, LocalPageRecord>;
+  localPages: Record<PageId, LocalPageRecord>;
   setPages: Setter<PageSummary[]>;
-  activePageUid: Accessor<string>;
-  setActivePageUid: Setter<string>;
+  activePageUid: Accessor<PageId>;
+  setActivePageUid: Setter<PageId>;
   activeVault: Accessor<VaultRecord | null>;
-  resolvePageUid: (value: string) => string;
+  resolvePageUid: (value: string) => PageId;
   snapshotBlocks: (items: Block[]) => Block[];
-  saveLocalPageSnapshot: (pageUid: string, title: string, items: Block[]) => void;
+  saveLocalPageSnapshot: (pageUid: PageId, title: string, items: Block[]) => void;
   buildLocalDefaults: () => Block[];
   buildEmptyBlocks: (idFactory: () => string) => Block[];
   buildDefaultBlocks: (idFactory: () => string) => Block[];
@@ -40,11 +41,11 @@ export type VaultLoaderDependencies = {
     title: string;
     blocks: Array<{ id: string; text: string; indent: number }>;
   }) => string;
-  shadowWriter: { scheduleWrite: (pageUid: string, content: string) => void };
+  shadowWriter: { scheduleWrite: (pageUid: PageId, content: string) => void };
   setReviewSummary: Setter<ReviewQueueSummary>;
   setReviewItems: Setter<ReviewQueueItem[]>;
   setReviewBusy: Setter<boolean>;
-  defaultPageUid: string;
+  defaultPageUid: PageId;
 };
 
 export const createVaultLoaders = (deps: VaultLoaderDependencies) => {

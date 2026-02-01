@@ -17,6 +17,7 @@ import type {
   SyncStatus
 } from "../../../entities/sync/model/sync-types";
 import type { VaultKeyStatus } from "../../../entities/vault/model/vault-types";
+import type { PageId } from "../../../shared/model/id-types";
 
 const SYNC_BATCH_LIMIT = 200;
 const SYNC_INTERVAL_MS = 8000;
@@ -67,32 +68,32 @@ export const buildSyncStateDetail = (options: {
 export type SyncDependencies = {
   isTauri: () => boolean;
   invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
-  resolvePageUid: (value: string) => string;
-  activePageUid: Accessor<string>;
+  resolvePageUid: (value: string) => PageId;
+  activePageUid: Accessor<PageId>;
   pages: Accessor<PageSummary[]>;
-  localPages: Record<string, LocalPageRecord>;
+  localPages: Record<PageId, LocalPageRecord>;
   getBlocks: () => Block[];
   snapshotBlocks: (items: Block[]) => Block[];
-  saveLocalPageSnapshot: (pageUid: string, title: string, items: Block[]) => void;
+  saveLocalPageSnapshot: (pageUid: PageId, title: string, items: Block[]) => void;
   setBlocks: SetStoreFunction<Block[]>;
   pageTitle: Accessor<string>;
   toPayload: (block: Block) => BlockPayload;
   makeBlock: (uid: string, text: string, indent: number) => Block;
   persistBlocks: (
-    pageUid: string,
+    pageUid: PageId,
     payload: BlockPayload[],
     title: string,
     snapshot: Block[]
   ) => Promise<boolean>;
-  scheduleShadowWrite: (pageUid?: string) => void;
+  scheduleShadowWrite: (pageUid?: PageId) => void;
   markSaving: () => void;
   markSaved: () => void;
   markSaveFailed: () => void;
-  loadBlocks: (pageUid?: string) => Promise<void>;
+  loadBlocks: (pageUid?: PageId) => Promise<void>;
   vaultKeyStatus: Accessor<VaultKeyStatus>;
   copyToClipboard: (value: string) => Promise<void>;
   makeRandomId: () => string;
-  defaultPageUid: string;
+  defaultPageUid: PageId;
 };
 
 export const createSync = (deps: SyncDependencies) => {
@@ -203,7 +204,7 @@ export const createSync = (deps: SyncDependencies) => {
   };
 
   const fetchPageBlocks = async (
-    pageUid: string
+    pageUid: PageId
   ): Promise<LocalPageRecord | null> => {
     const resolvedUid = deps.resolvePageUid(pageUid);
     if (!deps.isTauri()) {
@@ -313,7 +314,7 @@ export const createSync = (deps: SyncDependencies) => {
     setSyncConflictMergeId(null);
   };
 
-  const getConflictPageTitle = (pageUid: string) =>
+  const getConflictPageTitle = (pageUid: PageId) =>
     deps.pages().find((page) => page.uid === deps.resolvePageUid(pageUid))
       ?.title ?? pageUid;
 

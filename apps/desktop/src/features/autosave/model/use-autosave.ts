@@ -1,19 +1,20 @@
 import { createSignal, untrack, type Accessor } from "solid-js";
 import type { Block, BlockPayload } from "../../../entities/block/model/block-types";
+import type { PageId } from "../../../shared/model/id-types";
 
 export type AutosaveDependencies = {
   isTauri: () => boolean;
   invoke: (command: string, payload?: Record<string, unknown>) => Promise<unknown>;
-  resolvePageUid: (value: string) => string;
-  activePageUid: Accessor<string>;
+  resolvePageUid: (value: string) => PageId;
+  activePageUid: Accessor<PageId>;
   getBlocks: () => Block[];
   pageTitle: Accessor<string>;
   snapshotBlocks: (items: Block[]) => Block[];
   toPayload: (block: Block) => BlockPayload;
-  saveLocalPageSnapshot: (pageUid: string, title: string, items: Block[]) => void;
-  shadowWriter: { scheduleWrite: (pageUid: string, content: string) => void };
+  saveLocalPageSnapshot: (pageUid: PageId, title: string, items: Block[]) => void;
+  shadowWriter: { scheduleWrite: (pageUid: PageId, content: string) => void };
   serializePageToMarkdown: (page: {
-    id: string;
+    id: PageId;
     title: string;
     blocks: Array<{ id: string; text: string; indent: number }>;
   }) => string;
@@ -28,7 +29,7 @@ export const createAutosave = (deps: AutosaveDependencies) => {
 
   let saveTimeout: number | undefined;
   let saveRequestId = 0;
-  let pendingSavePageUid: string | null = null;
+  let pendingSavePageUid: PageId | null = null;
 
   const stampNow =
     deps.stampNow ??
@@ -55,7 +56,7 @@ export const createAutosave = (deps: AutosaveDependencies) => {
   };
 
   const persistBlocks = async (
-    pageUid: string,
+    pageUid: PageId,
     payload: BlockPayload[],
     title: string,
     snapshot: Block[]
@@ -123,7 +124,7 @@ export const createAutosave = (deps: AutosaveDependencies) => {
     markSaving();
   };
 
-  const cancelPendingSave = (pageUid: string) => {
+  const cancelPendingSave = (pageUid: PageId) => {
     if (pendingSavePageUid !== pageUid) return;
     if (saveTimeout) {
       window.clearTimeout(saveTimeout);

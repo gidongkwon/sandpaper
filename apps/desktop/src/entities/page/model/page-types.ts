@@ -1,18 +1,19 @@
 import type { Block, BlockPayload } from "../../block/model/block-types";
+import type { PageId } from "../../../shared/model/id-types";
 
 export type PageSummary = {
-  uid: string;
+  uid: PageId;
   title: string;
 };
 
 export type LocalPageRecord = {
-  uid: string;
+  uid: PageId;
   title: string;
   blocks: Block[];
 };
 
 export type PageBlocksResponse = {
-  page_uid: string;
+  page_uid: PageId;
   title: string;
   blocks: BlockPayload[];
 };

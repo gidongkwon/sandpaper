@@ -18,6 +18,7 @@ import type {
   PageBlocksResponse,
   PageSummary
 } from "../../entities/page/model/page-types";
+import type { PageId } from "../../shared/model/id-types";
 import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import type { CodeFence } from "../../shared/model/markdown-types";
 import type { CaretPosition } from "../../shared/model/position";
@@ -67,7 +68,7 @@ type WikilinkMenuState = {
 type LinkPreviewState = {
   open: boolean;
   position: CaretPosition | null;
-  pageUid: string | null;
+  pageUid: PageId | null;
   title: string;
   blocks: string[];
   loading: boolean;
@@ -92,15 +93,15 @@ type EditorPaneProps = {
   setRenameTitle: Setter<string>;
   renamePage: () => void | Promise<void>;
   pages: Accessor<PageSummary[]>;
-  activePageUid: Accessor<string>;
-  resolvePageUid: (value: string) => string;
+  activePageUid: Accessor<PageId>;
+  resolvePageUid: (value: string) => PageId;
   setNewPageTitle: Setter<string>;
   createPage: () => void | Promise<void>;
-  switchPage: (uid: string) => void | Promise<void>;
+  switchPage: (uid: PageId) => void | Promise<void>;
   createPageFromLink: (title: string) => void | Promise<void> | Promise<PageSummary | null>;
   isTauri: () => boolean;
-  localPages: Record<string, LocalPageRecord>;
-  saveLocalPageSnapshot: (pageUid: string, title: string, blocks: Block[]) => void;
+  localPages: Record<PageId, LocalPageRecord>;
+  saveLocalPageSnapshot: (pageUid: PageId, title: string, blocks: Block[]) => void;
   snapshotBlocks: (source: Block[]) => Block[];
   pageTitle: Accessor<string>;
   renderersByKind: Accessor<Map<string, PluginRenderer>>;
@@ -735,7 +736,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     }, 120);
   };
 
-  const loadPreviewBlocks = async (pageUid: string) => {
+  const loadPreviewBlocks = async (pageUid: PageId) => {
     if (!isTauri()) {
       const local = localPages[pageUid];
       return (

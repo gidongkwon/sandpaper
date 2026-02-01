@@ -1,11 +1,13 @@
+import type { VaultId } from "../../../shared/model/id-types";
+
 export type VaultRecord = {
-  id: string;
+  id: VaultId;
   name: string;
   path: string;
 };
 
 export type VaultConfig = {
-  active_id?: string | null;
+  active_id?: VaultId | null;
   vaults: VaultRecord[];
 };
 
