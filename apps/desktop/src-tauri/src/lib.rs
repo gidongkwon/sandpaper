@@ -1117,6 +1117,16 @@ fn clear_plugin_settings(db: &Database, plugin_id: &str) -> Result<(), String> {
         .map_err(|err| format!("{:?}", err))
 }
 
+async fn run_blocking<F, R>(operation: F) -> Result<R, String>
+where
+    F: FnOnce() -> Result<R, String> + Send + 'static,
+    R: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|err| format!("runtime-join-failed:{err}"))?
+}
+
 fn decode_sync_payload(db: &Database, payload: &[u8]) -> Result<Vec<u8>, String> {
     let value: serde_json::Value = match serde_json::from_slice(payload) {
         Ok(value) => value,
@@ -1828,132 +1838,151 @@ fn build_markdown_export(page: &PageBlocksResponse) -> String {
 }
 
 #[tauri::command]
-fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let registry = plugin_registry_for_vault(&vault_path);
-    let db = open_active_database()?;
-    let plugins = list_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
-    list_permissions_for_plugins(&db, plugins)
-}
-
-#[tauri::command]
-fn install_plugin_command(path: String) -> Result<PluginPermissionInfo, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let registry = plugin_registry_for_vault(&vault_path);
-    let db = open_active_database()?;
-    let source = PathBuf::from(path);
-    let plugin = install_plugin(&vault_path, &registry, &source)
-        .map_err(|err| format!("{:?}", err))?;
-    let mut entries =
-        list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
-    entries
-        .pop()
-        .ok_or_else(|| "Failed to install plugin.".to_string())
-}
-
-#[tauri::command]
-fn update_plugin_command(plugin_id: String) -> Result<PluginPermissionInfo, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let registry = plugin_registry_for_vault(&vault_path);
-    let db = open_active_database()?;
-    let plugin = update_plugin(&vault_path, &registry, &plugin_id)
-        .map_err(|err| format!("{:?}", err))?;
-    let mut entries =
-        list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
-    entries
-        .pop()
-        .ok_or_else(|| "Failed to update plugin.".to_string())
-}
-
-#[tauri::command]
-fn remove_plugin_command(plugin_id: String) -> Result<(), String> {
-    let vault_path = resolve_active_vault_path()?;
-    let registry = plugin_registry_for_vault(&vault_path);
-    let db = open_active_database()?;
-    remove_plugin(&vault_path, &registry, &plugin_id)
-        .map_err(|err| format!("{:?}", err))?;
-    db.clear_plugin_permissions(&plugin_id)
-        .map_err(|err| format!("{:?}", err))?;
-    clear_plugin_settings(&db, &plugin_id)?;
-    Ok(())
-}
-
-#[tauri::command]
-fn load_plugins_command(state: tauri::State<RuntimeState>) -> Result<PluginRuntimeStatus, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let registry = plugin_registry_for_vault(&vault_path);
-    let db = open_active_database()?;
-    let plugins = discover_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
-
-    let mut allowed: Vec<PluginDescriptor> = Vec::new();
-    let mut blocked: Vec<PluginBlockInfo> = Vec::new();
-
-    for plugin in plugins {
-        if !plugin.enabled {
-            blocked.push(PluginBlockInfo {
-                id: plugin.manifest.id,
-                reason: "disabled".to_string(),
-                missing_permissions: Vec::new(),
-            });
-            continue;
-        }
-
-        if check_manifest_compatibility(&plugin.manifest).is_err() {
-            blocked.push(PluginBlockInfo {
-                id: plugin.manifest.id,
-                reason: "incompatible".to_string(),
-                missing_permissions: Vec::new(),
-            });
-            continue;
-        }
-
-        let granted = db
-            .list_plugin_permissions(&plugin.manifest.id)
-            .map_err(|err| format!("{:?}", err))?;
-        let missing = compute_missing_permissions(&plugin.manifest.permissions, &granted);
-        if missing.is_empty() {
-            allowed.push(plugin);
-        } else {
-            blocked.push(PluginBlockInfo {
-                id: plugin.manifest.id,
-                reason: "missing-permissions".to_string(),
-                missing_permissions: missing,
-            });
-        }
-    }
-
-    let mut settings_by_plugin: HashMap<String, Value> = HashMap::new();
-    for plugin in &allowed {
-        if let Ok(Some(settings)) = get_plugin_settings(&db, &plugin.manifest.id) {
-            settings_by_plugin.insert(plugin.manifest.id.clone(), settings);
-        }
-    }
-
-    let loaded = if allowed.is_empty() {
-        PluginRuntimeLoadResult {
-            loaded: Vec::new(),
-            commands: Vec::new(),
-            panels: Vec::new(),
-            toolbar_actions: Vec::new(),
-            renderers: Vec::new(),
-        }
-    } else {
-        state.load_plugins(allowed, settings_by_plugin)?
-    };
-
-    Ok(PluginRuntimeStatus {
-        loaded: loaded.loaded,
-        blocked,
-        commands: loaded.commands,
-        panels: loaded.panels,
-        toolbar_actions: loaded.toolbar_actions,
-        renderers: loaded.renderers,
+async fn list_plugins_command() -> Result<Vec<PluginPermissionInfo>, String> {
+    run_blocking(|| {
+        let vault_path = resolve_active_vault_path()?;
+        let registry = plugin_registry_for_vault(&vault_path);
+        let db = open_active_database()?;
+        let plugins = list_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
+        list_permissions_for_plugins(&db, plugins)
     })
+    .await
+}
+
+#[tauri::command]
+async fn install_plugin_command(path: String) -> Result<PluginPermissionInfo, String> {
+    run_blocking(move || {
+        let vault_path = resolve_active_vault_path()?;
+        let registry = plugin_registry_for_vault(&vault_path);
+        let db = open_active_database()?;
+        let source = PathBuf::from(path);
+        let plugin = install_plugin(&vault_path, &registry, &source)
+            .map_err(|err| format!("{:?}", err))?;
+        let mut entries =
+            list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
+        entries
+            .pop()
+            .ok_or_else(|| "Failed to install plugin.".to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn update_plugin_command(plugin_id: String) -> Result<PluginPermissionInfo, String> {
+    run_blocking(move || {
+        let vault_path = resolve_active_vault_path()?;
+        let registry = plugin_registry_for_vault(&vault_path);
+        let db = open_active_database()?;
+        let plugin = update_plugin(&vault_path, &registry, &plugin_id)
+            .map_err(|err| format!("{:?}", err))?;
+        let mut entries =
+            list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
+        entries
+            .pop()
+            .ok_or_else(|| "Failed to update plugin.".to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn remove_plugin_command(plugin_id: String) -> Result<(), String> {
+    run_blocking(move || {
+        let vault_path = resolve_active_vault_path()?;
+        let registry = plugin_registry_for_vault(&vault_path);
+        let db = open_active_database()?;
+        remove_plugin(&vault_path, &registry, &plugin_id)
+            .map_err(|err| format!("{:?}", err))?;
+        db.clear_plugin_permissions(&plugin_id)
+            .map_err(|err| format!("{:?}", err))?;
+        clear_plugin_settings(&db, &plugin_id)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn load_plugins_command(
+    state: tauri::State<'_, Arc<RuntimeState>>,
+) -> Result<PluginRuntimeStatus, String> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let vault_path = resolve_active_vault_path()?;
+        let registry = plugin_registry_for_vault(&vault_path);
+        let db = open_active_database()?;
+        let plugins =
+            discover_plugins(&vault_path, &registry).map_err(|err| format!("{:?}", err))?;
+
+        let mut allowed: Vec<PluginDescriptor> = Vec::new();
+        let mut blocked: Vec<PluginBlockInfo> = Vec::new();
+
+        for plugin in plugins {
+            if !plugin.enabled {
+                blocked.push(PluginBlockInfo {
+                    id: plugin.manifest.id,
+                    reason: "disabled".to_string(),
+                    missing_permissions: Vec::new(),
+                });
+                continue;
+            }
+
+            if check_manifest_compatibility(&plugin.manifest).is_err() {
+                blocked.push(PluginBlockInfo {
+                    id: plugin.manifest.id,
+                    reason: "incompatible".to_string(),
+                    missing_permissions: Vec::new(),
+                });
+                continue;
+            }
+
+            let granted = db
+                .list_plugin_permissions(&plugin.manifest.id)
+                .map_err(|err| format!("{:?}", err))?;
+            let missing = compute_missing_permissions(&plugin.manifest.permissions, &granted);
+            if missing.is_empty() {
+                allowed.push(plugin);
+            } else {
+                blocked.push(PluginBlockInfo {
+                    id: plugin.manifest.id,
+                    reason: "missing-permissions".to_string(),
+                    missing_permissions: missing,
+                });
+            }
+        }
+
+        let mut settings_by_plugin: HashMap<String, Value> = HashMap::new();
+        for plugin in &allowed {
+            if let Ok(Some(settings)) = get_plugin_settings(&db, &plugin.manifest.id) {
+                settings_by_plugin.insert(plugin.manifest.id.clone(), settings);
+            }
+        }
+
+        let loaded = if allowed.is_empty() {
+            PluginRuntimeLoadResult {
+                loaded: Vec::new(),
+                commands: Vec::new(),
+                panels: Vec::new(),
+                toolbar_actions: Vec::new(),
+                renderers: Vec::new(),
+            }
+        } else {
+            state.load_plugins(allowed, settings_by_plugin)?
+        };
+
+        Ok(PluginRuntimeStatus {
+            loaded: loaded.loaded,
+            blocked,
+            commands: loaded.commands,
+            panels: loaded.panels,
+            toolbar_actions: loaded.toolbar_actions,
+            renderers: loaded.renderers,
+        })
+    })
+    .await
 }
 
 #[tauri::command]
 fn get_plugin_runtime_error_command(
-    state: tauri::State<RuntimeState>,
+    state: tauri::State<'_, Arc<RuntimeState>>,
 ) -> Option<PluginRuntimeError> {
     state.last_error()
 }
@@ -2007,37 +2036,43 @@ fn plugin_write_page(
 }
 
 #[tauri::command]
-fn emit_plugin_event(
+async fn emit_plugin_event(
     plugin_id: String,
     event: String,
     payload: Value,
-    state: tauri::State<RuntimeState>,
+    state: tauri::State<'_, Arc<RuntimeState>>,
 ) -> Result<Value, String> {
-    state.emit_event(plugin_id, event, payload)
+    let state = state.inner().clone();
+    run_blocking(move || state.emit_event(plugin_id, event, payload)).await
 }
 
 #[tauri::command]
-fn plugin_render_block(
+async fn plugin_render_block(
     plugin_id: String,
     renderer_id: String,
     block_uid: String,
     text: String,
-    state: tauri::State<RuntimeState>,
+    state: tauri::State<'_, Arc<RuntimeState>>,
 ) -> Result<PluginBlockView, String> {
-    state.render_block(plugin_id, renderer_id, block_uid, text)
+    let state = state.inner().clone();
+    run_blocking(move || state.render_block(plugin_id, renderer_id, block_uid, text)).await
 }
 
 #[tauri::command]
-fn plugin_block_action(
+async fn plugin_block_action(
     plugin_id: String,
     renderer_id: String,
     block_uid: String,
     text: String,
     action_id: String,
     value: Option<Value>,
-    state: tauri::State<RuntimeState>,
+    state: tauri::State<'_, Arc<RuntimeState>>,
 ) -> Result<PluginBlockView, String> {
-    state.handle_block_action(plugin_id, renderer_id, block_uid, text, action_id, value)
+    let state = state.inner().clone();
+    run_blocking(move || {
+        state.handle_block_action(plugin_id, renderer_id, block_uid, text, action_id, value)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -2060,12 +2095,12 @@ fn read_text_file(path: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(RuntimeState::new())
+        .manage(Arc::new(RuntimeState::new()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if let Some(state) = window.app_handle().try_state::<RuntimeState>() {
+                if let Some(state) = window.app_handle().try_state::<Arc<RuntimeState>>() {
                     state.shutdown();
                 }
             }
@@ -2125,7 +2160,7 @@ pub fn run() {
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit { .. }
             ) {
-                if let Some(state) = app_handle.try_state::<RuntimeState>() {
+                if let Some(state) = app_handle.try_state::<Arc<RuntimeState>>() {
                     state.shutdown();
                 }
             }
@@ -2138,9 +2173,10 @@ mod tests {
         apply_sync_ops_to_blocks, backup_before_migration_at, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
-        load_sync_config, next_review_due, resolve_review_interval, set_plugin_settings,
-        sanitize_kebab, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
-        Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
+        load_sync_config, next_review_due, resolve_review_interval, run_blocking,
+        set_plugin_settings, sanitize_kebab, shadow_markdown_path,
+        write_shadow_markdown_to_vault, BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
+        RuntimeState, SyncOpPayload,
     };
     use super::plugins::{PluginDescriptor, PluginManifest};
     use aes_gcm::aead::KeyInit;
@@ -2150,6 +2186,7 @@ mod tests {
     use std::collections::HashMap;
     use tempfile::tempdir;
     use chrono::TimeZone;
+    use tauri::async_runtime::block_on;
 
     #[test]
     fn sanitize_kebab_strips_unsafe_chars() {
@@ -2354,6 +2391,25 @@ mod tests {
             .expect_err("runtime unavailable");
         assert!(error.contains("runtime-unavailable"), "error was {error}");
         assert!(error.contains("plugin-error"), "error was {error}");
+    }
+
+    #[test]
+    fn run_blocking_executes_off_thread() {
+        let main_thread = std::thread::current().id();
+        let result = block_on(async {
+            run_blocking(|| Ok(std::thread::current().id())).await
+        })
+        .expect("run blocking");
+        assert_ne!(result, main_thread);
+    }
+
+    #[test]
+    fn run_blocking_propagates_errors() {
+        let err = block_on(async {
+            run_blocking(|| -> Result<(), String> { Err("boom".to_string()) }).await
+        })
+            .expect_err("run blocking error");
+        assert!(err.contains("boom"));
     }
 
     #[test]
