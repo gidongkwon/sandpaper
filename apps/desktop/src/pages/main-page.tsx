@@ -41,6 +41,7 @@ import { createAutosave } from "../features/autosave/model/use-autosave";
 import { createPlugins } from "../features/plugins/model/use-plugins";
 import { createVaultLoaders } from "../features/vault/model/use-vault-loaders";
 import { createSync } from "../features/sync/model/use-sync";
+import { ConfirmDialog } from "../shared/ui/confirm-dialog";
 import type {
   BacklinkEntry,
   PageBacklinkRecord,
@@ -152,6 +153,11 @@ function MainPage() {
   const [renameTitle, setRenameTitle] = createSignal("");
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
   const [pageBusy, setPageBusy] = createSignal(false);
+  const [pageDialogOpen, setPageDialogOpen] = createSignal(false);
+  const [pageDialogMode, setPageDialogMode] = createSignal<
+    "new" | "rename" | null
+  >(null);
+  const [pageDialogValue, setPageDialogValue] = createSignal("");
   const [captureText, setCaptureText] = createSignal("");
   const [jumpTarget, setJumpTarget] = createSignal<{
     id: string;
@@ -784,6 +790,69 @@ function MainPage() {
     } finally {
       setReviewBusy(false);
     }
+  };
+
+  const openNewPageDialog = () => {
+    setPageDialogMode("new");
+    setPageDialogValue("");
+    setPageDialogOpen(true);
+  };
+
+  const openRenamePageDialog = () => {
+    const currentTitle = renameTitle().trim() || pageTitle();
+    setPageDialogMode("rename");
+    setPageDialogValue(currentTitle);
+    setPageDialogOpen(true);
+  };
+
+  const closePageDialog = () => {
+    setPageDialogOpen(false);
+    setPageDialogMode(null);
+  };
+
+  const pageDialogTitle = createMemo(() =>
+    pageDialogMode() === "rename" ? "Rename page" : "New page title"
+  );
+
+  const pageDialogConfirmLabel = createMemo(() =>
+    pageDialogMode() === "rename" ? "Rename" : "Create"
+  );
+
+  const pageDialogDisabled = createMemo(() => {
+    const value = pageDialogValue().trim();
+    if (!value) return true;
+    if (pageDialogMode() === "rename") {
+      const currentTitle = renameTitle().trim() || pageTitle();
+      return value === currentTitle;
+    }
+    return false;
+  });
+
+  const confirmPageDialog = () => {
+    const mode = pageDialogMode();
+    const value = pageDialogValue().trim();
+    if (!mode) {
+      closePageDialog();
+      return;
+    }
+    if (mode === "new") {
+      if (!value) {
+        closePageDialog();
+        return;
+      }
+      setNewPageTitle(value);
+      void createPage();
+      closePageDialog();
+      return;
+    }
+    const currentTitle = renameTitle().trim() || pageTitle();
+    if (!value || value === currentTitle) {
+      closePageDialog();
+      return;
+    }
+    setRenameTitle(value);
+    void renamePage();
+    closePageDialog();
   };
 
   let highlightTimeout: number | undefined;
@@ -1735,21 +1804,14 @@ function MainPage() {
           id: "new-page",
           label: "Create new page",
           action: () => {
-            const title = prompt("New page title:", "");
-            if (!title?.trim()) return;
-            setNewPageTitle(title.trim());
-            void createPage();
+            openNewPageDialog();
           }
         },
         {
           id: "rename-page",
           label: "Rename current page",
           action: () => {
-            const currentTitle = renameTitle().trim() || pageTitle();
-            const nextTitle = prompt("Rename page", currentTitle);
-            if (!nextTitle?.trim()) return;
-            setRenameTitle(nextTitle.trim());
-            void renamePage();
+            openRenamePageDialog();
           }
         },
         {
@@ -2101,11 +2163,7 @@ function MainPage() {
                   onSwitch: switchPage,
                   pageMessage,
                   onCreate: () => {
-                    const title = prompt("New page title:");
-                    if (title?.trim()) {
-                      setNewPageTitle(title.trim());
-                      void createPage();
-                    }
+                    openNewPageDialog();
                   }
                 }}
               />
@@ -2298,6 +2356,24 @@ function MainPage() {
           setOfflineImportStatus
         }}
       />
+      <ConfirmDialog
+        open={pageDialogOpen}
+        title={pageDialogTitle()}
+        confirmLabel={pageDialogConfirmLabel()}
+        onConfirm={confirmPageDialog}
+        onCancel={closePageDialog}
+        confirmDisabled={pageDialogDisabled}
+      >
+        <input
+          class="modal__input"
+          type="text"
+          placeholder={
+            pageDialogMode() === "rename" ? "Page title" : "New page title"
+          }
+          value={pageDialogValue()}
+          onInput={(event) => setPageDialogValue(event.currentTarget.value)}
+        />
+      </ConfirmDialog>
       <PermissionPromptModal
         prompt={permissionPrompt}
         onDeny={denyPermission}

@@ -83,10 +83,16 @@ describe("App linking UX", () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi.spyOn(window, "prompt");
-    promptSpy.mockReturnValueOnce("Project Atlas");
     await user.click(
       screen.getByRole("button", { name: /create new page/i })
+    );
+    const createDialog = await screen.findByRole("dialog", {
+      name: "New page title"
+    });
+    const createInput = within(createDialog).getByRole("textbox");
+    await user.type(createInput, "Project Atlas");
+    await user.click(
+      within(createDialog).getByRole("button", { name: "Create" })
     );
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
 
@@ -111,8 +117,16 @@ describe("App linking UX", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Project Atlas" }));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
-    promptSpy.mockReturnValueOnce("Project Nova");
     await user.click(screen.getByRole("button", { name: "Rename" }));
+    const renameDialog = await screen.findByRole("dialog", {
+      name: "Rename page"
+    });
+    const renameInput = within(renameDialog).getByRole("textbox");
+    await user.clear(renameInput);
+    await user.type(renameInput, "Project Nova");
+    await user.click(
+      within(renameDialog).getByRole("button", { name: "Rename" })
+    );
     await screen.findByText("Project Nova", { selector: ".editor-pane__title" });
 
     await user.click(screen.getByRole("button", { name: "Open Inbox" }));
@@ -126,18 +140,19 @@ describe("App linking UX", () => {
     expect((inboxInputsAfter[0] as HTMLTextAreaElement).value).toContain(
       "[[Project Nova|Alias]]"
     );
-    promptSpy.mockRestore();
   });
 
   it("shows a link preview on hover with the top blocks", async () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi.spyOn(window, "prompt");
-    promptSpy.mockReturnValueOnce("Preview Page");
     await user.click(
       screen.getByRole("button", { name: /create new page/i })
     );
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await user.type(input, "Preview Page");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
     await screen.findByText("Preview Page", { selector: ".editor-pane__title" });
 
     const previewInputs = await screen.findAllByPlaceholderText("Write something...");
@@ -163,6 +178,5 @@ describe("App linking UX", () => {
     expect(preview).toHaveTextContent("First block");
     expect(preview).toHaveTextContent("Second block");
     expect(within(preview).getByRole("button", { name: "Open" })).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 });

@@ -270,11 +270,12 @@ describe("App", () => {
   it("shows page backlinks from other pages", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi
-      .spyOn(window, "prompt")
-      .mockReturnValue("Project Atlas");
     const createButton = screen.getByRole("button", { name: /create new page/i });
     await userEvent.click(createButton);
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Project Atlas");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
@@ -302,17 +303,17 @@ describe("App", () => {
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 
   it("renders markdown display with wikilinks and opens the linked page", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi
-      .spyOn(window, "prompt")
-      .mockReturnValue("Project Atlas");
     const createButton = screen.getByRole("button", { name: /create new page/i });
     await userEvent.click(createButton);
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Project Atlas");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
@@ -333,19 +334,19 @@ describe("App", () => {
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 
   it("creates and opens a linked page from the editor", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi
-      .spyOn(window, "prompt")
-      .mockReturnValue("Project Atlas");
     const linkButtons = await screen.findAllByRole("button", {
       name: /link to page/i
     });
     await userEvent.click(linkButtons[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Link to page" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Project Atlas");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Link" }));
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
@@ -362,7 +363,6 @@ describe("App", () => {
       selector: ".backlink-item__text"
     });
     expect(backlinks.length).toBeGreaterThan(0);
-    promptSpy.mockRestore();
   });
 
   it("exports markdown in browser mode", async () => {
@@ -460,30 +460,35 @@ describe("App", () => {
 
   it("creates a new page and switches to it", async () => {
     render(() => <App />);
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Project Atlas");
     const createButton = screen.getByRole("button", { name: /create new page/i });
     await userEvent.click(createButton);
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Project Atlas");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 
   it("renames the active page", async () => {
     render(() => <App />);
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Inbox Zero");
     const renameButton = await screen.findByRole("button", { name: "Rename" });
     await userEvent.click(renameButton);
+    const dialog = await screen.findByRole("dialog", { name: "Rename page" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Inbox Zero");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
     expect(
       await screen.findByText("Inbox Zero", { selector: ".page-item__title" })
     ).toBeInTheDocument();
     expect(
       await screen.findByText("Inbox Zero", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 
   it("opens a plugin panel from the list", async () => {

@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -37,12 +37,14 @@ describe("App sidebar", () => {
     expect(screen.getByRole("button", { name: "Links" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
     expect(screen.getByText("Pages")).toBeInTheDocument();
-    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Sidebar Page");
     await user.click(screen.getByRole("button", { name: /create new page/i }));
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await user.type(input, "Sidebar Page");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(
       await screen.findByText("Sidebar Page", { selector: ".page-item__title" })
     ).toBeInTheDocument();
-    promptSpy.mockRestore();
   });
 
   it("can collapse and reopen the sidebar", async () => {

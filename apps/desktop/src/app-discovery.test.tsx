@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -52,12 +52,13 @@ describe("App search & discovery", () => {
   it("shows unlinked references and converts them to wikilinks", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const promptSpy = vi
-      .spyOn(window, "prompt")
-      .mockReturnValue("Project Atlas");
     await userEvent.click(
       screen.getByRole("button", { name: /create new page/i })
     );
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Project Atlas");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
     await userEvent.click(screen.getByRole("button", { name: "Open Inbox" }));
     const inputs = await screen.findAllByPlaceholderText("Write something...");
@@ -74,6 +75,5 @@ describe("App search & discovery", () => {
         "[[Project Atlas]]"
       );
     });
-    promptSpy.mockRestore();
   });
 });

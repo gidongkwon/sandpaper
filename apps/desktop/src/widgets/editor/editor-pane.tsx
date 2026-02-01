@@ -25,6 +25,7 @@ import { BlockActions } from "../../features/editor/ui/block-actions";
 import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
+import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
@@ -174,6 +175,15 @@ export const EditorPane = (props: EditorPaneProps) => {
     blocks: [],
     loading: false
   });
+  const [dialogOpen, setDialogOpen] = createSignal(false);
+  const [dialogMode, setDialogMode] = createSignal<"link" | "rename" | null>(
+    null
+  );
+  const [dialogValue, setDialogValue] = createSignal("");
+  const [dialogTarget, setDialogTarget] = createSignal<{
+    id: string;
+    index: number;
+  } | null>(null);
   const [blockHeights, setBlockHeights] = createStore<Record<string, number>>(
     {}
   );
@@ -621,25 +631,88 @@ export const EditorPane = (props: EditorPaneProps) => {
     await createPage();
   };
 
-  const linkToPageFromBlock = async (block: Block, index: number) => {
-    const response = prompt("Link to page", "");
-    if (response === null) return;
-    const title = response.trim();
-    if (!title) return;
-    const link = `[[${title}]]`;
+  const openLinkDialog = (block: Block, index: number) => {
+    setDialogMode("link");
+    setDialogTarget({ id: block.id, index });
+    setDialogValue("");
+    setDialogOpen(true);
+  };
+
+  const openRenameDialog = () => {
+    const currentTitle = renameTitle().trim() || pageTitle();
+    setDialogMode("rename");
+    setDialogTarget(null);
+    setDialogValue(currentTitle);
+    setDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setDialogMode(null);
+    setDialogTarget(null);
+  };
+
+  const dialogTitle = createMemo(() =>
+    dialogMode() === "rename" ? "Rename page" : "Link to page"
+  );
+
+  const dialogConfirmLabel = createMemo(() =>
+    dialogMode() === "rename" ? "Rename" : "Link"
+  );
+
+  const dialogDisabled = createMemo(() => {
+    const value = dialogValue().trim();
+    if (!value) return true;
+    if (dialogMode() === "rename") {
+      const currentTitle = renameTitle().trim() || pageTitle();
+      return value === currentTitle;
+    }
+    return false;
+  });
+
+  const confirmDialog = async () => {
+    const mode = dialogMode();
+    const value = dialogValue().trim();
+    if (!mode) {
+      closeDialog();
+      return;
+    }
+    if (mode === "rename") {
+      const currentTitle = renameTitle().trim() || pageTitle();
+      if (!value || value === currentTitle) {
+        closeDialog();
+        return;
+      }
+      setRenameTitle(value);
+      void renamePage();
+      closeDialog();
+      return;
+    }
+    const target = dialogTarget();
+    if (!value || !target) {
+      closeDialog();
+      return;
+    }
+    const block = blocks[target.index];
+    if (!block || block.id !== target.id) {
+      closeDialog();
+      return;
+    }
+    const link = `[[${value}]]`;
     const separator = block.text.trim().length ? " " : "";
     const nextText = `${block.text}${separator}${link}`;
-    setBlocks(index, "text", nextText);
+    setBlocks(target.index, "text", nextText);
     if (!isTauri()) {
       const snapshot = snapshotBlocks(blocks);
-      if (snapshot[index]) {
-        snapshot[index].text = nextText;
+      if (snapshot[target.index]) {
+        snapshot[target.index].text = nextText;
       }
       saveLocalPageSnapshot(activePageUid(), pageTitle(), snapshot);
     }
     scheduleSave();
 
-    await openPageByTitle(title);
+    await openPageByTitle(value);
+    closeDialog();
   };
 
   const closeLinkPreview = () => {
@@ -1012,13 +1085,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const requestRename = () => {
-    const currentTitle = renameTitle().trim() || pageTitle();
-    const nextTitle = prompt("Rename page", currentTitle);
-    if (nextTitle === null) return;
-    const trimmed = nextTitle.trim();
-    if (!trimmed || trimmed === currentTitle) return;
-    setRenameTitle(trimmed);
-    void renamePage();
+    openRenameDialog();
   };
 
   return (
@@ -1081,7 +1148,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                   >
                     <BlockActions
                       onAddReview={() => addReviewFromBlock(block)}
-                      onLinkToPage={() => linkToPageFromBlock(block, blockIndex())}
+                      onLinkToPage={() => openLinkDialog(block, blockIndex())}
                       onDuplicate={() => duplicateBlockAt(blockIndex())}
                     />
                     <span class="block__bullet" aria-hidden="true" />
@@ -1216,6 +1283,24 @@ export const EditorPane = (props: EditorPaneProps) => {
           onMouseEnter={() => cancelLinkPreviewClose()}
           onMouseLeave={() => scheduleLinkPreviewClose()}
         />
+        <ConfirmDialog
+          open={dialogOpen}
+          title={dialogTitle()}
+          confirmLabel={dialogConfirmLabel()}
+          onConfirm={confirmDialog}
+          onCancel={closeDialog}
+          confirmDisabled={dialogDisabled}
+        >
+          <input
+            class="modal__input"
+            type="text"
+            placeholder={
+              dialogMode() === "rename" ? "Page title" : "Link target"
+            }
+            value={dialogValue()}
+            onInput={(event) => setDialogValue(event.currentTarget.value)}
+          />
+        </ConfirmDialog>
       </div>
     </section>
   );
