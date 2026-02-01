@@ -15,6 +15,55 @@ type PluginBlockPreviewProps = {
   onUpdateText: (nextText: string) => void;
 };
 
+type PluginBlockCacheEntry = {
+  view: PluginBlockView;
+  fetchedAt: number;
+  ttlMs: number;
+};
+
+const DEFAULT_CACHE_TTL_MS = 15000;
+const MAX_CACHE_ENTRIES = 200;
+const blockViewCache = new Map<string, PluginBlockCacheEntry>();
+
+export const __clearPluginBlockCache = () => {
+  blockViewCache.clear();
+};
+
+const cacheKeyFor = (renderer: PluginRenderer, blockId: string, text: string) =>
+  `${renderer.plugin_id}::${renderer.id}::${blockId}::${text}`;
+
+const resolveCacheTtlMs = (view: PluginBlockView) => {
+  const ttlSeconds = view.cache?.ttlSeconds;
+  if (typeof ttlSeconds === "number") {
+    if (!Number.isFinite(ttlSeconds)) return DEFAULT_CACHE_TTL_MS;
+    if (ttlSeconds <= 0) return null;
+    return ttlSeconds * 1000;
+  }
+  return DEFAULT_CACHE_TTL_MS;
+};
+
+const readCachedView = (key: string) => {
+  const entry = blockViewCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > entry.ttlMs) {
+    blockViewCache.delete(key);
+    return null;
+  }
+  return entry.view;
+};
+
+const storeCachedView = (key: string, view: PluginBlockView) => {
+  const ttlMs = resolveCacheTtlMs(view);
+  if (ttlMs === null) return;
+  blockViewCache.set(key, { view, fetchedAt: Date.now(), ttlMs });
+  if (blockViewCache.size > MAX_CACHE_ENTRIES) {
+    const oldestKey = blockViewCache.keys().next().value;
+    if (oldestKey) {
+      blockViewCache.delete(oldestKey);
+    }
+  }
+};
+
 const applyNextText = (
   current: string,
   nextText: string | null | undefined,
@@ -114,6 +163,21 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
 
   const loadView = async () => {
     if (!props.isTauri()) return;
+    const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
+    const cached = readCachedView(key);
+    if (cached) {
+      setError(null);
+      setView(cached);
+      setLoading(false);
+      applyNextText(
+        props.block.text,
+        cached.next_text,
+        props.onUpdateText,
+        (value) => setSkipNextRender(value)
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -127,6 +191,15 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         text: props.block.text
       });
       setView(result);
+      storeCachedView(key, result);
+      if (result.next_text && result.next_text !== props.block.text) {
+        const nextKey = cacheKeyFor(
+          props.renderer,
+          props.block.id,
+          result.next_text
+        );
+        storeCachedView(nextKey, result);
+      }
       applyNextText(
         props.block.text,
         result.next_text,
@@ -159,6 +232,16 @@ export const PluginBlockPreview = (props: PluginBlockPreviewProps) => {
         value
       });
       setView(result);
+      const key = cacheKeyFor(props.renderer, props.block.id, props.block.text);
+      storeCachedView(key, result);
+      if (result.next_text && result.next_text !== props.block.text) {
+        const nextKey = cacheKeyFor(
+          props.renderer,
+          props.block.id,
+          result.next_text
+        );
+        storeCachedView(nextKey, result);
+      }
       applyNextText(
         props.block.text,
         result.next_text,
