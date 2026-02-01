@@ -1,4 +1,11 @@
-import { createContext, useContext, type Accessor, type JSX, type Setter } from "solid-js";
+import {
+  createContext,
+  untrack,
+  useContext,
+  type Accessor,
+  type JSX,
+  type Setter
+} from "solid-js";
 import type { createSectionJump } from "../../../widgets/section-jump/section-jump";
 import type { PageDialogMode } from "./page-dialog-utils";
 import { BacklinksPanel } from "../../../widgets/backlinks/backlinks-panel";
@@ -69,13 +76,12 @@ export const MainPageProvider = (props: {
   value: MainPageContextValue;
   children: JSX.Element;
 }) => {
-  /* eslint-disable solid/reactivity */
+  const value = untrack(() => props.value);
   return (
-    <MainPageContext.Provider value={props.value}>
+    <MainPageContext.Provider value={value}>
       {props.children}
     </MainPageContext.Provider>
   );
-  /* eslint-enable solid/reactivity */
 };
 
 export const useMainPageContext = () => {
