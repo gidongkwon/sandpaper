@@ -1,10 +1,15 @@
 mod prelude {
-    pub(super) use crate::ui::text_input::{TextInput, TextInputEvent, TextInputStyle};
-    pub(super) use chrono::Local;
+    pub(super) use chrono::{Local, TimeZone};
+    pub(super) use gpui_component::{
+        ActiveTheme as _, RopeExt as _, Sizable, VirtualListScrollHandle, v_virtual_list,
+    };
+    pub(super) use gpui_component::button::{Button, ButtonVariants as _};
+    pub(super) use gpui_component::input::{Input, InputState};
     pub(super) use gpui::{
-        actions, div, list, px, rgb, rgba, App, Context, Entity, FocusHandle, Focusable,
-        KeyBinding, ListAlignment, ListState, MouseButton, MouseDownEvent, MouseMoveEvent,
-        MouseUpEvent, Render, SharedString, StatefulInteractiveElement, Subscription, Window,
+        actions, div, point, px, rgba, size, AnyWindowHandle, App, Context, Entity, FocusHandle,
+        Focusable, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
+        MouseUpEvent, Render,
+        ScrollStrategy, SharedString, StatefulInteractiveElement, Subscription, Window,
         prelude::*,
     };
     pub(super) use sandpaper_core::{
@@ -17,6 +22,7 @@ mod prelude {
     pub(super) use std::collections::{HashMap, HashSet};
     pub(super) use std::mem;
     pub(super) use std::path::PathBuf;
+    pub(super) use std::rc::Rc;
     pub(super) use std::time::Duration;
     pub(super) use uuid::Uuid;
 }
@@ -51,6 +57,9 @@ enum SaveState {
     Error(String),
 }
 
+const BLOCK_ROW_HEIGHT: f32 = 32.0;
+const COMPACT_ROW_HEIGHT: f32 = 30.0;
+
 #[derive(Clone, Debug)]
 struct BacklinkEntry {
     block_uid: String,
@@ -64,6 +73,7 @@ struct UnlinkedReference {
     block_uid: String,
     page_title: String,
     snippet: String,
+    match_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -73,6 +83,7 @@ struct ReviewDisplayItem {
     block_uid: String,
     page_title: String,
     text: String,
+    due_at: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -129,7 +140,7 @@ impl PaneSelection {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum PaletteAction {
     OpenVaults,
     SwitchMode(Mode),
@@ -141,6 +152,7 @@ enum PaletteAction {
     ToggleSplitPane,
     DuplicateToSplit,
     SwapSplitPanes,
+    OpenPage(String),
 }
 
 #[derive(Clone, Debug)]
@@ -154,9 +166,35 @@ struct PaletteItem {
 struct SecondaryPane {
     page: PageRecord,
     editor: EditorModel,
-    list_state: ListState,
+    list_state: PaneListState,
     selection: PaneSelection,
     dirty: bool,
+}
+
+#[derive(Clone)]
+struct PaneListState {
+    scroll_handle: VirtualListScrollHandle,
+    item_sizes: Rc<Vec<gpui::Size<gpui::Pixels>>>,
+}
+
+impl PaneListState {
+    fn new(count: usize, row_height: gpui::Pixels) -> Self {
+        Self {
+            scroll_handle: VirtualListScrollHandle::new(),
+            item_sizes: Rc::new(vec![size(px(0.), row_height); count]),
+        }
+    }
+
+    fn reset(&mut self, count: usize, row_height: gpui::Pixels) {
+        self.item_sizes = Rc::new(vec![size(px(0.), row_height); count]);
+        self.scroll_handle
+            .base_handle()
+            .set_offset(point(px(0.), px(0.)));
+    }
+
+    fn set_count(&mut self, count: usize, row_height: gpui::Pixels) {
+        self.item_sizes = Rc::new(vec![size(px(0.), row_height); count]);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -238,24 +276,26 @@ pub fn bind_keys(cx: &mut App) {
 
 pub struct SandpaperApp {
     focus_handle: FocusHandle,
+    window_handle: AnyWindowHandle,
 
     boot_status: SharedString,
     db: Option<Database>,
     vaults: Vec<VaultRecord>,
     active_vault_id: Option<String>,
     vault_dialog_open: bool,
-    vault_dialog_name_input: Entity<TextInput>,
-    vault_dialog_path_input: Entity<TextInput>,
+    vault_dialog_name_input: Entity<InputState>,
+    vault_dialog_path_input: Entity<InputState>,
     vault_dialog_error: Option<SharedString>,
 
     pages: Vec<PageRecord>,
     active_page: Option<PageRecord>,
     editor: Option<EditorModel>,
-    caret_offsets: HashMap<String, usize>,
+    page_cursors: HashMap<String, helpers::PageCursor>,
+    recent_pages: Vec<String>,
     highlighted_block_uid: Option<String>,
     highlight_epoch: u64,
     sidebar_search_query: String,
-    sidebar_search_input: Entity<TextInput>,
+    sidebar_search_input: Entity<InputState>,
     search_pages: Vec<PageRecord>,
     search_blocks: Vec<BlockPageRecord>,
     backlinks: Vec<BacklinkEntry>,
@@ -275,19 +315,22 @@ pub struct SandpaperApp {
 
     page_dialog_open: bool,
     page_dialog_mode: PageDialogMode,
-    page_dialog_input: Entity<TextInput>,
+    page_dialog_input: Entity<InputState>,
 
-    capture_input: Entity<TextInput>,
+    capture_input: Entity<InputState>,
 
     review_items: Vec<ReviewDisplayItem>,
 
-    block_input: Entity<TextInput>,
-    palette_input: Entity<TextInput>,
+    block_input: Entity<InputState>,
+    palette_input: Entity<InputState>,
     palette_open: bool,
     palette_query: String,
     palette_index: usize,
 
-    blocks_list_state: ListState,
+    blocks_list_state: PaneListState,
+    sync_scroll: bool,
+    capture_confirmation: Option<SharedString>,
+    capture_confirmation_epoch: u64,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -300,7 +343,10 @@ enum PageDialogMode {
 
 #[cfg(test)]
 mod tests {
-    use super::helpers::{fuzzy_score, resolve_cursor_for_blocks, PageCursor};
+    use super::helpers::{
+        count_case_insensitive_occurrences, fuzzy_score, link_first_unlinked_reference,
+        resolve_cursor_for_blocks, score_palette_page, PageCursor,
+    };
     use super::PaneSelection;
     use sandpaper_core::db::BlockSnapshot;
 
@@ -376,5 +422,39 @@ mod tests {
         let (ix, offset) = resolve_cursor_for_blocks(&blocks, Some(&cursor));
         assert_eq!(ix, 0);
         assert_eq!(offset, 5);
+    }
+
+    #[test]
+    fn count_case_insensitive_occurrences_counts_matches() {
+        let count = count_case_insensitive_occurrences("Hello hello HELLO", "hello");
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn link_unlinked_reference_preserves_cursor_before_match() {
+        let text = "Note here";
+        let (next, cursor) = link_first_unlinked_reference(text, "Note", 0).unwrap();
+        assert_eq!(next, "[[Note]] here");
+        assert_eq!(cursor, 0);
+    }
+
+    #[test]
+    fn link_unlinked_reference_advances_cursor_after_match() {
+        let text = "See Note later";
+        let (next, cursor) = link_first_unlinked_reference(text, "Note", text.len()).unwrap();
+        assert_eq!(next, "See [[Note]] later");
+        assert_eq!(cursor, text.len() + 4);
+    }
+
+    #[test]
+    fn score_palette_page_prioritizes_recency_when_query_empty() {
+        let recent = score_palette_page("", "Title", "", Some(0)).unwrap();
+        let older = score_palette_page("", "Title", "", Some(4)).unwrap();
+        assert!(recent > older);
+    }
+
+    #[test]
+    fn score_palette_page_filters_non_matches() {
+        assert!(score_palette_page("foo", "Bar", "", Some(0)).is_none());
     }
 }

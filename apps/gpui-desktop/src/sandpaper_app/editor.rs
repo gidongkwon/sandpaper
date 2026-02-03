@@ -2,6 +2,40 @@ use super::*;
 use super::helpers::now_millis;
 
 impl SandpaperApp {
+    pub(super) fn with_window(
+        &self,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut Window, &mut App),
+    ) {
+        let _ = cx.update_window(self.window_handle, |_, window, cx| f(window, cx));
+    }
+
+    pub(super) fn record_page_cursor_for_pane(
+        &mut self,
+        pane: EditorPane,
+        block_uid: &str,
+        cursor: usize,
+    ) {
+        let Some(page) = self.page_for_pane(pane) else {
+            return;
+        };
+        self.page_cursors.insert(
+            page.uid.clone(),
+            helpers::PageCursor {
+                block_uid: block_uid.to_string(),
+                cursor_offset: cursor,
+            },
+        );
+    }
+
+    pub(super) fn record_recent_page(&mut self, page_uid: &str) {
+        self.recent_pages.retain(|uid| uid != page_uid);
+        self.recent_pages.insert(0, page_uid.to_string());
+        if self.recent_pages.len() > 24 {
+            self.recent_pages.truncate(24);
+        }
+    }
+
     pub(super) fn selection_for_pane(&self, pane: EditorPane) -> Option<&PaneSelection> {
         match pane {
             EditorPane::Primary => Some(&self.primary_selection),
@@ -54,10 +88,43 @@ impl SandpaperApp {
         }
     }
 
-    pub(super) fn list_state_for_pane_mut(&mut self, pane: EditorPane) -> Option<&mut ListState> {
+    pub(super) fn list_state_for_pane_mut(&mut self, pane: EditorPane) -> Option<&mut PaneListState> {
         match pane {
             EditorPane::Primary => Some(&mut self.blocks_list_state),
             EditorPane::Secondary => self.secondary_pane.as_mut().map(|pane| &mut pane.list_state),
+        }
+    }
+
+    pub(super) fn update_block_list_for_pane(&mut self, pane: EditorPane) {
+        let count = match self.editor_for_pane(pane) {
+            Some(editor) => editor.blocks.len(),
+            None => return,
+        };
+        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
+            list_state.set_count(count, px(BLOCK_ROW_HEIGHT));
+        }
+    }
+
+    pub(super) fn scroll_active_block_into_view(&mut self, pane: EditorPane) {
+        let active_ix = match self.editor_for_pane(pane) {
+            Some(editor) => editor.active_ix,
+            None => return,
+        };
+        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
+            list_state
+                .scroll_handle
+                .scroll_to_item(active_ix, ScrollStrategy::Nearest);
+        }
+        if self.sync_scroll {
+            let other = match pane {
+                EditorPane::Primary => EditorPane::Secondary,
+                EditorPane::Secondary => EditorPane::Primary,
+            };
+            if let Some(list_state) = self.list_state_for_pane_mut(other) {
+                list_state
+                    .scroll_handle
+                    .scroll_to_item(active_ix, ScrollStrategy::Nearest);
+            }
         }
     }
 
@@ -81,23 +148,39 @@ impl SandpaperApp {
         }
     }
 
-    pub(super) fn sync_block_input_from_active_with_cursor(&mut self, cursor: usize, cx: &mut Context<Self>) {
-        self.sync_block_input_from_active_with_cursor_for_pane(EditorPane::Primary, cursor, cx);
+    pub(super) fn sync_block_input_from_active_with_cursor(
+        &mut self,
+        cursor: usize,
+        window: Option<&mut Window>,
+        cx: &mut Context<Self>,
+    ) {
+        self.sync_block_input_from_active_with_cursor_for_pane(
+            EditorPane::Primary,
+            cursor,
+            window,
+            cx,
+        );
     }
 
-    pub(super) fn sync_block_input_from_active_for_pane(&mut self, pane: EditorPane, cx: &mut Context<Self>) {
+    pub(super) fn sync_block_input_from_active_for_pane(
+        &mut self,
+        pane: EditorPane,
+        window: Option<&mut Window>,
+        cx: &mut Context<Self>,
+    ) {
         let cursor = self
             .editor_for_pane(pane)
             .and_then(|editor| editor.blocks.get(editor.active_ix))
             .map(|block| block.text.len())
             .unwrap_or(0);
-        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor, cx);
+        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor, window, cx);
     }
 
     pub(super) fn sync_block_input_from_active_with_cursor_for_pane(
         &mut self,
         pane: EditorPane,
         cursor: usize,
+        window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         let Some(editor) = self.editor_for_pane(pane) else {
@@ -106,12 +189,25 @@ impl SandpaperApp {
         if editor.active_ix >= editor.blocks.len() {
             return;
         }
-        let text = editor.blocks[editor.active_ix].text.clone();
+        let block = &editor.blocks[editor.active_ix];
+        let text = block.text.clone();
         let cursor = cursor.min(text.len());
-        self.block_input.update(cx, |input, cx| {
-            input.set_text(text, cx);
-            input.set_cursor_offset(cursor, cx);
-        });
+        let block_uid = block.uid.clone();
+        let input = self.block_input.clone();
+        let update_input = move |window: &mut Window, cx: &mut App| {
+            input.update(cx, |input, cx| {
+                input.set_value(text.clone(), window, cx);
+                let position = input.text().offset_to_position(cursor);
+                input.set_cursor_position(position, window, cx);
+            });
+        };
+        if let Some(window) = window {
+            update_input(window, cx);
+        } else {
+            self.with_window(cx, update_input);
+        }
+        self.record_page_cursor_for_pane(pane, &block_uid, cursor);
+        self.scroll_active_block_into_view(pane);
         self.refresh_block_backlinks();
     }
 
@@ -127,7 +223,7 @@ impl SandpaperApp {
             self.secondary_pane = None;
             if self.active_pane == EditorPane::Secondary {
                 self.active_pane = EditorPane::Primary;
-                self.sync_block_input_from_active_for_pane(EditorPane::Primary, cx);
+                self.sync_block_input_from_active_for_pane(EditorPane::Primary, None, cx);
             }
             cx.notify();
             return;
@@ -155,7 +251,7 @@ impl SandpaperApp {
         };
         let blocks = db.load_blocks_for_page(page.id).unwrap_or_default();
         let editor = EditorModel::new(blocks);
-        let list_state = ListState::new(editor.blocks.len(), ListAlignment::Top, px(600.0));
+        let list_state = PaneListState::new(editor.blocks.len(), px(BLOCK_ROW_HEIGHT));
         self.secondary_pane = Some(SecondaryPane {
             page,
             editor,
@@ -163,8 +259,9 @@ impl SandpaperApp {
             selection: PaneSelection::new(),
             dirty: false,
         });
+        self.record_recent_page(page_uid);
         if self.active_pane == EditorPane::Secondary {
-            self.sync_block_input_from_active_for_pane(EditorPane::Secondary, cx);
+            self.sync_block_input_from_active_for_pane(EditorPane::Secondary, None, cx);
         }
         cx.notify();
     }
@@ -184,7 +281,7 @@ impl SandpaperApp {
             return;
         };
         let editor = editor.clone();
-        let list_state = ListState::new(editor.blocks.len(), ListAlignment::Top, px(600.0));
+        let list_state = PaneListState::new(editor.blocks.len(), px(BLOCK_ROW_HEIGHT));
         let selection = PaneSelection::new();
         let dirty = self.primary_dirty;
 
@@ -210,7 +307,7 @@ impl SandpaperApp {
         self.update_save_state_from_dirty();
         self.close_slash_menu();
         if self.active_pane == EditorPane::Secondary {
-            self.sync_block_input_from_active_for_pane(EditorPane::Secondary, cx);
+            self.sync_block_input_from_active_for_pane(EditorPane::Secondary, None, cx);
         }
         cx.notify();
     }
@@ -236,8 +333,10 @@ impl SandpaperApp {
         self.editor = Some(editor);
         self.primary_selection = selection;
         self.primary_dirty = dirty;
-        self.blocks_list_state
-            .reset(self.editor.as_ref().map(|e| e.blocks.len()).unwrap_or(0));
+        self.blocks_list_state.reset(
+            self.editor.as_ref().map(|e| e.blocks.len()).unwrap_or(0),
+            px(BLOCK_ROW_HEIGHT),
+        );
         self.active_pane = EditorPane::Primary;
         self.highlighted_block_uid = None;
         self.update_save_state_from_dirty();
@@ -247,17 +346,20 @@ impl SandpaperApp {
             let _ = db.set_kv("active.page", &page.uid);
         }
 
-        if let Some(editor) = self.editor.as_ref() {
-            let active_uid = editor.active().uid.clone();
-            let active_len = editor.active().text.len();
-            let cursor = self
-                .caret_offsets
-                .get(&active_uid)
-                .copied()
-                .unwrap_or(active_len);
+        self.record_recent_page(&page.uid);
+        if let Some(editor) = self.editor.as_mut() {
+            let cursor = if let Some(page_cursor) = self.page_cursors.get(&page.uid) {
+                let (active_ix, offset) =
+                    helpers::resolve_cursor_for_blocks(&editor.blocks, Some(page_cursor));
+                editor.active_ix = active_ix;
+                offset
+            } else {
+                editor.active().text.len()
+            };
             self.sync_block_input_from_active_with_cursor_for_pane(
                 EditorPane::Primary,
                 cursor,
+                Some(window),
                 cx,
             );
         }
@@ -308,7 +410,7 @@ impl SandpaperApp {
         self.update_save_state_from_dirty();
         self.refresh_references();
         self.close_slash_menu();
-        self.sync_block_input_from_active_for_pane(self.active_pane, cx);
+        self.sync_block_input_from_active_for_pane(self.active_pane, None, cx);
         cx.notify();
     }
 
@@ -339,9 +441,9 @@ impl SandpaperApp {
         }
         let (cursor_offset, text) = {
             let input = self.block_input.read(cx);
-            (input.cursor_offset(), input.text().to_string())
+            (input.cursor(), input.value().to_string())
         };
-        let (cursor, insert_ix) = {
+        let cursor = {
             let Some(editor) = self.editor_for_pane_mut(pane) else {
                 return;
             };
@@ -353,15 +455,17 @@ impl SandpaperApp {
                 editor.blocks[editor.active_ix].text = text;
             }
 
-            let insert_ix = editor.active_ix + 1;
             let cursor = editor.split_active_and_insert_after(cursor_offset);
-            (cursor, insert_ix)
+            cursor
         };
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(insert_ix..insert_ix, 1);
-        }
+        self.update_block_list_for_pane(pane);
 
-        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+        self.sync_block_input_from_active_with_cursor_for_pane(
+            pane,
+            cursor.offset,
+            Some(window),
+            cx,
+        );
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -431,10 +535,7 @@ impl SandpaperApp {
             return;
         };
         if editor.move_active_up() {
-            if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-                list_state.remeasure();
-            }
-            self.sync_block_input_from_active_for_pane(pane, cx);
+            self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
             self.mark_dirty_for_pane(pane, cx);
             self.schedule_references_refresh(cx);
         }
@@ -458,10 +559,7 @@ impl SandpaperApp {
             return;
         };
         if editor.move_active_down() {
-            if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-                list_state.remeasure();
-            }
-            self.sync_block_input_from_active_for_pane(pane, cx);
+            self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
             self.mark_dirty_for_pane(pane, cx);
             self.schedule_references_refresh(cx);
         }
@@ -488,10 +586,13 @@ impl SandpaperApp {
             return;
         }
         let cursor = editor.duplicate_active();
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(cursor.block_ix..cursor.block_ix, 1);
-        }
-        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+        self.update_block_list_for_pane(pane);
+        self.sync_block_input_from_active_with_cursor_for_pane(
+            pane,
+            cursor.offset,
+            Some(window),
+            cx,
+        );
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -528,27 +629,40 @@ impl SandpaperApp {
         }
     }
 
-    pub(super) fn on_block_input_event(&mut self, event: &TextInputEvent, cx: &mut Context<Self>) {
+    pub(super) fn handle_block_input_key_down(
+        &mut self,
+        pane: EditorPane,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.mode != Mode::Editor {
-            return;
+            return false;
         }
-        let pane = self.active_pane;
+        if event.keystroke.modifiers.modified() {
+            return false;
+        }
         if self
             .selection_for_pane(pane)
             .is_some_and(|selection| selection.has_range())
         {
-            return;
+            return false;
         }
 
-        match event {
-            TextInputEvent::BackspaceAtStart => {
-                let current_text = self.block_input.read(cx).text().to_string();
-                let (cursor, remove_range) = {
+        let (cursor_offset, text_len) = {
+            let input = self.block_input.read(cx);
+            (input.cursor(), input.text().len())
+        };
+
+        match event.keystroke.key.as_str() {
+            "backspace" if cursor_offset == 0 => {
+                let current_text = self.block_input.read(cx).value().to_string();
+                let cursor = {
                     let Some(editor) = self.editor_for_pane_mut(pane) else {
-                        return;
+                        return false;
                     };
                     if editor.active_ix >= editor.blocks.len() {
-                        return;
+                        return false;
                     }
 
                     let old_ix = editor.active_ix;
@@ -563,38 +677,40 @@ impl SandpaperApp {
                     };
 
                     let Some(cursor) = cursor else {
-                        return;
+                        return false;
                     };
-
-                    (cursor, old_ix..old_ix + 1)
+                    cursor
                 };
 
-                if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-                    list_state.splice(remove_range, 0);
-                }
-                self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+                self.update_block_list_for_pane(pane);
+                self.sync_block_input_from_active_with_cursor_for_pane(
+                    pane,
+                    cursor.offset,
+                    Some(window),
+                    cx,
+                );
                 self.close_slash_menu();
                 self.mark_dirty_for_pane(pane, cx);
                 self.schedule_references_refresh(cx);
+                true
             }
-            TextInputEvent::DeleteAtEnd => {
+            "delete" if cursor_offset == text_len => {
                 let (cursor_offset, current_text) = {
                     let input = self.block_input.read(cx);
-                    (input.cursor_offset(), input.text().to_string())
+                    (input.cursor(), input.value().to_string())
                 };
-                let (cursor, remove_range) = {
+                let cursor = {
                     let Some(editor) = self.editor_for_pane_mut(pane) else {
-                        return;
+                        return false;
                     };
                     if editor.active_ix >= editor.blocks.len() {
-                        return;
+                        return false;
                     }
 
                     let old_ix = editor.active_ix;
-                    let old_len = editor.blocks.len();
                     let next_ix = old_ix + 1;
-                    if next_ix >= old_len {
-                        return;
+                    if next_ix >= editor.blocks.len() {
+                        return false;
                     }
 
                     if editor.blocks[old_ix].text != current_text {
@@ -602,55 +718,71 @@ impl SandpaperApp {
                     }
 
                     let Some(cursor) = editor.merge_next_into_active(cursor_offset) else {
-                        return;
+                        return false;
                     };
-                    (cursor, next_ix..next_ix + 1)
+                    cursor
                 };
 
-                if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-                    list_state.splice(remove_range, 0);
-                }
-                self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+                self.update_block_list_for_pane(pane);
+                self.sync_block_input_from_active_with_cursor_for_pane(
+                    pane,
+                    cursor.offset,
+                    Some(window),
+                    cx,
+                );
                 self.close_slash_menu();
                 self.mark_dirty_for_pane(pane, cx);
                 self.schedule_references_refresh(cx);
+                true
             }
-            TextInputEvent::ArrowUpAtStart => {
+            "up" if cursor_offset == 0 => {
                 let cursor = {
                     let Some(editor) = self.editor_for_pane_mut(pane) else {
-                        return;
+                        return false;
                     };
                     if editor.active_ix == 0 {
-                        return;
+                        return false;
                     }
                     editor.active_ix -= 1;
-
                     editor.blocks[editor.active_ix].text.len()
                 };
 
-                self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor, cx);
+                self.sync_block_input_from_active_with_cursor_for_pane(
+                    pane,
+                    cursor,
+                    Some(window),
+                    cx,
+                );
                 self.close_slash_menu();
                 cx.notify();
+                true
             }
-            TextInputEvent::ArrowDownAtEnd => {
+            "down" if cursor_offset == text_len => {
                 let has_next = {
                     let Some(editor) = self.editor_for_pane_mut(pane) else {
-                        return;
+                        return false;
                     };
                     let next_ix = editor.active_ix + 1;
                     if next_ix >= editor.blocks.len() {
-                        return;
+                        return false;
                     }
                     editor.active_ix = next_ix;
                     true
                 };
 
                 if has_next {
-                    self.sync_block_input_from_active_with_cursor_for_pane(pane, 0, cx);
+                    self.sync_block_input_from_active_with_cursor_for_pane(
+                        pane,
+                        0,
+                        Some(window),
+                        cx,
+                    );
                 }
                 self.close_slash_menu();
                 cx.notify();
+                true
             }
+            _ => false,
         }
     }
 
@@ -680,7 +812,7 @@ impl SandpaperApp {
             }
             editor.active_ix = ix;
         }
-        self.sync_block_input_from_active_for_pane(pane, cx);
+        self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.close_slash_menu();
         cx.notify();
@@ -754,9 +886,14 @@ impl SandpaperApp {
             editor.active_ix = ix;
         }
         self.set_active_pane(pane, cx);
-        self.sync_block_input_from_active_for_pane(pane, cx);
-        if let Some(window) = window {
-            window.focus(&self.block_input.focus_handle(cx), cx);
+        match window {
+            Some(window) => {
+                self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
+                window.focus(&self.block_input.focus_handle(cx), cx);
+            }
+            None => {
+                self.sync_block_input_from_active_for_pane(pane, None, cx);
+            }
         }
         self.clear_selection_for_pane(pane);
         self.close_slash_menu();
@@ -795,10 +932,13 @@ impl SandpaperApp {
             editor.active_ix = ix;
             editor.insert_after_active(String::new())
         };
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(cursor.block_ix..cursor.block_ix, 1);
-        }
-        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+        self.update_block_list_for_pane(pane);
+        self.sync_block_input_from_active_with_cursor_for_pane(
+            pane,
+            cursor.offset,
+            Some(window),
+            cx,
+        );
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -821,10 +961,13 @@ impl SandpaperApp {
             editor.active_ix = ix;
             editor.duplicate_active()
         };
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(cursor.block_ix..cursor.block_ix, 1);
-        }
-        self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor.offset, cx);
+        self.update_block_list_for_pane(pane);
+        self.sync_block_input_from_active_with_cursor_for_pane(
+            pane,
+            cursor.offset,
+            Some(window),
+            cx,
+        );
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -880,8 +1023,9 @@ impl SandpaperApp {
         let next_cursor = next_text.len();
         editor.blocks[ix].text = next_text.clone();
         self.block_input.update(cx, |input, cx| {
-            input.set_text(next_text, cx);
-            input.set_cursor_offset(next_cursor, cx);
+            input.set_value(next_text.clone(), window, cx);
+            let position = input.text().offset_to_position(next_cursor);
+            input.set_cursor_position(position, window, cx);
         });
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
@@ -908,23 +1052,25 @@ impl SandpaperApp {
         if title.is_empty() {
             return;
         }
-        let lowered = text.to_lowercase();
-        let title_lower = title.to_lowercase();
-        let Some(match_start) = lowered.find(&title_lower) else {
+        let cursor = if editor.active_ix == ix {
+            self.block_input.read(cx).cursor()
+        } else {
+            text.len()
+        };
+        let Some((next_text, next_cursor)) =
+            helpers::link_first_unlinked_reference(&text, title, cursor)
+        else {
             return;
         };
-        let match_end = match_start + title.len();
-        let next_text = format!(
-            "{}[[{}]]{}",
-            &text[..match_start],
-            title,
-            &text[match_end..]
-        );
         editor.blocks[ix].text = next_text.clone();
         if editor.active_ix == ix {
-            self.block_input.update(cx, |input, cx| {
-                input.set_text(next_text, cx);
-                input.set_cursor_offset(input.text().len(), cx);
+            let block_input = self.block_input.clone();
+            self.with_window(cx, move |window, cx| {
+                block_input.update(cx, |input, cx| {
+                    input.set_value(next_text.clone(), window, cx);
+                    let position = input.text().offset_to_position(next_cursor);
+                    input.set_cursor_position(position, window, cx);
+                });
             });
         }
         self.mark_dirty_for_pane(EditorPane::Primary, cx);
@@ -954,14 +1100,12 @@ impl SandpaperApp {
             }
             (insert_range, insert_count)
         };
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(insert_range.start..insert_range.start, insert_count);
-        }
+        self.update_block_list_for_pane(pane);
         if insert_count > 0 {
             let new_start = insert_range.start;
             let new_end = insert_range.end.saturating_sub(1);
             self.set_selection_range_for_pane(pane, new_start, new_end);
-            self.sync_block_input_from_active_for_pane(pane, cx);
+            self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
             window.focus(&self.block_input.focus_handle(cx), cx);
         }
         self.mark_dirty_for_pane(pane, cx);
@@ -975,20 +1119,20 @@ impl SandpaperApp {
         let Some(editor) = self.editor_for_pane_mut(pane) else {
             return;
         };
-        let old_len = editor.blocks.len();
-        let removed_len = range.end.saturating_sub(range.start);
         let cursor = match editor.delete_range(range.clone()) {
             Some(cursor) => cursor,
             None => return,
         };
-        let insert_count = if removed_len >= old_len { 1 } else { 0 };
-        if let Some(list_state) = self.list_state_for_pane_mut(pane) {
-            list_state.splice(range.start..range.start + removed_len, insert_count);
-        }
+        self.update_block_list_for_pane(pane);
         self.clear_selection_for_pane(pane);
-        self.sync_block_input_from_active_for_pane(pane, cx);
-        self.block_input.update(cx, |input, cx| {
-            input.set_cursor_offset(cursor.offset, cx);
+        self.sync_block_input_from_active_for_pane(pane, None, cx);
+        let block_input = self.block_input.clone();
+        let cursor_offset = cursor.offset;
+        self.with_window(cx, move |window, cx| {
+            block_input.update(cx, |input, cx| {
+                let position = input.text().offset_to_position(cursor_offset);
+                input.set_cursor_position(position, window, cx);
+            });
         });
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -1045,7 +1189,7 @@ impl SandpaperApp {
         if new_range.end > 0 {
             self.set_selection_range_for_pane(pane, new_range.start, new_range.end - 1);
         }
-        self.sync_block_input_from_active_for_pane(pane, cx);
+        self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.mark_dirty_for_pane(pane, cx);
         self.schedule_references_refresh(cx);
@@ -1053,41 +1197,53 @@ impl SandpaperApp {
     }
 
     pub(super) fn add_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text = self.capture_input.read(cx).text().trim().to_string();
+        let text = self
+            .capture_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
         if text.is_empty() {
             return;
         }
 
-        let Some(editor) = self.editor.as_mut() else {
-            return;
+        let (text, uid) = {
+            let Some(editor) = self.editor.as_mut() else {
+                return;
+            };
+
+            let block = BlockSnapshot {
+                uid: Uuid::new_v4().to_string(),
+                text,
+                indent: 0,
+            };
+            let uid = block.uid.clone();
+
+            editor.blocks.insert(0, block);
+            editor.active_ix = 0;
+
+            let text = editor.blocks[0].text.clone();
+            (text, uid)
         };
+        self.update_block_list_for_pane(EditorPane::Primary);
 
-        let block = BlockSnapshot {
-            uid: Uuid::new_v4().to_string(),
-            text,
-            indent: 0,
-        };
-        let uid = block.uid.clone();
-
-        editor.blocks.insert(0, block);
-        editor.active_ix = 0;
-        self.blocks_list_state.splice(0..0, 1);
-
-        let text = editor.blocks[0].text.clone();
         let cursor = text.len();
         self.block_input.update(cx, |input, cx| {
-            input.set_text(text, cx);
-            input.set_cursor_offset(cursor, cx);
+            input.set_value(text.clone(), window, cx);
+            let position = input.text().offset_to_position(cursor);
+            input.set_cursor_position(position, window, cx);
         });
 
         self.capture_input.update(cx, |input, cx| {
-            input.set_text("", cx);
+            input.set_value("", window, cx);
         });
 
         self.set_mode(Mode::Editor, cx);
         self.active_pane = EditorPane::Primary;
         window.focus(&self.block_input.focus_handle(cx), cx);
 
+        self.capture_confirmation = Some("Captured".into());
+        self.schedule_capture_confirmation_clear(cx);
         self.highlighted_block_uid = Some(uid);
         self.schedule_highlight_clear(cx);
         self.mark_dirty_for_pane(EditorPane::Primary, cx);
@@ -1191,8 +1347,9 @@ impl SandpaperApp {
         editor.active_ix = block_ix;
         self.set_active_pane(pane, cx);
         self.block_input.update(cx, |input, cx| {
-            input.set_text(next_text, cx);
-            input.set_cursor_offset(next_cursor, cx);
+            input.set_value(next_text.clone(), window, cx);
+            let position = input.text().offset_to_position(next_cursor);
+            input.set_cursor_position(position, window, cx);
         });
         window.focus(&self.block_input.focus_handle(cx), cx);
         self.close_slash_menu();

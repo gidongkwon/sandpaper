@@ -117,3 +117,80 @@ pub(super) fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
     let length_penalty = (text_chars.len().saturating_sub(query.len())) as i64 / 4;
     Some(score - length_penalty)
 }
+
+pub(super) fn count_case_insensitive_occurrences(text: &str, needle: &str) -> usize {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return 0;
+    }
+    let text_lower = text.to_lowercase();
+    let needle_lower = needle.to_lowercase();
+    if needle_lower.is_empty() {
+        return 0;
+    }
+    text_lower.match_indices(&needle_lower).count()
+}
+
+pub(super) fn link_first_unlinked_reference(
+    text: &str,
+    title: &str,
+    cursor: usize,
+) -> Option<(String, usize)> {
+    let title = title.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let lowered = text.to_lowercase();
+    let title_lower = title.to_lowercase();
+    let match_start = lowered.find(&title_lower)?;
+    let match_end = match_start + title_lower.len();
+    if match_end > text.len() {
+        return None;
+    }
+
+    let mut next_text = String::with_capacity(text.len() + 4);
+    next_text.push_str(&text[..match_start]);
+    next_text.push_str("[[");
+    next_text.push_str(title);
+    next_text.push_str("]]");
+    next_text.push_str(&text[match_end..]);
+
+    let replaced_len = match_end - match_start;
+    let delta = (4 + title.len()) as isize - replaced_len as isize;
+    let next_cursor = if cursor <= match_start {
+        cursor
+    } else if cursor >= match_end {
+        cursor.saturating_add(delta.max(0) as usize)
+    } else {
+        match_start + 2 + title.len()
+    };
+
+    Some((next_text, next_cursor))
+}
+
+pub(super) fn score_palette_page(
+    query: &str,
+    title: &str,
+    snippet: &str,
+    recent_rank: Option<usize>,
+) -> Option<i64> {
+    let query = query.trim();
+    let recency_boost = recent_rank
+        .map(|rank| (100 - (rank as i64 * 2)).max(0))
+        .unwrap_or(0);
+
+    if query.is_empty() {
+        return Some(recency_boost);
+    }
+
+    let title_score = fuzzy_score(query, title);
+    let snippet_score = fuzzy_score(query, snippet).map(|score| score.saturating_sub(3));
+    let best = match (title_score, snippet_score) {
+        (Some(title), Some(snippet)) => title.max(snippet),
+        (Some(title), None) => title,
+        (None, Some(snippet)) => snippet,
+        (None, None) => return None,
+    };
+
+    Some(best + recency_boost)
+}

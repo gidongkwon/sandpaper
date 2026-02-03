@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", package = "gpui", default-features = false, features = ["font-kit", "runtime_shaders"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 sandpaper-core = { path = "../../crates/sandpaper-core" }
 chrono = { version = "0.4", default-features = false, features = ["alloc", "std", "clock"] }
 unicode-segmentation = "1.12.0"

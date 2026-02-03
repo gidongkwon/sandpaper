@@ -1,12 +1,12 @@
 mod sandpaper_app;
-mod ui;
 
 use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui_component::Root;
 
 fn main() {
     Application::new().run(|cx: &mut App| {
+        gpui_component::init(cx);
         sandpaper_app::bind_keys(cx);
-        ui::text_input::bind_keys(cx);
 
         let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);
 
@@ -15,7 +15,10 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_, cx| cx.new(sandpaper_app::SandpaperApp::new),
+            |window, cx| {
+                let app = cx.new(|cx| sandpaper_app::SandpaperApp::new(window, cx));
+                cx.new(|cx| Root::new(app, window, cx))
+            },
         )
         .expect("open window");
 

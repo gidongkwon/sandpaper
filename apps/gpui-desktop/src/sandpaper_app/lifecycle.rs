@@ -2,46 +2,29 @@ use super::*;
 use super::helpers::{default_vault_path, expand_tilde};
 
 impl SandpaperApp {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
+        let window_handle = window.window_handle();
 
-        let page_dialog_input = cx.new(|cx| TextInput::new(cx, "Page title"));
-        let vault_dialog_name_input = cx.new(|cx| TextInput::new(cx, "Vault name"));
-        let vault_dialog_path_input = cx.new(|cx| TextInput::new(cx, "Vault path"));
-        let capture_input = cx.new(|cx| TextInput::new(cx, "Capture a thought, link, or task..."));
-        let sidebar_search_input = cx.new(|cx| TextInput::new(cx, "Search"));
-        let block_input = cx.new(|cx| TextInput::new(cx, "Write a block…"));
-        let palette_input = cx.new(|cx| TextInput::new(cx, "Search commands..."));
-
-        capture_input.update(cx, |input, _cx| {
-            input.set_style(TextInputStyle {
-                text_size: px(15.0),
-                line_height: px(24.0),
-                padding: px(8.0),
-                allow_vertical_navigation: true,
-            });
+        let page_dialog_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Page title"));
+        let vault_dialog_name_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Vault name"));
+        let vault_dialog_path_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Vault path"));
+        let capture_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Capture a thought, link, or task...")
+                .multi_line(true)
         });
-
-        block_input.update(cx, |input, _cx| {
-            input.set_style(TextInputStyle {
-                text_size: px(15.0),
-                line_height: px(24.0),
-                padding: px(4.0),
-                allow_vertical_navigation: true,
-            });
-        });
-
-        palette_input.update(cx, |input, _cx| {
-            input.set_style(TextInputStyle {
-                text_size: px(14.0),
-                line_height: px(22.0),
-                padding: px(6.0),
-                allow_vertical_navigation: false,
-            });
-        });
+        let sidebar_search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let block_input = cx.new(|cx| InputState::new(window, cx).placeholder("Write a block…"));
+        let palette_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search commands..."));
 
         let mut app = Self {
             focus_handle,
+            window_handle,
             boot_status: "Booting…".into(),
             db: None,
             vaults: Vec::new(),
@@ -53,7 +36,8 @@ impl SandpaperApp {
             pages: Vec::new(),
             active_page: None,
             editor: None,
-            caret_offsets: HashMap::new(),
+            page_cursors: HashMap::new(),
+            recent_pages: Vec::new(),
             highlighted_block_uid: None,
             highlight_epoch: 0,
             sidebar_search_query: String::new(),
@@ -83,7 +67,10 @@ impl SandpaperApp {
             palette_open: false,
             palette_query: String::new(),
             palette_index: 0,
-            blocks_list_state: ListState::new(0, ListAlignment::Top, px(600.0)),
+            blocks_list_state: PaneListState::new(0, px(BLOCK_ROW_HEIGHT)),
+            sync_scroll: false,
+            capture_confirmation: None,
+            capture_confirmation_epoch: 0,
             _subscriptions: Vec::new(),
         };
 
@@ -92,7 +79,7 @@ impl SandpaperApp {
         let sub_block_input = cx.observe(&app.block_input, |this, input, cx| {
             let (text, cursor) = {
                 let input = input.read(cx);
-                (input.text().to_string(), input.cursor_offset())
+                (input.value().to_string(), input.cursor())
             };
 
             let pane = this.active_pane;
@@ -113,7 +100,7 @@ impl SandpaperApp {
                 (uid, active_ix, text_changed)
             };
 
-            this.caret_offsets.insert(uid.clone(), cursor);
+            this.record_page_cursor_for_pane(pane, &uid, cursor);
 
             if text_changed {
                 this.mark_dirty_for_pane(pane, cx);
@@ -126,7 +113,7 @@ impl SandpaperApp {
         app._subscriptions.push(sub_block_input);
 
         let sub_search_input = cx.observe(&app.sidebar_search_input, |this, input, cx| {
-            this.sidebar_search_query = input.read(cx).text().to_string();
+            this.sidebar_search_query = input.read(cx).value().to_string();
             this.refresh_search_results();
             cx.notify();
         });
@@ -134,18 +121,12 @@ impl SandpaperApp {
         app._subscriptions.push(sub_search_input);
 
         let sub_palette_input = cx.observe(&app.palette_input, |this, input, cx| {
-            this.palette_query = input.read(cx).text().to_string();
+            this.palette_query = input.read(cx).value().to_string();
             this.palette_index = 0;
             cx.notify();
         });
 
         app._subscriptions.push(sub_palette_input);
-
-        let sub_block_events = cx.subscribe(&app.block_input, |this, _input, event, cx| {
-            this.on_block_input_event(event, cx);
-        });
-
-        app._subscriptions.push(sub_block_events);
 
         app
     }
@@ -158,13 +139,16 @@ impl SandpaperApp {
         self.primary_selection.clear();
         self.active_pane = EditorPane::Primary;
         self.primary_dirty = false;
+        self.page_cursors.clear();
+        self.recent_pages.clear();
+        self.capture_confirmation = None;
         self.refresh_vaults();
         match app::open_active_database() {
             Ok((vault, db)) => {
                 self.boot_status = format!("Vault: {}", vault.record.name).into();
                 self.active_page = None;
                 self.editor = None;
-                self.blocks_list_state.reset(0);
+                self.blocks_list_state.reset(0, px(BLOCK_ROW_HEIGHT));
                 self.vault_dialog_open = false;
                 self.vault_dialog_error = None;
 
@@ -188,7 +172,7 @@ impl SandpaperApp {
                 self.db = None;
                 self.active_page = None;
                 self.editor = None;
-                self.blocks_list_state.reset(0);
+                self.blocks_list_state.reset(0, px(BLOCK_ROW_HEIGHT));
                 self.vault_dialog_open = true;
             }
             Err(err) => {
@@ -196,7 +180,7 @@ impl SandpaperApp {
                 self.db = None;
                 self.active_page = None;
                 self.editor = None;
-                self.blocks_list_state.reset(0);
+                self.blocks_list_state.reset(0, px(BLOCK_ROW_HEIGHT));
                 self.vault_dialog_error = Some(format!("{err:?}").into());
                 self.vault_dialog_open = true;
             }
@@ -221,7 +205,7 @@ impl SandpaperApp {
     pub(super) fn open_vaults(
         &mut self,
         _: &OpenVaults,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.refresh_vaults();
@@ -232,12 +216,14 @@ impl SandpaperApp {
         let default_path = default_vault_path(&default_name);
 
         self.vault_dialog_name_input.update(cx, |input, cx| {
-            input.set_text(default_name, cx);
-            input.reset_selection(cx);
+            input.set_value(default_name.clone(), window, cx);
+            let position = input.text().offset_to_position(0);
+            input.set_cursor_position(position, window, cx);
         });
         self.vault_dialog_path_input.update(cx, |input, cx| {
-            input.set_text(default_path, cx);
-            input.reset_selection(cx);
+            input.set_value(default_path.clone(), window, cx);
+            let position = input.text().offset_to_position(0);
+            input.set_cursor_position(position, window, cx);
         });
 
         cx.notify();
@@ -264,8 +250,18 @@ impl SandpaperApp {
     }
 
     pub(super) fn create_vault(&mut self, cx: &mut Context<Self>) {
-        let name = self.vault_dialog_name_input.read(cx).text().trim().to_string();
-        let raw_path = self.vault_dialog_path_input.read(cx).text().trim().to_string();
+        let name = self
+            .vault_dialog_name_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        let raw_path = self
+            .vault_dialog_path_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
         if name.is_empty() || raw_path.is_empty() {
             self.vault_dialog_error = Some("Name and path are required.".into());
             return;
@@ -429,27 +425,26 @@ impl SandpaperApp {
         let blocks = db
             .load_blocks_for_page(page.id)
             .unwrap_or_else(|_| Vec::new());
-        let editor = EditorModel::new(blocks);
+        let mut editor = EditorModel::new(blocks);
 
         let _ = db.set_kv("active.page", &page.uid);
 
-        self.active_page = Some(page);
+        self.active_page = Some(page.clone());
         self.primary_dirty = false;
         self.update_save_state_from_dirty();
-        self.blocks_list_state.reset(editor.blocks.len());
+        self.blocks_list_state
+            .reset(editor.blocks.len(), px(BLOCK_ROW_HEIGHT));
         self.active_pane = EditorPane::Primary;
 
-        let active_uid = editor.active().uid.clone();
-        let active_len = editor.active().text.len();
-        let cursor = self
-            .caret_offsets
-            .get(&active_uid)
-            .copied()
-            .unwrap_or(active_len);
+        let page_cursor = self.page_cursors.get(&page.uid);
+        let (active_ix, cursor) =
+            helpers::resolve_cursor_for_blocks(&editor.blocks, page_cursor);
+        editor.active_ix = active_ix;
+        self.record_recent_page(&page.uid);
 
         self.editor = Some(editor);
         self.clear_selection_for_pane(EditorPane::Primary);
-        self.sync_block_input_from_active_with_cursor(cursor, cx);
+        self.sync_block_input_from_active_with_cursor(cursor, None, cx);
         self.close_slash_menu();
         self.refresh_references();
         cx.notify();
@@ -468,9 +463,14 @@ impl SandpaperApp {
                 .unwrap_or_default(),
         };
 
-        self.page_dialog_input.update(cx, |input, cx| {
-            input.set_text(initial, cx);
-            input.reset_selection(cx);
+        let page_dialog_input = self.page_dialog_input.clone();
+        let initial_clone = initial.clone();
+        self.with_window(cx, move |window, cx| {
+            page_dialog_input.update(cx, |input, cx| {
+                input.set_value(initial_clone.clone(), window, cx);
+                let position = input.text().offset_to_position(0);
+                input.set_cursor_position(position, window, cx);
+            });
         });
 
         cx.notify();
@@ -482,7 +482,12 @@ impl SandpaperApp {
     }
 
     pub(super) fn confirm_page_dialog(&mut self, cx: &mut Context<Self>) {
-        let title = self.page_dialog_input.read(cx).text().trim().to_string();
+        let title = self
+            .page_dialog_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
         if title.is_empty() {
             return;
         }

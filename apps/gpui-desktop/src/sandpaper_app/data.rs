@@ -20,6 +20,24 @@ impl SandpaperApp {
         .detach();
     }
 
+    pub(super) fn schedule_capture_confirmation_clear(&mut self, cx: &mut Context<Self>) {
+        self.capture_confirmation_epoch += 1;
+        let epoch = self.capture_confirmation_epoch;
+
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(1200)).await;
+            this.update(cx, |this, cx| {
+                if this.capture_confirmation_epoch != epoch {
+                    return;
+                }
+                this.capture_confirmation = None;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     pub(super) fn refresh_search_results(&mut self) {
         let query = self.sidebar_search_query.trim();
         if query.is_empty() {
@@ -137,12 +155,15 @@ impl SandpaperApp {
                 if seen.contains(&key) {
                     continue;
                 }
-                if lowered.contains(&title.to_lowercase()) {
+                let count =
+                    helpers::count_case_insensitive_occurrences(&stripped, title);
+                if count > 0 && lowered.contains(&title.to_lowercase()) {
                     seen.insert(key);
                     self.unlinked_references.push(UnlinkedReference {
                         block_uid: block.uid.clone(),
                         page_title: page.title.clone(),
                         snippet: format_snippet(&stripped, 120),
+                        match_count: count,
                     });
                 }
             }
@@ -247,6 +268,7 @@ impl SandpaperApp {
                 block_uid,
                 page_title,
                 text,
+                due_at: item.due_at,
             });
         }
 
@@ -269,6 +291,16 @@ impl SandpaperApp {
         };
         let now = now_millis();
         let next = now + 86_400_000;
+        let _ = db.mark_review_queue_item(item_id, "pending", now, Some(next));
+        self.load_review_items(cx);
+    }
+
+    pub(super) fn review_snooze_week(&mut self, item_id: i64, cx: &mut Context<Self>) {
+        let Some(db) = self.db.as_ref() else {
+            return;
+        };
+        let now = now_millis();
+        let next = now + 604_800_000;
         let _ = db.mark_review_queue_item(item_id, "pending", now, Some(next));
         self.load_review_items(cx);
     }

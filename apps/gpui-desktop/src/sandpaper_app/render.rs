@@ -9,6 +9,7 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
 
 impl SandpaperApp {
     fn render_topbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let mode_label = match self.mode {
             Mode::Editor => "Editor",
             Mode::Capture => "Capture",
@@ -29,57 +30,69 @@ impl SandpaperApp {
             SaveState::Error(err) => format!("Save failed: {err}").into(),
         };
 
+        let mut status_group = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.foreground)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(format!("Sandpaper · {mode_label}")),
+            )
+            .child(
+                div()
+                    .ml_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(self.boot_status.clone()),
+            );
+
+        if let Some(note) = self.capture_confirmation.clone() {
+            status_group = status_group.child(
+                div()
+                    .ml_2()
+                    .px_2()
+                    .py(px(1.0))
+                    .rounded_sm()
+                    .bg(theme.success)
+                    .text_xs()
+                    .text_color(theme.success_foreground)
+                    .child(note),
+            );
+        }
+
+        let right_group = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(save_label),
+            )
+            .child(
+                Button::new("vaults-button")
+                    .label(vault_label)
+                    .xsmall()
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.open_vaults(&OpenVaults, window, cx);
+                    })),
+            );
+
         div()
             .h(px(44.0))
             .px_3()
             .flex()
             .items_center()
             .justify_between()
-            .bg(rgb(0x0f111a))
+            .bg(theme.title_bar)
             .border_b_1()
-            .border_color(rgb(0x1b1e2b))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xcdd6f4))
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child(format!("Sandpaper · {mode_label}")),
-                    )
-                    .child(
-                        div()
-                            .ml_2()
-                            .text_xs()
-                            .text_color(rgb(0x9aa2c8))
-                            .child(self.boot_status.clone()),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(div().text_xs().text_color(rgb(0x9aa2c8)).child(save_label))
-                    .child(
-                        div()
-                            .id("vaults-button")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(0x1b1e2b))
-                            .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                            .text_xs()
-                            .text_color(rgb(0xcdd6f4))
-                            .on_click(cx.listener(|this, _event, window, cx| {
-                                this.open_vaults(&OpenVaults, window, cx);
-                            }))
-                            .child(vault_label),
-                    ),
-            )
+            .border_color(theme.title_bar_border)
+            .child(status_group)
+            .child(right_group)
     }
 
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -89,15 +102,15 @@ impl SandpaperApp {
             self.render_search_results(cx).into_any_element()
         } else {
             self.render_pages_list(cx, active_uid.clone())
-                .into_any_element()
         };
+        let theme = cx.theme();
 
         let mut sidebar = div()
             .w(px(280.0))
             .h_full()
-            .bg(rgb(0x10121b))
+            .bg(theme.sidebar)
             .border_r_1()
-            .border_color(rgb(0x1b1e2b))
+            .border_color(theme.sidebar_border)
             .flex()
             .flex_col()
             .child(
@@ -109,27 +122,25 @@ impl SandpaperApp {
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(0xcdd6f4))
+                            .text_color(theme.sidebar_foreground)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("Pages"),
                     )
                     .child(
-                        div()
-                            .id("new-page")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(0x1b1e2b))
-                            .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                            .text_xs()
-                            .text_color(rgb(0xcdd6f4))
+                        Button::new("new-page")
+                            .label("New")
+                            .xsmall()
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.open_page_dialog(PageDialogMode::Create, cx);
-                            }))
-                            .child("New"),
+                            })),
                     ),
             )
-            .child(div().px_3().pb_2().child(self.sidebar_search_input.clone()))
+            .child(
+                div()
+                    .px_3()
+                    .pb_2()
+                    .child(Input::new(&self.sidebar_search_input).small().cleanable(true)),
+            )
             .child(list);
 
         if let Some(references) = self.render_sidebar_references(cx) {
@@ -143,50 +154,88 @@ impl SandpaperApp {
         &mut self,
         cx: &mut Context<Self>,
         active_uid: Option<String>,
-    ) -> impl IntoElement {
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
         if self.pages.is_empty() {
             return div()
-                .id("pages-scroll")
+                .id("pages-list")
                 .flex_1()
                 .min_h_0()
-                .overflow_scroll()
                 .child(
                     div()
                         .px_3()
                         .py_3()
                         .text_sm()
-                        .text_color(rgb(0x9aa2c8))
+                        .text_color(theme.muted_foreground)
                         .child("No pages yet"),
-                );
+                )
+                .into_any_element();
         }
 
-        div()
-            .id("pages-scroll")
-            .flex_1()
-            .min_h_0()
-            .overflow_scroll()
-            .children(self.pages.iter().cloned().map(|page| {
-                let is_active = active_uid.as_ref().is_some_and(|uid| uid == &page.uid);
-                div()
-                    .id(page.uid.clone())
-                    .px_3()
-                    .py_2()
-                    .cursor_pointer()
-                    .bg(if is_active { rgb(0x1b1e2b) } else { rgb(0x10121b) })
-                    .hover(|s| s.bg(rgb(0x1b1e2b)))
-                    .child(
+        let item_sizes = Rc::new(vec![
+            size(px(0.), px(COMPACT_ROW_HEIGHT));
+            self.pages.len()
+        ]);
+        let active_uid = active_uid.clone();
+
+        v_virtual_list(
+            cx.entity(),
+            "pages-list",
+            item_sizes,
+            move |this, range: std::ops::Range<usize>, _window, cx| {
+                let theme = cx.theme();
+                range
+                    .map(|ix| {
+                        let page = this.pages[ix].clone();
+                        let is_active =
+                            active_uid.as_ref().is_some_and(|uid| uid == &page.uid);
+                        let text_color = if is_active {
+                            theme.sidebar_accent_foreground
+                        } else {
+                            theme.sidebar_foreground
+                        };
+                        let bg = if is_active {
+                            theme.sidebar_accent
+                        } else {
+                            theme.sidebar
+                        };
+                        let hover_bg = theme.sidebar_accent;
+
                         div()
-                            .text_sm()
-                            .text_color(if is_active { rgb(0xffffff) } else { rgb(0xcdd6f4) })
-                            .child(page.title.clone()),
-                    )
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.on_click_page(page.uid.clone(), window, cx);
-                    }))
-            }))
+                            .id(page.uid.clone())
+                            .px_3()
+                            .py_2()
+                            .cursor_pointer()
+                            .bg(bg)
+                            .hover(move |s| {
+                                if is_active {
+                                    s
+                                } else {
+                                    s.bg(hover_bg).cursor_pointer()
+                                }
+                            })
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(text_color)
+                                    .child(page.title.clone()),
+                            )
+                            .on_click(cx.listener(move |this, _event, window, cx| {
+                                this.on_click_page(page.uid.clone(), window, cx);
+                            }))
+                    })
+                    .collect()
+            },
+        )
+        .flex_1()
+        .min_h_0()
+        .size_full()
+        .into_any_element()
     }
 
     fn render_search_results(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let list_hover = theme.list_hover;
         let mut content = div()
             .id("search-scroll")
             .flex_1()
@@ -199,7 +248,7 @@ impl SandpaperApp {
                     .px_3()
                     .py_3()
                     .text_sm()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("No results"),
             );
         }
@@ -210,7 +259,7 @@ impl SandpaperApp {
                     .px_3()
                     .pt_3()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Pages"),
             );
             content = content.children(self.search_pages.iter().cloned().map(|page| {
@@ -221,6 +270,7 @@ impl SandpaperApp {
                     .id(format!("search-page-{}", page_uid))
                     .px_3()
                     .py_2()
+                    .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
                             .flex()
@@ -229,7 +279,7 @@ impl SandpaperApp {
                             .child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0xe7e7ea))
+                                    .text_color(theme.foreground)
                                     .child(page.title.clone()),
                             )
                             .child(
@@ -238,38 +288,26 @@ impl SandpaperApp {
                                     .items_center()
                                     .gap_2()
                                     .child(
-                                        div()
-                                            .id(format!("search-open-{}", page_uid))
-                                            .px_2()
-                                            .py_1()
-                                            .rounded_md()
-                                            .bg(rgb(0x1b1e2b))
-                                            .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                            .text_xs()
-                                            .text_color(rgb(0xcdd6f4))
+                                        Button::new(format!("search-open-{}", page_uid))
+                                            .label("Open")
+                                            .xsmall()
+                                            .ghost()
                                             .on_click(cx.listener(
                                                 move |this, _event, window, cx| {
                                                     this.on_click_page(open_uid.clone(), window, cx);
                                                 },
-                                            ))
-                                            .child("Open"),
+                                            )),
                                     )
                                     .child(
-                                        div()
-                                            .id(format!("search-split-{}", page_uid))
-                                            .px_2()
-                                            .py_1()
-                                            .rounded_md()
-                                            .bg(rgb(0x1b1e2b))
-                                            .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                            .text_xs()
-                                            .text_color(rgb(0xcdd6f4))
+                                        Button::new(format!("search-split-{}", page_uid))
+                                            .label("Split")
+                                            .xsmall()
+                                            .ghost()
                                             .on_click(cx.listener(
                                                 move |this, _event, _window, cx| {
                                                     this.open_secondary_pane_for_page(&split_uid, cx);
                                                 },
-                                            ))
-                                            .child("Split"),
+                                            )),
                                     ),
                             ),
                     )
@@ -282,7 +320,7 @@ impl SandpaperApp {
                     .px_3()
                     .pt_3()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Blocks"),
             );
             content = content.children(self.search_blocks.iter().cloned().map(|block| {
@@ -292,17 +330,17 @@ impl SandpaperApp {
                     .px_3()
                     .py_2()
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgb(0x1b1e2b)))
+                    .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(0xe7e7ea))
+                            .text_color(theme.foreground)
                             .child(snippet),
                     )
                     .child(
                         div()
                             .text_xs()
-                            .text_color(rgb(0x9aa2c8))
+                            .text_color(theme.muted_foreground)
                             .child(block.page_title.clone()),
                     )
                     .on_click(cx.listener(move |this, _event, window, cx| {
@@ -319,6 +357,7 @@ impl SandpaperApp {
             return None;
         }
 
+        let theme = cx.theme();
         let references = self.unlinked_references.clone();
         if references.is_empty() {
             let panel = div()
@@ -328,17 +367,17 @@ impl SandpaperApp {
                 .px_3()
                 .py_3()
                 .border_t_1()
-                .border_color(rgb(0x1b1e2b))
+                .border_color(theme.border)
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(0x9aa2c8))
+                        .text_color(theme.muted_foreground)
                         .child("Unlinked references"),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(0x7f87ad))
+                        .text_color(theme.muted_foreground)
                         .child("No unlinked references."),
                 );
             return Some(panel.into_any_element());
@@ -351,50 +390,55 @@ impl SandpaperApp {
             .px_3()
             .py_3()
             .border_t_1()
-            .border_color(rgb(0x1b1e2b))
+            .border_color(theme.border)
             .child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Unlinked references"),
             );
 
         panel = panel.children(references.iter().map(|entry| {
             let entry = entry.clone();
             let snippet = format_snippet(&entry.snippet, 100);
+            let count_label = if entry.match_count == 1 {
+                "1 match".to_string()
+            } else {
+                format!("{} matches", entry.match_count)
+            };
             div()
                 .flex()
                 .flex_col()
                 .gap_2()
                 .p_2()
                 .rounded_md()
-                .bg(rgb(0x0f111a))
+                .bg(theme.colors.list)
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(0xe7e7ea))
+                        .text_color(theme.foreground)
                         .child(snippet),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(0x9aa2c8))
+                        .text_color(theme.muted_foreground)
                         .child(entry.page_title.clone()),
                 )
                 .child(
                     div()
-                        .id(format!("unlinked-link-{}", entry.block_uid))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .bg(rgb(0x1b1e2b))
-                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
                         .text_xs()
-                        .text_color(rgb(0xcdd6f4))
+                        .text_color(theme.muted_foreground)
+                        .child(count_label),
+                )
+                .child(
+                    Button::new(format!("unlinked-link-{}", entry.block_uid))
+                        .label("Link")
+                        .xsmall()
+                        .ghost()
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.link_unlinked_reference(&entry, cx);
-                        }))
-                        .child("Link"),
+                        })),
                 )
         }));
 
@@ -428,7 +472,7 @@ impl SandpaperApp {
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgb(0x0b0c10))
+            .bg(cx.theme().background)
             .key_context("SandpaperEditor")
             .on_action(cx.listener(Self::insert_block_below))
             .on_action(cx.listener(Self::indent_block))
@@ -448,24 +492,34 @@ impl SandpaperApp {
         container
     }
 
-    fn render_placeholder(&mut self, label: &str, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_placeholder(&mut self, label: &str, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
             .text_sm()
-            .text_color(rgb(0x9aa2c8))
+            .text_color(theme.muted_foreground)
             .child(label.to_string())
     }
 
     fn render_blocks_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.blocks_list_state.clone();
         let list = if self.editor.is_some() {
-            list(state, cx.processor(|this, ix: usize, window, cx| {
-                this.render_block_row_for_pane(EditorPane::Primary, ix, window, cx)
-                    .into_any_element()
-            }))
+            v_virtual_list(
+                cx.entity(),
+                "blocks-list",
+                state.item_sizes.clone(),
+                |this, range: std::ops::Range<usize>, window, cx| {
+                    range
+                        .map(|ix| {
+                            this.render_block_row_for_pane(EditorPane::Primary, ix, window, cx)
+                        })
+                        .collect::<Vec<_>>()
+                },
+            )
+            .track_scroll(&state.scroll_handle)
             .flex_1()
             .min_h_0()
             .size_full()
@@ -481,6 +535,8 @@ impl SandpaperApp {
                 .into_any_element()
         };
 
+        let theme = cx.theme();
+        let is_active = self.active_pane == EditorPane::Primary;
         let mut container = div()
             .id("blocks")
             .flex_1()
@@ -488,7 +544,14 @@ impl SandpaperApp {
             .h_full()
             .flex()
             .flex_col()
-            .p_4();
+            .p_4()
+            .bg(theme.background)
+            .border_1()
+            .border_color(if is_active && self.secondary_pane.is_some() {
+                theme.ring
+            } else {
+                theme.border
+            });
 
         if let Some(header) = self.render_editor_header(cx) {
             container = container.child(header);
@@ -557,6 +620,7 @@ impl SandpaperApp {
         let Some(active_page) = self.active_page.as_ref() else {
             return None;
         };
+        let theme = cx.theme();
         let block_count = self.editor.as_ref().map(|editor| editor.blocks.len()).unwrap_or(0);
         let title = if active_page.title.trim().is_empty() {
             "Untitled"
@@ -572,14 +636,14 @@ impl SandpaperApp {
             .child(
                 div()
                     .text_lg()
-                    .text_color(rgb(0xe7e7ea))
+                    .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title.to_string()),
             )
             .child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child(format!("{block_count} blocks")),
             );
 
@@ -589,6 +653,7 @@ impl SandpaperApp {
                 .flex()
                 .items_center()
                 .gap_1();
+            let crumb_hover = theme.list_hover;
             for (idx, item) in breadcrumbs.iter().enumerate() {
                 let is_last = idx == breadcrumbs.len() - 1;
                 let uid = item.uid.clone();
@@ -598,10 +663,18 @@ impl SandpaperApp {
                     .px_1()
                     .py(px(1.0))
                     .rounded_sm()
-                    .bg(if is_last { rgb(0x1b1e2b) } else { rgb(0x0f111a) })
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
+                    .bg(if is_last {
+                        theme.list_active
+                    } else {
+                        theme.secondary
+                    })
+                    .hover(move |s| s.bg(crumb_hover).cursor_pointer())
                     .text_xs()
-                    .text_color(if is_last { rgb(0xe7e7ea) } else { rgb(0x9aa2c8) })
+                    .text_color(if is_last {
+                        theme.foreground
+                    } else {
+                        theme.muted_foreground
+                    })
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.focus_block_by_uid(&uid, Some(window), cx);
                         cx.notify();
@@ -612,7 +685,7 @@ impl SandpaperApp {
                         div()
                             .ml_1()
                             .text_xs()
-                            .text_color(rgb(0x50567a))
+                            .text_color(theme.muted_foreground)
                             .child("/"),
                     );
                 }
@@ -626,56 +699,62 @@ impl SandpaperApp {
             .items_center()
             .gap_2()
             .child(
-                div()
-                    .id("editor-rename")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                Button::new("editor-rename")
+                    .label("Rename")
+                    .xsmall()
+                    .ghost()
                     .on_click(cx.listener(|this, _event, _window, cx| {
                         this.open_page_dialog(PageDialogMode::Rename, cx);
-                    }))
-                    .child("Rename"),
+                    })),
             )
             .child(
-                div()
-                    .id("editor-split")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.toggle_split_pane(cx);
-                    }))
-                    .child(if self.secondary_pane.is_some() {
+                Button::new("editor-split")
+                    .label(if self.secondary_pane.is_some() {
                         "Close split"
                     } else {
                         "Split"
-                    }),
+                    })
+                    .xsmall()
+                    .ghost()
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.toggle_split_pane(cx);
+                    })),
+            )
+            .child(
+                Button::new("editor-duplicate")
+                    .label("Duplicate to split")
+                    .xsmall()
+                    .ghost()
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.copy_primary_to_secondary(cx);
+                    })),
             );
 
         if self.secondary_pane.is_some() {
-            actions = actions.child(
-                div()
-                    .id("editor-duplicate")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.copy_primary_to_secondary(cx);
-                    }))
-                    .child("Duplicate"),
-            );
+            actions = actions
+                .child(
+                    Button::new("editor-swap")
+                        .label("Swap panes")
+                        .xsmall()
+                        .ghost()
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.swap_panes(cx);
+                        })),
+                )
+                .child(
+                    Button::new("editor-sync-scroll")
+                        .label(if self.sync_scroll {
+                            "Sync scroll: On"
+                        } else {
+                            "Sync scroll: Off"
+                        })
+                        .xsmall()
+                        .ghost()
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.sync_scroll = !this.sync_scroll;
+                            cx.notify();
+                        })),
+                );
         }
 
         actions = actions.child(self.render_backlinks_toggle(cx));
@@ -696,32 +775,26 @@ impl SandpaperApp {
     fn render_backlinks_toggle(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let total = self.backlinks.len() + self.block_backlinks.len();
         let is_open = self.backlinks_open;
-        let mut toggle = div()
-            .id("backlinks-toggle")
-            .px_2()
-            .py_1()
-            .rounded_md()
-            .bg(if is_open { rgb(0x22314d) } else { rgb(0x1b1e2b) })
-            .hover(|s| s.bg(rgb(0x2a3a5c)).cursor_pointer())
-            .text_xs()
-            .text_color(rgb(0xcdd6f4))
+        let label = if total > 0 {
+            format!(
+                "{} ({total})",
+                if is_open { "Hide backlinks" } else { "Show backlinks" }
+            )
+        } else if is_open {
+            "Hide backlinks".to_string()
+        } else {
+            "Show backlinks".to_string()
+        };
+
+        Button::new("backlinks-toggle")
+            .label(label)
+            .xsmall()
+            .ghost()
             .on_click(cx.listener(|this, _event, _window, cx| {
                 this.backlinks_open = !this.backlinks_open;
                 cx.notify();
             }))
-            .child(if is_open { "Hide backlinks" } else { "Show backlinks" });
-
-        if total > 0 {
-            toggle = toggle.child(
-                div()
-                    .ml_2()
-                    .text_xs()
-                    .text_color(rgb(0x9aa2c8))
-                    .child(format!("{total}")),
-            );
-        }
-
-        toggle.into_any_element()
+            .into_any_element()
     }
 
     fn render_selection_toolbar_for_pane(
@@ -729,6 +802,7 @@ impl SandpaperApp {
         pane: EditorPane,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
+        let theme = cx.theme();
         let selection = self.selection_for_pane(pane)?;
         if !selection.has_range() {
             return None;
@@ -745,9 +819,9 @@ impl SandpaperApp {
                 .px_2()
                 .py_2()
                 .rounded_md()
-                .bg(rgb(0x11131f))
+                .bg(theme.colors.list)
                 .border_1()
-                .border_color(rgb(0x23263a))
+                .border_color(theme.border)
                 .child(
                     div()
                         .flex()
@@ -756,120 +830,78 @@ impl SandpaperApp {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9aa2c8))
+                                .text_color(theme.muted_foreground)
                                 .child("Selection"),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-duplicate"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-duplicate"))
+                                .label("Duplicate")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.duplicate_selection_in_pane(pane, window, cx);
-                                }))
-                                .child("Duplicate"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-delete"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-delete"))
+                                .label("Delete")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, _window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.delete_selection_in_pane(pane, cx);
-                                }))
-                                .child("Delete"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-indent"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-indent"))
+                                .label("Indent")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, _window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.indent_selection_in_pane(pane, cx);
-                                }))
-                                .child("Indent"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-outdent"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-outdent"))
+                                .label("Outdent")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, _window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.outdent_selection_in_pane(pane, cx);
-                                }))
-                                .child("Outdent"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-move-up"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-move-up"))
+                                .label("Move up")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.move_selection_in_pane(pane, -1, window, cx);
-                                }))
-                                .child("Move up"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-move-down"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-move-down"))
+                                .label("Move down")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, window, cx| {
                                     this.set_active_pane(pane, cx);
                                     this.move_selection_in_pane(pane, 1, window, cx);
-                                }))
-                                .child("Move down"),
+                                })),
                         )
                         .child(
-                            div()
-                                .id(format!("{id_prefix}-clear"))
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new(format!("{id_prefix}-clear"))
+                                .label("Clear")
+                                .xsmall()
+                                .ghost()
                                 .on_click(cx.listener(move |this, _event, _window, cx| {
                                     this.clear_selection_for_pane(pane);
                                     cx.notify();
-                                }))
-                                .child("Clear"),
+                                })),
                         ),
                 )
                 .into_any_element(),
@@ -880,6 +912,7 @@ impl SandpaperApp {
         if !self.slash_menu.open {
             return None;
         }
+        let theme = cx.theme();
 
         let mut menu = div()
             .absolute()
@@ -887,18 +920,19 @@ impl SandpaperApp {
             .left(px(24.0))
             .w(px(220.0))
             .rounded_md()
-            .bg(rgb(0x10121b))
+            .bg(theme.popover)
             .border_1()
-            .border_color(rgb(0x23263a))
+            .border_color(theme.border)
             .child(
                 div()
                     .px_3()
                     .py_2()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Commands"),
             );
 
+        let hover_bg = theme.list_hover;
         for (id, label) in SLASH_COMMANDS.iter().copied() {
             menu = menu.child(
                 div()
@@ -906,8 +940,8 @@ impl SandpaperApp {
                     .px_3()
                     .py_2()
                     .text_sm()
-                    .text_color(rgb(0xe7e7ea))
-                    .hover(|s| s.bg(rgb(0x1b1e2b)).cursor_pointer())
+                    .text_color(theme.foreground)
+                    .hover(move |s| s.bg(hover_bg).cursor_pointer())
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.apply_slash_command(id, window, cx);
                     }))
@@ -928,6 +962,7 @@ impl SandpaperApp {
         if self.active_page.is_none() {
             return None;
         }
+        let theme = cx.theme();
 
         let active_block_text = self
             .editor
@@ -937,14 +972,18 @@ impl SandpaperApp {
 
         let has_page_backlinks = !self.backlinks.is_empty();
         let has_block_backlinks = !self.block_backlinks.is_empty();
+        let list_bg = theme.colors.list;
+        let list_hover = theme.list_hover;
+        let muted = theme.muted_foreground;
+        let foreground = theme.foreground;
 
         let mut panel = div()
             .id("backlinks-panel")
             .w(px(320.0))
             .h_full()
             .border_l_1()
-            .border_color(rgb(0x1b1e2b))
-            .bg(rgb(0x0f111a))
+            .border_color(theme.sidebar_border)
+            .bg(theme.sidebar)
             .flex()
             .flex_col()
             .min_h_0()
@@ -956,29 +995,23 @@ impl SandpaperApp {
                     .items_center()
                     .justify_between()
                     .border_b_1()
-                    .border_color(rgb(0x1b1e2b))
+                    .border_color(theme.border)
                     .child(
                         div()
                             .text_sm()
-                            .text_color(rgb(0xe7e7ea))
+                            .text_color(theme.foreground)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("Backlinks"),
                     )
                     .child(
-                        div()
-                            .id("backlinks-close")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(0x1b1e2b))
-                            .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                            .text_xs()
-                            .text_color(rgb(0xcdd6f4))
+                        Button::new("backlinks-close")
+                            .label("Close")
+                            .xsmall()
+                            .ghost()
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.backlinks_open = false;
                                 cx.notify();
-                            }))
-                            .child("Close"),
+                            })),
                     ),
             );
 
@@ -988,44 +1021,108 @@ impl SandpaperApp {
             .min_h_0()
             .overflow_scroll();
 
+        if !has_page_backlinks && !has_block_backlinks {
+            body = body.child(
+                div()
+                    .px_3()
+                    .py_3()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("No backlinks yet."),
+            );
+        }
+
         if has_page_backlinks {
             body = body.child(
                 div()
                     .px_3()
                     .pt_3()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Page backlinks"),
             );
             body = body.child(div().h(px(6.0)));
             body = body.children(self.backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
+                let page_uid = entry.page_uid.clone();
+                let block_uid = entry.block_uid.clone();
+                let open_block_uid = block_uid.clone();
+                let split_page_uid = entry.page_uid.clone();
+                let split_block_uid = block_uid.clone();
                 div()
                     .id(format!("backlinks-page-{}", entry.block_uid))
                     .px_3()
                     .py_2()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(0x1b1e2b)))
+                    .rounded_md()
+                    .bg(list_bg)
+                    .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0xe7e7ea))
-                            .child(snippet),
+                            .flex()
+                            .items_start()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(foreground)
+                                            .child(snippet),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(entry.page_title.clone()),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        Button::new(format!("backlinks-open-{}", block_uid))
+                                            .label("Open")
+                                            .xsmall()
+                                            .ghost()
+                                            .on_click(cx.listener(
+                                                move |this, _event, window, cx| {
+                                                    this.open_page_and_focus_block(
+                                                        &page_uid,
+                                                        &open_block_uid,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new(format!("backlinks-split-{}", block_uid))
+                                            .label("Split")
+                                            .xsmall()
+                                            .ghost()
+                                            .on_click(cx.listener(
+                                                move |this, _event, _window, cx| {
+                                                    this.open_secondary_pane_for_page(
+                                                        &split_page_uid,
+                                                        cx,
+                                                    );
+                                                    this.focus_block_by_uid_in_pane(
+                                                        EditorPane::Secondary,
+                                                        &split_block_uid,
+                                                        None,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
+                                    ),
+                            ),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x9aa2c8))
-                            .child(entry.page_title.clone()),
-                    )
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.open_page_and_focus_block(
-                            &entry.page_uid,
-                            &entry.block_uid,
-                            window,
-                            cx,
-                        );
-                    }))
             }));
         }
 
@@ -1040,7 +1137,7 @@ impl SandpaperApp {
                     .px_3()
                     .pt_3()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("Block backlinks"),
             );
             body = body.child(
@@ -1048,37 +1145,93 @@ impl SandpaperApp {
                     .px_3()
                     .pt_1()
                     .text_xs()
-                    .text_color(rgb(0x7f87ad))
+                    .text_color(theme.muted_foreground)
                     .child(format!("Linked to {block_label}")),
             );
             body = body.children(self.block_backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
+                let page_uid = entry.page_uid.clone();
+                let block_uid = entry.block_uid.clone();
+                let open_block_uid = block_uid.clone();
+                let split_page_uid = entry.page_uid.clone();
+                let split_block_uid = block_uid.clone();
                 div()
                     .id(format!("backlinks-block-{}", entry.block_uid))
                     .px_3()
                     .py_2()
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(0x1b1e2b)))
+                    .rounded_md()
+                    .bg(list_bg)
+                    .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0xe7e7ea))
-                            .child(snippet),
+                            .flex()
+                            .items_start()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(foreground)
+                                            .child(snippet),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child(entry.page_title.clone()),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        Button::new(format!("backlinks-block-open-{}", block_uid))
+                                            .label("Open")
+                                            .xsmall()
+                                            .ghost()
+                                            .on_click(cx.listener(
+                                                move |this, _event, window, cx| {
+                                                    this.open_page_and_focus_block(
+                                                        &page_uid,
+                                                        &open_block_uid,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        Button::new(format!(
+                                            "backlinks-block-split-{}",
+                                            block_uid
+                                        ))
+                                        .label("Split")
+                                        .xsmall()
+                                        .ghost()
+                                        .on_click(cx.listener(
+                                            move |this, _event, _window, cx| {
+                                                this.open_secondary_pane_for_page(
+                                                    &split_page_uid,
+                                                    cx,
+                                                );
+                                                this.focus_block_by_uid_in_pane(
+                                                    EditorPane::Secondary,
+                                                    &split_block_uid,
+                                                    None,
+                                                    cx,
+                                                );
+                                            },
+                                        )),
+                                    ),
+                            ),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x9aa2c8))
-                            .child(entry.page_title.clone()),
-                    )
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.open_page_and_focus_block(
-                            &entry.page_uid,
-                            &entry.block_uid,
-                            window,
-                            cx,
-                        );
-                    }))
             }));
         }
 
@@ -1099,15 +1252,28 @@ impl SandpaperApp {
             let list_state = pane.list_state.clone();
             (title, block_count, list_state)
         };
-        let list = list(list_state, cx.processor(|this, ix: usize, window, cx| {
-            this.render_block_row_for_pane(EditorPane::Secondary, ix, window, cx)
-                .into_any_element()
-        }))
+
+        let list = v_virtual_list(
+            cx.entity(),
+            "secondary-blocks",
+            list_state.item_sizes.clone(),
+            |this, range: std::ops::Range<usize>, window, cx| {
+                range
+                    .map(|ix| {
+                        this.render_block_row_for_pane(EditorPane::Secondary, ix, window, cx)
+                    })
+                    .collect::<Vec<_>>()
+            },
+        )
+        .track_scroll(&list_state.scroll_handle)
         .flex_1()
         .min_h_0()
         .size_full();
+
         let breadcrumbs = self.build_breadcrumb_items_for_pane(EditorPane::Secondary);
         let is_active = self.active_pane == EditorPane::Secondary;
+        let toolbar = self.render_selection_toolbar_for_pane(EditorPane::Secondary, cx);
+        let theme = cx.theme();
 
         let mut title_group = div()
             .flex()
@@ -1116,14 +1282,14 @@ impl SandpaperApp {
             .child(
                 div()
                     .text_sm()
-                    .text_color(rgb(0xe7e7ea))
+                    .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child(title),
             )
             .child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child(format!("{block_count} blocks")),
             );
 
@@ -1133,6 +1299,7 @@ impl SandpaperApp {
                 .flex()
                 .items_center()
                 .gap_1();
+            let crumb_hover = theme.list_hover;
             for (idx, item) in breadcrumbs.iter().enumerate() {
                 let is_last = idx == breadcrumbs.len() - 1;
                 let uid = item.uid.clone();
@@ -1142,10 +1309,14 @@ impl SandpaperApp {
                     .px_1()
                     .py(px(1.0))
                     .rounded_sm()
-                    .bg(if is_last { rgb(0x1b1e2b) } else { rgb(0x0f111a) })
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
+                    .bg(if is_last { theme.list_active } else { theme.secondary })
+                    .hover(move |s| s.bg(crumb_hover).cursor_pointer())
                     .text_xs()
-                    .text_color(if is_last { rgb(0xe7e7ea) } else { rgb(0x9aa2c8) })
+                    .text_color(if is_last {
+                        theme.foreground
+                    } else {
+                        theme.muted_foreground
+                    })
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.focus_block_by_uid_in_pane(
                             EditorPane::Secondary,
@@ -1161,7 +1332,7 @@ impl SandpaperApp {
                         div()
                             .ml_1()
                             .text_xs()
-                            .text_color(rgb(0x50567a))
+                            .text_color(theme.muted_foreground)
                             .child("/"),
                     );
                 }
@@ -1178,7 +1349,7 @@ impl SandpaperApp {
             .min_h_0()
             .p_3();
 
-        if let Some(toolbar) = self.render_selection_toolbar_for_pane(EditorPane::Secondary, cx) {
+        if let Some(toolbar) = toolbar {
             body = body.child(toolbar);
         }
 
@@ -1190,8 +1361,8 @@ impl SandpaperApp {
                 .w(px(360.0))
                 .h_full()
                 .border_l_1()
-                .border_color(if is_active { rgb(0x2d6cdf) } else { rgb(0x1b1e2b) })
-                .bg(rgb(0x0f111a))
+                .border_color(if is_active { theme.ring } else { theme.sidebar_border })
+                .bg(theme.sidebar)
                 .flex()
                 .flex_col()
                 .min_h_0()
@@ -1203,7 +1374,7 @@ impl SandpaperApp {
                         .items_center()
                         .justify_between()
                         .border_b_1()
-                        .border_color(rgb(0x1b1e2b))
+                        .border_color(theme.border)
                         .child(title_group)
                         .child(
                             div()
@@ -1211,45 +1382,28 @@ impl SandpaperApp {
                                 .items_center()
                                 .gap_2()
                                 .child(
-                                    div()
-                                        .id("secondary-open")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("secondary-open")
+                                        .label("Open")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(move |this, _event, window, cx| {
                                             this.copy_secondary_to_primary(window, cx);
-                                        }))
-                                        .child("Open"),
+                                        })),
                                 )
                                 .child(
-                                    div()
-                                        .id("secondary-swap")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("secondary-swap")
+                                        .label("Swap")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.swap_panes(cx);
-                                        }))
-                                        .child("Swap"),
+                                        })),
                                 )
                                 .child(
-                                    div()
-                                        .id("secondary-close")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("secondary-close")
+                                        .label("Close")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             if this
                                                 .secondary_pane
@@ -1262,11 +1416,11 @@ impl SandpaperApp {
                                             this.active_pane = EditorPane::Primary;
                                             this.sync_block_input_from_active_for_pane(
                                                 EditorPane::Primary,
+                                                None,
                                                 cx,
                                             );
                                             cx.notify();
-                                        }))
-                                        .child("Close"),
+                                        })),
                                 ),
                         ),
                 )
@@ -1302,27 +1456,44 @@ impl SandpaperApp {
         let indent_px = px(12.0 + (block.indent.max(0) as f32) * 18.0);
 
         let show_input = is_active && !has_selection && self.active_pane == pane;
-        let content = if show_input {
-            self.block_input.clone().into_any_element()
-        } else {
-            div()
-                .text_sm()
-                .text_color(rgb(0xe7e7ea))
-                .child(if block.text.is_empty() { " " } else { &block.text }.to_string())
-                .into_any_element()
-        };
         let actions = if show_input {
             self.render_block_actions_for_pane(pane, ix, cx)
                 .into_any_element()
         } else {
             div().into_any_element()
         };
+        let theme = cx.theme();
+        let content = if show_input {
+            let input = Input::new(&self.block_input)
+                .appearance(false)
+                .bordered(false)
+                .focus_bordered(false)
+                .small();
+            div()
+                .capture_key_down(cx.listener(move |this, event, window, cx| {
+                    if this.handle_block_input_key_down(pane, event, window, cx) {
+                        cx.stop_propagation();
+                    }
+                }))
+                .child(input)
+                .into_any_element()
+        } else {
+            div()
+                .text_sm()
+                .text_color(theme.foreground)
+                .child(if block.text.is_empty() { " " } else { &block.text }.to_string())
+                .into_any_element()
+        };
 
         let base_bg = if pane == EditorPane::Secondary {
-            rgb(0x0f111a)
+            theme.sidebar
         } else {
-            rgb(0x0b0c10)
+            theme.background
         };
+        let selected_bg = theme.selection;
+        let active_bg = theme.list_active;
+        let hover_bg = theme.list_hover;
+        let highlight_bg = theme.accent.opacity(0.25);
 
         div()
             .id(match pane {
@@ -1337,15 +1508,21 @@ impl SandpaperApp {
             .px_2()
             .rounded_md()
             .bg(if is_selected {
-                rgb(0x1f2a44)
+                selected_bg
             } else if is_active {
-                rgb(0x151826)
+                active_bg
             } else if is_highlighted {
-                rgb(0x1f2a44)
+                highlight_bg
             } else {
                 base_bg
             })
-            .hover(|s| s.bg(rgb(0x151826)))
+            .hover(move |s| {
+                if is_active || is_selected {
+                    s
+                } else {
+                    s.bg(hover_bg)
+                }
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
@@ -1406,7 +1583,7 @@ impl SandpaperApp {
                     .w(px(10.0))
                     .h(px(10.0))
                     .rounded_full()
-                    .bg(rgb(0x2c324c)),
+                    .bg(theme.border),
             )
             .child(div().flex_1().min_w_0().child(content))
             .child(actions)
@@ -1433,72 +1610,49 @@ impl SandpaperApp {
             .items_center()
             .gap_1()
             .child(
-                div()
-                    .id(format!("{id_prefix}-insert-{ix}"))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                Button::new(format!("{id_prefix}-insert-{ix}"))
+                    .label("Insert")
+                    .xsmall()
+                    .ghost()
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.insert_block_after_in_pane(pane, insert_ix, window, cx);
-                    }))
-                    .child("Insert"),
+                    })),
             )
             .child(
-                div()
-                    .id(format!("{id_prefix}-review-{ix}"))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                Button::new(format!("{id_prefix}-review-{ix}"))
+                    .label("Review")
+                    .xsmall()
+                    .ghost()
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.set_active_pane(pane, cx);
                         this.add_review_from_block_in_pane(pane, review_ix, cx);
-                    }))
-                    .child("Review"),
+                    })),
             )
             .child(
-                div()
-                    .id(format!("{id_prefix}-link-{ix}"))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                Button::new(format!("{id_prefix}-link-{ix}"))
+                    .label("Link")
+                    .xsmall()
+                    .ghost()
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.link_block_to_page_in_pane(pane, link_ix, window, cx);
-                    }))
-                    .child("Link"),
+                    })),
             )
             .child(
-                div()
-                    .id(format!("{id_prefix}-duplicate-{ix}"))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                Button::new(format!("{id_prefix}-duplicate-{ix}"))
+                    .label("Duplicate")
+                    .xsmall()
+                    .ghost()
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.duplicate_block_at_in_pane(pane, duplicate_ix, window, cx);
-                    }))
-                    .child("Duplicate"),
+                    })),
             )
     }
 
     fn render_capture_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         div()
             .flex_1()
             .h_full()
@@ -1507,31 +1661,37 @@ impl SandpaperApp {
             .child(
                 div()
                     .text_lg()
-                    .text_color(rgb(0xe7e7ea))
+                    .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child("Quick Capture"),
             )
             .child(div().h(px(12.0)))
-            .child(self.capture_input.clone())
-            .child(div().h(px(12.0)))
             .child(
                 div()
-                    .id("capture-submit")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(rgb(0x1b1e2b))
-                    .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                    .text_xs()
-                    .text_color(rgb(0xcdd6f4))
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "enter"
+                            && event.keystroke.modifiers.secondary()
+                        {
+                            this.add_capture(window, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .child(Input::new(&self.capture_input).h(px(160.0))),
+            )
+            .child(div().h(px(12.0)))
+            .child(
+                Button::new("capture-submit")
+                    .label("Capture")
+                    .xsmall()
+                    .primary()
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.add_capture(window, cx);
-                    }))
-                    .child("Capture"),
+                    })),
             )
     }
 
     fn render_review_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
         let mut body = div()
             .flex_1()
             .h_full()
@@ -1540,7 +1700,7 @@ impl SandpaperApp {
             .child(
                 div()
                     .text_lg()
-                    .text_color(rgb(0xe7e7ea))
+                    .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .child("Review Queue"),
             )
@@ -1550,7 +1710,7 @@ impl SandpaperApp {
             body = body.child(
                 div()
                     .text_sm()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("No review items due yet."),
             );
         } else {
@@ -1560,27 +1720,38 @@ impl SandpaperApp {
                 let item_id = item.id;
                 let snippet = format_snippet(&item.text, 80);
                 let page_title = item.page_title.clone();
+                let due_label = chrono::Local
+                    .timestamp_millis_opt(item.due_at)
+                    .single()
+                    .map(|dt| dt.format("%b %d, %H:%M").to_string())
+                    .unwrap_or_else(|| "Due soon".to_string());
 
                 body = body.child(
                     div()
                         .rounded_md()
-                        .bg(rgb(0x10121b))
+                        .bg(theme.colors.list)
                         .border_1()
-                        .border_color(rgb(0x23263a))
+                        .border_color(theme.border)
                         .px_3()
                         .py_3()
                         .mb_3()
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(0xe7e7ea))
+                                .text_color(theme.foreground)
                                 .child(snippet),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9aa2c8))
+                                .text_color(theme.muted_foreground)
                                 .child(page_title),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(format!("Due {due_label}")),
                         )
                         .child(
                             div()
@@ -1589,15 +1760,10 @@ impl SandpaperApp {
                                 .gap_2()
                                 .pt_2()
                                 .child(
-                                    div()
-                                        .id(format!("review-open-{item_id}"))
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new(format!("review-open-{item_id}"))
+                                        .label("Open")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(
                                             move |this, _event, window, cx| {
                                                 this.open_page_and_focus_block(
@@ -1607,38 +1773,34 @@ impl SandpaperApp {
                                                     cx,
                                                 );
                                             },
-                                        ))
-                                        .child("Open"),
+                                        )),
                                 )
                                 .child(
-                                    div()
-                                        .id(format!("review-done-{item_id}"))
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new(format!("review-done-{item_id}"))
+                                        .label("Done")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(move |this, _event, _window, cx| {
                                             this.review_mark_done(item_id, cx);
-                                        }))
-                                        .child("Done"),
+                                        })),
                                 )
                                 .child(
-                                    div()
-                                        .id(format!("review-snooze-{item_id}"))
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new(format!("review-snooze-day-{item_id}"))
+                                        .label("Snooze 1 day")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(move |this, _event, _window, cx| {
                                             this.review_snooze_day(item_id, cx);
-                                        }))
-                                        .child("Snooze"),
+                                        })),
+                                )
+                                .child(
+                                    Button::new(format!("review-snooze-week-{item_id}"))
+                                        .label("Snooze 1 week")
+                                        .xsmall()
+                                        .ghost()
+                                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                                            this.review_snooze_week(item_id, cx);
+                                        })),
                                 ),
                         ),
                 );
@@ -1652,6 +1814,7 @@ impl SandpaperApp {
         if !self.page_dialog_open {
             return None;
         }
+        let theme = cx.theme();
 
         let title = match self.page_dialog_mode {
             PageDialogMode::Create => "Create Page",
@@ -1676,9 +1839,9 @@ impl SandpaperApp {
                         .w(px(420.0))
                         .p_4()
                         .rounded_lg()
-                        .bg(rgb(0x10121b))
+                        .bg(theme.popover)
                         .border_1()
-                        .border_color(rgb(0x23263a))
+                        .border_color(theme.border)
                         .child(
                             div()
                                 .flex()
@@ -1687,43 +1850,31 @@ impl SandpaperApp {
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0xe7e7ea))
+                                        .text_color(theme.foreground)
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child(title),
                                 )
                                 .child(
-                                    div()
-                                        .id("page-dialog-close")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("page-dialog-close")
+                                        .label("Close")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.close_page_dialog(cx);
-                                        }))
-                                        .child("Close"),
+                                        })),
                                 ),
                         )
                         .child(div().h(px(8.0)))
-                        .child(self.page_dialog_input.clone())
+                        .child(Input::new(&self.page_dialog_input).small())
                         .child(div().h(px(8.0)))
                         .child(
-                            div()
-                                .id("page-dialog-confirm")
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new("page-dialog-confirm")
+                                .label(confirm_label)
+                                .xsmall()
+                                .primary()
                                 .on_click(cx.listener(|this, _event, _window, cx| {
                                     this.confirm_page_dialog(cx);
-                                }))
-                                .child(confirm_label),
+                                })),
                         ),
                 )
                 .into_any_element(),
@@ -1734,17 +1885,19 @@ impl SandpaperApp {
         if !self.vault_dialog_open {
             return None;
         }
+        let theme = cx.theme();
 
         let vaults = self.vaults.clone();
         let active_id = self.active_vault_id.clone();
         let error = self.vault_dialog_error.clone();
 
         let mut list = div().flex().flex_col().gap_2().pb_3();
+        let list_hover = theme.list_hover;
         if vaults.is_empty() {
             list = list.child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0x9aa2c8))
+                    .text_color(theme.muted_foreground)
                     .child("No vaults yet."),
             );
         } else {
@@ -1757,10 +1910,14 @@ impl SandpaperApp {
                         .px_2()
                         .py_2()
                         .rounded_md()
-                        .bg(if is_active { rgb(0x1f2a44) } else { rgb(0x0f111a) })
-                        .hover(|s| s.bg(rgb(0x151826)).cursor_pointer())
+                        .bg(if is_active { theme.list_active } else { theme.colors.list })
+                        .hover(move |s| s.bg(list_hover).cursor_pointer())
                         .text_sm()
-                        .text_color(if is_active { rgb(0xe7e7ea) } else { rgb(0x9aa2c8) })
+                        .text_color(if is_active {
+                            theme.foreground
+                        } else {
+                            theme.muted_foreground
+                        })
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.set_active_vault(id.clone(), cx);
                         }))
@@ -1773,7 +1930,7 @@ impl SandpaperApp {
             list = list.child(
                 div()
                     .text_xs()
-                    .text_color(rgb(0xf38ba8))
+                    .text_color(theme.danger_foreground)
                     .child(msg),
             );
         }
@@ -1792,9 +1949,9 @@ impl SandpaperApp {
                         .w(px(500.0))
                         .p_4()
                         .rounded_lg()
-                        .bg(rgb(0x10121b))
+                        .bg(theme.popover)
                         .border_1()
-                        .border_color(rgb(0x23263a))
+                        .border_color(theme.border)
                         .child(
                             div()
                                 .flex()
@@ -1803,24 +1960,18 @@ impl SandpaperApp {
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0xe7e7ea))
+                                        .text_color(theme.foreground)
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child("Vaults"),
                                 )
                                 .child(
-                                    div()
-                                        .id("vault-dialog-close")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("vault-dialog-close")
+                                        .label("Close")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.close_vault_dialog(cx);
-                                        }))
-                                        .child("Close"),
+                                        })),
                                 ),
                         )
                         .child(div().h(px(8.0)))
@@ -1828,7 +1979,7 @@ impl SandpaperApp {
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(0xe7e7ea))
+                                .text_color(theme.foreground)
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .child("Create new vault"),
                         )
@@ -1836,33 +1987,27 @@ impl SandpaperApp {
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9aa2c8))
+                                .text_color(theme.muted_foreground)
                                 .child("Name"),
                         )
-                        .child(self.vault_dialog_name_input.clone())
+                        .child(Input::new(&self.vault_dialog_name_input).small())
                         .child(div().h(px(8.0)))
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(0x9aa2c8))
+                                .text_color(theme.muted_foreground)
                                 .child("Path"),
                         )
-                        .child(self.vault_dialog_path_input.clone())
+                        .child(Input::new(&self.vault_dialog_path_input).small())
                         .child(div().h(px(8.0)))
                         .child(
-                            div()
-                                .id("vault-create")
-                                .px_2()
-                                .py_1()
-                                .rounded_md()
-                                .bg(rgb(0x1b1e2b))
-                                .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                .text_xs()
-                                .text_color(rgb(0xcdd6f4))
+                            Button::new("vault-create")
+                                .label("Create vault")
+                                .xsmall()
+                                .primary()
                                 .on_click(cx.listener(|this, _event, _window, cx| {
                                     this.create_vault(cx);
-                                }))
-                                .child("Create vault"),
+                                })),
                         ),
                 )
                 .into_any_element(),
@@ -1874,57 +2019,75 @@ impl SandpaperApp {
             return None;
         }
 
+        let theme = cx.theme();
         let commands = self.filtered_palette_items();
         let active_ix = self.palette_index;
+        let list_active = theme.list_active;
+        let list_bg = theme.colors.list;
+        let list_hover = theme.list_hover;
+        let foreground = theme.foreground;
+        let muted = theme.muted_foreground;
 
-        let mut list = div().flex().flex_col().gap_1();
-
-        if commands.is_empty() {
-            list = list.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(0x9aa2c8))
-                    .child("No matches"),
-            );
+        let list = if commands.is_empty() {
+            div()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child("No matches")
+                .into_any_element()
         } else {
-            for (idx, item) in commands.iter().enumerate() {
-                let is_active = idx == active_ix;
-                let label = item.label.clone();
-                let hint = item.hint.clone();
+            let item_sizes = Rc::new(vec![
+                size(px(0.), px(COMPACT_ROW_HEIGHT));
+                commands.len()
+            ]);
+            v_virtual_list(
+                cx.entity(),
+                "palette-list",
+                item_sizes,
+                move |_this, range: std::ops::Range<usize>, _window, cx| {
+                    range
+                        .map(|idx| {
+                            let item = commands[idx].clone();
+                            let is_active = idx == active_ix;
+                            let label = item.label.clone();
+                            let hint = item.hint.clone();
 
-                let mut row = div()
-                    .id(format!("palette-item-{}", item.id))
-                    .px_3()
-                    .py_2()
-                    .rounded_md()
-                    .bg(if is_active { rgb(0x1f2a44) } else { rgb(0x0f111a) })
-                    .hover(|s| s.bg(rgb(0x151826)).cursor_pointer())
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xe7e7ea))
-                            .child(label),
-                    );
+                            let mut row = div()
+                                .id(format!("palette-item-{}", item.id))
+                                .px_3()
+                                .py_2()
+                                .rounded_md()
+                                .bg(if is_active { list_active } else { list_bg })
+                                .hover(move |s| s.bg(list_hover).cursor_pointer())
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(foreground)
+                                        .child(label),
+                                );
 
-                if let Some(hint) = hint {
-                    row = row.child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x9aa2c8))
-                            .child(hint),
-                    );
-                }
+                            if let Some(hint) = hint {
+                                row = row.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(hint),
+                                );
+                            }
 
-                list = list.child(
-                    row.on_click(cx.listener(move |this, _event, window, cx| {
-                        this.run_palette_command(idx, window, cx);
-                    })),
-                );
-            }
-        }
+                            row.on_click(cx.listener(move |this, _event, window, cx| {
+                                this.run_palette_command(idx, window, cx);
+                            }))
+                        })
+                        .collect::<Vec<_>>()
+                },
+            )
+            .flex_1()
+            .min_h_0()
+            .into_any_element()
+        };
 
         Some(
             div()
@@ -1941,9 +2104,9 @@ impl SandpaperApp {
                         .w(px(520.0))
                         .p_4()
                         .rounded_lg()
-                        .bg(rgb(0x10121b))
+                        .bg(theme.popover)
                         .border_1()
-                        .border_color(rgb(0x23263a))
+                        .border_color(theme.border)
                         .child(
                             div()
                                 .flex()
@@ -1952,28 +2115,22 @@ impl SandpaperApp {
                                 .child(
                                     div()
                                         .text_sm()
-                                        .text_color(rgb(0xe7e7ea))
+                                        .text_color(theme.foreground)
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child("Command palette"),
                                 )
                                 .child(
-                                    div()
-                                        .id("command-palette-close")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x1b1e2b))
-                                        .hover(|s| s.bg(rgb(0x23263a)).cursor_pointer())
-                                        .text_xs()
-                                        .text_color(rgb(0xcdd6f4))
+                                    Button::new("command-palette-close")
+                                        .label("Close")
+                                        .xsmall()
+                                        .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.close_command_palette(cx);
-                                        }))
-                                        .child("Close"),
+                                        })),
                                 ),
                         )
                         .child(div().h(px(8.0)))
-                        .child(self.palette_input.clone())
+                        .child(Input::new(&self.palette_input).small().cleanable(true))
                         .child(list),
                 )
                 .into_any_element(),
@@ -2007,7 +2164,7 @@ impl Render for SandpaperApp {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x0b0c10))
+            .bg(cx.theme().background)
             .child(self.render_topbar(cx))
             .child(
                 div()
