@@ -1,4 +1,4 @@
-use sandpaper_lib::db::Database;
+use sandpaper_core::db::Database;
 use std::time::Instant;
 
 const TOTAL_BLOCKS: usize = 100_000;

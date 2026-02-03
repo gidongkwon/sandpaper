@@ -182,7 +182,7 @@ const MIGRATIONS: &[Migration] = &[
     },
 ];
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PageRecord {
     pub id: i64,
     pub uid: String,
@@ -214,7 +214,7 @@ pub struct BlockSnapshot {
     pub indent: i64,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlockPageRecord {
     pub block_uid: String,
     pub text: String,
@@ -508,6 +508,31 @@ impl Database {
         rows.collect()
     }
 
+    pub fn search_block_page_summaries(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> rusqlite::Result<Vec<BlockPageRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT b.uid, b.text, p.uid, p.title
+             FROM blocks b
+             JOIN blocks_fts fts ON b.id = fts.rowid
+             JOIN pages p ON b.page_id = p.id
+             WHERE blocks_fts MATCH ?1
+             ORDER BY bm25(blocks_fts)
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![query, limit], |row| {
+            Ok(BlockPageRecord {
+                block_uid: row.get(0)?,
+                text: row.get(1)?,
+                page_uid: row.get(2)?,
+                page_title: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn load_blocks_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<BlockSnapshot>> {
         let mut stmt = self.conn.prepare(
             "SELECT uid, text, props FROM blocks WHERE page_id = ?1 ORDER BY sort_key",
@@ -769,6 +794,24 @@ impl Database {
         rows.collect()
     }
 
+    pub fn list_blocks_with_block_refs(&self) -> rusqlite::Result<Vec<BlockPageRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT blocks.uid, blocks.text, pages.uid, pages.title
+             FROM blocks
+             JOIN pages ON blocks.page_id = pages.id
+             WHERE blocks.text LIKE '%((%'",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(BlockPageRecord {
+                block_uid: row.get(0)?,
+                text: row.get(1)?,
+                page_uid: row.get(2)?,
+                page_title: row.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn delete_edge(&self, edge_id: i64) -> rusqlite::Result<()> {
         self.conn
             .execute("DELETE FROM edges WHERE id = ?1", [edge_id])?;
@@ -791,8 +834,8 @@ impl Database {
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn list_sync_ops_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<SyncOp>> {
-        let mut stmt = self.conn.prepare(
+pub fn list_sync_ops_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<SyncOp>> {
+    let mut stmt = self.conn.prepare(
             "SELECT id, op_id, page_id, device_id, op_type, payload, created_at
              FROM sync_ops
              WHERE page_id = ?1
@@ -991,6 +1034,37 @@ mod tests {
     }
 
     #[test]
+    fn list_blocks_with_block_refs_filters_blocks() {
+        let db = Database::new_in_memory().expect("db");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-1", "Page 1").expect("page");
+
+        db.insert_block(
+            page_id,
+            "block-a",
+            None,
+            "000001",
+            "Hello ((block-1))",
+            "{}",
+        )
+        .expect("block a");
+        db.insert_block(
+            page_id,
+            "block-b",
+            None,
+            "000002",
+            "No refs here",
+            "{}",
+        )
+        .expect("block b");
+
+        let records = db.list_blocks_with_block_refs().expect("refs");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].block_uid, "block-a");
+    }
+
+    #[test]
     fn migrations_create_schema() {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
@@ -1082,6 +1156,28 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].uid, "block-uid");
+        assert_eq!(results[0].text, "alpha note");
+    }
+
+    #[test]
+    fn search_block_page_summaries_returns_page_info() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-uid", "Search page").expect("insert page");
+        db.insert_block(page_id, "block-uid", None, "a", "alpha note", "{}")
+            .expect("insert block");
+        db.insert_block(page_id, "block-uid-2", None, "b", "beta note", "{}")
+            .expect("insert block");
+
+        let results = db
+            .search_block_page_summaries("alpha", 10)
+            .expect("search summaries");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].block_uid, "block-uid");
+        assert_eq!(results[0].page_uid, "page-uid");
+        assert_eq!(results[0].page_title, "Search page");
         assert_eq!(results[0].text, "alpha note");
     }
 

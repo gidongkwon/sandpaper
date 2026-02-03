@@ -1,22 +1,17 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-pub mod assets;
-pub mod db;
-pub mod plugins;
-pub mod vaults;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use aes_gcm::aead::{Aead, KeyInit};
 use base64::Engine;
 use rand_core::RngCore;
 use sha2::{Digest, Sha256};
+use sandpaper_core::plugins;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
-use vaults::{VaultConfig, VaultRecord, VaultStore};
-use db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
-use plugins::{
+use sandpaper_core::vaults::{VaultConfig, VaultRecord, VaultStore};
+use sandpaper_core::db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
+use sandpaper_core::plugins::{
     check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, remove_plugin,
     update_plugin, PluginBlockView, PluginCommand, PluginDescriptor, PluginInfo, PluginPanel,
     PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeError, PluginRuntimeLoadResult,
@@ -597,86 +592,14 @@ fn set_active_vault(vault_id: String) -> Result<VaultConfig, String> {
 }
 
 fn resolve_active_vault_path() -> Result<PathBuf, String> {
-    let store = VaultStore::default_store().map_err(|err| format!("{:?}", err))?;
-    let config = store.load().map_err(|err| format!("{:?}", err))?;
-    let active = config
-        .active_id
-        .as_ref()
-        .and_then(|id| config.vaults.iter().find(|vault| &vault.id == id))
-        .or_else(|| config.vaults.first())
-        .ok_or_else(|| "No vault configured".to_string())?;
-    Ok(PathBuf::from(&active.path))
+    let active = sandpaper_core::app::load_active_vault().map_err(|err| format!("{:?}", err))?;
+    Ok(active.root)
 }
 
 fn open_active_database() -> Result<Database, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let db_path = vault_path.join("sandpaper.db");
-    let db = Database::open(&db_path).map_err(|err| format!("{:?}", err))?;
-    backup_before_migration(&vault_path, &db_path, &db)?;
-    db.run_migrations().map_err(|err| format!("{:?}", err))?;
+    let (_vault, db) =
+        sandpaper_core::app::open_active_database().map_err(|err| format!("{:?}", err))?;
     Ok(db)
-}
-
-fn backup_before_migration(
-    vault_path: &std::path::Path,
-    db_path: &std::path::Path,
-    db: &Database,
-) -> Result<Option<PathBuf>, String> {
-    backup_before_migration_at(vault_path, db_path, db, chrono::Utc::now())
-}
-
-fn backup_before_migration_at(
-    vault_path: &std::path::Path,
-    db_path: &std::path::Path,
-    db: &Database,
-    now: chrono::DateTime<chrono::Utc>,
-) -> Result<Option<PathBuf>, String> {
-    let current_version = db
-        .current_schema_version()
-        .map_err(|err| format!("{:?}", err))?;
-    let latest_version = Database::latest_migration_version();
-    if current_version >= latest_version {
-        return Ok(None);
-    }
-
-    let backup_dir = vault_path.join("backups");
-    std::fs::create_dir_all(&backup_dir).map_err(|err| format!("{:?}", err))?;
-    let stamp = now.format("%Y%m%d%H%M%S").to_string();
-    let backup_path = backup_dir.join(format!("sandpaper-{stamp}.db"));
-    std::fs::copy(db_path, &backup_path).map_err(|err| format!("{:?}", err))?;
-    rotate_backups(&backup_dir)?;
-    Ok(Some(backup_path))
-}
-
-fn rotate_backups(backup_dir: &std::path::Path) -> Result<(), String> {
-    let mut backups: Vec<PathBuf> = std::fs::read_dir(backup_dir)
-        .map_err(|err| format!("{:?}", err))?
-        .filter_map(|entry| entry.ok())
-        .filter_map(|entry| {
-            let path = entry.path();
-            let name = path.file_name()?.to_string_lossy();
-            if name.starts_with("sandpaper-") && name.ends_with(".db") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    backups.sort_by(|a, b| {
-        let a_name = a.file_name().map(|name| name.to_string_lossy());
-        let b_name = b.file_name().map(|name| name.to_string_lossy());
-        a_name.cmp(&b_name)
-    });
-
-    if backups.len() <= 3 {
-        return Ok(());
-    }
-
-    for path in backups.iter().take(backups.len() - 3) {
-        std::fs::remove_file(path).map_err(|err| format!("{:?}", err))?;
-    }
-    Ok(())
 }
 
 fn plugin_registry_for_vault(vault_path: &std::path::Path) -> PluginRegistry {
@@ -2170,7 +2093,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_sync_ops_to_blocks, backup_before_migration_at, build_markdown_export, build_sync_ops,
+        apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
         load_sync_config, next_review_due, resolve_review_interval, run_blocking,
@@ -2178,6 +2101,7 @@ mod tests {
         write_shadow_markdown_to_vault, BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
         RuntimeState, SyncOpPayload,
     };
+    use sandpaper_core::app::backup_before_migration_at;
     use super::plugins::{PluginDescriptor, PluginManifest};
     use aes_gcm::aead::KeyInit;
     use aes_gcm::aead::Aead;

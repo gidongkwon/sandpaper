@@ -1,4 +1,4 @@
-use sandpaper_lib::plugins::{parse_plugin_manifest, PluginDescriptor, PluginRuntime};
+use sandpaper_core::plugins::{parse_plugin_manifest, PluginDescriptor, PluginRuntime};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;

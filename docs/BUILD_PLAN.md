@@ -3,13 +3,13 @@
 Date: 2026-01-30
 
 ## Goal
-Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Notion-like blocks, plugin-first architecture, performant at 100k+ notes, with optional self-hosted sync and E2E encryption.
+Build a local-first notes app with Logseq-style outliner + Notion-like blocks, plugin-first architecture, performant at 100k+ notes, with optional self-hosted sync and E2E encryption.
 
 ## Locked Decisions
 - Hybrid storage: **SQLite canonical** + **per-page shadow Markdown** (read-only, batched).
 - **Stable block IDs** inline in Markdown.
 - **Content-addressed attachments** (dedupe + integrity).
-- **Solid** frontend.
+- Frontend: **Tauri v2 + Solid** today; migrating to **GPUI** (native Rust UI).
 - **Plugin-driven from day one**; sandboxed JS runtime with default-deny permissions.
 - App modes: **Quick Capture / Editor / Review**.
 - Sync: **SQLite-first**, CRDT **only for sync**, **Node** server.
@@ -22,7 +22,7 @@ Build a Tauri v2 + Solid local-first notes app with Logseq-style outliner + Noti
 - **Shadow Markdown**: `# Title ^page-id` and `- Block text ^block-id`; plugin metadata stored as HTML comments `<!--sp:{"plugin":"id","data":{...}}-->` appended to the block line; fenced code blocks live inside block text.
 - **Interoperability**: export Markdown now, import/export compatibility later with schema versioning.
 - **Attachments**: `/assets/<hash>` content-addressed files + DB mapping; GC only after explicit cleanup tool.
-- **Packaging**: Tauri bundler for macOS (universal dmg) + Windows (MSI); Android deferred.
+- **Packaging**: Tauri bundler today; native bundling (TBD) during GPUI migration; Android deferred.
 
 ## High-level Architecture
 
