@@ -437,6 +437,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_block_text_by_uid(&self, block_uid: &str, text: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE blocks SET text = ?1, updated_at = strftime('%s','now') WHERE uid = ?2",
+            params![text, block_uid],
+        )?;
+        Ok(())
+    }
+
     pub fn update_block_position(
         &self,
         block_id: i64,
@@ -1137,6 +1145,23 @@ mod tests {
         db.delete_block(block_id).expect("delete block");
         let results = db.search_blocks("goodbye").expect("search after delete");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn update_block_text_by_uid_updates_fts() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("page-uid", "Test page").expect("insert page");
+        let block_id = db
+            .insert_block(page_id, "block-uid", None, "a", "hello world", "{}")
+            .expect("insert block");
+
+        db.update_block_text_by_uid("block-uid", "updated title")
+            .expect("update block by uid");
+
+        let results = db.search_blocks("updated").expect("search updated");
+        assert_eq!(results, vec![block_id]);
     }
 
     #[test]

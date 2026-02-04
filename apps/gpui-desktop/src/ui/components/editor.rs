@@ -1,452 +1,9 @@
-use super::*;
-use super::helpers::format_snippet;
-
-const SLASH_COMMANDS: &[(&str, &str)] = &[
-    ("link", "Link to page"),
-    ("date", "Insert date"),
-    ("task", "Convert to task"),
-];
-
-impl SandpaperApp {
-    fn render_topbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let mode_label = match self.mode {
-            Mode::Editor => "Editor",
-            Mode::Capture => "Capture",
-            Mode::Review => "Review",
-        };
-
-        let vault_label: SharedString = self
-            .active_vault_id
-            .as_ref()
-            .and_then(|id| self.vaults.iter().find(|vault| &vault.id == id))
-            .map(|vault| vault.name.clone().into())
-            .unwrap_or_else(|| "Vaults".into());
-
-        let save_label: SharedString = match &self.save_state {
-            SaveState::Saved => "Saved".into(),
-            SaveState::Dirty => "Unsaved changes".into(),
-            SaveState::Saving => "Saving…".into(),
-            SaveState::Error(err) => format!("Save failed: {err}").into(),
-        };
-
-        let mut status_group = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(format!("Sandpaper · {mode_label}")),
-            )
-            .child(
-                div()
-                    .ml_2()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(self.boot_status.clone()),
-            );
-
-        if let Some(note) = self.capture_confirmation.clone() {
-            status_group = status_group.child(
-                div()
-                    .ml_2()
-                    .px_2()
-                    .py(px(1.0))
-                    .rounded_sm()
-                    .bg(theme.success)
-                    .text_xs()
-                    .text_color(theme.success_foreground)
-                    .child(note),
-            );
-        }
-
-        let right_group = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(save_label),
-            )
-            .child(
-                Button::new("vaults-button")
-                    .label(vault_label)
-                    .xsmall()
-                    .on_click(cx.listener(|this, _event, window, cx| {
-                        this.open_vaults(&OpenVaults, window, cx);
-                    })),
-            );
-
-        div()
-            .h(px(44.0))
-            .px_3()
-            .flex()
-            .items_center()
-            .justify_between()
-            .bg(theme.title_bar)
-            .border_b_1()
-            .border_color(theme.title_bar_border)
-            .child(status_group)
-            .child(right_group)
-    }
-
-    fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_uid = self.active_page.as_ref().map(|page| page.uid.clone());
-        let has_query = !self.sidebar_search_query.trim().is_empty();
-        let list = if has_query {
-            self.render_search_results(cx).into_any_element()
-        } else {
-            self.render_pages_list(cx, active_uid.clone())
-        };
-        let theme = cx.theme();
-
-        let mut sidebar = div()
-            .w(px(280.0))
-            .h_full()
-            .bg(theme.sidebar)
-            .border_r_1()
-            .border_color(theme.sidebar_border)
-            .flex()
-            .flex_col()
-            .child(
-                div()
-                    .p_3()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.sidebar_foreground)
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("Pages"),
-                    )
-                    .child(
-                        Button::new("new-page")
-                            .label("New")
-                            .xsmall()
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.open_page_dialog(PageDialogMode::Create, cx);
-                            })),
-                    ),
-            )
-            .child(
-                div()
-                    .px_3()
-                    .pb_2()
-                    .child(Input::new(&self.sidebar_search_input).small().cleanable(true)),
-            )
-            .child(list);
-
-        if let Some(references) = self.render_sidebar_references(cx) {
-            sidebar = sidebar.child(references);
-        }
-
-        sidebar
-    }
-
-    fn render_pages_list(
-        &mut self,
-        cx: &mut Context<Self>,
-        active_uid: Option<String>,
-    ) -> gpui::AnyElement {
-        let theme = cx.theme();
-        if self.pages.is_empty() {
-            return div()
-                .id("pages-list")
-                .flex_1()
-                .min_h_0()
-                .child(
-                    div()
-                        .px_3()
-                        .py_3()
-                        .text_sm()
-                        .text_color(theme.muted_foreground)
-                        .child("No pages yet"),
-                )
-                .into_any_element();
-        }
-
-        let item_sizes = Rc::new(vec![
-            size(px(0.), px(COMPACT_ROW_HEIGHT));
-            self.pages.len()
-        ]);
-        let active_uid = active_uid.clone();
-
-        v_virtual_list(
-            cx.entity(),
-            "pages-list",
-            item_sizes,
-            move |this, range: std::ops::Range<usize>, _window, cx| {
-                let theme = cx.theme();
-                range
-                    .map(|ix| {
-                        let page = this.pages[ix].clone();
-                        let is_active =
-                            active_uid.as_ref().is_some_and(|uid| uid == &page.uid);
-                        let text_color = if is_active {
-                            theme.sidebar_accent_foreground
-                        } else {
-                            theme.sidebar_foreground
-                        };
-                        let bg = if is_active {
-                            theme.sidebar_accent
-                        } else {
-                            theme.sidebar
-                        };
-                        let hover_bg = theme.sidebar_accent;
-
-                        div()
-                            .id(page.uid.clone())
-                            .px_3()
-                            .py_2()
-                            .cursor_pointer()
-                            .bg(bg)
-                            .hover(move |s| {
-                                if is_active {
-                                    s
-                                } else {
-                                    s.bg(hover_bg).cursor_pointer()
-                                }
-                            })
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(text_color)
-                                    .child(page.title.clone()),
-                            )
-                            .on_click(cx.listener(move |this, _event, window, cx| {
-                                this.on_click_page(page.uid.clone(), window, cx);
-                            }))
-                    })
-                    .collect()
-            },
-        )
-        .flex_1()
-        .min_h_0()
-        .size_full()
-        .into_any_element()
-    }
-
-    fn render_search_results(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let list_hover = theme.list_hover;
-        let mut content = div()
-            .id("search-scroll")
-            .flex_1()
-            .min_h_0()
-            .overflow_scroll();
-
-        if self.search_pages.is_empty() && self.search_blocks.is_empty() {
-            return content.child(
-                div()
-                    .px_3()
-                    .py_3()
-                    .text_sm()
-                    .text_color(theme.muted_foreground)
-                    .child("No results"),
-            );
-        }
-
-        if !self.search_pages.is_empty() {
-            content = content.child(
-                div()
-                    .px_3()
-                    .pt_3()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Pages"),
-            );
-            content = content.children(self.search_pages.iter().cloned().map(|page| {
-                let page_uid = page.uid.clone();
-                let open_uid = page.uid.clone();
-                let split_uid = page.uid.clone();
-                div()
-                    .id(format!("search-page-{}", page_uid))
-                    .px_3()
-                    .py_2()
-                    .hover(move |s| s.bg(list_hover))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.foreground)
-                                    .child(page.title.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .child(
-                                        Button::new(format!("search-open-{}", page_uid))
-                                            .label("Open")
-                                            .xsmall()
-                                            .ghost()
-                                            .on_click(cx.listener(
-                                                move |this, _event, window, cx| {
-                                                    this.on_click_page(open_uid.clone(), window, cx);
-                                                },
-                                            )),
-                                    )
-                                    .child(
-                                        Button::new(format!("search-split-{}", page_uid))
-                                            .label("Split")
-                                            .xsmall()
-                                            .ghost()
-                                            .on_click(cx.listener(
-                                                move |this, _event, _window, cx| {
-                                                    this.open_secondary_pane_for_page(&split_uid, cx);
-                                                },
-                                            )),
-                                    ),
-                            ),
-                    )
-            }));
-        }
-
-        if !self.search_blocks.is_empty() {
-            content = content.child(
-                div()
-                    .px_3()
-                    .pt_3()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Blocks"),
-            );
-            content = content.children(self.search_blocks.iter().cloned().map(|block| {
-                let snippet = format_snippet(&block.text, 80);
-                div()
-                    .id(format!("search-block-{}", block.block_uid))
-                    .px_3()
-                    .py_2()
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(list_hover))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.foreground)
-                            .child(snippet),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child(block.page_title.clone()),
-                    )
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.open_page_and_focus_block(&block.page_uid, &block.block_uid, window, cx);
-                    }))
-            }));
-        }
-
-        content
-    }
-
-    fn render_sidebar_references(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if self.active_page.is_none() {
-            return None;
-        }
-
-        let theme = cx.theme();
-        let references = self.unlinked_references.clone();
-        if references.is_empty() {
-            let panel = div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .px_3()
-                .py_3()
-                .border_t_1()
-                .border_color(theme.border)
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child("Unlinked references"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child("No unlinked references."),
-                );
-            return Some(panel.into_any_element());
-        }
-
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .px_3()
-            .py_3()
-            .border_t_1()
-            .border_color(theme.border)
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Unlinked references"),
-            );
-
-        panel = panel.children(references.iter().map(|entry| {
-            let entry = entry.clone();
-            let snippet = format_snippet(&entry.snippet, 100);
-            let count_label = if entry.match_count == 1 {
-                "1 match".to_string()
-            } else {
-                format!("{} matches", entry.match_count)
-            };
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .p_2()
-                .rounded_md()
-                .bg(theme.colors.list)
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.foreground)
-                        .child(snippet),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(entry.page_title.clone()),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(count_label),
-                )
-                .child(
-                    Button::new(format!("unlinked-link-{}", entry.block_uid))
-                        .label("Link")
-                        .xsmall()
-                        .ghost()
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.link_unlinked_reference(&entry, cx);
-                        })),
-                )
-        }));
-
-        Some(panel.into_any_element())
-    }
-
-    fn render_editor(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let editor_body = match self.mode {
+use crate::app::prelude::*;
+use crate::app::store::*;
+use crate::app::store::helpers::format_snippet;
+impl AppStore {
+    pub(super) fn render_editor(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let editor_body = match self.app.mode {
             Mode::Editor => {
                 let mut body = div()
                     .flex()
@@ -465,7 +22,7 @@ impl SandpaperApp {
             Mode::Review => self.render_review_pane(cx).into_any_element(),
         };
 
-        let mut container = div()
+        let container = div()
             .flex_1()
             .min_w_0()
             .min_h_0()
@@ -485,10 +42,6 @@ impl SandpaperApp {
             .on_action(cx.listener(Self::toggle_split_pane_action))
             .child(editor_body);
 
-        if let Some(menu) = self.render_slash_menu(cx) {
-            container = container.child(menu);
-        }
-
         container
     }
 
@@ -505,8 +58,8 @@ impl SandpaperApp {
     }
 
     fn render_blocks_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.blocks_list_state.clone();
-        let list = if self.editor.is_some() {
+        let state = self.editor.blocks_list_state.clone();
+        let list = if self.editor.editor.is_some() {
             v_virtual_list(
                 cx.entity(),
                 "blocks-list",
@@ -536,7 +89,7 @@ impl SandpaperApp {
         };
 
         let theme = cx.theme();
-        let is_active = self.active_pane == EditorPane::Primary;
+        let is_active = self.editor.active_pane == EditorPane::Primary;
         let mut container = div()
             .id("blocks")
             .flex_1()
@@ -547,7 +100,7 @@ impl SandpaperApp {
             .p_4()
             .bg(theme.background)
             .border_1()
-            .border_color(if is_active && self.secondary_pane.is_some() {
+            .border_color(if is_active && self.editor.secondary_pane.is_some() {
                 theme.ring
             } else {
                 theme.border
@@ -617,11 +170,16 @@ impl SandpaperApp {
     }
 
     fn render_editor_header(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let Some(active_page) = self.active_page.as_ref() else {
+        let Some(active_page) = self.editor.active_page.as_ref() else {
             return None;
         };
         let theme = cx.theme();
-        let block_count = self.editor.as_ref().map(|editor| editor.blocks.len()).unwrap_or(0);
+        let block_count = self
+            .editor
+            .editor
+            .as_ref()
+            .map(|editor| editor.blocks.len())
+            .unwrap_or(0);
         let title = if active_page.title.trim().is_empty() {
             "Untitled"
         } else {
@@ -709,7 +267,7 @@ impl SandpaperApp {
             )
             .child(
                 Button::new("editor-split")
-                    .label(if self.secondary_pane.is_some() {
+                    .label(if self.editor.secondary_pane.is_some() {
                         "Close split"
                     } else {
                         "Split"
@@ -730,7 +288,7 @@ impl SandpaperApp {
                     })),
             );
 
-        if self.secondary_pane.is_some() {
+        if self.editor.secondary_pane.is_some() {
             actions = actions
                 .child(
                     Button::new("editor-swap")
@@ -743,7 +301,7 @@ impl SandpaperApp {
                 )
                 .child(
                     Button::new("editor-sync-scroll")
-                        .label(if self.sync_scroll {
+                        .label(if self.settings.sync_scroll {
                             "Sync scroll: On"
                         } else {
                             "Sync scroll: Off"
@@ -751,7 +309,8 @@ impl SandpaperApp {
                         .xsmall()
                         .ghost()
                         .on_click(cx.listener(|this, _event, _window, cx| {
-                            this.sync_scroll = !this.sync_scroll;
+                            this.settings.sync_scroll = !this.settings.sync_scroll;
+                            this.persist_settings();
                             cx.notify();
                         })),
                 );
@@ -773,8 +332,8 @@ impl SandpaperApp {
     }
 
     fn render_backlinks_toggle(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let total = self.backlinks.len() + self.block_backlinks.len();
-        let is_open = self.backlinks_open;
+        let total = self.editor.backlinks.len() + self.editor.block_backlinks.len();
+        let is_open = self.settings.backlinks_open;
         let label = if total > 0 {
             format!(
                 "{} ({total})",
@@ -791,7 +350,8 @@ impl SandpaperApp {
             .xsmall()
             .ghost()
             .on_click(cx.listener(|this, _event, _window, cx| {
-                this.backlinks_open = !this.backlinks_open;
+                this.settings.backlinks_open = !this.settings.backlinks_open;
+                this.persist_settings();
                 cx.notify();
             }))
             .into_any_element()
@@ -908,70 +468,474 @@ impl SandpaperApp {
         )
     }
 
-    fn render_slash_menu(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if !self.slash_menu.open {
-            return None;
-        }
+    fn render_slash_menu_at(
+        &mut self,
+        origin: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let theme = cx.theme();
+        let query = self.editor.slash_menu.query.trim();
+        let title: SharedString = if query.is_empty() {
+            "Commands".into()
+        } else {
+            format!("Commands: {query}").into()
+        };
+
+        let commands = self.filtered_slash_commands();
+        if self.editor.slash_menu.selected_index >= commands.len() {
+            self.editor.slash_menu.selected_index = 0;
+        }
+        let selected_index = self.editor.slash_menu.selected_index;
 
         let mut menu = div()
             .absolute()
-            .top(px(72.0))
-            .left(px(24.0))
+            .top(origin.y)
+            .left(origin.x)
             .w(px(220.0))
             .rounded_md()
             .bg(theme.popover)
             .border_1()
             .border_color(theme.border)
+            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
             .child(
                 div()
                     .px_3()
                     .py_2()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child("Commands"),
+                    .child(title),
             );
 
         let hover_bg = theme.list_hover;
-        for (id, label) in SLASH_COMMANDS.iter().copied() {
+        let selected_bg = theme.list_active;
+        if commands.is_empty() {
             menu = menu.child(
                 div()
-                    .id(format!("slash-{id}"))
                     .px_3()
                     .py_2()
                     .text_sm()
-                    .text_color(theme.foreground)
-                    .hover(move |s| s.bg(hover_bg).cursor_pointer())
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.apply_slash_command(id, window, cx);
-                    }))
-                    .child(label),
+                    .text_color(theme.muted_foreground)
+                    .child("No matches"),
             );
+        } else {
+            for (ix, (id, label)) in commands.into_iter().enumerate() {
+                let is_selected = ix == selected_index;
+                let row_bg = if is_selected { selected_bg } else { theme.popover };
+                menu = menu.child(
+                    div()
+                        .id(format!("slash-{id}"))
+                        .px_3()
+                        .py_2()
+                        .text_sm()
+                        .text_color(theme.foreground)
+                        .bg(row_bg)
+                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_this, _event, _window, cx| {
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .on_mouse_move(cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                            if this.editor.slash_menu.selected_index != ix {
+                                this.editor.slash_menu.selected_index = ix;
+                                cx.notify();
+                            }
+                        }))
+                        .on_click(cx.listener(move |this, _event, window, cx| {
+                            this.apply_slash_command(id, window, cx);
+                        }))
+                        .child(label),
+                );
+            }
         }
 
-        Some(menu.into_any_element())
+        menu.into_any_element()
+    }
+
+    fn render_wikilink_menu_at(
+        &mut self,
+        origin: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let mut items = self.wikilink_menu_items();
+        if self.editor.wikilink_menu.selected_index >= items.len() {
+            self.editor.wikilink_menu.selected_index = 0;
+        }
+        let selected_index = self.editor.wikilink_menu.selected_index;
+
+        let mut menu = div()
+            .absolute()
+            .top(origin.y)
+            .left(origin.x)
+            .w(px(260.0))
+            .rounded_md()
+            .bg(theme.popover)
+            .border_1()
+            .border_color(theme.border)
+            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Link suggestions"),
+            );
+
+        let hover_bg = theme.list_hover;
+        let selected_bg = theme.list_active;
+        if items.is_empty() {
+            menu = menu.child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_sm()
+                    .text_color(theme.muted_foreground)
+                    .child("No matches"),
+            );
+        } else {
+            for (ix, item) in items.drain(..).enumerate() {
+                let is_selected = ix == selected_index;
+                let row_bg = if is_selected { selected_bg } else { theme.popover };
+                let (label, create, query) = match item {
+                    WikilinkMenuItem::Page(page) => {
+                        let title = if page.title.trim().is_empty() {
+                            page.uid
+                        } else {
+                            page.title
+                        };
+                        (title, false, String::new())
+                    }
+                    WikilinkMenuItem::Create { label, query } => (label, true, query),
+                };
+                let label_clone = label.clone();
+                menu = menu.child(
+                    div()
+                        .id(format!("wikilink-item-{ix}"))
+                        .px_3()
+                        .py_2()
+                        .text_sm()
+                        .text_color(theme.foreground)
+                        .bg(row_bg)
+                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_this, _event, _window, cx| {
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .on_mouse_move(cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                            if this.editor.wikilink_menu.selected_index != ix {
+                                this.editor.wikilink_menu.selected_index = ix;
+                                cx.notify();
+                            }
+                        }))
+                        .on_click(cx.listener(move |this, _event, window, cx| {
+                            if create {
+                                this.apply_wikilink_suggestion(&query, true, window, cx);
+                            } else {
+                                this.apply_wikilink_suggestion(&label_clone, false, window, cx);
+                            }
+                        }))
+                        .child(label),
+                );
+            }
+        }
+
+        menu.into_any_element()
+    }
+
+    pub(super) fn render_link_preview(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let preview = self.editor.link_preview.clone()?;
+        if !preview.open {
+            return None;
+        }
+
+        let theme = cx.theme();
+        let viewport = window.viewport_size();
+        let panel_width = px(280.0);
+        let margin = px(12.0);
+        let header_height = px(36.0);
+        let body_height = if preview.loading || preview.blocks.is_empty() {
+            px(28.0)
+        } else {
+            px(22.0) * preview.blocks.len() as f32
+        };
+        let estimated_height = header_height + body_height + px(8.0);
+        let min_x = margin;
+        let max_x = if viewport.width > panel_width + margin {
+            viewport.width - panel_width - margin
+        } else {
+            min_x
+        };
+        let min_y = margin;
+        let max_y = if viewport.height > estimated_height + margin {
+            viewport.height - estimated_height - margin
+        } else {
+            min_y
+        };
+        let mut clamped_x = preview.position.x;
+        if clamped_x < min_x {
+            clamped_x = min_x;
+        }
+        if clamped_x > max_x {
+            clamped_x = max_x;
+        }
+        let mut clamped_y = preview.position.y;
+        if clamped_y < min_y {
+            clamped_y = min_y;
+        }
+        if clamped_y > max_y {
+            clamped_y = max_y;
+        }
+
+        let open_title = preview.title.clone();
+        let preview_title = preview.title.clone();
+        let preview_blocks = preview.blocks.clone();
+        let preview_loading = preview.loading;
+
+        let mut panel = div()
+            .id("link-preview")
+            .absolute()
+            .top(clamped_y)
+            .left(clamped_x)
+            .w(panel_width)
+            .rounded_md()
+            .bg(theme.popover)
+            .border_1()
+            .border_color(theme.border)
+            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
+                cx.stop_propagation();
+            }))
+            .on_mouse_move(cx.listener(|this, _event: &MouseMoveEvent, _window, cx| {
+                this.keep_link_preview_open();
+                cx.stop_propagation();
+            }))
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .border_b_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child(preview_title),
+                    )
+                    .child(
+                        Button::new("link-preview-open")
+                            .label("Open")
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.open_page(&open_title, cx);
+                                this.editor.link_preview = None;
+                                this.editor.link_preview_hovering_link = false;
+                                cx.notify();
+                            })),
+                    ),
+            );
+
+        if preview_loading {
+            panel = panel.child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Loading preview..."),
+            );
+        } else if preview_blocks.is_empty() {
+            panel = panel.child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("No content yet."),
+            );
+        } else {
+            for (ix, block_text) in preview_blocks.iter().enumerate() {
+                panel = panel.child(
+                    div()
+                        .id(format!("link-preview-block-{ix}"))
+                        .px_3()
+                        .py_2()
+                        .text_xs()
+                        .text_color(theme.foreground)
+                        .child(block_text.clone()),
+                );
+            }
+        }
+
+        Some(panel.into_any_element())
+    }
+
+    fn render_wikilink_text(
+        &mut self,
+        pane: EditorPane,
+        block_uid: &str,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let tokens = helpers::parse_wikilink_tokens(text);
+        let mut display = String::new();
+        let mut link_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut link_targets: Vec<String> = Vec::new();
+
+        for token in tokens {
+            match token {
+                helpers::WikilinkToken::Text(value) => {
+                    display.push_str(&value);
+                }
+                helpers::WikilinkToken::Link { target, label } => {
+                    let start = display.len();
+                    display.push_str(&label);
+                    let end = display.len();
+                    if start < end {
+                        link_ranges.push(start..end);
+                        link_targets.push(target);
+                    }
+                }
+            }
+        }
+
+        if display.is_empty() {
+            display.push(' ');
+        }
+
+        if link_targets.is_empty() {
+            return div()
+                .text_sm()
+                .text_color(theme.foreground)
+                .child(display)
+                .into_any_element();
+        }
+
+        let link_color = theme.accent;
+        let underline = UnderlineStyle {
+            thickness: px(1.0),
+            color: Some(link_color),
+            wavy: false,
+        };
+        let mut highlights = Vec::with_capacity(link_ranges.len());
+        for range in link_ranges.iter() {
+            highlights.push((
+                range.clone(),
+                HighlightStyle {
+                    color: Some(link_color),
+                    underline: Some(underline),
+                    ..Default::default()
+                },
+            ));
+        }
+
+        let styled = StyledText::new(display).with_highlights(highlights);
+        let entity = cx.entity();
+        let click_entity = entity.clone();
+        let hover_entity = entity.clone();
+        let link_targets = Rc::new(link_targets);
+        let hover_targets = link_targets.clone();
+        let click_targets = link_targets.clone();
+        let hover_ranges = Rc::new(link_ranges);
+        let click_ranges = hover_ranges.as_ref().clone();
+        let hover_ranges_clone = hover_ranges.clone();
+        let id_prefix = match pane {
+            EditorPane::Primary => "primary",
+            EditorPane::Secondary => "secondary",
+        };
+
+        let interactive = InteractiveText::new(
+            format!("wikilink-text-{id_prefix}-{block_uid}"),
+            styled,
+        )
+        .on_click(click_ranges, move |idx, _window, cx| {
+            if let Some(target) = click_targets.get(idx) {
+                let target = target.clone();
+                click_entity.update(cx, |this, cx| {
+                    this.open_page(&target, cx);
+                    this.editor.link_preview = None;
+                    this.editor.link_preview_hovering_link = false;
+                });
+            }
+            cx.stop_propagation();
+        })
+        .on_hover(move |hover_ix, event, _window, cx| {
+            let mut hovered_target = None;
+            if let Some(ix) = hover_ix {
+                for (range_ix, range) in hover_ranges_clone.iter().enumerate() {
+                    if range.contains(&ix) {
+                        hovered_target = hover_targets.get(range_ix).cloned();
+                        break;
+                    }
+                }
+            }
+
+            hover_entity.update(cx, |this, cx| {
+                if let Some(target) = hovered_target {
+                    this.editor.link_preview_hovering_link = true;
+                    this.keep_link_preview_open();
+                    this.open_link_preview(&target, event.position, cx);
+                } else {
+                    this.editor.link_preview_hovering_link = false;
+                    this.schedule_link_preview_close(cx);
+                }
+            });
+        });
+
+        div()
+            .text_sm()
+            .text_color(theme.foreground)
+            .child(interactive)
+            .into_any_element()
     }
 
     fn render_backlinks_panel(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if self.mode != Mode::Editor {
+        if self.app.mode != Mode::Editor {
             return None;
         }
-        if !self.backlinks_open {
+        if !self.settings.backlinks_open {
             return None;
         }
-        if self.active_page.is_none() {
+        if self.editor.active_page.is_none() {
             return None;
         }
         let theme = cx.theme();
 
         let active_block_text = self
             .editor
+            .editor
             .as_ref()
             .map(|editor| editor.active().text.clone())
             .unwrap_or_default();
 
-        let has_page_backlinks = !self.backlinks.is_empty();
-        let has_block_backlinks = !self.block_backlinks.is_empty();
+        let has_page_backlinks = !self.editor.backlinks.is_empty();
+        let has_block_backlinks = !self.editor.block_backlinks.is_empty();
         let list_bg = theme.colors.list;
         let list_hover = theme.list_hover;
         let muted = theme.muted_foreground;
@@ -1009,7 +973,8 @@ impl SandpaperApp {
                             .xsmall()
                             .ghost()
                             .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.backlinks_open = false;
+                                this.settings.backlinks_open = false;
+                                this.persist_settings();
                                 cx.notify();
                             })),
                     ),
@@ -1042,7 +1007,7 @@ impl SandpaperApp {
                     .child("Page backlinks"),
             );
             body = body.child(div().h(px(6.0)));
-            body = body.children(self.backlinks.iter().cloned().map(|entry| {
+            body = body.children(self.editor.backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
                 let page_uid = entry.page_uid.clone();
                 let block_uid = entry.block_uid.clone();
@@ -1148,7 +1113,7 @@ impl SandpaperApp {
                     .text_color(theme.muted_foreground)
                     .child(format!("Linked to {block_label}")),
             );
-            body = body.children(self.block_backlinks.iter().cloned().map(|entry| {
+            body = body.children(self.editor.block_backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
                 let page_uid = entry.page_uid.clone();
                 let block_uid = entry.block_uid.clone();
@@ -1242,7 +1207,7 @@ impl SandpaperApp {
 
     fn render_secondary_pane(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let (title, block_count, list_state) = {
-            let pane = self.secondary_pane.as_ref()?;
+            let pane = self.editor.secondary_pane.as_ref()?;
             let title = if pane.page.title.trim().is_empty() {
                 "Untitled".to_string()
             } else {
@@ -1271,7 +1236,7 @@ impl SandpaperApp {
         .size_full();
 
         let breadcrumbs = self.build_breadcrumb_items_for_pane(EditorPane::Secondary);
-        let is_active = self.active_pane == EditorPane::Secondary;
+        let is_active = self.editor.active_pane == EditorPane::Secondary;
         let toolbar = self.render_selection_toolbar_for_pane(EditorPane::Secondary, cx);
         let theme = cx.theme();
 
@@ -1406,14 +1371,15 @@ impl SandpaperApp {
                                         .ghost()
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             if this
+                                                .editor
                                                 .secondary_pane
                                                 .as_ref()
                                                 .is_some_and(|pane| pane.dirty)
                                             {
                                                 this.save(cx);
                                             }
-                                            this.secondary_pane = None;
-                                            this.active_pane = EditorPane::Primary;
+                                            this.editor.secondary_pane = None;
+                                            this.editor.active_pane = EditorPane::Primary;
                                             this.sync_block_input_from_active_for_pane(
                                                 EditorPane::Primary,
                                                 None,
@@ -1433,7 +1399,7 @@ impl SandpaperApp {
         &mut self,
         pane: EditorPane,
         ix: usize,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let Some(editor) = self.editor_for_pane(pane) else {
@@ -1450,21 +1416,21 @@ impl SandpaperApp {
         let has_selection = selection.is_some_and(|selection| selection.has_range());
         let is_highlighted = pane == EditorPane::Primary
             && self
+                .editor
                 .highlighted_block_uid
                 .as_ref()
                 .is_some_and(|uid| uid == &block.uid);
         let indent_px = px(12.0 + (block.indent.max(0) as f32) * 18.0);
 
-        let show_input = is_active && !has_selection && self.active_pane == pane;
+        let show_input = is_active && !has_selection && self.editor.active_pane == pane;
         let actions = if show_input {
             self.render_block_actions_for_pane(pane, ix, cx)
                 .into_any_element()
         } else {
             div().into_any_element()
         };
-        let theme = cx.theme();
         let content = if show_input {
-            let input = Input::new(&self.block_input)
+            let input = Input::new(&self.editor.block_input)
                 .appearance(false)
                 .bordered(false)
                 .focus_bordered(false)
@@ -1478,13 +1444,34 @@ impl SandpaperApp {
                 .child(input)
                 .into_any_element()
         } else {
-            div()
-                .text_sm()
-                .text_color(theme.foreground)
-                .child(if block.text.is_empty() { " " } else { &block.text }.to_string())
-                .into_any_element()
+            self.render_wikilink_text(pane, &block.uid, &block.text, cx)
         };
 
+        let mut content_container = div().flex_1().min_w_0().relative().child(content);
+        if show_input
+            && self.editor.slash_menu.open
+            && self.editor.slash_menu.pane == pane
+            && self.editor.slash_menu.block_ix == Some(ix)
+        {
+            let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
+            let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
+            let menu = gpui::deferred(self.render_slash_menu_at(menu_origin, cx))
+                .with_priority(10);
+            content_container = content_container.child(menu);
+        }
+        if show_input
+            && self.editor.wikilink_menu.open
+            && self.editor.wikilink_menu.pane == pane
+            && self.editor.wikilink_menu.block_ix == Some(ix)
+        {
+            let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
+            let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
+            let menu = gpui::deferred(self.render_wikilink_menu_at(menu_origin, cx))
+                .with_priority(10);
+            content_container = content_container.child(menu);
+        }
+
+        let theme = cx.theme();
         let base_bg = if pane == EditorPane::Secondary {
             theme.sidebar
         } else {
@@ -1585,7 +1572,7 @@ impl SandpaperApp {
                     .rounded_full()
                     .bg(theme.border),
             )
-            .child(div().flex_1().min_w_0().child(content))
+            .child(content_container)
             .child(actions)
             .into_any_element()
     }
@@ -1676,7 +1663,7 @@ impl SandpaperApp {
                             cx.stop_propagation();
                         }
                     }))
-                    .child(Input::new(&self.capture_input).h(px(160.0))),
+                    .child(Input::new(&self.editor.capture_input).h(px(160.0))),
             )
             .child(div().h(px(12.0)))
             .child(
@@ -1706,7 +1693,7 @@ impl SandpaperApp {
             )
             .child(div().h(px(12.0)));
 
-        if self.review_items.is_empty() {
+        if self.editor.review_items.is_empty() {
             body = body.child(
                 div()
                     .text_sm()
@@ -1714,7 +1701,7 @@ impl SandpaperApp {
                     .child("No review items due yet."),
             );
         } else {
-            for item in self.review_items.iter() {
+            for item in self.editor.review_items.iter() {
                 let block_uid = item.block_uid.clone();
                 let page_uid = item.page_uid.clone();
                 let item_id = item.id;
@@ -1810,383 +1797,4 @@ impl SandpaperApp {
         body
     }
 
-    fn render_page_dialog(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if !self.page_dialog_open {
-            return None;
-        }
-        let theme = cx.theme();
-
-        let title = match self.page_dialog_mode {
-            PageDialogMode::Create => "Create Page",
-            PageDialogMode::Rename => "Rename Page",
-        };
-        let confirm_label = match self.page_dialog_mode {
-            PageDialogMode::Create => "Create",
-            PageDialogMode::Rename => "Rename",
-        };
-
-        Some(
-            div()
-                .id("page-dialog")
-                .absolute()
-                .inset_0()
-                .bg(rgba(0x0000008c))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .w(px(420.0))
-                        .p_4()
-                        .rounded_lg()
-                        .bg(theme.popover)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(theme.foreground)
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .child(title),
-                                )
-                                .child(
-                                    Button::new("page-dialog-close")
-                                        .label("Close")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(|this, _event, _window, cx| {
-                                            this.close_page_dialog(cx);
-                                        })),
-                                ),
-                        )
-                        .child(div().h(px(8.0)))
-                        .child(Input::new(&self.page_dialog_input).small())
-                        .child(div().h(px(8.0)))
-                        .child(
-                            Button::new("page-dialog-confirm")
-                                .label(confirm_label)
-                                .xsmall()
-                                .primary()
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.confirm_page_dialog(cx);
-                                })),
-                        ),
-                )
-                .into_any_element(),
-        )
-    }
-
-    fn render_vault_dialog(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if !self.vault_dialog_open {
-            return None;
-        }
-        let theme = cx.theme();
-
-        let vaults = self.vaults.clone();
-        let active_id = self.active_vault_id.clone();
-        let error = self.vault_dialog_error.clone();
-
-        let mut list = div().flex().flex_col().gap_2().pb_3();
-        let list_hover = theme.list_hover;
-        if vaults.is_empty() {
-            list = list.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("No vaults yet."),
-            );
-        } else {
-            for vault in vaults.into_iter() {
-                let id = vault.id.clone();
-                let is_active = active_id.as_ref().is_some_and(|active| active == &id);
-                list = list.child(
-                    div()
-                        .id(format!("vault-item-{id}"))
-                        .px_2()
-                        .py_2()
-                        .rounded_md()
-                        .bg(if is_active { theme.list_active } else { theme.colors.list })
-                        .hover(move |s| s.bg(list_hover).cursor_pointer())
-                        .text_sm()
-                        .text_color(if is_active {
-                            theme.foreground
-                        } else {
-                            theme.muted_foreground
-                        })
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.set_active_vault(id.clone(), cx);
-                        }))
-                        .child(vault.name.clone()),
-                );
-            }
-        }
-
-        if let Some(msg) = error {
-            list = list.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.danger_foreground)
-                    .child(msg),
-            );
-        }
-
-        Some(
-            div()
-                .id("vault-dialog")
-                .absolute()
-                .inset_0()
-                .bg(rgba(0x0000008c))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .w(px(500.0))
-                        .p_4()
-                        .rounded_lg()
-                        .bg(theme.popover)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(theme.foreground)
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .child("Vaults"),
-                                )
-                                .child(
-                                    Button::new("vault-dialog-close")
-                                        .label("Close")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(|this, _event, _window, cx| {
-                                            this.close_vault_dialog(cx);
-                                        })),
-                                ),
-                        )
-                        .child(div().h(px(8.0)))
-                        .child(list)
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.foreground)
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .child("Create new vault"),
-                        )
-                        .child(div().h(px(8.0)))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child("Name"),
-                        )
-                        .child(Input::new(&self.vault_dialog_name_input).small())
-                        .child(div().h(px(8.0)))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child("Path"),
-                        )
-                        .child(Input::new(&self.vault_dialog_path_input).small())
-                        .child(div().h(px(8.0)))
-                        .child(
-                            Button::new("vault-create")
-                                .label("Create vault")
-                                .xsmall()
-                                .primary()
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.create_vault(cx);
-                                })),
-                        ),
-                )
-                .into_any_element(),
-        )
-    }
-
-    fn render_command_palette(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if !self.palette_open {
-            return None;
-        }
-
-        let theme = cx.theme();
-        let commands = self.filtered_palette_items();
-        let active_ix = self.palette_index;
-        let list_active = theme.list_active;
-        let list_bg = theme.colors.list;
-        let list_hover = theme.list_hover;
-        let foreground = theme.foreground;
-        let muted = theme.muted_foreground;
-
-        let list = if commands.is_empty() {
-            div()
-                .text_xs()
-                .text_color(theme.muted_foreground)
-                .child("No matches")
-                .into_any_element()
-        } else {
-            let item_sizes = Rc::new(vec![
-                size(px(0.), px(COMPACT_ROW_HEIGHT));
-                commands.len()
-            ]);
-            v_virtual_list(
-                cx.entity(),
-                "palette-list",
-                item_sizes,
-                move |_this, range: std::ops::Range<usize>, _window, cx| {
-                    range
-                        .map(|idx| {
-                            let item = commands[idx].clone();
-                            let is_active = idx == active_ix;
-                            let label = item.label.clone();
-                            let hint = item.hint.clone();
-
-                            let mut row = div()
-                                .id(format!("palette-item-{}", item.id))
-                                .px_3()
-                                .py_2()
-                                .rounded_md()
-                                .bg(if is_active { list_active } else { list_bg })
-                                .hover(move |s| s.bg(list_hover).cursor_pointer())
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(foreground)
-                                        .child(label),
-                                );
-
-                            if let Some(hint) = hint {
-                                row = row.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(muted)
-                                        .child(hint),
-                                );
-                            }
-
-                            row.on_click(cx.listener(move |this, _event, window, cx| {
-                                this.run_palette_command(idx, window, cx);
-                            }))
-                        })
-                        .collect::<Vec<_>>()
-                },
-            )
-            .flex_1()
-            .min_h_0()
-            .into_any_element()
-        };
-
-        Some(
-            div()
-                .id("command-palette")
-                .absolute()
-                .inset_0()
-                .bg(rgba(0x0000008c))
-                .flex()
-                .items_center()
-                .justify_center()
-                .key_context("CommandPalette")
-                .child(
-                    div()
-                        .w(px(520.0))
-                        .p_4()
-                        .rounded_lg()
-                        .bg(theme.popover)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(theme.foreground)
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .child("Command palette"),
-                                )
-                                .child(
-                                    Button::new("command-palette-close")
-                                        .label("Close")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(|this, _event, _window, cx| {
-                                            this.close_command_palette(cx);
-                                        })),
-                                ),
-                        )
-                        .child(div().h(px(8.0)))
-                        .child(Input::new(&self.palette_input).small().cleanable(true))
-                        .child(list),
-                )
-                .into_any_element(),
-        )
-    }
-}
-
-impl Focusable for SandpaperApp {
-    fn focus_handle(&self, _cx: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl Render for SandpaperApp {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut root = div()
-            .id("sandpaper-app")
-            .key_context("Sandpaper")
-            .on_action(cx.listener(Self::open_vaults))
-            .on_action(cx.listener(Self::new_page))
-            .on_action(cx.listener(Self::rename_page))
-            .on_action(cx.listener(Self::toggle_mode_editor))
-            .on_action(cx.listener(Self::toggle_mode_capture))
-            .on_action(cx.listener(Self::toggle_mode_review))
-            .on_action(cx.listener(Self::open_command_palette_action))
-            .on_action(cx.listener(Self::close_command_palette_action))
-            .on_action(cx.listener(Self::palette_move_up))
-            .on_action(cx.listener(Self::palette_move_down))
-            .on_action(cx.listener(Self::palette_run))
-            .track_focus(&self.focus_handle)
-            .flex()
-            .flex_col()
-            .size_full()
-            .bg(cx.theme().background)
-            .child(self.render_topbar(cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.render_sidebar(cx))
-                    .child(self.render_editor(cx)),
-            );
-
-        if let Some(dialog) = self.render_page_dialog(cx) {
-            root = root.child(dialog);
-        }
-
-        if let Some(dialog) = self.render_vault_dialog(cx) {
-            root = root.child(dialog);
-        }
-
-        if let Some(palette) = self.render_command_palette(cx) {
-            root = root.child(palette);
-        }
-
-        root
-    }
 }

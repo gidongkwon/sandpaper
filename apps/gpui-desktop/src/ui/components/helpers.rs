@@ -1,0 +1,107 @@
+use crate::app::prelude::*;
+use crate::app::store::*;
+
+impl AppStore {
+    pub(super) fn render_header_row(
+        &self,
+        title: &str,
+        trailing: gpui::AnyElement,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.foreground)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(title.to_string()),
+            )
+            .child(trailing)
+            .into_any_element()
+    }
+
+    pub(super) fn render_settings_row(
+        &self,
+        label: &str,
+        description: &str,
+        control: gpui::AnyElement,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .child(label.to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(description.to_string()),
+                    ),
+            )
+            .child(control)
+            .into_any_element()
+    }
+
+    pub(super) fn render_plugin_card(
+        &self,
+        plugin: &PluginPermissionInfo,
+        title_color: gpui::Hsla,
+        background: gpui::Hsla,
+        right_slot: gpui::AnyElement,
+        include_description: bool,
+        cx: &App,
+    ) -> gpui::Div {
+        let theme = cx.theme();
+        let mut card = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .px_2()
+            .py_2()
+            .rounded_md()
+            .bg(background)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(title_color)
+                            .child(plugin.name.clone()),
+                    )
+                    .child(right_slot),
+            );
+
+        if include_description {
+            if let Some(description) = plugin.description.clone() {
+                card = card.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(description),
+                );
+            }
+        }
+
+        card
+    }
+}

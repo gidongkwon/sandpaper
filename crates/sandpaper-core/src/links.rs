@@ -1,3 +1,5 @@
+use crate::app;
+
 pub fn extract_wikilinks(text: &str) -> Vec<String> {
     let mut links = Vec::new();
     let mut cursor = 0;
@@ -84,9 +86,84 @@ pub fn strip_block_refs(text: &str) -> String {
     output
 }
 
+pub fn replace_wikilinks_in_text(text: &str, from_title: &str, to_title: &str) -> String {
+    let normalized_from = app::sanitize_kebab(from_title);
+    let normalized_to = app::sanitize_kebab(to_title);
+    if normalized_from.is_empty() || normalized_from == normalized_to {
+        return text.to_string();
+    }
+
+    let mut output = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while let Some(start_rel) = text[cursor..].find("[[") {
+        let start = cursor + start_rel;
+        output.push_str(&text[cursor..start]);
+        let inner_start = start + 2;
+        if inner_start >= text.len() {
+            output.push_str(&text[start..]);
+            return output;
+        }
+        let Some(end_rel) = text[inner_start..].find("]]") else {
+            output.push_str(&text[start..]);
+            return output;
+        };
+        let inner_end = inner_start + end_rel;
+        let inner = text[inner_start..inner_end].trim();
+        if inner.is_empty() {
+            output.push_str(&text[start..inner_end + 2]);
+            cursor = inner_end + 2;
+            continue;
+        }
+
+        let mut parts = inner.splitn(2, '|');
+        let target_part = parts.next().unwrap_or("").trim();
+        let alias_part = parts
+            .next()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty());
+        let mut target_parts = target_part.splitn(2, '#');
+        let target_base = target_parts.next().unwrap_or("").trim();
+        let heading_part = target_parts
+            .next()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty());
+
+        if target_base.is_empty()
+            || app::sanitize_kebab(target_base) != normalized_from
+        {
+            output.push_str(&text[start..inner_end + 2]);
+            cursor = inner_end + 2;
+            continue;
+        }
+
+        let next_target = to_title.trim();
+        let next_target = if next_target.is_empty() {
+            target_base
+        } else {
+            next_target
+        };
+        let heading_suffix = heading_part
+            .map(|value| format!("#{value}"))
+            .unwrap_or_default();
+        let alias_suffix = alias_part
+            .map(|value| format!("|{value}"))
+            .unwrap_or_default();
+        output.push_str(&format!(
+            "[[{next_target}{heading_suffix}{alias_suffix}]]"
+        ));
+        cursor = inner_end + 2;
+    }
+
+    output.push_str(&text[cursor..]);
+    output
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_block_refs, extract_wikilinks, strip_block_refs, strip_wikilinks};
+    use super::{
+        extract_block_refs, extract_wikilinks, replace_wikilinks_in_text, strip_block_refs,
+        strip_wikilinks,
+    };
 
     #[test]
     fn extract_wikilinks_collects_titles() {
@@ -110,5 +187,36 @@ mod tests {
     fn strip_block_refs_removes_parens() {
         let stripped = strip_block_refs("Link to ((block-1)) and ((block-2|Alias)).");
         assert_eq!(stripped, "Link to block-1 and Alias.");
+    }
+
+    #[test]
+    fn replace_wikilinks_updates_matching_targets() {
+        let text = "See [[Project Atlas|Alias]] and [[Project Atlas#Head]] plus [[Other]].";
+        let next = replace_wikilinks_in_text(text, "Project Atlas", "Project Nova");
+        assert_eq!(
+            next,
+            "See [[Project Nova|Alias]] and [[Project Nova#Head]] plus [[Other]]."
+        );
+    }
+
+    #[test]
+    fn replace_wikilinks_ignores_mismatched_targets() {
+        let text = "Check [[Atlas]] and [[Other|Alias]].";
+        let next = replace_wikilinks_in_text(text, "Project Atlas", "Project Nova");
+        assert_eq!(next, text);
+    }
+
+    #[test]
+    fn replace_wikilinks_keeps_target_when_new_title_blank() {
+        let text = "Jump to [[Project Atlas]]";
+        let next = replace_wikilinks_in_text(text, "Project Atlas", "");
+        assert_eq!(next, text);
+    }
+
+    #[test]
+    fn replace_wikilinks_matches_normalized_titles() {
+        let text = "Jump to [[project-atlas]]";
+        let next = replace_wikilinks_in_text(text, "Project Atlas", "Project Nova");
+        assert_eq!(next, "Jump to [[Project Nova]]");
     }
 }

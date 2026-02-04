@@ -1,18 +1,18 @@
 use super::*;
 use super::helpers::{format_snippet, now_millis};
 
-impl SandpaperApp {
-    pub(super) fn schedule_highlight_clear(&mut self, cx: &mut Context<Self>) {
-        self.highlight_epoch += 1;
-        let epoch = self.highlight_epoch;
+impl AppStore {
+    pub(crate) fn schedule_highlight_clear(&mut self, cx: &mut Context<Self>) {
+        self.editor.highlight_epoch += 1;
+        let epoch = self.editor.highlight_epoch;
 
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_millis(1500)).await;
             this.update(cx, |this, cx| {
-                if this.highlight_epoch != epoch {
+                if this.editor.highlight_epoch != epoch {
                     return;
                 }
-                this.highlighted_block_uid = None;
+                this.editor.highlighted_block_uid = None;
                 cx.notify();
             })
             .ok();
@@ -20,17 +20,17 @@ impl SandpaperApp {
         .detach();
     }
 
-    pub(super) fn schedule_capture_confirmation_clear(&mut self, cx: &mut Context<Self>) {
-        self.capture_confirmation_epoch += 1;
-        let epoch = self.capture_confirmation_epoch;
+    pub(crate) fn schedule_capture_confirmation_clear(&mut self, cx: &mut Context<Self>) {
+        self.ui.capture_confirmation_epoch += 1;
+        let epoch = self.ui.capture_confirmation_epoch;
 
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_millis(1200)).await;
             this.update(cx, |this, cx| {
-                if this.capture_confirmation_epoch != epoch {
+                if this.ui.capture_confirmation_epoch != epoch {
                     return;
                 }
-                this.capture_confirmation = None;
+                this.ui.capture_confirmation = None;
                 cx.notify();
             })
             .ok();
@@ -38,44 +38,45 @@ impl SandpaperApp {
         .detach();
     }
 
-    pub(super) fn refresh_search_results(&mut self) {
-        let query = self.sidebar_search_query.trim();
+    pub(crate) fn refresh_search_results(&mut self) {
+        let query = self.editor.sidebar_search_query.trim();
         if query.is_empty() {
-            self.search_pages.clear();
-            self.search_blocks.clear();
+            self.editor.search_pages.clear();
+            self.editor.search_blocks.clear();
             return;
         }
-        let Some(db) = self.db.as_ref() else {
-            self.search_pages.clear();
-            self.search_blocks.clear();
+        let Some(db) = self.app.db.as_ref() else {
+            self.editor.search_pages.clear();
+            self.editor.search_blocks.clear();
             return;
         };
         let page_ids = db.search_pages(query).unwrap_or_default();
         let lookup: HashMap<i64, PageRecord> = self
+            .editor
             .pages
             .iter()
             .cloned()
             .map(|page| (page.id, page))
             .collect();
-        self.search_pages = page_ids
+        self.editor.search_pages = page_ids
             .iter()
             .filter_map(|id| lookup.get(id).cloned())
             .collect();
-        self.search_blocks = db
+        self.editor.search_blocks = db
             .search_block_page_summaries(query, 20)
             .unwrap_or_default();
     }
 
-    pub(super) fn schedule_references_refresh(&mut self, cx: &mut Context<Self>) {
-        self.references_epoch += 1;
-        let epoch = self.references_epoch;
+    pub(crate) fn schedule_references_refresh(&mut self, cx: &mut Context<Self>) {
+        self.editor.references_epoch += 1;
+        let epoch = self.editor.references_epoch;
 
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(300))
                 .await;
             this.update(cx, |this, cx| {
-                if this.references_epoch != epoch {
+                if this.editor.references_epoch != epoch {
                     return;
                 }
                 this.refresh_references();
@@ -86,15 +87,15 @@ impl SandpaperApp {
         .detach();
     }
 
-    pub(super) fn refresh_references(&mut self) {
-        self.backlinks.clear();
-        self.unlinked_references.clear();
-        self.block_backlinks.clear();
+    pub(crate) fn refresh_references(&mut self) {
+        self.editor.backlinks.clear();
+        self.editor.unlinked_references.clear();
+        self.editor.block_backlinks.clear();
 
-        let Some(active_page) = self.active_page.as_ref() else {
+        let Some(active_page) = self.editor.active_page.as_ref() else {
             return;
         };
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.app.db.as_ref() else {
             return;
         };
 
@@ -115,7 +116,7 @@ impl SandpaperApp {
                     }
                 }
                 if is_match {
-                    self.backlinks.push(BacklinkEntry {
+                    self.editor.backlinks.push(BacklinkEntry {
                         block_uid: record.block_uid,
                         page_uid: record.page_uid,
                         page_title: record.page_title,
@@ -124,16 +125,17 @@ impl SandpaperApp {
                 }
             }
         }
-        if self.backlinks.len() > 20 {
-            self.backlinks.truncate(20);
+        if self.editor.backlinks.len() > 20 {
+            self.editor.backlinks.truncate(20);
         }
 
-        let Some(editor) = self.editor.as_ref() else {
+        let Some(editor) = self.editor.editor.as_ref() else {
             return;
         };
 
         let mut seen = HashSet::new();
         let pages = self
+            .editor
             .pages
             .iter()
             .filter(|page| page.uid != active_uid && !page.title.trim().is_empty())
@@ -159,7 +161,7 @@ impl SandpaperApp {
                     helpers::count_case_insensitive_occurrences(&stripped, title);
                 if count > 0 && lowered.contains(&title.to_lowercase()) {
                     seen.insert(key);
-                    self.unlinked_references.push(UnlinkedReference {
+                    self.editor.unlinked_references.push(UnlinkedReference {
                         block_uid: block.uid.clone(),
                         page_title: page.title.clone(),
                         snippet: format_snippet(&stripped, 120),
@@ -169,20 +171,20 @@ impl SandpaperApp {
             }
         }
 
-        if self.unlinked_references.len() > 12 {
-            self.unlinked_references.truncate(12);
+        if self.editor.unlinked_references.len() > 12 {
+            self.editor.unlinked_references.truncate(12);
         }
 
         self.refresh_block_backlinks();
     }
 
-    pub(super) fn refresh_block_backlinks(&mut self) {
-        self.block_backlinks.clear();
+    pub(crate) fn refresh_block_backlinks(&mut self) {
+        self.editor.block_backlinks.clear();
 
-        let Some(editor) = self.editor.as_ref() else {
+        let Some(editor) = self.editor.editor.as_ref() else {
             return;
         };
-        let Some(db) = self.db.as_ref() else {
+        let Some(db) = self.app.db.as_ref() else {
             return;
         };
 
@@ -201,7 +203,7 @@ impl SandpaperApp {
                     }
                 }
                 if is_match {
-                    self.block_backlinks.push(BacklinkEntry {
+                    self.editor.block_backlinks.push(BacklinkEntry {
                         block_uid: record.block_uid,
                         page_uid: record.page_uid,
                         page_title: record.page_title,
@@ -211,14 +213,14 @@ impl SandpaperApp {
             }
         }
 
-        if self.block_backlinks.len() > 20 {
-            self.block_backlinks.truncate(20);
+        if self.editor.block_backlinks.len() > 20 {
+            self.editor.block_backlinks.truncate(20);
         }
     }
 
-    pub(super) fn load_review_items(&mut self, cx: &mut Context<Self>) {
-        let Some(db) = self.db.as_ref() else {
-            self.review_items.clear();
+    pub(crate) fn load_review_items(&mut self, cx: &mut Context<Self>) {
+        let Some(db) = self.app.db.as_ref() else {
+            self.editor.review_items.clear();
             return;
         };
 
@@ -272,12 +274,12 @@ impl SandpaperApp {
             });
         }
 
-        self.review_items = display_items;
+        self.editor.review_items = display_items;
         cx.notify();
     }
 
-    pub(super) fn review_mark_done(&mut self, item_id: i64, cx: &mut Context<Self>) {
-        let Some(db) = self.db.as_ref() else {
+    pub(crate) fn review_mark_done(&mut self, item_id: i64, cx: &mut Context<Self>) {
+        let Some(db) = self.app.db.as_ref() else {
             return;
         };
         let now = now_millis();
@@ -285,8 +287,8 @@ impl SandpaperApp {
         self.load_review_items(cx);
     }
 
-    pub(super) fn review_snooze_day(&mut self, item_id: i64, cx: &mut Context<Self>) {
-        let Some(db) = self.db.as_ref() else {
+    pub(crate) fn review_snooze_day(&mut self, item_id: i64, cx: &mut Context<Self>) {
+        let Some(db) = self.app.db.as_ref() else {
             return;
         };
         let now = now_millis();
@@ -295,8 +297,8 @@ impl SandpaperApp {
         self.load_review_items(cx);
     }
 
-    pub(super) fn review_snooze_week(&mut self, item_id: i64, cx: &mut Context<Self>) {
-        let Some(db) = self.db.as_ref() else {
+    pub(crate) fn review_snooze_week(&mut self, item_id: i64, cx: &mut Context<Self>) {
+        let Some(db) = self.app.db.as_ref() else {
             return;
         };
         let now = now_millis();
