@@ -1,12 +1,16 @@
 pub(crate) mod prelude;
 pub mod store;
 
-use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui::{px, size, App, AppContext, Application, Bounds, WindowBounds, WindowOptions};
 use gpui_component::Root;
+use gpui_component_assets::Assets;
 
 pub fn run() {
-    Application::new().run(|cx: &mut App| {
+    let app = Application::new().with_assets(Assets);
+
+    app.run(|cx: &mut App| {
         gpui_component::init(cx);
+        crate::ui::sandpaper_theme::init(cx);
         store::bind_keys(cx);
 
         let bounds = Bounds::centered(None, size(px(1200.0), px(760.0)), cx);

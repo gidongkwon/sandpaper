@@ -1,6 +1,6 @@
-use super::*;
 use super::editor::update_wikilinks_in_db;
 use super::helpers::{default_vault_path, expand_tilde};
+use super::*;
 
 impl AppStore {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -161,15 +161,13 @@ impl AppStore {
                     window.open_dialog(cx, move |dialog, _window, _cx| {
                         let app = app.clone();
                         let view = view.clone();
-                        dialog
-                            .title("Vaults")
-                            .w(px(560.0))
-                            .child(view)
-                            .on_close(move |_event, _window, cx| {
+                        dialog.title("Vaults").w(px(560.0)).child(view).on_close(
+                            move |_event, _window, cx| {
                                 app.update(cx, |app, cx| {
                                     app.close_vault_dialog(cx);
                                 });
-                            })
+                            },
+                        )
                     });
                     window.focus(&name_input.focus_handle(cx), cx);
                 });
@@ -210,15 +208,13 @@ impl AppStore {
                     window.open_dialog(cx, move |dialog, _window, _cx| {
                         let app = app.clone();
                         let view = view.clone();
-                        dialog
-                            .title("Vaults")
-                            .w(px(560.0))
-                            .child(view)
-                            .on_close(move |_event, _window, cx| {
+                        dialog.title("Vaults").w(px(560.0)).child(view).on_close(
+                            move |_event, _window, cx| {
                                 app.update(cx, |app, cx| {
                                     app.close_vault_dialog(cx);
                                 });
-                            })
+                            },
+                        )
                     });
                     window.focus(&name_input.focus_handle(cx), cx);
                 });
@@ -509,13 +505,13 @@ impl AppStore {
         self.editor.active_page = Some(page.clone());
         self.app.primary_dirty = false;
         self.update_save_state_from_dirty();
-        self.editor.blocks_list_state
+        self.editor
+            .blocks_list_state
             .reset(editor.blocks.len(), px(BLOCK_ROW_HEIGHT));
         self.editor.active_pane = EditorPane::Primary;
 
         let page_cursor = self.editor.page_cursors.get(&page.uid);
-        let (active_ix, cursor) =
-            helpers::resolve_cursor_for_blocks(&editor.blocks, page_cursor);
+        let (active_ix, cursor) = helpers::resolve_cursor_for_blocks(&editor.blocks, page_cursor);
         editor.active_ix = active_ix;
         self.record_recent_page(&page.uid);
 
@@ -615,7 +611,11 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn confirm_page_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn confirm_page_dialog(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let title = self
             .ui
             .page_dialog_input
@@ -646,8 +646,7 @@ impl AppStore {
                         }
                     };
                     if db.insert_page(&uid, &title).is_err() {
-                        self.ui.page_dialog_error =
-                            Some("Failed to create page.".into());
+                        self.ui.page_dialog_error = Some("Failed to create page.".into());
                         cx.notify();
                         return false;
                     }
@@ -681,8 +680,7 @@ impl AppStore {
                         return false;
                     };
                     if db.update_page_title(active.id, &title).is_err() {
-                        self.ui.page_dialog_error =
-                            Some("Failed to rename page.".into());
+                        self.ui.page_dialog_error = Some("Failed to rename page.".into());
                         cx.notify();
                         return false;
                     }

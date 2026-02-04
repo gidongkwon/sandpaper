@@ -115,15 +115,9 @@ pub(crate) fn coerce_setting_value(field: &PluginSettingSchema, raw: &str) -> Va
     match setting_kind(field) {
         PluginSettingKind::Boolean => {
             let normalized = trimmed.to_lowercase();
-            if matches!(
-                normalized.as_str(),
-                "true" | "1" | "yes" | "on"
-            ) {
+            if matches!(normalized.as_str(), "true" | "1" | "yes" | "on") {
                 Value::Bool(true)
-            } else if matches!(
-                normalized.as_str(),
-                "false" | "0" | "no" | "off"
-            ) {
+            } else if matches!(normalized.as_str(), "false" | "0" | "no" | "off") {
                 Value::Bool(false)
             } else {
                 Value::Bool(!normalized.is_empty())
@@ -134,7 +128,10 @@ pub(crate) fn coerce_setting_value(field: &PluginSettingSchema, raw: &str) -> Va
             .map(|value| Value::Number(value.into()))
             .unwrap_or_else(|_| Value::String(trimmed.to_string())),
         PluginSettingKind::Number => {
-            let value = trimmed.parse::<f64>().ok().and_then(serde_json::Number::from_f64);
+            let value = trimmed
+                .parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64);
             value
                 .map(Value::Number)
                 .unwrap_or_else(|| Value::String(trimmed.to_string()))
@@ -206,7 +203,10 @@ impl PluginsState {
     }
 }
 
-fn input_keys_for_schema(plugin_id: &str, schema: Option<&PluginSettingsSchema>) -> HashSet<String> {
+fn input_keys_for_schema(
+    plugin_id: &str,
+    schema: Option<&PluginSettingsSchema>,
+) -> HashSet<String> {
     let mut keys = HashSet::new();
     let Some(schema) = schema else {
         return keys;
@@ -340,9 +340,7 @@ impl AppStore {
             .settings
             .plugin_settings_selected
             .as_ref()
-            .is_some_and(|id| {
-                self.plugins.plugins.iter().any(|plugin| &plugin.id == id)
-            });
+            .is_some_and(|id| self.plugins.plugins.iter().any(|plugin| &plugin.id == id));
         if !selected_valid {
             self.settings.plugin_settings_selected = None;
         }
@@ -357,11 +355,7 @@ impl AppStore {
         }
     }
 
-    fn on_plugin_list_changed(
-        &mut self,
-        window: Option<&mut Window>,
-        cx: &mut Context<Self>,
-    ) {
+    fn on_plugin_list_changed(&mut self, window: Option<&mut Window>, cx: &mut Context<Self>) {
         self.prune_plugin_setting_inputs();
         if self.settings.open && self.settings.tab == SettingsTab::Plugins {
             self.ensure_plugin_settings_selection();
@@ -381,7 +375,8 @@ impl AppStore {
     }
 
     pub(crate) fn plugin_setting_value(&self, plugin_id: &str, key: &str) -> Option<Value> {
-        self.plugins.plugin_settings_values
+        self.plugins
+            .plugin_settings_values
             .get(plugin_id)
             .and_then(|value| value.as_object())
             .and_then(|map| map.get(key).cloned())
@@ -392,32 +387,28 @@ impl AppStore {
         let saved = self.plugins.plugin_settings_saved.get(plugin_id);
         let is_dirty = match (current, saved) {
             (Some(current), Some(saved)) => current != saved,
-            (Some(current), None) => {
-                current != &Value::Object(serde_json::Map::new())
-            }
+            (Some(current), None) => current != &Value::Object(serde_json::Map::new()),
             (None, Some(_)) => true,
             (None, None) => false,
         };
         if is_dirty {
-            self.plugins.plugin_settings_dirty.insert(plugin_id.to_string());
+            self.plugins
+                .plugin_settings_dirty
+                .insert(plugin_id.to_string());
         } else {
             self.plugins.plugin_settings_dirty.remove(plugin_id);
         }
     }
 
     fn set_plugin_settings_value(&mut self, plugin_id: &str, value: Value) {
-        self.plugins.plugin_settings_values
+        self.plugins
+            .plugin_settings_values
             .insert(plugin_id.to_string(), value);
         self.update_plugin_settings_dirty(plugin_id);
         self.plugins.plugin_settings_status.remove(plugin_id);
     }
 
-    pub(crate) fn update_plugin_setting_value(
-        &mut self,
-        plugin_id: &str,
-        key: &str,
-        value: Value,
-    ) {
+    pub(crate) fn update_plugin_setting_value(&mut self, plugin_id: &str, key: &str, value: Value) {
         let entry = self
             .plugins
             .plugin_settings_values
@@ -447,10 +438,7 @@ impl AppStore {
             return input;
         }
 
-        let placeholder = field
-            .title
-            .clone()
-            .unwrap_or_else(|| key.to_string());
+        let placeholder = field.title.clone().unwrap_or_else(|| key.to_string());
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let initial_value = self
             .plugin_setting_value(plugin_id, &key)
@@ -718,9 +706,7 @@ impl AppStore {
                                 div()
                                     .text_sm()
                                     .text_color(cx.theme().foreground)
-                                    .child(format!(
-                                        "Allow {plugin_name} to use {permission}?"
-                                    )),
+                                    .child(format!("Allow {plugin_name} to use {permission}?")),
                             )
                             .child(
                                 div()
@@ -732,9 +718,7 @@ impl AppStore {
                     .on_ok({
                         let app = app.clone();
                         move |_event, window, cx| {
-                            app.update(cx, |app, cx| {
-                                app.grant_plugin_permission_action(window, cx)
-                            })
+                            app.update(cx, |app, cx| app.grant_plugin_permission_action(window, cx))
                         }
                     })
                     .on_cancel({
@@ -786,11 +770,8 @@ impl AppStore {
             }
         }
 
-        let toast: SharedString = format!(
-            "Granted {} to {}.",
-            prompt.permission, prompt.plugin_name
-        )
-        .into();
+        let toast: SharedString =
+            format!("Granted {} to {}.", prompt.permission, prompt.plugin_name).into();
 
         self.plugins.plugin_permission_prompt = None;
         self.load_plugins(Some(window), cx);
@@ -961,19 +942,14 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn save_plugin_settings(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn save_plugin_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(selected) = self.settings.plugin_settings_selected.clone() else {
             return;
         };
         let Some(db) = self.app.db.as_ref() else {
-            self.plugins.plugin_settings_status.insert(
-                selected,
-                "Database not available.".into(),
-            );
+            self.plugins
+                .plugin_settings_status
+                .insert(selected, "Database not available.".into());
             cx.notify();
             return;
         };
@@ -986,43 +962,43 @@ impl AppStore {
             .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
         if let Err(err) = set_plugin_settings(db, &selected, &value) {
-            self.plugins.plugin_settings_status
+            self.plugins
+                .plugin_settings_status
                 .insert(selected, format!("Failed to save: {err}").into());
             cx.notify();
             return;
         }
 
-        self.plugins.plugin_settings_saved
+        self.plugins
+            .plugin_settings_saved
             .insert(selected.clone(), value.clone());
         self.plugins.plugin_settings_dirty.remove(&selected);
-        self.plugins.plugin_settings_status
+        self.plugins
+            .plugin_settings_status
             .insert(selected.clone(), "Saved. Reloading…".into());
         self.reload_plugin_runtime(Some(window), cx);
-        self.plugins.plugin_settings_status
+        self.plugins
+            .plugin_settings_status
             .insert(selected.clone(), "Saved and reloaded.".into());
         self.sync_plugin_setting_inputs_for_selected(window, cx);
         cx.notify();
     }
 
-    pub(crate) fn reset_plugin_settings(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn reset_plugin_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(selected) = self.settings.plugin_settings_selected.clone() else {
             return;
         };
         let Some(db) = self.app.db.as_ref() else {
-            self.plugins.plugin_settings_status.insert(
-                selected,
-                "Database not available.".into(),
-            );
+            self.plugins
+                .plugin_settings_status
+                .insert(selected, "Database not available.".into());
             cx.notify();
             return;
         };
 
         if let Err(err) = clear_plugin_settings(db, &selected) {
-            self.plugins.plugin_settings_status
+            self.plugins
+                .plugin_settings_status
                 .insert(selected, format!("Failed to reset: {err}").into());
             cx.notify();
             return;
@@ -1036,7 +1012,8 @@ impl AppStore {
             .and_then(|plugin| plugin.settings_schema.as_ref());
         let value = apply_settings_schema_defaults(schema, None);
         self.set_plugin_settings_value(&selected, value);
-        self.plugins.plugin_settings_status
+        self.plugins
+            .plugin_settings_status
             .insert(selected.clone(), "Reset to defaults.".into());
         self.sync_plugin_setting_inputs_for_selected(window, cx);
         cx.notify();
@@ -1075,10 +1052,7 @@ impl AppStore {
                         .mt_2()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(format!(
-                            "Context: {}",
-                            format_error_context(context)
-                        )),
+                        .child(format!("Context: {}", format_error_context(context))),
                 );
             }
 
@@ -1092,7 +1066,10 @@ impl AppStore {
                 );
             }
 
-            dialog.title("Plugin error details").w(px(560.0)).child(body)
+            dialog
+                .title("Plugin error details")
+                .w(px(560.0))
+                .child(body)
         });
     }
 }
@@ -1102,7 +1079,7 @@ mod tests {
     use super::{
         apply_settings_schema_defaults, build_plugin_settings_state, coerce_setting_value,
         compute_missing_permissions, get_plugin_settings, list_permissions_for_plugins,
-        set_plugin_settings, setting_kind, PluginPermissionInfo, PluginSettingKind, AppStore,
+        set_plugin_settings, setting_kind, AppStore, PluginPermissionInfo, PluginSettingKind,
     };
     use gpui::{AppContext, Entity, TestAppContext};
     use sandpaper_core::db::Database;
@@ -1123,8 +1100,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.grant_plugin_permission("alpha", "fs")
-            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "fs").expect("grant fs");
 
         let plugins = vec![PluginInfo {
             id: "alpha".to_string(),
@@ -1346,7 +1322,11 @@ mod tests {
             }];
 
             app.request_plugin_permission("alpha", "data.write", None, cx);
-            let prompt = app.plugins.plugin_permission_prompt.clone().expect("prompt");
+            let prompt = app
+                .plugins
+                .plugin_permission_prompt
+                .clone()
+                .expect("prompt");
             assert_eq!(prompt.plugin_name, "Alpha");
             assert_eq!(prompt.permission, "data.write");
         });

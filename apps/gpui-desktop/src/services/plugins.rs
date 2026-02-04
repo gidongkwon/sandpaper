@@ -1,10 +1,10 @@
 use crate::app::prelude::*;
 use crate::app::store::constants;
-use crate::app::store::{PluginBlockInfo, PluginPermissionInfo};
 use crate::app::store::plugins::{
     compute_missing_permissions, describe_plugin_error, list_permissions_for_plugins,
     plugin_registry_for_vault,
 };
+use crate::app::store::{PluginBlockInfo, PluginPermissionInfo};
 use sandpaper_core::plugins::{install_plugin, remove_plugin, update_plugin};
 
 pub(crate) struct PluginLoadPlan {
@@ -126,4 +126,3 @@ pub(crate) fn remove(
     let registry = plugin_registry_for_vault(vault_root);
     remove_plugin(vault_root, &registry, plugin_id).map_err(|err| describe_plugin_error(&err))
 }
-

@@ -191,7 +191,10 @@ fn parse_wikilink_inner(inner: &str) -> Option<(String, String)> {
     }
     let mut parts = raw.splitn(2, '|');
     let before_alias = parts.next().unwrap_or("").trim();
-    let alias = parts.next().map(|value| value.trim()).filter(|value| !value.is_empty());
+    let alias = parts
+        .next()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty());
     let mut target_parts = before_alias.splitn(2, '#');
     let target = target_parts.next().unwrap_or("").trim();
     if target.is_empty() {
@@ -211,7 +214,10 @@ pub(crate) fn resolve_cursor_for_blocks(
     }
 
     if let Some(cursor) = cursor {
-        if let Some(ix) = blocks.iter().position(|block| block.uid == cursor.block_uid) {
+        if let Some(ix) = blocks
+            .iter()
+            .position(|block| block.uid == cursor.block_uid)
+        {
             let offset = cursor.cursor_offset.min(blocks[ix].text.len());
             return (ix, offset);
         }
@@ -374,7 +380,10 @@ fn apply_heading_command(prefix: &str, text: &str) -> (String, usize) {
 
 fn apply_wrap_command(wrapper: &str, text: &str) -> (String, usize) {
     let trimmed = text.trim();
-    if trimmed.starts_with(wrapper) && trimmed.ends_with(wrapper) && trimmed.len() >= 2 * wrapper.len() {
+    if trimmed.starts_with(wrapper)
+        && trimmed.ends_with(wrapper)
+        && trimmed.len() >= 2 * wrapper.len()
+    {
         let next_text = trimmed.to_string();
         return (next_text.clone(), next_text.len());
     }

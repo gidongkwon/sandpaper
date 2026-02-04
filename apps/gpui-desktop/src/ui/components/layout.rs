@@ -70,9 +70,10 @@ impl AppStore {
             )
             .child(
                 Button::new("settings-button")
-                    .label("Settings")
                     .xsmall()
                     .ghost()
+                    .icon(IconName::Settings)
+                    .tooltip("Settings")
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.open_settings(SettingsTab::General, window, cx);
                     })),
@@ -81,13 +82,14 @@ impl AppStore {
                 Button::new("vaults-button")
                     .label(vault_label)
                     .xsmall()
+                    .icon(IconName::FolderOpen)
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.open_vaults(&OpenVaults, window, cx);
                     })),
             );
 
         div()
-            .h(px(44.0))
+            .h(px(48.0))
             .px_3()
             .flex()
             .items_center()
@@ -99,7 +101,11 @@ impl AppStore {
             .child(right_group)
     }
 
-    pub(crate) fn render_root(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_root(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let mut root = div()
             .id("sandpaper-app")
             .key_context("Sandpaper")

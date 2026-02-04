@@ -20,17 +20,13 @@ impl AppStore {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "—".to_string());
 
-        let mut content = div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("General"),
-            );
+        let mut content = div().flex().flex_col().gap_3().child(
+            div()
+                .text_sm()
+                .text_color(theme.foreground)
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child("General"),
+        );
 
         content = content.child(
             div()

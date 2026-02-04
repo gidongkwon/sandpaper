@@ -1,10 +1,14 @@
 use crate::app::prelude::*;
-use crate::app::store::*;
 use crate::app::store::helpers::format_snippet;
+use crate::app::store::*;
 
 impl AppStore {
     pub(super) fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_uid = self.editor.active_page.as_ref().map(|page| page.uid.clone());
+        let active_uid = self
+            .editor
+            .active_page
+            .as_ref()
+            .map(|page| page.uid.clone());
         let has_query = !self.editor.sidebar_search_query.trim().is_empty();
         let list = if has_query {
             self.render_search_results(cx).into_any_element()
@@ -14,7 +18,7 @@ impl AppStore {
         let theme = cx.theme();
 
         let mut sidebar = div()
-            .w(px(280.0))
+            .w(px(272.0))
             .h_full()
             .bg(theme.sidebar)
             .border_r_1()
@@ -38,16 +42,23 @@ impl AppStore {
                         Button::new("new-page")
                             .label("New")
                             .xsmall()
+                            .icon(IconName::Plus)
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.open_page_dialog(PageDialogMode::Create, cx);
                             })),
                     ),
             )
             .child(
-                div()
-                    .px_3()
-                    .pb_2()
-                    .child(Input::new(&self.editor.sidebar_search_input).small().cleanable(true)),
+                div().px_3().pb_2().child(
+                    Input::new(&self.editor.sidebar_search_input)
+                        .small()
+                        .cleanable(true)
+                        .prefix(
+                            Icon::new(IconName::Search)
+                                .small()
+                                .text_color(theme.muted_foreground),
+                        ),
+                ),
             )
             .child(list);
 
@@ -95,8 +106,7 @@ impl AppStore {
                 range
                     .map(|ix| {
                         let page = this.editor.pages[ix].clone();
-                        let is_active =
-                            active_uid.as_ref().is_some_and(|uid| uid == &page.uid);
+                        let is_active = active_uid.as_ref().is_some_and(|uid| uid == &page.uid);
                         let text_color = if is_active {
                             theme.sidebar_accent_foreground
                         } else {
@@ -107,13 +117,15 @@ impl AppStore {
                         } else {
                             theme.sidebar
                         };
-                        let hover_bg = theme.sidebar_accent;
+                        let hover_bg = theme.list_hover;
 
                         div()
                             .id(page.uid.clone())
-                            .px_3()
+                            .mx_2()
+                            .px_2()
                             .py_2()
                             .cursor_pointer()
+                            .rounded_md()
                             .bg(bg)
                             .hover(move |s| {
                                 if is_active {
@@ -200,9 +212,14 @@ impl AppStore {
                                             .label("Open")
                                             .xsmall()
                                             .ghost()
+                                            .icon(IconName::ArrowRight)
                                             .on_click(cx.listener(
                                                 move |this, _event, window, cx| {
-                                                    this.on_click_page(open_uid.clone(), window, cx);
+                                                    this.on_click_page(
+                                                        open_uid.clone(),
+                                                        window,
+                                                        cx,
+                                                    );
                                                 },
                                             )),
                                     )
@@ -211,9 +228,12 @@ impl AppStore {
                                             .label("Split")
                                             .xsmall()
                                             .ghost()
+                                            .icon(IconName::PanelRightOpen)
                                             .on_click(cx.listener(
                                                 move |this, _event, _window, cx| {
-                                                    this.open_secondary_pane_for_page(&split_uid, cx);
+                                                    this.open_secondary_pane_for_page(
+                                                        &split_uid, cx,
+                                                    );
                                                 },
                                             )),
                                     ),
@@ -239,12 +259,7 @@ impl AppStore {
                     .py_2()
                     .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.foreground)
-                            .child(snippet),
-                    )
+                    .child(div().text_sm().text_color(theme.foreground).child(snippet))
                     .child(
                         div()
                             .text_xs()
@@ -252,7 +267,12 @@ impl AppStore {
                             .child(block.page_title.clone()),
                     )
                     .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.open_page_and_focus_block(&block.page_uid, &block.block_uid, window, cx);
+                        this.open_page_and_focus_block(
+                            &block.page_uid,
+                            &block.block_uid,
+                            window,
+                            cx,
+                        );
                     }))
             }));
         }
@@ -321,12 +341,7 @@ impl AppStore {
                 .p_2()
                 .rounded_md()
                 .bg(theme.colors.list)
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.foreground)
-                        .child(snippet),
-                )
+                .child(div().text_xs().text_color(theme.foreground).child(snippet))
                 .child(
                     div()
                         .text_xs()
@@ -352,5 +367,4 @@ impl AppStore {
 
         Some(panel.into_any_element())
     }
-
 }

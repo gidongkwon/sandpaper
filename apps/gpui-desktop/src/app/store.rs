@@ -112,7 +112,11 @@ impl PaneSelection {
         if start == end {
             self.range = None;
         } else {
-            let (lo, hi) = if start <= end { (start, end) } else { (end, start) };
+            let (lo, hi) = if start <= end {
+                (start, end)
+            } else {
+                (end, start)
+            };
             self.range = Some((lo, hi));
         }
     }
@@ -437,10 +441,10 @@ pub(crate) enum PageDialogMode {
 #[cfg(test)]
 mod tests {
     use super::helpers::{
-        apply_slash_command_text, count_case_insensitive_occurrences, filter_slash_commands,
-        find_slash_query, find_wikilink_query, fuzzy_score, link_first_unlinked_reference,
-        parse_wikilink_tokens, resolve_cursor_for_blocks, score_palette_page, cycle_index,
-        PageCursor, WikilinkToken,
+        apply_slash_command_text, count_case_insensitive_occurrences, cycle_index,
+        filter_slash_commands, find_slash_query, find_wikilink_query, fuzzy_score,
+        link_first_unlinked_reference, parse_wikilink_tokens, resolve_cursor_for_blocks,
+        score_palette_page, PageCursor, WikilinkToken,
     };
     use super::PaneSelection;
     use sandpaper_core::db::BlockSnapshot;
@@ -605,42 +609,35 @@ mod tests {
 
     #[test]
     fn filter_slash_commands_skips_unmatched() {
-        let commands = [
-            ("link", "Link to page"),
-            ("date", "Insert date"),
-        ];
+        let commands = [("link", "Link to page"), ("date", "Insert date")];
         let filtered = filter_slash_commands("xyz", &commands);
         assert!(filtered.is_empty());
     }
 
     #[test]
     fn apply_slash_command_heading_sets_prefix() {
-        let (next, cursor) =
-            apply_slash_command_text("h2", "Note ", "", "2024-01-01");
+        let (next, cursor) = apply_slash_command_text("h2", "Note ", "", "2024-01-01");
         assert_eq!(next, "## Note");
         assert_eq!(cursor, next.len());
     }
 
     #[test]
     fn apply_slash_command_quote_sets_prefix() {
-        let (next, cursor) =
-            apply_slash_command_text("quote", "Note ", "", "2024-01-01");
+        let (next, cursor) = apply_slash_command_text("quote", "Note ", "", "2024-01-01");
         assert_eq!(next, "> Note");
         assert_eq!(cursor, next.len());
     }
 
     #[test]
     fn apply_slash_command_bold_wraps_text() {
-        let (next, cursor) =
-            apply_slash_command_text("bold", "Note ", "", "2024-01-01");
+        let (next, cursor) = apply_slash_command_text("bold", "Note ", "", "2024-01-01");
         assert_eq!(next, "**Note**");
         assert_eq!(cursor, next.len());
     }
 
     #[test]
     fn apply_slash_command_divider_ignores_content() {
-        let (next, cursor) =
-            apply_slash_command_text("divider", "Note ", "", "2024-01-01");
+        let (next, cursor) = apply_slash_command_text("divider", "Note ", "", "2024-01-01");
         assert_eq!(next, "---");
         assert_eq!(cursor, next.len());
     }

@@ -1,6 +1,6 @@
 use crate::app::prelude::*;
-use crate::app::store::*;
 use crate::app::store::helpers::format_snippet;
+use crate::app::store::*;
 impl AppStore {
     pub(super) fn render_editor(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let editor_body = match self.app.mode {
@@ -81,10 +81,7 @@ impl AppStore {
             div()
                 .flex_1()
                 .min_h_0()
-                .child(self.render_placeholder(
-                    "Select or create a page to start writing.",
-                    cx,
-                ))
+                .child(self.render_placeholder("Select or create a page to start writing.", cx))
                 .into_any_element()
         };
 
@@ -97,9 +94,10 @@ impl AppStore {
             .h_full()
             .flex()
             .flex_col()
-            .p_4()
+            .p_3()
             .bg(theme.background)
             .border_1()
+            .rounded_lg()
             .border_color(if is_active && self.editor.secondary_pane.is_some() {
                 theme.ring
             } else {
@@ -206,11 +204,7 @@ impl AppStore {
             );
 
         if breadcrumbs.len() > 1 {
-            let mut trail = div()
-                .id("editor-breadcrumbs")
-                .flex()
-                .items_center()
-                .gap_1();
+            let mut trail = div().id("editor-breadcrumbs").flex().items_center().gap_1();
             let crumb_hover = theme.list_hover;
             for (idx, item) in breadcrumbs.iter().enumerate() {
                 let is_last = idx == breadcrumbs.len() - 1;
@@ -337,7 +331,11 @@ impl AppStore {
         let label = if total > 0 {
             format!(
                 "{} ({total})",
-                if is_open { "Hide backlinks" } else { "Show backlinks" }
+                if is_open {
+                    "Hide backlinks"
+                } else {
+                    "Show backlinks"
+                }
             )
         } else if is_open {
             "Hide backlinks".to_string()
@@ -496,12 +494,18 @@ impl AppStore {
             .bg(theme.popover)
             .border_1()
             .border_color(theme.border)
-            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
             .child(
                 div()
                     .px_3()
@@ -525,7 +529,11 @@ impl AppStore {
         } else {
             for (ix, (id, label)) in commands.into_iter().enumerate() {
                 let is_selected = ix == selected_index;
-                let row_bg = if is_selected { selected_bg } else { theme.popover };
+                let row_bg = if is_selected {
+                    selected_bg
+                } else {
+                    theme.popover
+                };
                 menu = menu.child(
                     div()
                         .id(format!("slash-{id}"))
@@ -541,12 +549,14 @@ impl AppStore {
                                 cx.stop_propagation();
                             }),
                         )
-                        .on_mouse_move(cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
-                            if this.editor.slash_menu.selected_index != ix {
-                                this.editor.slash_menu.selected_index = ix;
-                                cx.notify();
-                            }
-                        }))
+                        .on_mouse_move(cx.listener(
+                            move |this, _event: &MouseMoveEvent, _window, cx| {
+                                if this.editor.slash_menu.selected_index != ix {
+                                    this.editor.slash_menu.selected_index = ix;
+                                    cx.notify();
+                                }
+                            },
+                        ))
                         .on_click(cx.listener(move |this, _event, window, cx| {
                             this.apply_slash_command(id, window, cx);
                         }))
@@ -579,12 +589,18 @@ impl AppStore {
             .bg(theme.popover)
             .border_1()
             .border_color(theme.border)
-            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
             .child(
                 div()
                     .px_3()
@@ -608,7 +624,11 @@ impl AppStore {
         } else {
             for (ix, item) in items.drain(..).enumerate() {
                 let is_selected = ix == selected_index;
-                let row_bg = if is_selected { selected_bg } else { theme.popover };
+                let row_bg = if is_selected {
+                    selected_bg
+                } else {
+                    theme.popover
+                };
                 let (label, create, query) = match item {
                     WikilinkMenuItem::Page(page) => {
                         let title = if page.title.trim().is_empty() {
@@ -636,12 +656,14 @@ impl AppStore {
                                 cx.stop_propagation();
                             }),
                         )
-                        .on_mouse_move(cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
-                            if this.editor.wikilink_menu.selected_index != ix {
-                                this.editor.wikilink_menu.selected_index = ix;
-                                cx.notify();
-                            }
-                        }))
+                        .on_mouse_move(cx.listener(
+                            move |this, _event: &MouseMoveEvent, _window, cx| {
+                                if this.editor.wikilink_menu.selected_index != ix {
+                                    this.editor.wikilink_menu.selected_index = ix;
+                                    cx.notify();
+                                }
+                            },
+                        ))
                         .on_click(cx.listener(move |this, _event, window, cx| {
                             if create {
                                 this.apply_wikilink_suggestion(&query, true, window, cx);
@@ -720,12 +742,18 @@ impl AppStore {
             .bg(theme.popover)
             .border_1()
             .border_color(theme.border)
-            .on_mouse_down(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|_this, _event, _window, cx| {
-                cx.stop_propagation();
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
             .on_mouse_move(cx.listener(|this, _event: &MouseMoveEvent, _window, cx| {
                 this.keep_link_preview_open();
                 cx.stop_propagation();
@@ -870,43 +898,41 @@ impl AppStore {
             EditorPane::Secondary => "secondary",
         };
 
-        let interactive = InteractiveText::new(
-            format!("wikilink-text-{id_prefix}-{block_uid}"),
-            styled,
-        )
-        .on_click(click_ranges, move |idx, _window, cx| {
-            if let Some(target) = click_targets.get(idx) {
-                let target = target.clone();
-                click_entity.update(cx, |this, cx| {
-                    this.open_page(&target, cx);
-                    this.editor.link_preview = None;
-                    this.editor.link_preview_hovering_link = false;
-                });
-            }
-            cx.stop_propagation();
-        })
-        .on_hover(move |hover_ix, event, _window, cx| {
-            let mut hovered_target = None;
-            if let Some(ix) = hover_ix {
-                for (range_ix, range) in hover_ranges_clone.iter().enumerate() {
-                    if range.contains(&ix) {
-                        hovered_target = hover_targets.get(range_ix).cloned();
-                        break;
+        let interactive =
+            InteractiveText::new(format!("wikilink-text-{id_prefix}-{block_uid}"), styled)
+                .on_click(click_ranges, move |idx, _window, cx| {
+                    if let Some(target) = click_targets.get(idx) {
+                        let target = target.clone();
+                        click_entity.update(cx, |this, cx| {
+                            this.open_page(&target, cx);
+                            this.editor.link_preview = None;
+                            this.editor.link_preview_hovering_link = false;
+                        });
                     }
-                }
-            }
+                    cx.stop_propagation();
+                })
+                .on_hover(move |hover_ix, event, _window, cx| {
+                    let mut hovered_target = None;
+                    if let Some(ix) = hover_ix {
+                        for (range_ix, range) in hover_ranges_clone.iter().enumerate() {
+                            if range.contains(&ix) {
+                                hovered_target = hover_targets.get(range_ix).cloned();
+                                break;
+                            }
+                        }
+                    }
 
-            hover_entity.update(cx, |this, cx| {
-                if let Some(target) = hovered_target {
-                    this.editor.link_preview_hovering_link = true;
-                    this.keep_link_preview_open();
-                    this.open_link_preview(&target, event.position, cx);
-                } else {
-                    this.editor.link_preview_hovering_link = false;
-                    this.schedule_link_preview_close(cx);
-                }
-            });
-        });
+                    hover_entity.update(cx, |this, cx| {
+                        if let Some(target) = hovered_target {
+                            this.editor.link_preview_hovering_link = true;
+                            this.keep_link_preview_open();
+                            this.open_link_preview(&target, event.position, cx);
+                        } else {
+                            this.editor.link_preview_hovering_link = false;
+                            this.schedule_link_preview_close(cx);
+                        }
+                    });
+                });
 
         div()
             .text_sm()
@@ -946,8 +972,8 @@ impl AppStore {
             .w(px(320.0))
             .h_full()
             .border_l_1()
-            .border_color(theme.sidebar_border)
-            .bg(theme.sidebar)
+            .border_color(theme.border)
+            .bg(theme.background)
             .flex()
             .flex_col()
             .min_h_0()
@@ -969,9 +995,10 @@ impl AppStore {
                     )
                     .child(
                         Button::new("backlinks-close")
-                            .label("Close")
                             .xsmall()
                             .ghost()
+                            .icon(IconName::Close)
+                            .tooltip("Close backlinks")
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.settings.backlinks_open = false;
                                 this.persist_settings();
@@ -1032,12 +1059,7 @@ impl AppStore {
                                     .flex()
                                     .flex_col()
                                     .gap_1()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(foreground)
-                                            .child(snippet),
-                                    )
+                                    .child(div().text_sm().text_color(foreground).child(snippet))
                                     .child(
                                         div()
                                             .text_xs()
@@ -1138,12 +1160,7 @@ impl AppStore {
                                     .flex()
                                     .flex_col()
                                     .gap_1()
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(foreground)
-                                            .child(snippet),
-                                    )
+                                    .child(div().text_sm().text_color(foreground).child(snippet))
                                     .child(
                                         div()
                                             .text_xs()
@@ -1173,27 +1190,24 @@ impl AppStore {
                                             )),
                                     )
                                     .child(
-                                        Button::new(format!(
-                                            "backlinks-block-split-{}",
-                                            block_uid
-                                        ))
-                                        .label("Split")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(
-                                            move |this, _event, _window, cx| {
-                                                this.open_secondary_pane_for_page(
-                                                    &split_page_uid,
-                                                    cx,
-                                                );
-                                                this.focus_block_by_uid_in_pane(
-                                                    EditorPane::Secondary,
-                                                    &split_block_uid,
-                                                    None,
-                                                    cx,
-                                                );
-                                            },
-                                        )),
+                                        Button::new(format!("backlinks-block-split-{}", block_uid))
+                                            .label("Split")
+                                            .xsmall()
+                                            .ghost()
+                                            .on_click(cx.listener(
+                                                move |this, _event, _window, cx| {
+                                                    this.open_secondary_pane_for_page(
+                                                        &split_page_uid,
+                                                        cx,
+                                                    );
+                                                    this.focus_block_by_uid_in_pane(
+                                                        EditorPane::Secondary,
+                                                        &split_block_uid,
+                                                        None,
+                                                        cx,
+                                                    );
+                                                },
+                                            )),
                                     ),
                             ),
                     )
@@ -1224,9 +1238,7 @@ impl AppStore {
             list_state.item_sizes.clone(),
             |this, range: std::ops::Range<usize>, window, cx| {
                 range
-                    .map(|ix| {
-                        this.render_block_row_for_pane(EditorPane::Secondary, ix, window, cx)
-                    })
+                    .map(|ix| this.render_block_row_for_pane(EditorPane::Secondary, ix, window, cx))
                     .collect::<Vec<_>>()
             },
         )
@@ -1274,7 +1286,11 @@ impl AppStore {
                     .px_1()
                     .py(px(1.0))
                     .rounded_sm()
-                    .bg(if is_last { theme.list_active } else { theme.secondary })
+                    .bg(if is_last {
+                        theme.list_active
+                    } else {
+                        theme.secondary
+                    })
                     .hover(move |s| s.bg(crumb_hover).cursor_pointer())
                     .text_xs()
                     .text_color(if is_last {
@@ -1326,8 +1342,8 @@ impl AppStore {
                 .w(px(360.0))
                 .h_full()
                 .border_l_1()
-                .border_color(if is_active { theme.ring } else { theme.sidebar_border })
-                .bg(theme.sidebar)
+                .border_color(if is_active { theme.ring } else { theme.border })
+                .bg(theme.background)
                 .flex()
                 .flex_col()
                 .min_h_0()
@@ -1348,27 +1364,30 @@ impl AppStore {
                                 .gap_2()
                                 .child(
                                     Button::new("secondary-open")
-                                        .label("Open")
                                         .xsmall()
                                         .ghost()
+                                        .icon(IconName::ArrowLeft)
+                                        .tooltip("Open in primary")
                                         .on_click(cx.listener(move |this, _event, window, cx| {
                                             this.copy_secondary_to_primary(window, cx);
                                         })),
                                 )
                                 .child(
                                     Button::new("secondary-swap")
-                                        .label("Swap")
                                         .xsmall()
                                         .ghost()
+                                        .icon(IconName::Replace)
+                                        .tooltip("Swap panes")
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.swap_panes(cx);
                                         })),
                                 )
                                 .child(
                                     Button::new("secondary-close")
-                                        .label("Close")
                                         .xsmall()
                                         .ghost()
+                                        .icon(IconName::Close)
+                                        .tooltip("Close split")
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             if this
                                                 .editor
@@ -1455,8 +1474,7 @@ impl AppStore {
         {
             let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
             let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
-            let menu = gpui::deferred(self.render_slash_menu_at(menu_origin, cx))
-                .with_priority(10);
+            let menu = gpui::deferred(self.render_slash_menu_at(menu_origin, cx)).with_priority(10);
             content_container = content_container.child(menu);
         }
         if show_input
@@ -1466,8 +1484,8 @@ impl AppStore {
         {
             let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
             let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
-            let menu = gpui::deferred(self.render_wikilink_menu_at(menu_origin, cx))
-                .with_priority(10);
+            let menu =
+                gpui::deferred(self.render_wikilink_menu_at(menu_origin, cx)).with_priority(10);
             content_container = content_container.child(menu);
         }
 
@@ -1525,18 +1543,20 @@ impl AppStore {
                     cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
-                if let Some(selection) = this.selection_for_pane_mut(pane) {
-                    if !selection.dragging {
-                        return;
+            .on_mouse_move(
+                cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                    if let Some(selection) = this.selection_for_pane_mut(pane) {
+                        if !selection.dragging {
+                            return;
+                        }
+                        let Some(anchor) = selection.anchor else {
+                            return;
+                        };
+                        selection.set_range(anchor, ix);
+                        cx.notify();
                     }
-                    let Some(anchor) = selection.anchor else {
-                        return;
-                    };
-                    selection.set_range(anchor, ix);
-                    cx.notify();
-                }
-            }))
+                }),
+            )
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
@@ -1656,9 +1676,7 @@ impl AppStore {
             .child(
                 div()
                     .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key == "enter"
-                            && event.keystroke.modifiers.secondary()
-                        {
+                        if event.keystroke.key == "enter" && event.keystroke.modifiers.secondary() {
                             this.add_capture(window, cx);
                             cx.stop_propagation();
                         }
@@ -1722,12 +1740,7 @@ impl AppStore {
                         .px_3()
                         .py_3()
                         .mb_3()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.foreground)
-                                .child(snippet),
-                        )
+                        .child(div().text_sm().text_color(theme.foreground).child(snippet))
                         .child(
                             div()
                                 .text_xs()
@@ -1751,16 +1764,11 @@ impl AppStore {
                                         .label("Open")
                                         .xsmall()
                                         .ghost()
-                                        .on_click(cx.listener(
-                                            move |this, _event, window, cx| {
-                                                this.open_page_and_focus_block(
-                                                    &page_uid,
-                                                    &block_uid,
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        )),
+                                        .on_click(cx.listener(move |this, _event, window, cx| {
+                                            this.open_page_and_focus_block(
+                                                &page_uid, &block_uid, window, cx,
+                                            );
+                                        })),
                                 )
                                 .child(
                                     Button::new(format!("review-done-{item_id}"))
@@ -1796,5 +1804,4 @@ impl AppStore {
 
         body
     }
-
 }

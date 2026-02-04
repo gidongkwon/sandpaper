@@ -1,10 +1,10 @@
-use crate::app::prelude::*;
 use super::{
-    BacklinkEntry, EditorPane, LinkPreviewCacheEntry, LinkPreviewState, Mode, PageDialogMode,
-    PaneListState, PaneSelection, PluginPanel, PluginPermissionPrompt, PluginPermissionInfo,
-    PluginRuntimeStatus, ReviewDisplayItem, AppStore, SaveState, SecondaryPane, SettingsTab,
-    SlashMenuState, UnlinkedReference, WikilinkMenuState,
+    AppStore, BacklinkEntry, EditorPane, LinkPreviewCacheEntry, LinkPreviewState, Mode,
+    PageDialogMode, PaneListState, PaneSelection, PluginPanel, PluginPermissionInfo,
+    PluginPermissionPrompt, PluginRuntimeStatus, ReviewDisplayItem, SaveState, SecondaryPane,
+    SettingsTab, SlashMenuState, UnlinkedReference, WikilinkMenuState,
 };
+use crate::app::prelude::*;
 
 pub(crate) struct AppState {
     pub(crate) boot_status: SharedString,
@@ -186,8 +186,11 @@ impl SettingsState {
     }
 
     pub(crate) fn save_to_db(&self, db: &Database) -> Result<(), String> {
-        db.set_kv("settings.sync_scroll", if self.sync_scroll { "true" } else { "false" })
-            .map_err(|err| format!("{err:?}"))?;
+        db.set_kv(
+            "settings.sync_scroll",
+            if self.sync_scroll { "true" } else { "false" },
+        )
+        .map_err(|err| format!("{err:?}"))?;
         db.set_kv(
             "settings.backlinks_open",
             if self.backlinks_open { "true" } else { "false" },
@@ -218,8 +221,7 @@ pub(crate) struct UiState {
 
 impl UiState {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<AppStore>) -> Self {
-        let page_dialog_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Page title"));
+        let page_dialog_input = cx.new(|cx| InputState::new(window, cx).placeholder("Page title"));
         let vault_dialog_name_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Vault name"));
         let vault_dialog_path_input =
@@ -325,8 +327,8 @@ mod tests {
     use super::*;
     use gpui::TestAppContext;
     use std::sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     };
 
     #[test]
@@ -374,7 +376,11 @@ mod tests {
 
         struct DummyView;
         impl Render for DummyView {
-            fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl gpui::IntoElement {
+            fn render(
+                &mut self,
+                _window: &mut Window,
+                _cx: &mut Context<Self>,
+            ) -> impl gpui::IntoElement {
                 div()
             }
         }

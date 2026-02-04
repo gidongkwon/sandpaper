@@ -48,11 +48,7 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn close_command_palette(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn close_command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.ui.palette_open {
             return;
         }
@@ -234,7 +230,9 @@ impl AppStore {
             return HashMap::new();
         };
         let mut snippets = HashMap::new();
-        let results = db.search_block_page_summaries(query, 50).unwrap_or_default();
+        let results = db
+            .search_block_page_summaries(query, 50)
+            .unwrap_or_default();
         for record in results {
             snippets
                 .entry(record.page_uid)
@@ -255,8 +253,13 @@ impl AppStore {
                 page.title.clone()
             };
             let snippet = snippets.get(&page.uid).cloned().unwrap_or_default();
-            let recent_rank = self.editor.recent_pages.iter().position(|uid| uid == &page.uid);
-            let Some(score) = helpers::score_palette_page(query, &label, &snippet, recent_rank) else {
+            let recent_rank = self
+                .editor
+                .recent_pages
+                .iter()
+                .position(|uid| uid == &page.uid);
+            let Some(score) = helpers::score_palette_page(query, &label, &snippet, recent_rank)
+            else {
                 continue;
             };
             scored.push((
@@ -264,7 +267,11 @@ impl AppStore {
                 PaletteItem {
                     id: format!("page-{}", page.uid),
                     label,
-                    hint: if snippet.is_empty() { None } else { Some(snippet) },
+                    hint: if snippet.is_empty() {
+                        None
+                    } else {
+                        Some(snippet)
+                    },
                     action: PaletteAction::OpenPage(page.uid.clone()),
                 },
             ));
@@ -297,7 +304,10 @@ impl AppStore {
         let mut scored: Vec<(i64, PaletteItem)> = Vec::new();
         for item in self.build_palette_items() {
             let label_score = helpers::fuzzy_score(query, &item.label);
-            let hint_score = item.hint.as_ref().and_then(|hint| helpers::fuzzy_score(query, hint));
+            let hint_score = item
+                .hint
+                .as_ref()
+                .and_then(|hint| helpers::fuzzy_score(query, hint));
             let score = match (label_score, hint_score) {
                 (Some(label), Some(hint)) => label.max(hint.saturating_sub(2)),
                 (Some(label), None) => label,

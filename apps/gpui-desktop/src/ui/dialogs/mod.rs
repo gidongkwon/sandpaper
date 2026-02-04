@@ -35,13 +35,19 @@ impl Render for SettingsSheetView {
             let mut button = Button::new(format!("settings-sheet-tab-{}", label.to_lowercase()))
                 .label(label)
                 .xsmall();
-            button = if is_active { button.primary() } else { button.ghost() };
+            button = if is_active {
+                button.primary()
+            } else {
+                button.ghost()
+            };
 
-            nav = nav.child(button.on_click(cx.listener(move |this, _event, window, cx| {
-                this.app.update(cx, |app, cx| {
-                    app.set_settings_tab(tab, window, cx);
-                });
-            })));
+            nav = nav.child(
+                button.on_click(cx.listener(move |this, _event, window, cx| {
+                    this.app.update(cx, |app, cx| {
+                        app.set_settings_tab(tab, window, cx);
+                    });
+                })),
+            );
         }
 
         let content = match active_tab {
@@ -60,9 +66,13 @@ impl Render for SettingsSheetView {
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .child("Plugins"),
                     )
-                    .child(div().mt_2().flex_1().min_h_0().child(
-                        app.render_plugin_settings_panel(window, cx),
-                    ))
+                    .child(
+                        div()
+                            .mt_2()
+                            .flex_1()
+                            .min_h_0()
+                            .child(app.render_plugin_settings_panel(window, cx)),
+                    )
                     .into_any_element()
             }),
         };
@@ -138,6 +148,7 @@ impl Render for CommandPaletteDialogView {
                 theme.muted_foreground,
             )
         };
+        let popover = cx.theme().popover;
 
         let list = if items.is_empty() {
             div()
@@ -177,12 +188,7 @@ impl Render for CommandPaletteDialogView {
                                 );
 
                             if let Some(hint) = hint {
-                                row = row.child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(muted)
-                                        .child(hint),
-                                );
+                                row = row.child(div().text_xs().text_color(muted).child(hint));
                             }
 
                             row.on_click(cx.listener(move |this, _event, window, cx| {
@@ -206,8 +212,14 @@ impl Render for CommandPaletteDialogView {
             .flex_col()
             .gap_2()
             .min_h_0()
-            .child(Input::new(&palette_input).small().cleanable(true))
-            .child(list)
+            .child(
+                Input::new(&palette_input).small().cleanable(true).prefix(
+                    Icon::new(IconName::Search)
+                        .small()
+                        .text_color(cx.theme().muted_foreground),
+                ),
+            )
+            .child(div().bg(popover).rounded_lg().p_2().min_h_0().child(list))
     }
 }
 
@@ -256,12 +268,7 @@ impl Render for VaultDialogView {
 
         let mut list = div().flex().flex_col().gap_1();
         if vaults.is_empty() {
-            list = list.child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child("No vaults yet."),
-            );
+            list = list.child(div().text_xs().text_color(muted).child("No vaults yet."));
         } else {
             for vault in vaults.into_iter() {
                 let id = vault.id.clone();
@@ -433,7 +440,11 @@ impl Render for PageDialogView {
 
         let (foreground, muted, danger) = {
             let theme = cx.theme();
-            (theme.foreground, theme.muted_foreground, theme.danger_foreground)
+            (
+                theme.foreground,
+                theme.muted_foreground,
+                theme.danger_foreground,
+            )
         };
 
         let label = match mode {

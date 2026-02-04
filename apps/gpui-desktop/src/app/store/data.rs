@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::{format_snippet, now_millis};
+use super::*;
 
 impl AppStore {
     pub(crate) fn schedule_highlight_clear(&mut self, cx: &mut Context<Self>) {
@@ -7,7 +7,9 @@ impl AppStore {
         let epoch = self.editor.highlight_epoch;
 
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_millis(1500)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(1500))
+                .await;
             this.update(cx, |this, cx| {
                 if this.editor.highlight_epoch != epoch {
                     return;
@@ -25,7 +27,9 @@ impl AppStore {
         let epoch = self.ui.capture_confirmation_epoch;
 
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(Duration::from_millis(1200)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(1200))
+                .await;
             this.update(cx, |this, cx| {
                 if this.ui.capture_confirmation_epoch != epoch {
                     return;
@@ -157,8 +161,7 @@ impl AppStore {
                 if seen.contains(&key) {
                     continue;
                 }
-                let count =
-                    helpers::count_case_insensitive_occurrences(&stripped, title);
+                let count = helpers::count_case_insensitive_occurrences(&stripped, title);
                 if count > 0 && lowered.contains(&title.to_lowercase()) {
                     seen.insert(key);
                     self.editor.unlinked_references.push(UnlinkedReference {

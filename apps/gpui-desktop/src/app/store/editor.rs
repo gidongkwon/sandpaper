@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::now_millis;
+use super::*;
 
 pub(crate) fn update_wikilinks_in_db(
     db: &Database,
@@ -74,14 +74,25 @@ impl AppStore {
     pub(crate) fn selection_for_pane(&self, pane: EditorPane) -> Option<&PaneSelection> {
         match pane {
             EditorPane::Primary => Some(&self.editor.primary_selection),
-            EditorPane::Secondary => self.editor.secondary_pane.as_ref().map(|pane| &pane.selection),
+            EditorPane::Secondary => self
+                .editor
+                .secondary_pane
+                .as_ref()
+                .map(|pane| &pane.selection),
         }
     }
 
-    pub(crate) fn selection_for_pane_mut(&mut self, pane: EditorPane) -> Option<&mut PaneSelection> {
+    pub(crate) fn selection_for_pane_mut(
+        &mut self,
+        pane: EditorPane,
+    ) -> Option<&mut PaneSelection> {
         match pane {
             EditorPane::Primary => Some(&mut self.editor.primary_selection),
-            EditorPane::Secondary => self.editor.secondary_pane.as_mut().map(|pane| &mut pane.selection),
+            EditorPane::Secondary => self
+                .editor
+                .secondary_pane
+                .as_mut()
+                .map(|pane| &mut pane.selection),
         }
     }
 
@@ -98,13 +109,21 @@ impl AppStore {
         }
     }
 
-    pub(crate) fn set_selection_range_for_pane(&mut self, pane: EditorPane, start: usize, end: usize) {
+    pub(crate) fn set_selection_range_for_pane(
+        &mut self,
+        pane: EditorPane,
+        start: usize,
+        end: usize,
+    ) {
         if let Some(selection) = self.selection_for_pane_mut(pane) {
             selection.set_range(start, end);
         }
     }
 
-    pub(crate) fn selected_range_for_pane(&self, pane: EditorPane) -> Option<std::ops::Range<usize>> {
+    pub(crate) fn selected_range_for_pane(
+        &self,
+        pane: EditorPane,
+    ) -> Option<std::ops::Range<usize>> {
         self.selection_for_pane(pane)
             .and_then(|selection| selection.selected_range())
     }
@@ -119,14 +138,25 @@ impl AppStore {
     pub(crate) fn editor_for_pane_mut(&mut self, pane: EditorPane) -> Option<&mut EditorModel> {
         match pane {
             EditorPane::Primary => self.editor.editor.as_mut(),
-            EditorPane::Secondary => self.editor.secondary_pane.as_mut().map(|pane| &mut pane.editor),
+            EditorPane::Secondary => self
+                .editor
+                .secondary_pane
+                .as_mut()
+                .map(|pane| &mut pane.editor),
         }
     }
 
-    pub(crate) fn list_state_for_pane_mut(&mut self, pane: EditorPane) -> Option<&mut PaneListState> {
+    pub(crate) fn list_state_for_pane_mut(
+        &mut self,
+        pane: EditorPane,
+    ) -> Option<&mut PaneListState> {
         match pane {
             EditorPane::Primary => Some(&mut self.editor.blocks_list_state),
-            EditorPane::Secondary => self.editor.secondary_pane.as_mut().map(|pane| &mut pane.list_state),
+            EditorPane::Secondary => self
+                .editor
+                .secondary_pane
+                .as_mut()
+                .map(|pane| &mut pane.list_state),
         }
     }
 
@@ -350,7 +380,11 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn copy_secondary_to_primary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn copy_secondary_to_primary(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.app.primary_dirty {
             self.save(cx);
         }
@@ -692,8 +726,11 @@ impl AppStore {
                 let items = self.wikilink_menu_items();
                 if !items.is_empty() {
                     let forward = key == "down";
-                    self.editor.wikilink_menu.selected_index =
-                        helpers::cycle_index(self.editor.wikilink_menu.selected_index, items.len(), forward);
+                    self.editor.wikilink_menu.selected_index = helpers::cycle_index(
+                        self.editor.wikilink_menu.selected_index,
+                        items.len(),
+                        forward,
+                    );
                     cx.notify();
                 }
                 return true;
@@ -702,8 +739,11 @@ impl AppStore {
                 let items = self.wikilink_menu_items();
                 if !items.is_empty() {
                     let forward = !event.keystroke.modifiers.shift;
-                    self.editor.wikilink_menu.selected_index =
-                        helpers::cycle_index(self.editor.wikilink_menu.selected_index, items.len(), forward);
+                    self.editor.wikilink_menu.selected_index = helpers::cycle_index(
+                        self.editor.wikilink_menu.selected_index,
+                        items.len(),
+                        forward,
+                    );
                     cx.notify();
                 }
                 return true;
@@ -755,8 +795,11 @@ impl AppStore {
                 let commands = self.filtered_slash_commands();
                 if !commands.is_empty() {
                     let forward = !event.keystroke.modifiers.shift;
-                    self.editor.slash_menu.selected_index =
-                        helpers::cycle_index(self.editor.slash_menu.selected_index, commands.len(), forward);
+                    self.editor.slash_menu.selected_index = helpers::cycle_index(
+                        self.editor.slash_menu.selected_index,
+                        commands.len(),
+                        forward,
+                    );
                     cx.notify();
                 }
                 return true;
@@ -1006,7 +1049,11 @@ impl AppStore {
             let Some(editor) = self.editor_for_pane(pane) else {
                 return false;
             };
-            let Some(ix) = editor.blocks.iter().position(|block| block.uid == block_uid) else {
+            let Some(ix) = editor
+                .blocks
+                .iter()
+                .position(|block| block.uid == block_uid)
+            else {
                 return false;
             };
             ix
@@ -1444,11 +1491,12 @@ impl AppStore {
             return;
         };
 
-        let selected_index = if self.editor.wikilink_menu.open && self.editor.wikilink_menu.query == query.query {
-            self.editor.wikilink_menu.selected_index
-        } else {
-            0
-        };
+        let selected_index =
+            if self.editor.wikilink_menu.open && self.editor.wikilink_menu.query == query.query {
+                self.editor.wikilink_menu.selected_index
+            } else {
+                0
+            };
 
         self.editor.wikilink_menu = WikilinkMenuState {
             open: true,
@@ -1521,7 +1569,8 @@ impl AppStore {
         if query.is_empty() {
             return self.editor.pages.clone();
         }
-        self.editor.pages
+        self.editor
+            .pages
             .iter()
             .filter(|page| {
                 let title = page.title.to_lowercase();
@@ -1849,12 +1898,14 @@ impl AppStore {
 
     fn find_page_by_title(&self, title: &str) -> Option<PageRecord> {
         let normalized = app::sanitize_kebab(title);
-        self.editor.pages
+        self.editor
+            .pages
             .iter()
             .find(|page| app::sanitize_kebab(&page.uid) == normalized)
             .cloned()
             .or_else(|| {
-                self.editor.pages
+                self.editor
+                    .pages
                     .iter()
                     .find(|page| page.title.eq_ignore_ascii_case(title))
                     .cloned()

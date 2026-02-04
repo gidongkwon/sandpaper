@@ -4,4 +4,3 @@ mod layout;
 mod modals;
 mod plugins;
 mod sidebar;
-

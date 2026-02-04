@@ -3,7 +3,10 @@ use crate::app::store::*;
 use gpui_component::Disableable;
 
 impl AppStore {
-    pub(super) fn render_plugin_error_banner(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    pub(super) fn render_plugin_error_banner(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let message = self.plugins.plugin_error.clone()?;
         let theme = cx.theme();
 
@@ -65,7 +68,10 @@ impl AppStore {
         )
     }
 
-    pub(super) fn render_plugin_panel(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    pub(super) fn render_plugin_panel(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         let panel = self.plugins.plugin_active_panel.clone()?;
         let theme = cx.theme();
         let title = panel.title.clone();
@@ -83,18 +89,20 @@ impl AppStore {
                 .bg(theme.popover)
                 .border_1()
                 .border_color(theme.border)
-                .child(self.render_header_row(
-                    &title,
-                    Button::new("plugin-panel-close")
-                        .label("Close")
-                        .xsmall()
-                        .ghost()
-                        .on_click(cx.listener(|this, _event, _window, cx| {
-                            this.close_plugin_panel(cx);
-                        }))
-                        .into_any_element(),
-                    cx,
-                ))
+                .child(
+                    self.render_header_row(
+                        &title,
+                        Button::new("plugin-panel-close")
+                            .label("Close")
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.close_plugin_panel(cx);
+                            }))
+                            .into_any_element(),
+                        cx,
+                    ),
+                )
                 .child(
                     div()
                         .mt_2()
@@ -138,12 +146,10 @@ impl AppStore {
                     _ => option.to_string(),
                 };
                 let is_selected = option_value == value;
-                let mut button = Button::new(format!(
-                    "plugin-setting-{}-{}-{}",
-                    plugin.id, key, idx
-                ))
-                .label(option_label)
-                .xsmall();
+                let mut button =
+                    Button::new(format!("plugin-setting-{}-{}-{}", plugin.id, key, idx))
+                        .label(option_label)
+                        .xsmall();
                 button = if is_selected {
                     button.primary()
                 } else {
@@ -180,7 +186,10 @@ impl AppStore {
                 _ => {
                     let input =
                         self.ensure_plugin_setting_input(&plugin.id, key, field, window, cx);
-                    Input::new(&input).small().cleanable(true).into_any_element()
+                    Input::new(&input)
+                        .small()
+                        .cleanable(true)
+                        .into_any_element()
                 }
             }
         };
@@ -190,12 +199,7 @@ impl AppStore {
             .flex()
             .flex_col()
             .gap_1()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .child(label),
-            )
+            .child(div().text_sm().text_color(theme.foreground).child(label))
             .child(control);
 
         if let Some(description) = description {
@@ -306,13 +310,9 @@ impl AppStore {
                 keys.sort();
                 for key in keys {
                     if let Some(field) = schema.properties.get(&key) {
-                        fields = fields.child(self.render_plugin_setting_field(
-                            &plugin,
-                            &key,
-                            field,
-                            window,
-                            cx,
-                        ));
+                        fields = fields.child(
+                            self.render_plugin_setting_field(&plugin, &key, field, window, cx),
+                        );
                     }
                 }
             }
@@ -432,5 +432,4 @@ impl AppStore {
             )
             .into_any_element()
     }
-
 }

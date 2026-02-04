@@ -1,19 +1,18 @@
 pub(crate) use chrono::{Local, TimeZone};
 pub(crate) use gpui::{
-    actions, div, point, px, size, AnyWindowHandle, App, AppContext, Context, Entity, FocusHandle,
-    Focusable, HighlightStyle, InteractiveText, KeyBinding, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Point, Pixels, Render, ScrollStrategy,
+    actions, div, point, prelude::*, px, size, AnyWindowHandle, App, AppContext, Context, Entity,
+    FocusHandle, Focusable, HighlightStyle, InteractiveText, KeyBinding, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, Render, ScrollStrategy,
     SharedString, StatefulInteractiveElement, StyledText, Subscription, TextRun, UnderlineStyle,
     Window,
-    prelude::*,
-};
-pub(crate) use gpui_component::{
-    ActiveTheme as _, RopeExt as _, Root, Sizable, VirtualListScrollHandle, WindowExt as _,
-    scroll::ScrollableElement, v_virtual_list,
 };
 pub(crate) use gpui_component::button::{Button, ButtonVariants as _};
 pub(crate) use gpui_component::input::{Input, InputState};
 pub(crate) use gpui_component::switch::Switch;
+pub(crate) use gpui_component::{
+    scroll::ScrollableElement, v_virtual_list, ActiveTheme as _, Icon, IconName, Root,
+    RopeExt as _, Sizable, VirtualListScrollHandle, WindowExt as _,
+};
 pub(crate) use sandpaper_core::{
     app::{self, AppError},
     db::{BlockPageRecord, BlockSnapshot, Database, PageRecord},
@@ -34,4 +33,3 @@ pub(crate) use std::path::PathBuf;
 pub(crate) use std::rc::Rc;
 pub(crate) use std::time::Duration;
 pub(crate) use uuid::Uuid;
-
