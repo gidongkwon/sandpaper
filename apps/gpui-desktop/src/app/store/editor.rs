@@ -3975,82 +3975,265 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn add_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let history_before = self.pane_snapshot(EditorPane::Primary, cx);
-        let raw_text = self
-            .editor
-            .capture_input
-            .read(cx)
-            .value()
-            .trim()
-            .to_string();
-        if raw_text.is_empty() {
-            return;
-        }
-
-        let mut text = raw_text;
-        match self.settings.quick_add_target {
-            QuickAddTarget::Inbox => {
-                self.open_page("inbox", cx);
-            }
-            QuickAddTarget::CurrentPage => {
-                if self.editor.active_page.is_none() {
-                    self.open_page("inbox", cx);
-                }
-            }
-            QuickAddTarget::TaskInbox => {
-                self.open_page("inbox", cx);
-                text = format!("- [ ] {text}");
-            }
-            QuickAddTarget::DailyNote => {
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                self.open_page(&today, cx);
-            }
-        }
-
-        let (text, uid) = {
-            let Some(editor) = self.editor.editor.as_mut() else {
-                return;
-            };
-
-            let block = BlockSnapshot {
-                uid: Uuid::new_v4().to_string(),
-                text,
-                indent: 0,
-                block_type: BlockType::Text,
-            };
-            let uid = block.uid.clone();
-
-            editor.blocks.insert(0, block);
-            editor.active_ix = 0;
-
-            let text = editor.blocks[0].text.clone();
-            (text, uid)
+    fn ensure_inbox_page(&mut self) -> Result<PageRecord, String> {
+        let Some(db) = self.app.db.as_mut() else {
+            return Err("database unavailable".to_string());
         };
-        self.update_block_list_for_pane(EditorPane::Primary);
 
-        let cursor = text.len();
-        self.sync_block_input_from_active_with_cursor_for_pane(
-            EditorPane::Primary,
-            cursor,
-            Some(window),
-            cx,
-        );
+        if let Some(page) = db
+            .get_page_by_uid("inbox")
+            .map_err(|err| format!("lookup inbox page: {err}"))?
+        {
+            return Ok(page);
+        }
 
-        self.editor.capture_input.update(cx, |input, cx| {
-            input.set_value("", window, cx);
-        });
+        let page_id = db
+            .insert_page("inbox", "Inbox")
+            .map_err(|err| format!("create inbox page: {err}"))?;
+        if let Ok(pages) = db.list_pages() {
+            self.editor.pages = pages;
+        }
 
-        self.editor.active_pane = EditorPane::Primary;
-        window.focus(&self.editor.block_input.focus_handle(cx), cx);
+        Ok(PageRecord {
+            id: page_id,
+            uid: "inbox".to_string(),
+            title: "Inbox".to_string(),
+        })
+    }
 
-        self.ui.capture_confirmation = Some("Captured".into());
-        self.schedule_capture_confirmation_clear(cx);
-        self.editor.highlighted_block_uid = Some(uid);
+    fn capture_blocks_for_page(&self, page: &PageRecord) -> Vec<BlockSnapshot> {
+        if self
+            .editor
+            .active_page
+            .as_ref()
+            .is_some_and(|active| active.uid == page.uid)
+        {
+            if let Some(editor) = self.editor.editor.as_ref() {
+                return editor.blocks.clone();
+            }
+        }
+
+        if let Some(secondary) = self.editor.secondary_pane.as_ref() {
+            if secondary.page.uid == page.uid {
+                return secondary.editor.blocks.clone();
+            }
+        }
+
+        self.app
+            .db
+            .as_ref()
+            .and_then(|db| db.load_blocks_for_page(page.id).ok())
+            .unwrap_or_default()
+    }
+
+    fn sync_capture_blocks_for_visible_page(
+        &mut self,
+        page_uid: &str,
+        blocks: &[BlockSnapshot],
+        cx: &mut Context<Self>,
+    ) {
+        let mut update_primary = false;
+        if self
+            .editor
+            .active_page
+            .as_ref()
+            .is_some_and(|active| active.uid == page_uid)
+        {
+            if let Some(editor) = self.editor.editor.as_mut() {
+                editor.blocks = blocks.to_vec();
+                if editor.blocks.is_empty() {
+                    editor.active_ix = 0;
+                } else {
+                    editor.active_ix = editor.active_ix.min(editor.blocks.len() - 1);
+                }
+                update_primary = true;
+            }
+        }
+        if update_primary {
+            self.update_block_list_for_pane(EditorPane::Primary);
+            if self.editor.active_pane == EditorPane::Primary {
+                self.sync_block_input_from_active_for_pane(EditorPane::Primary, None, cx);
+            }
+        }
+
+        let mut update_secondary = false;
+        if let Some(secondary) = self.editor.secondary_pane.as_mut() {
+            if secondary.page.uid == page_uid {
+                secondary.editor.blocks = blocks.to_vec();
+                if secondary.editor.blocks.is_empty() {
+                    secondary.editor.active_ix = 0;
+                } else {
+                    secondary.editor.active_ix =
+                        secondary.editor.active_ix.min(secondary.editor.blocks.len() - 1);
+                }
+                update_secondary = true;
+            }
+        }
+        if update_secondary {
+            self.update_block_list_for_pane(EditorPane::Secondary);
+            if self.editor.active_pane == EditorPane::Secondary {
+                self.sync_block_input_from_active_for_pane(EditorPane::Secondary, None, cx);
+            }
+        }
+    }
+
+    fn persist_capture_blocks_for_page(
+        &mut self,
+        page: &PageRecord,
+        blocks: &[BlockSnapshot],
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        {
+            let Some(db) = self.app.db.as_mut() else {
+                return Err("database unavailable".to_string());
+            };
+            db.replace_blocks_for_page(page.id, blocks)
+                .map_err(|err| format!("replace blocks for '{}': {err}", page.uid))?;
+        }
+        self.sync_capture_blocks_for_visible_page(&page.uid, blocks, cx);
+        Ok(())
+    }
+
+    pub(crate) fn capture_queue_items(&self) -> Vec<CaptureQueueItem> {
+        let inbox_page = self
+            .app
+            .db
+            .as_ref()
+            .and_then(|db| db.get_page_by_uid("inbox").ok().flatten());
+        let Some(inbox_page) = inbox_page else {
+            return Vec::new();
+        };
+
+        self.capture_blocks_for_page(&inbox_page)
+            .into_iter()
+            .map(|block| CaptureQueueItem {
+                uid: block.uid,
+                text: block.text,
+            })
+            .collect()
+    }
+
+    pub(crate) fn enqueue_capture_queue_item(
+        &mut self,
+        raw_text: &str,
+        cx: &mut Context<Self>,
+    ) -> Result<String, String> {
+        let text = raw_text.trim();
+        if text.is_empty() {
+            return Err("capture text is empty".to_string());
+        }
+
+        let inbox_page = self.ensure_inbox_page()?;
+        let mut inbox_blocks = self.capture_blocks_for_page(&inbox_page);
+
+        let block = BlockSnapshot {
+            uid: Uuid::new_v4().to_string(),
+            text: text.to_string(),
+            indent: 0,
+            block_type: BlockType::Text,
+        };
+        let uid = block.uid.clone();
+
+        inbox_blocks.push(block);
+        self.persist_capture_blocks_for_page(&inbox_page, &inbox_blocks, cx)?;
+        if let Some(db) = self.app.db.as_ref() {
+            let now = now_millis();
+            let _ = db.upsert_review_queue_item(&inbox_page.uid, &uid, now, None);
+        }
+        self.load_review_items(cx);
+        self.editor.highlighted_block_uid = Some(uid.clone());
         self.schedule_highlight_clear(cx);
-        self.mark_dirty_for_pane(EditorPane::Primary, cx);
         self.schedule_references_refresh(cx);
-        self.record_structural_history_if_changed(EditorPane::Primary, history_before, cx);
+        Ok(uid)
+    }
+
+    pub(crate) fn move_capture_queue_item_to_page(
+        &mut self,
+        item_uid: &str,
+        destination_uid: &str,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let destination_uid = destination_uid.trim();
+        if destination_uid.is_empty() {
+            return Err("destination page is required".to_string());
+        }
+        if destination_uid == "inbox" {
+            return Err("destination page cannot be inbox".to_string());
+        }
+
+        let (inbox_page, destination_page) = {
+            let Some(db) = self.app.db.as_ref() else {
+                return Err("database unavailable".to_string());
+            };
+            let Some(inbox_page) = db
+                .get_page_by_uid("inbox")
+                .map_err(|err| format!("lookup inbox page: {err}"))?
+            else {
+                return Err("inbox page is missing".to_string());
+            };
+            let Some(destination_page) = db
+                .get_page_by_uid(destination_uid)
+                .map_err(|err| format!("lookup destination page '{destination_uid}': {err}"))?
+            else {
+                return Err(format!("destination page '{destination_uid}' not found"));
+            };
+            (inbox_page, destination_page)
+        };
+
+        let mut inbox_blocks = self.capture_blocks_for_page(&inbox_page);
+        let Some(source_ix) = inbox_blocks.iter().position(|block| block.uid == item_uid) else {
+            return Err(format!("capture queue item '{item_uid}' not found"));
+        };
+        let mut source = inbox_blocks.remove(source_ix);
+        source.indent = 0;
+
+        let mut destination_blocks = self.capture_blocks_for_page(&destination_page);
+        destination_blocks.insert(0, source.clone());
+
+        self.persist_capture_blocks_for_page(&inbox_page, &inbox_blocks, cx)?;
+        if let Err(err) =
+            self.persist_capture_blocks_for_page(&destination_page, &destination_blocks, cx)
+        {
+            let mut restore_inbox = inbox_blocks;
+            restore_inbox.insert(source_ix, source);
+            let _ = self.persist_capture_blocks_for_page(&inbox_page, &restore_inbox, cx);
+            return Err(err);
+        }
+
+        self.schedule_references_refresh(cx);
+        Ok(())
+    }
+
+    pub(crate) fn delete_capture_queue_item(
+        &mut self,
+        item_uid: &str,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let inbox_page = {
+            let Some(db) = self.app.db.as_ref() else {
+                return Err("database unavailable".to_string());
+            };
+            let Some(inbox_page) = db
+                .get_page_by_uid("inbox")
+                .map_err(|err| format!("lookup inbox page: {err}"))?
+            else {
+                return Err("inbox page is missing".to_string());
+            };
+            inbox_page
+        };
+
+        let mut inbox_blocks = self.capture_blocks_for_page(&inbox_page);
+        let Some(source_ix) = inbox_blocks.iter().position(|block| block.uid == item_uid) else {
+            return Err(format!("capture queue item '{item_uid}' not found"));
+        };
+        inbox_blocks.remove(source_ix);
+
+        self.persist_capture_blocks_for_page(&inbox_page, &inbox_blocks, cx)?;
+        if self.editor.capture_move_item_uid.as_deref() == Some(item_uid) {
+            self.editor.capture_move_item_uid = None;
+        }
+        self.schedule_references_refresh(cx);
+        Ok(())
     }
 
     pub(crate) fn update_slash_menu(
@@ -5036,6 +5219,7 @@ mod tests {
         let app = app_handle.borrow().clone().expect("app");
         cx.update_window(*window, |_root, _window, cx| {
             app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
                 app.update_slash_menu(EditorPane::Primary, "block-1", 0, 2, "/l", cx);
                 let first_priority = app.editor.slash_menu.layer_priority;
 
@@ -5072,6 +5256,7 @@ mod tests {
         let app = app_handle.borrow().clone().expect("app");
         cx.update_window(*window, |_root, _window, cx| {
             app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
                 app.editor.outline_menu = OutlineMenuState {
                     open: true,
                     pane: EditorPane::Primary,
@@ -5119,6 +5304,7 @@ mod tests {
         let app = app_handle.borrow().clone().expect("app");
         cx.update_window(*window, |_root, _window, cx| {
             app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
                 app.editor.outline_menu = OutlineMenuState {
                     open: true,
                     pane: EditorPane::Primary,
@@ -5492,6 +5678,7 @@ mod tests {
         let app = app_handle.borrow().clone().expect("app");
         cx.update_window(*window, |_root, window, cx| {
             app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
                 let mut db = Database::new_in_memory().expect("db init");
                 db.run_migrations().expect("migrations");
                 db.insert_page("page-a", "Page A").expect("insert page a");
@@ -7417,6 +7604,308 @@ mod tests {
 
                 let cursor_x = app.block_input_cursor_x(window, cx);
                 assert!(cursor_x >= px(0.0));
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn move_capture_queue_item_to_page_moves_block_between_pages(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let mut db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                db.insert_page("project", "Project")
+                    .expect("insert project");
+
+                let inbox = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox");
+                let project = db
+                    .get_page_by_uid("project")
+                    .expect("project lookup")
+                    .expect("project");
+
+                db.replace_blocks_for_page(
+                    inbox.id,
+                    &[
+                        BlockSnapshot {
+                            uid: "cap-1".to_string(),
+                            text: "capture item".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                        BlockSnapshot {
+                            uid: "cap-2".to_string(),
+                            text: "another capture".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                    ],
+                )
+                .expect("seed inbox");
+                db.replace_blocks_for_page(
+                    project.id,
+                    &[BlockSnapshot {
+                        uid: "proj-1".to_string(),
+                        text: "project note".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    }],
+                )
+                .expect("seed project");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.editor.active_page = None;
+                app.editor.editor = None;
+                app.editor.secondary_pane = None;
+
+                app.move_capture_queue_item_to_page("cap-1", "project", cx)
+                    .expect("move capture");
+
+                let db = app.app.db.as_ref().expect("db");
+                let inbox_blocks = db
+                    .load_blocks_for_page(inbox.id)
+                    .expect("load inbox blocks");
+                assert_eq!(inbox_blocks.len(), 1);
+                assert_eq!(inbox_blocks[0].uid, "cap-2");
+
+                let project_blocks = db
+                    .load_blocks_for_page(project.id)
+                    .expect("load project blocks");
+                assert_eq!(project_blocks.len(), 2);
+                assert_eq!(project_blocks[0].uid, "cap-1");
+                assert_eq!(project_blocks[0].text, "capture item");
+                assert_eq!(project_blocks[1].uid, "proj-1");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn enqueue_capture_queue_item_appends_new_item_last(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let mut db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                let inbox = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox");
+                db.replace_blocks_for_page(
+                    inbox.id,
+                    &[
+                        BlockSnapshot {
+                            uid: "cap-1".to_string(),
+                            text: "first".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                        BlockSnapshot {
+                            uid: "cap-2".to_string(),
+                            text: "second".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                    ],
+                )
+                .expect("seed inbox");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.editor.active_page = None;
+                app.editor.editor = None;
+                app.editor.secondary_pane = None;
+
+                let added_uid = app
+                    .enqueue_capture_queue_item("latest", cx)
+                    .expect("enqueue capture");
+
+                let db = app.app.db.as_ref().expect("db");
+                let blocks = db
+                    .load_blocks_for_page(inbox.id)
+                    .expect("load inbox blocks");
+                assert_eq!(blocks.len(), 3);
+                assert_eq!(blocks[0].uid, "cap-1");
+                assert_eq!(blocks[1].uid, "cap-2");
+                assert_eq!(blocks[2].uid, added_uid);
+                assert_eq!(blocks[2].text, "latest");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn enqueue_capture_queue_item_adds_item_to_review_queue(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.editor.active_page = None;
+                app.editor.editor = None;
+                app.editor.secondary_pane = None;
+
+                let added_uid = app
+                    .enqueue_capture_queue_item("review me", cx)
+                    .expect("enqueue capture");
+
+                let db = app.app.db.as_ref().expect("db");
+                let due = db
+                    .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
+                    .expect("list review due");
+                assert_eq!(due.len(), 1);
+                assert_eq!(due[0].page_uid, "inbox");
+                assert_eq!(due[0].block_uid, added_uid);
+                assert_eq!(app.editor.review_items.len(), 1);
+                assert_eq!(app.editor.review_items[0].block_uid, added_uid);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn delete_capture_queue_item_removes_item_from_inbox(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let mut db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                let inbox = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox");
+                db.replace_blocks_for_page(
+                    inbox.id,
+                    &[
+                        BlockSnapshot {
+                            uid: "cap-1".to_string(),
+                            text: "first".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                        BlockSnapshot {
+                            uid: "cap-2".to_string(),
+                            text: "second".to_string(),
+                            indent: 0,
+                            block_type: BlockType::Text,
+                        },
+                    ],
+                )
+                .expect("seed inbox");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.editor.active_page = None;
+                app.editor.editor = None;
+                app.editor.secondary_pane = None;
+                app.editor.capture_move_item_uid = Some("cap-1".to_string());
+
+                app.delete_capture_queue_item("cap-1", cx)
+                    .expect("delete capture");
+
+                let db = app.app.db.as_ref().expect("db");
+                let blocks = db
+                    .load_blocks_for_page(inbox.id)
+                    .expect("load inbox blocks");
+                assert_eq!(blocks.len(), 1);
+                assert_eq!(blocks[0].uid, "cap-2");
+                assert!(app.editor.capture_move_item_uid.is_none());
             });
         })
         .unwrap();

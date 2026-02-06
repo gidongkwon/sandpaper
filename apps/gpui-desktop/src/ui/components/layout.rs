@@ -3,6 +3,10 @@ use crate::app::store::*;
 use gpui_component::TitleBar;
 
 impl AppStore {
+    fn topbar_mode_switch_uses_small_buttons() -> bool {
+        true
+    }
+
     fn render_topbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let active_vault = self
@@ -29,28 +33,70 @@ impl AppStore {
 
         let vault_fg = theme.muted_foreground;
         let vault_hover_fg = theme.foreground;
+        let pending_review_count = self.editor.review_items.len();
         // Mode pills
         let current_mode = self.app.mode;
-        let mut mode_pills = div().flex().items_center().gap_1();
+        let mut mode_pills = div().id("topbar-mode-switcher").flex().items_center().gap_1();
         for (mode, label) in [
             (Mode::Capture, "Capture"),
             (Mode::Editor, "Edit"),
             (Mode::Review, "Review"),
         ] {
-            let mut btn = Button::new(format!("mode-{label}")).label(label).xsmall();
+            let mut btn = Button::new(format!("mode-{label}")).label(label);
+            btn = if Self::topbar_mode_switch_uses_small_buttons() {
+                btn.small()
+            } else {
+                btn.xsmall()
+            };
             btn = if current_mode == mode {
                 btn.primary()
             } else {
                 btn.ghost()
             };
-            mode_pills =
-                mode_pills.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
+            let button = btn
+                .on_click(cx.listener(move |this, _event, _window, cx| {
                     this.set_mode(mode, cx);
-                })));
+                }))
+                .into_any_element();
+
+            let pill = if mode == Mode::Review && pending_review_count > 0 {
+                let badge_label: SharedString = if pending_review_count > 99 {
+                    "99+".into()
+                } else {
+                    pending_review_count.to_string().into()
+                };
+                div()
+                    .relative()
+                    .child(button)
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(-4.0))
+                            .right(px(-6.0))
+                            .min_w(px(16.0))
+                            .h(px(16.0))
+                            .px_1()
+                            .rounded_full()
+                            .bg(theme.danger)
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(theme.danger_foreground)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(badge_label),
+                    )
+                    .into_any_element()
+            } else {
+                button
+            };
+
+            mode_pills = mode_pills.child(pill);
         }
 
         let divider_color = theme.border;
         let left_group = div()
+            .id("topbar-left")
             .flex()
             .items_center()
             .gap_3()
@@ -66,7 +112,6 @@ impl AppStore {
                         cx.notify();
                     })),
             )
-            .child(mode_pills)
             .child(div().w(px(1.0)).h(px(14.0)).bg(divider_color))
             .child(
                 div()
@@ -82,6 +127,7 @@ impl AppStore {
             );
 
         let right_group = div()
+            .id("topbar-right")
             .flex()
             .items_center()
             .gap_3()
@@ -124,9 +170,32 @@ impl AppStore {
                 .px_4()
                 .flex()
                 .items_center()
-                .justify_between()
-                .child(left_group)
-                .child(right_group),
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .justify_start()
+                        .child(left_group),
+                )
+                .child(
+                    div()
+                        .id("topbar-center")
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(mode_pills),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        .child(right_group),
+                ),
         )
     }
 
@@ -639,36 +708,13 @@ impl AppStore {
         let bg = theme.background;
         let border = theme.border;
         let muted_fg = theme.muted_foreground;
-        let active_target = self.ui.capture_overlay_target;
 
         let input = Input::new(&self.editor.capture_input)
             .appearance(false)
             .bordered(true)
             .focus_bordered(true)
             .small();
-
-        let mut target_row = div().flex().items_center().gap_1();
-        for (target, label) in [
-            (QuickAddTarget::Inbox, "Inbox"),
-            (QuickAddTarget::DailyNote, "Daily Note"),
-            (QuickAddTarget::CurrentPage, "Current Page"),
-        ] {
-            let mut btn = Button::new(format!("capture-target-{label}"))
-                .label(label)
-                .xsmall();
-            btn = if active_target == target {
-                btn.primary()
-            } else {
-                btn.ghost()
-            };
-            target_row =
-                target_row.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
-                    this.ui.capture_overlay_target = target;
-                    cx.notify();
-                })));
-        }
-
-        let hint = shortcut_hint(ShortcutSpec::new("cmd-enter", "ctrl-enter"));
+        let hint = shortcut_hint(ShortcutSpec::new("enter", "enter"));
 
         // Semi-transparent backdrop
         let backdrop = div()
@@ -704,19 +750,20 @@ impl AppStore {
             )
             .child(
                 div()
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
                         if event.keystroke.key == "escape" {
                             this.dismiss_quick_capture(cx);
                             cx.stop_propagation();
                         }
-                        if event.keystroke.key == "enter" && event.keystroke.modifiers.platform {
+                    }))
+                    .capture_action(cx.listener(
+                        |this, _: &gpui_component::input::Enter, window, cx| {
                             this.submit_quick_capture(window, cx);
                             cx.stop_propagation();
-                        }
-                    }))
+                        },
+                    ))
                     .child(input),
             )
-            .child(target_row)
             .child(
                 div()
                     .flex()
@@ -726,13 +773,13 @@ impl AppStore {
                         div()
                             .text_xs()
                             .text_color(muted_fg)
-                            .child(format!("Submit: {hint}")),
+                            .child(format!("Queue in Inbox: {hint}")),
                     )
                     .child(
                         Button::new("capture-submit")
                             .xsmall()
                             .primary()
-                            .label("Capture")
+                            .label("Queue")
                             .on_click(cx.listener(|this, _event, window, cx| {
                                 this.submit_quick_capture(window, cx);
                             })),
@@ -757,155 +804,155 @@ impl AppStore {
 
     fn render_capture_mode(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.theme();
-        let bg = theme.background;
-        let border = theme.border;
         let fg = theme.foreground;
         let muted_fg = theme.muted_foreground;
-        let active_target = self.ui.capture_overlay_target;
-
+        let border = theme.border;
+        let bubble_bg = theme.list_hover;
         let input = Input::new(&self.editor.capture_input)
             .appearance(false)
             .bordered(true)
             .focus_bordered(true)
             .small();
+        let queue_items = self.capture_queue_items();
 
-        let mut target_row = div().flex().items_center().gap_1();
-        for (target, label) in [
-            (QuickAddTarget::Inbox, "Inbox"),
-            (QuickAddTarget::DailyNote, "Daily Note"),
-            (QuickAddTarget::CurrentPage, "Current Page"),
-        ] {
-            let mut btn = Button::new(format!("cap-target-{label}"))
-                .label(label)
-                .xsmall();
-            btn = if active_target == target {
-                btn.primary()
-            } else {
-                btn.ghost()
-            };
-            target_row =
-                target_row.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
-                    this.ui.capture_overlay_target = target;
-                    cx.notify();
-                })));
-        }
-
-        let hint = shortcut_hint(ShortcutSpec::new("cmd-enter", "ctrl-enter"));
-
-        let mut card = div()
-            .w(px(520.0))
-            .rounded_lg()
-            .bg(bg)
-            .border_1()
-            .border_color(border)
+        let mut timeline = div()
+            .id("capture-queue-list")
+            .flex_1()
+            .min_h_0()
+            .overflow_scroll()
             .flex()
             .flex_col()
+            .justify_end()
             .gap_3()
-            .p_6()
-            .child(
-                div()
-                    .text_base()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(fg)
-                    .child("Quick Capture"),
-            )
-            .child(
-                div()
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key == "escape" {
-                            this.set_mode(Mode::Editor, cx);
-                            cx.stop_propagation();
-                        }
-                        if event.keystroke.key == "enter" && event.keystroke.modifiers.platform {
-                            this.submit_quick_capture(window, cx);
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .child(input),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(target_row)
-                    .child(
-                        Button::new("capture-submit-mode")
-                            .xsmall()
-                            .primary()
-                            .label("Capture")
-                            .on_click(cx.listener(|this, _event, window, cx| {
-                                this.submit_quick_capture(window, cx);
-                            })),
-                    ),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(muted_fg.opacity(0.7))
-                    .child(format!("{hint} submit  ·  esc back to editor")),
-            );
+            .w_full()
+            .max_w(px(920.0))
+            .mx_auto()
+            .px_6()
+            .pt_6()
+            .pb_3();
 
-        // Recent captures
-        if !self.editor.capture_recent.is_empty() {
-            card = card.child(
+        if queue_items.is_empty() {
+            timeline = timeline.child(
                 div()
-                    .mt_1()
-                    .pt_3()
-                    .border_t_1()
-                    .border_color(border)
-                    .text_xs()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .w_full()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(border.opacity(0.6))
+                    .bg(theme.background)
+                    .px_4()
+                    .py_3()
+                    .text_sm()
                     .text_color(muted_fg)
-                    .child("RECENT CAPTURES"),
+                    .child("What's on your mind? Capture anything and it will appear in Review."),
             );
-            let hover_bg = theme.list_hover;
-            for (i, item) in self.editor.capture_recent.iter().enumerate() {
-                let text: SharedString = if item.text.len() > 80 {
-                    format!("{}...", &item.text[..80]).into()
-                } else {
-                    item.text.clone().into()
-                };
-                let target_label: SharedString = item.target.as_str().into();
-                let page_uid = item.page_uid.clone();
-                card = card.child(
-                    div()
-                        .id(SharedString::from(format!("capture-recent-{i}")))
-                        .rounded_md()
-                        .px_2()
-                        .py_1()
-                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.open_page(&page_uid, cx);
-                            this.set_mode(Mode::Editor, cx);
-                        }))
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(div().text_sm().text_color(fg).flex_1().child(text))
-                        .child(
-                            div()
-                                .px_1()
-                                .py(px(1.0))
-                                .rounded_sm()
-                                .bg(theme.accent.opacity(0.15))
-                                .text_color(theme.accent)
-                                .text_xs()
-                                .child(target_label),
-                        ),
-                );
+        } else {
+            for (i, item) in queue_items.iter().enumerate() {
+                let item_text: SharedString = item.text.clone().into();
+                let delete_uid_for_button = item.uid.clone();
+                let bubble = div()
+                    .id(SharedString::from(format!("capture-queue-item-{i}")))
+                    .w_full()
+                    .rounded_lg()
+                    .bg(bubble_bg.opacity(0.7))
+                    .border_1()
+                    .border_color(border.opacity(0.6))
+                    .px_4()
+                    .py_3()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(div().text_sm().text_color(fg).child(item_text))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .child(
+                                Button::new(format!("capture-delete-{i}"))
+                                    .xsmall()
+                                    .ghost()
+                                    .icon(SandpaperIcon::Dismiss)
+                                    .tooltip("Delete capture")
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        if this
+                                            .delete_capture_queue_item(&delete_uid_for_button, cx)
+                                            .is_ok()
+                                        {
+                                            cx.notify();
+                                        }
+                                    })),
+                            ),
+                    );
+
+                timeline = timeline.child(bubble);
             }
         }
 
+        let submit_hint = shortcut_hint(ShortcutSpec::new("enter", "enter"));
         div()
             .flex_1()
             .min_w_0()
             .h_full()
             .flex()
-            .justify_center()
-            .items_start()
-            .pt(px(80.0))
-            .child(card)
+            .flex_col()
+            .child(timeline)
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(920.0))
+                    .mx_auto()
+                    .px_6()
+                    .pb_6()
+                    .pt_3()
+                    .border_t_1()
+                    .border_color(border.opacity(0.5))
+                    .bg(theme.background)
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .capture_key_down(cx.listener(
+                                |this, event: &KeyDownEvent, _window, cx| {
+                                    if event.keystroke.key == "escape" {
+                                        this.set_mode(Mode::Editor, cx);
+                                        cx.stop_propagation();
+                                        return;
+                                    }
+                                },
+                            ))
+                            .capture_action(cx.listener(
+                                |this, _: &gpui_component::input::Enter, window, cx| {
+                                    this.submit_quick_capture(window, cx);
+                                    cx.stop_propagation();
+                                },
+                            ))
+                            .child(input),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted_fg.opacity(0.8))
+                                    .child(format!(
+                                        "{submit_hint} queue  ·  shift+enter newline  ·  esc back to editor"
+                                    )),
+                            )
+                            .child(
+                                Button::new("capture-submit-mode")
+                                    .small()
+                                    .primary()
+                                    .label("Queue")
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        this.submit_quick_capture(window, cx);
+                                    })),
+                            ),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -1145,5 +1192,15 @@ impl AppStore {
             .p_6()
             .child(feed)
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn topbar_mode_switch_prefers_small_buttons() {
+        assert!(AppStore::topbar_mode_switch_uses_small_buttons());
     }
 }

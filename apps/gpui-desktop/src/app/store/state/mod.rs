@@ -62,6 +62,7 @@ pub(crate) struct EditorState {
     pub(crate) blocks_list_state: PaneListState,
     pub(crate) block_input: Entity<InputState>,
     pub(crate) capture_input: Entity<InputState>,
+    pub(crate) capture_move_destination_input: Entity<InputState>,
     pub(crate) review_items: Vec<ReviewDisplayItem>,
     pub(crate) review_selected_index: usize,
     pub(crate) link_preview: Option<LinkPreviewState>,
@@ -86,7 +87,7 @@ pub(crate) struct EditorState {
     pub(crate) page_properties: Vec<PagePropertyRecord>,
     pub(crate) properties_open: bool,
     // Capture mode state
-    pub(crate) capture_recent: Vec<super::CaptureHistoryItem>,
+    pub(crate) capture_move_item_uid: Option<String>,
     // Review mode / feed state
     pub(crate) feed_items: Vec<super::FeedItem>,
     pub(crate) feed_selected_index: usize,
@@ -114,6 +115,8 @@ impl EditorState {
                 .placeholder("Capture a thought, link, or task...")
                 .multi_line(true)
         });
+        let capture_move_destination_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Move to page..."));
 
         Self {
             pages: Vec::new(),
@@ -141,6 +144,7 @@ impl EditorState {
             blocks_list_state: PaneListState::new(0, px(super::BLOCK_ROW_HEIGHT)),
             block_input,
             capture_input,
+            capture_move_destination_input,
             review_items: Vec::new(),
             review_selected_index: 0,
             link_preview: None,
@@ -164,7 +168,7 @@ impl EditorState {
             connections_epoch: 0,
             page_properties: Vec::new(),
             properties_open: false,
-            capture_recent: Vec::new(),
+            capture_move_item_uid: None,
             feed_items: Vec::new(),
             feed_selected_index: 0,
             drag_source: None,

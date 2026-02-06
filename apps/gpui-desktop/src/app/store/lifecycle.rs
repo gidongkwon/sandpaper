@@ -87,6 +87,16 @@ impl AppStore {
         });
 
         app._subscriptions.push(sub_palette_input);
+        let sub_capture_destination_input = cx.observe(
+            &app.editor.capture_move_destination_input,
+            |this, _input, cx| {
+                if this.editor.capture_move_item_uid.is_some() {
+                    cx.notify();
+                }
+            },
+        );
+
+        app._subscriptions.push(sub_capture_destination_input);
         app.init_agent_debug(cx);
 
         app
@@ -940,6 +950,9 @@ impl AppStore {
     pub(crate) fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         let prev = self.app.mode;
         self.app.mode = mode;
+        if mode != Mode::Capture {
+            self.editor.capture_move_item_uid = None;
+        }
 
         // Teardown for leaving Editor mode
         if prev == Mode::Editor && mode != Mode::Editor {
@@ -1170,77 +1183,8 @@ impl AppStore {
             return;
         }
 
-        let target = self.ui.capture_overlay_target;
-        let mut text = raw_text;
-
-        match target {
-            QuickAddTarget::Inbox => {
-                self.open_page("inbox", cx);
-            }
-            QuickAddTarget::CurrentPage => {
-                if self.editor.active_page.is_none() {
-                    self.open_page("inbox", cx);
-                }
-            }
-            QuickAddTarget::TaskInbox => {
-                self.open_page("inbox", cx);
-                text = format!("- [ ] {text}");
-            }
-            QuickAddTarget::DailyNote => {
-                if let Some(db) = self.app.db.as_ref() {
-                    let _ = ensure_daily_note_in_db(db, chrono::Local::now().date_naive());
-                }
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                self.open_page(&today, cx);
-            }
-        }
-
-        let block_type = if matches!(target, QuickAddTarget::TaskInbox) {
-            BlockType::Todo
-        } else {
-            BlockType::Text
-        };
-
-        let uid = {
-            let Some(editor) = self.editor.editor.as_mut() else {
-                return;
-            };
-            let block = BlockSnapshot {
-                uid: Uuid::new_v4().to_string(),
-                text: text.clone(),
-                indent: 0,
-                block_type,
-            };
-            let uid = block.uid.clone();
-            editor.blocks.insert(0, block);
-            editor.active_ix = 0;
-            uid
-        };
-        self.update_block_list_for_pane(EditorPane::Primary);
-
-        self.editor.highlighted_block_uid = Some(uid);
-        self.schedule_highlight_clear(cx);
-        self.mark_dirty_for_pane(EditorPane::Primary, cx);
-        self.schedule_references_refresh(cx);
-
-        // Record capture history
-        let page_uid = self
-            .editor
-            .active_page
-            .as_ref()
-            .map(|p| p.uid.clone())
-            .unwrap_or_default();
-        self.editor.capture_recent.insert(
-            0,
-            CaptureHistoryItem {
-                text: text.clone(),
-                target,
-                timestamp: chrono::Utc::now().timestamp_millis(),
-                page_uid,
-            },
-        );
-        if self.editor.capture_recent.len() > 20 {
-            self.editor.capture_recent.truncate(20);
+        if self.enqueue_capture_queue_item(&raw_text, cx).is_err() {
+            return;
         }
 
         // Clear the capture input and close overlay
@@ -1329,6 +1273,137 @@ mod tests {
 
         let after = db.list_pages().expect("list pages").len();
         assert_eq!(before, after);
+    }
+
+    #[gpui::test]
+    fn submit_quick_capture_routes_daily_target_to_inbox_queue(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                db.insert_page("project", "Project")
+                    .expect("insert project");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.open_page("project", cx);
+
+                app.ui.capture_overlay_target = QuickAddTarget::DailyNote;
+                app.editor.capture_input.update(cx, |input, cx| {
+                    input.set_value("queue me".to_string(), window, cx);
+                });
+
+                app.submit_quick_capture(window, cx);
+
+                let active_uid = app
+                    .editor
+                    .active_page
+                    .as_ref()
+                    .map(|page| page.uid.as_str())
+                    .unwrap_or_default();
+                assert_eq!(active_uid, "project");
+                assert_eq!(app.editor.capture_input.read(cx).value(), "");
+
+                let db = app.app.db.as_ref().expect("db");
+                let inbox_page = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox exists");
+                let inbox_blocks = db
+                    .load_blocks_for_page(inbox_page.id)
+                    .expect("load inbox blocks");
+                assert_eq!(inbox_blocks.len(), 1);
+                assert_eq!(inbox_blocks[0].text, "queue me");
+                assert_eq!(inbox_blocks[0].block_type, BlockType::Text);
+
+                let today_uid = chrono::Local::now().format("%Y-%m-%d").to_string();
+                assert!(
+                    db.get_page_by_uid(&today_uid)
+                        .expect("daily lookup")
+                        .is_none(),
+                    "daily note should not be created from quick capture target",
+                );
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn submit_quick_capture_task_target_keeps_plain_text_in_queue(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+
+                app.ui.capture_overlay_target = QuickAddTarget::TaskInbox;
+                app.editor.capture_input.update(cx, |input, cx| {
+                    input.set_value("buy milk".to_string(), window, cx);
+                });
+
+                app.submit_quick_capture(window, cx);
+
+                let db = app.app.db.as_ref().expect("db");
+                let inbox_page = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox exists");
+                let inbox_blocks = db
+                    .load_blocks_for_page(inbox_page.id)
+                    .expect("load inbox blocks");
+                assert_eq!(inbox_blocks.len(), 1);
+                assert_eq!(inbox_blocks[0].text, "buy milk");
+                assert_eq!(inbox_blocks[0].block_type, BlockType::Text);
+            });
+        })
+        .unwrap();
     }
 
     #[gpui::test]

@@ -157,11 +157,9 @@ impl QuickAddTarget {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CaptureHistoryItem {
+pub(crate) struct CaptureQueueItem {
+    pub(crate) uid: String,
     pub(crate) text: String,
-    pub(crate) target: QuickAddTarget,
-    pub(crate) timestamp: i64,
-    pub(crate) page_uid: String,
 }
 
 #[derive(Clone, Debug)]

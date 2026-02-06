@@ -42,6 +42,10 @@ impl DebugSnapshotProvider for AppStore {
             ("search-scroll", "region"),
             ("sidebar-search-input", "textbox"),
             ("editor-page-title", "heading"),
+            ("topbar-left", "group"),
+            ("topbar-center", "group"),
+            ("topbar-mode-switcher", "group"),
+            ("topbar-right", "group"),
             ("command-palette", "dialog"),
             ("command-palette-input", "textbox"),
             ("settings-sheet", "dialog"),
@@ -664,6 +668,9 @@ impl AppStore {
         match id {
             "sandpaper-app" => true,
             "sidebar-rail" | "toggle-sidebar-action" => !self.settings.focus_mode,
+            "topbar-left" | "topbar-center" | "topbar-mode-switcher" | "topbar-right" => {
+                !self.settings.focus_mode
+            }
             "pages-list" | "search-scroll" | "sidebar-search-input" => {
                 !self.settings.focus_mode && !self.settings.sidebar_collapsed
             }
@@ -784,6 +791,21 @@ fn read_text_arg(args: &Option<Value>) -> Result<String, DebugResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::TestAppContext;
+    use gpui_component::Root;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn find_tree_element<'a>(tree: &'a Value, id: &str) -> &'a Value {
+        tree.get("elements")
+            .and_then(Value::as_array)
+            .and_then(|elements| {
+                elements
+                    .iter()
+                    .find(|element| element.get("id").and_then(Value::as_str) == Some(id))
+            })
+            .expect("element in debug tree")
+    }
 
     #[test]
     fn supported_actions_lists_known_ids() {
@@ -804,5 +826,39 @@ mod tests {
         let error = read_text_arg(&None).expect_err("missing args should fail");
         assert_eq!(error.status_code, 422);
         assert_eq!(error.body["error"]["code"], "invalid_args");
+    }
+
+    #[gpui::test]
+    fn debug_tree_tracks_topbar_mode_switcher_visibility(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                app.settings.focus_mode = false;
+                let tree = app.build_debug_tree(cx);
+                let mode_switcher = find_tree_element(&tree, "topbar-mode-switcher");
+                assert_eq!(mode_switcher["visible"], Value::Bool(true));
+
+                app.settings.focus_mode = true;
+                let focus_tree = app.build_debug_tree(cx);
+                let hidden_mode_switcher = find_tree_element(&focus_tree, "topbar-mode-switcher");
+                assert_eq!(hidden_mode_switcher["visible"], Value::Bool(false));
+            });
+        })
+        .expect("window update");
     }
 }
