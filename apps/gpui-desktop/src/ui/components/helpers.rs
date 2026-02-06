@@ -66,7 +66,7 @@ impl AppStore {
                         div()
                             .text_sm()
                             .text_color(title_color)
-                            .child(plugin.name.clone()),
+                            .child(crate::app::store::helpers::single_line_text(&plugin.name)),
                     )
                     .child(right_slot),
             );
@@ -77,7 +77,7 @@ impl AppStore {
                     div()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(description),
+                        .child(crate::app::store::helpers::single_line_text(&description)),
                 );
             }
         }

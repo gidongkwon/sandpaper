@@ -104,7 +104,11 @@ pub(crate) struct EditorState {
 impl EditorState {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<AppStore>) -> Self {
         let sidebar_search_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search…"));
-        let block_input = cx.new(|cx| InputState::new(window, cx).placeholder("Type here…"));
+        let block_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Type here…")
+                .multi_line(true)
+        });
         let capture_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Capture a thought, link, or task...")

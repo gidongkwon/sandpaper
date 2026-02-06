@@ -1343,30 +1343,53 @@ impl AppStore {
 
         window.open_dialog(cx, move |dialog, _window, cx| {
             let theme = cx.theme();
+            let message = crate::app::store::helpers::single_line_text(&format!(
+                "Message: {}",
+                details.message
+            ));
 
-            let mut body = div()
-                .text_sm()
-                .text_color(theme.foreground)
-                .child(format!("Message: {}", details.message));
+            let mut body = div().text_sm().text_color(theme.foreground).child(message);
 
             if let Some(context) = details.context.as_ref() {
+                let context = crate::app::store::helpers::single_line_text(&format!(
+                    "Context: {}",
+                    format_error_context(context)
+                ));
                 body = body.child(
                     div()
                         .mt_2()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(format!("Context: {}", format_error_context(context))),
+                        .child(context),
                 );
             }
 
             if let Some(stack) = details.stack.as_ref() {
-                body = body.child(
-                    div()
-                        .mt_2()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(stack.clone()),
-                );
+                let mut stack_lines = div()
+                    .mt_2()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .text_xs()
+                    .text_color(theme.muted_foreground);
+                for (line_ix, line) in stack
+                    .replace("\r\n", "\n")
+                    .replace('\r', "\n")
+                    .split('\n')
+                    .enumerate()
+                {
+                    let line = if line.is_empty() {
+                        " ".to_string()
+                    } else {
+                        line.to_string()
+                    };
+                    stack_lines = stack_lines.child(
+                        div()
+                            .id(format!("plugin-error-stack-line-{line_ix}"))
+                            .child(line),
+                    );
+                }
+                body = body.child(stack_lines);
             }
 
             dialog
@@ -1814,7 +1837,10 @@ mod tests {
 
         let app = app_handle.borrow().clone().expect("app");
         app.update(cx, |app, _cx| {
-            app.plugins.plugin_error_details = Some(PluginRuntimeError::new("boom"));
+            app.plugins.plugin_error_details = Some(
+                PluginRuntimeError::new("boom\nline2")
+                    .with_stack(Some("stack line 1\nstack line 2".to_string())),
+            );
         });
 
         cx.update_window(*window, |_root, window, cx| {

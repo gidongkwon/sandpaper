@@ -8,6 +8,7 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let message = self.plugins.plugin_error.clone()?;
+        let message = crate::app::store::helpers::single_line_text(&message);
         let theme = cx.theme();
 
         Some(
@@ -77,7 +78,7 @@ impl AppStore {
         let sidebar_bg = cx.theme().sidebar;
         let muted_fg = cx.theme().muted_foreground;
         let fg = cx.theme().foreground;
-        let title = panel.title.clone();
+        let title = crate::app::store::helpers::single_line_text(&panel.title);
         let plugin_id = panel.plugin_id.clone();
         let header = self.render_context_panel_header(&title, cx);
 
@@ -122,7 +123,11 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let label = field.title.clone().unwrap_or_else(|| key.to_string());
-        let description = field.description.clone();
+        let label = crate::app::store::helpers::single_line_text(&label);
+        let description = field
+            .description
+            .clone()
+            .map(|text| crate::app::store::helpers::single_line_text(&text));
         let value = self
             .plugin_setting_value(&plugin.id, key)
             .unwrap_or(Value::Null);

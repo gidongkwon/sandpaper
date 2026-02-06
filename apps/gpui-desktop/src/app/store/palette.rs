@@ -88,9 +88,10 @@ impl AppStore {
             let app = app.clone();
             let view = view.clone();
             dialog
-                .title("Command palette")
-                .w(px(520.0))
+                .w(px(640.0))
                 .keyboard(false)
+                .close_button(false)
+                .p_0()
                 .child(view)
                 .on_close(move |_event, _window, cx| {
                     app.update(cx, |app, cx| {

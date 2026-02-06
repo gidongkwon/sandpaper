@@ -207,6 +207,7 @@ pub(crate) const BLOCK_ROW_HEIGHT: f32 =
     BLOCK_ROW_CORE_HEIGHT + BLOCK_ROW_VERTICAL_PADDING + BLOCK_ROW_RENDER_BUFFER;
 pub(crate) const COMPACT_ROW_HEIGHT: f32 = 30.0;
 pub(crate) const BLOCK_INPUT_PADDING_X: f32 = 8.0;
+pub(crate) const BLOCK_SELECTION_DRAG_THRESHOLD_PX: f32 = 5.0;
 pub(crate) const LINK_PREVIEW_CLOSE_DELAY_MS: u64 = 200;
 pub(crate) const POPUP_STACK_PRIORITY_BASE: usize = 100;
 
@@ -334,6 +335,7 @@ pub(crate) struct PaneSelection {
     pub(crate) anchor: Option<usize>,
     pub(crate) dragging: bool,
     pub(crate) drag_completed: bool,
+    pub(crate) pointer_origin: Option<(i32, i32)>,
 }
 
 impl PaneSelection {
@@ -343,6 +345,7 @@ impl PaneSelection {
             anchor: None,
             dragging: false,
             drag_completed: false,
+            pointer_origin: None,
         }
     }
 
@@ -351,6 +354,7 @@ impl PaneSelection {
         self.anchor = None;
         self.dragging = false;
         self.drag_completed = false;
+        self.pointer_origin = None;
     }
 
     pub(crate) fn set_range(&mut self, start: usize, end: usize) {

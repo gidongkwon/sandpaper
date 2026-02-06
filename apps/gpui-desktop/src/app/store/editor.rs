@@ -790,6 +790,133 @@ impl AppStore {
         }
     }
 
+    pub(crate) fn begin_block_pointer_selection_in_pane(
+        &mut self,
+        pane: EditorPane,
+        visible_ix: usize,
+        position: gpui::Point<gpui::Pixels>,
+        shift: bool,
+    ) {
+        let Some(selection) = self.selection_for_pane_mut(pane) else {
+            return;
+        };
+        if !shift {
+            selection.anchor = Some(visible_ix);
+        }
+        selection.dragging = false;
+        selection.drag_completed = false;
+        selection.pointer_origin = Some((
+            f32::from(position.x).round() as i32,
+            f32::from(position.y).round() as i32,
+        ));
+    }
+
+    pub(crate) fn update_block_pointer_selection_in_pane(
+        &mut self,
+        pane: EditorPane,
+        visible_ix: usize,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(selection) = self.selection_for_pane_mut(pane) else {
+            return;
+        };
+        let Some((origin_x, origin_y)) = selection.pointer_origin else {
+            return;
+        };
+
+        let was_dragging = selection.dragging;
+        if !selection.dragging {
+            let dx = f32::from(position.x) - origin_x as f32;
+            let dy = f32::from(position.y) - origin_y as f32;
+            let threshold_sq =
+                BLOCK_SELECTION_DRAG_THRESHOLD_PX * BLOCK_SELECTION_DRAG_THRESHOLD_PX;
+            if (dx * dx) + (dy * dy) < threshold_sq {
+                return;
+            }
+            selection.dragging = true;
+        }
+
+        let previous_range = selection.range;
+        let anchor = selection.anchor.unwrap_or(visible_ix);
+        selection.set_range(anchor, visible_ix);
+        if selection.range != previous_range || selection.dragging != was_dragging {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn end_block_pointer_selection_in_pane(
+        &mut self,
+        pane: EditorPane,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(selection) = self.selection_for_pane_mut(pane) else {
+            return;
+        };
+        let had_pointer_origin = selection.pointer_origin.take().is_some();
+        let was_dragging = selection.dragging;
+        selection.dragging = false;
+        if was_dragging {
+            selection.drag_completed = selection.has_range();
+        }
+        if was_dragging || had_pointer_origin {
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn shift_click_block_in_pane(
+        &mut self,
+        pane: EditorPane,
+        visible_ix: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(list_state) = self.list_state_for_pane(pane) else {
+            return false;
+        };
+        let Some(actual_ix) = list_state.visible_to_actual.get(visible_ix).copied() else {
+            return false;
+        };
+        let next_cursor = {
+            let Some(editor) = self.editor_for_pane(pane) else {
+                return false;
+            };
+            let Some(block) = editor.blocks.get(actual_ix) else {
+                return false;
+            };
+            block.text.len()
+        };
+
+        let anchor = {
+            let current_anchor = self
+                .selection_for_pane(pane)
+                .and_then(|selection| selection.anchor);
+            current_anchor.unwrap_or(visible_ix)
+        };
+
+        if let Some(selection) = self.selection_for_pane_mut(pane) {
+            selection.anchor = Some(anchor);
+            selection.set_range(anchor, visible_ix);
+            selection.dragging = false;
+            selection.drag_completed = false;
+            selection.pointer_origin = None;
+        }
+
+        if let Some(editor) = self.editor_for_pane_mut(pane) {
+            editor.active_ix = actual_ix;
+        } else {
+            return false;
+        }
+
+        self.sync_block_input_from_active_with_cursor_for_pane(pane, next_cursor, Some(window), cx);
+        window.focus(&self.editor.block_input.focus_handle(cx), cx);
+        self.close_slash_menu();
+        self.close_wikilink_menu();
+        self.close_outline_menu();
+        cx.notify();
+        true
+    }
+
     pub(crate) fn select_all_blocks_in_pane(
         &mut self,
         pane: EditorPane,
@@ -814,6 +941,7 @@ impl AppStore {
             selection.anchor = Some(0);
             selection.dragging = false;
             selection.drag_completed = false;
+            selection.pointer_origin = None;
         }
         self.close_slash_menu();
         self.close_wikilink_menu();
@@ -883,6 +1011,177 @@ impl AppStore {
         self.set_selection_range_for_pane(pane, anchor_visible_ix, next_visible_ix);
         if let Some(selection) = self.selection_for_pane_mut(pane) {
             selection.anchor = Some(anchor_visible_ix);
+        }
+        self.sync_block_input_from_active_with_cursor_for_pane(pane, next_cursor, Some(window), cx);
+        self.close_slash_menu();
+        self.close_wikilink_menu();
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn jump_to_block_edge_in_pane(
+        &mut self,
+        pane: EditorPane,
+        to_bottom: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (target_visible_ix, target_actual_ix, next_cursor) = {
+            let Some(editor) = self.editor_for_pane(pane) else {
+                return false;
+            };
+            let Some(list_state) = self.list_state_for_pane(pane) else {
+                return false;
+            };
+            if list_state.visible_to_actual.is_empty() {
+                return false;
+            }
+
+            let target_visible_ix = if to_bottom {
+                list_state.visible_to_actual.len().saturating_sub(1)
+            } else {
+                0
+            };
+            let Some(target_actual_ix) =
+                list_state.visible_to_actual.get(target_visible_ix).copied()
+            else {
+                return false;
+            };
+            let next_cursor = editor
+                .blocks
+                .get(target_actual_ix)
+                .map(|block| if to_bottom { block.text.len() } else { 0 })
+                .unwrap_or(0);
+            (target_visible_ix, target_actual_ix, next_cursor)
+        };
+
+        if let Some(editor) = self.editor_for_pane_mut(pane) {
+            editor.active_ix = target_actual_ix;
+        } else {
+            return false;
+        }
+        self.clear_selection_for_pane(pane);
+        if let Some(selection) = self.selection_for_pane_mut(pane) {
+            selection.anchor = Some(target_visible_ix);
+        }
+        self.sync_block_input_from_active_with_cursor_for_pane(pane, next_cursor, Some(window), cx);
+        self.close_slash_menu();
+        self.close_wikilink_menu();
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn extend_block_selection_to_edge_in_pane(
+        &mut self,
+        pane: EditorPane,
+        to_bottom: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (target_visible_ix, target_actual_ix, anchor_visible_ix, next_cursor) = {
+            let Some(editor) = self.editor_for_pane(pane) else {
+                return false;
+            };
+            let Some(list_state) = self.list_state_for_pane(pane) else {
+                return false;
+            };
+            if list_state.visible_to_actual.is_empty() {
+                return false;
+            }
+
+            let active_visible_ix = Self::visible_index_for_actual(list_state, editor.active_ix);
+            let target_visible_ix = if to_bottom {
+                list_state.visible_to_actual.len().saturating_sub(1)
+            } else {
+                0
+            };
+            if target_visible_ix == active_visible_ix {
+                return false;
+            }
+            let Some(target_actual_ix) =
+                list_state.visible_to_actual.get(target_visible_ix).copied()
+            else {
+                return false;
+            };
+            let anchor_visible_ix = self
+                .selection_for_pane(pane)
+                .and_then(|selection| selection.anchor)
+                .unwrap_or(active_visible_ix);
+            let next_cursor = editor
+                .blocks
+                .get(target_actual_ix)
+                .map(|block| if to_bottom { 0 } else { block.text.len() })
+                .unwrap_or(0);
+            (
+                target_visible_ix,
+                target_actual_ix,
+                anchor_visible_ix,
+                next_cursor,
+            )
+        };
+
+        if let Some(editor) = self.editor_for_pane_mut(pane) {
+            editor.active_ix = target_actual_ix;
+        } else {
+            return false;
+        }
+        self.set_selection_range_for_pane(pane, anchor_visible_ix, target_visible_ix);
+        if let Some(selection) = self.selection_for_pane_mut(pane) {
+            selection.anchor = Some(anchor_visible_ix);
+        }
+        self.sync_block_input_from_active_with_cursor_for_pane(pane, next_cursor, Some(window), cx);
+        self.close_slash_menu();
+        self.close_wikilink_menu();
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn collapse_selection_with_arrow_for_pane(
+        &mut self,
+        pane: EditorPane,
+        to_bottom: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (target_visible_ix, target_actual_ix, next_cursor) = {
+            let Some(selection) = self.selection_for_pane(pane) else {
+                return false;
+            };
+            let Some((start_visible, end_visible)) = selection.range else {
+                return false;
+            };
+            let target_visible_ix = if to_bottom {
+                end_visible
+            } else {
+                start_visible
+            };
+            let Some(list_state) = self.list_state_for_pane(pane) else {
+                return false;
+            };
+            let Some(target_actual_ix) =
+                list_state.visible_to_actual.get(target_visible_ix).copied()
+            else {
+                return false;
+            };
+            let Some(editor) = self.editor_for_pane(pane) else {
+                return false;
+            };
+            let next_cursor = editor
+                .blocks
+                .get(target_actual_ix)
+                .map(|block| if to_bottom { block.text.len() } else { 0 })
+                .unwrap_or(0);
+            (target_visible_ix, target_actual_ix, next_cursor)
+        };
+
+        if let Some(editor) = self.editor_for_pane_mut(pane) {
+            editor.active_ix = target_actual_ix;
+        } else {
+            return false;
+        }
+        self.clear_selection_for_pane(pane);
+        if let Some(selection) = self.selection_for_pane_mut(pane) {
+            selection.anchor = Some(target_visible_ix);
         }
         self.sync_block_input_from_active_with_cursor_for_pane(pane, next_cursor, Some(window), cx);
         self.close_slash_menu();
@@ -2168,6 +2467,22 @@ impl AppStore {
                 self.redo_edit_action(&RedoEdit, window, cx);
                 return true;
             }
+            if (key == "up" || key == "down")
+                && event.keystroke.modifiers.number_of_modifiers() == 1
+            {
+                return self.jump_to_block_edge_in_pane(pane, key == "down", window, cx);
+            }
+            if (key == "up" || key == "down")
+                && event.keystroke.modifiers.shift
+                && event.keystroke.modifiers.number_of_modifiers() == 2
+            {
+                return self.extend_block_selection_to_edge_in_pane(
+                    pane,
+                    key == "down",
+                    window,
+                    cx,
+                );
+            }
         }
         if self.editor.wikilink_menu.open && self.editor.wikilink_menu.pane == pane {
             let key = event.keystroke.key.as_str();
@@ -2295,7 +2610,11 @@ impl AppStore {
             .selection_for_pane(pane)
             .is_some_and(|selection| selection.has_range())
         {
-            return false;
+            return match event.keystroke.key.as_str() {
+                "up" => self.collapse_selection_with_arrow_for_pane(pane, false, window, cx),
+                "down" => self.collapse_selection_with_arrow_for_pane(pane, true, window, cx),
+                _ => false,
+            };
         }
 
         let (cursor_offset, text_len) = {
@@ -2389,7 +2708,7 @@ impl AppStore {
                 true
             }
             "up" if cursor_offset == 0 => {
-                let (next_ix, cursor) = {
+                let next_ix = {
                     let Some(editor) = self.editor_for_pane(pane) else {
                         return false;
                     };
@@ -2401,6 +2720,32 @@ impl AppStore {
                         return false;
                     };
                     let Some(next_ix) = list_state.visible_to_actual.get(prev_visible_ix).copied()
+                    else {
+                        return false;
+                    };
+                    next_ix
+                };
+
+                if let Some(editor) = self.editor_for_pane_mut(pane) {
+                    editor.active_ix = next_ix;
+                }
+
+                self.sync_block_input_from_active_with_cursor_for_pane(pane, 0, Some(window), cx);
+                self.close_slash_menu();
+                cx.notify();
+                true
+            }
+            "down" if cursor_offset == text_len => {
+                let (next_ix, cursor) = {
+                    let Some(editor) = self.editor_for_pane(pane) else {
+                        return false;
+                    };
+                    let Some(list_state) = self.list_state_for_pane(pane) else {
+                        return false;
+                    };
+                    let visible_ix = Self::visible_index_for_actual(list_state, editor.active_ix);
+                    let next_visible_ix = visible_ix + 1;
+                    let Some(next_ix) = list_state.visible_to_actual.get(next_visible_ix).copied()
                     else {
                         return false;
                     };
@@ -2422,32 +2767,6 @@ impl AppStore {
                     Some(window),
                     cx,
                 );
-                self.close_slash_menu();
-                cx.notify();
-                true
-            }
-            "down" if cursor_offset == text_len => {
-                let next_ix = {
-                    let Some(editor) = self.editor_for_pane(pane) else {
-                        return false;
-                    };
-                    let Some(list_state) = self.list_state_for_pane(pane) else {
-                        return false;
-                    };
-                    let visible_ix = Self::visible_index_for_actual(list_state, editor.active_ix);
-                    let next_visible_ix = visible_ix + 1;
-                    let Some(next_ix) = list_state.visible_to_actual.get(next_visible_ix).copied()
-                    else {
-                        return false;
-                    };
-                    next_ix
-                };
-
-                if let Some(editor) = self.editor_for_pane_mut(pane) {
-                    editor.active_ix = next_ix;
-                }
-
-                self.sync_block_input_from_active_with_cursor_for_pane(pane, 0, Some(window), cx);
                 self.close_slash_menu();
                 cx.notify();
                 true
@@ -2522,28 +2841,31 @@ impl AppStore {
         }
         self.set_active_pane(pane, cx);
 
-        if let Some(selection) = self.selection_for_pane_mut(pane) {
-            if selection.drag_completed {
-                selection.drag_completed = false;
-                return;
-            }
-
-            if event.modifiers().shift {
-                let anchor = selection.anchor.unwrap_or(visible_ix);
-                selection.set_range(anchor, visible_ix);
-                if selection.has_range() {
-                    selection.drag_completed = true;
-                }
-                cx.notify();
-                return;
-            }
-
-            if selection.has_range() {
-                self.clear_selection_for_pane(pane);
-            }
+        if self
+            .selection_for_pane(pane)
+            .is_some_and(|selection| selection.drag_completed)
+        {
             if let Some(selection) = self.selection_for_pane_mut(pane) {
-                selection.anchor = Some(visible_ix);
+                selection.drag_completed = false;
+                selection.pointer_origin = None;
             }
+            return;
+        }
+
+        if event.modifiers().shift {
+            self.shift_click_block_in_pane(pane, visible_ix, window, cx);
+            return;
+        }
+
+        if self
+            .selection_for_pane(pane)
+            .is_some_and(|selection| selection.has_range())
+        {
+            self.clear_selection_for_pane(pane);
+        }
+        if let Some(selection) = self.selection_for_pane_mut(pane) {
+            selection.anchor = Some(visible_ix);
+            selection.pointer_origin = None;
         }
         self.on_click_block_in_pane(pane, visible_ix, window, cx);
     }
@@ -3311,6 +3633,7 @@ impl AppStore {
         if let Some(selection) = self.selection_for_pane_mut(pane) {
             selection.dragging = false;
             selection.drag_completed = false;
+            selection.pointer_origin = None;
         }
         cx.notify();
     }
@@ -3500,6 +3823,7 @@ impl AppStore {
         if let Some(selection) = self.selection_for_pane_mut(pane) {
             selection.dragging = false;
             selection.drag_completed = true;
+            selection.pointer_origin = None;
         }
 
         if !moved {
@@ -3901,9 +4225,20 @@ impl AppStore {
             cursor -= 1;
         }
 
+        // `shape_line` panics on embedded newlines, so shape only the current line segment.
+        let line_start = text[..cursor]
+            .char_indices()
+            .rev()
+            .find_map(|(ix, ch)| (ch == '\n' || ch == '\r').then_some(ix + ch.len_utf8()))
+            .unwrap_or(0);
+        let line_text = &text[line_start..cursor];
+        if line_text.is_empty() {
+            return px(0.0);
+        }
+
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
-        let display_text: SharedString = text.clone().into();
+        let display_text: SharedString = line_text.to_string().into();
         let run = TextRun {
             len: display_text.len(),
             font: text_style.font(),
@@ -5210,6 +5545,809 @@ mod tests {
     }
 
     #[gpui::test]
+    fn mouse_move_below_threshold_does_not_start_range_selection_primary(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                app.editor.blocks_list_state.reset(3, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                app.begin_block_pointer_selection_in_pane(
+                    EditorPane::Primary,
+                    0,
+                    point(px(10.0), px(10.0)),
+                    false,
+                );
+                app.update_block_pointer_selection_in_pane(
+                    EditorPane::Primary,
+                    1,
+                    point(px(13.0), px(13.0)),
+                    cx,
+                );
+
+                let selection = app
+                    .selection_for_pane(EditorPane::Primary)
+                    .expect("selection");
+                assert!(!selection.dragging);
+                assert_eq!(selection.range, None);
+                assert_eq!(selection.anchor, Some(0));
+
+                app.end_block_pointer_selection_in_pane(EditorPane::Primary, cx);
+                let selection = app
+                    .selection_for_pane(EditorPane::Primary)
+                    .expect("selection");
+                assert!(!selection.dragging);
+                assert!(!selection.drag_completed);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn mouse_move_above_threshold_starts_range_selection_primary(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                app.editor.blocks_list_state.reset(3, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                app.begin_block_pointer_selection_in_pane(
+                    EditorPane::Primary,
+                    0,
+                    point(px(10.0), px(10.0)),
+                    false,
+                );
+                app.update_block_pointer_selection_in_pane(
+                    EditorPane::Primary,
+                    1,
+                    point(px(24.0), px(10.0)),
+                    cx,
+                );
+
+                let selection = app
+                    .selection_for_pane(EditorPane::Primary)
+                    .expect("selection");
+                assert!(selection.dragging);
+                assert_eq!(selection.range, Some((0, 1)));
+                assert_eq!(selection.anchor, Some(0));
+
+                app.end_block_pointer_selection_in_pane(EditorPane::Primary, cx);
+                let selection = app
+                    .selection_for_pane(EditorPane::Primary)
+                    .expect("selection");
+                assert!(!selection.dragging);
+                assert!(selection.drag_completed);
+                assert_eq!(selection.range, Some((0, 1)));
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn shift_click_extends_range_and_focuses_clicked_endpoint_primary(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a4".to_string(),
+                        text: "Four".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 1;
+                }
+                app.editor.blocks_list_state.reset(4, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    0,
+                    Some(window),
+                    cx,
+                );
+                if let Some(selection) = app.selection_for_pane_mut(EditorPane::Primary) {
+                    selection.anchor = Some(1);
+                }
+
+                assert!(app.shift_click_block_in_pane(EditorPane::Primary, 3, window, cx));
+
+                assert_eq!(app.editor.primary_selection.range, Some((1, 3)));
+                assert_eq!(app.editor.primary_selection.anchor, Some(1));
+                assert!(!app.editor.primary_selection.drag_completed);
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 3);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), "Four".len());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn shift_click_extends_range_and_focuses_clicked_endpoint_secondary(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![BlockSnapshot {
+                    uid: "a1".to_string(),
+                    text: "Primary".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                }]));
+                app.editor.blocks_list_state.reset(1, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                let secondary_blocks = vec![
+                    BlockSnapshot {
+                        uid: "b1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "b2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "b3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ];
+                app.editor.secondary_pane = Some(SecondaryPane {
+                    page: PageRecord {
+                        id: 2,
+                        uid: "page-b".to_string(),
+                        title: "Page B".to_string(),
+                    },
+                    editor: EditorModel::new(secondary_blocks),
+                    list_state: PaneListState::new(3, px(BLOCK_ROW_HEIGHT)),
+                    selection: PaneSelection::new(),
+                    dirty: false,
+                });
+                app.update_block_list_for_pane(EditorPane::Secondary);
+                if let Some(secondary) = app.editor.secondary_pane.as_mut() {
+                    secondary.editor.active_ix = 0;
+                    secondary.selection.anchor = Some(0);
+                }
+                app.set_active_pane(EditorPane::Secondary, cx);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Secondary,
+                    0,
+                    Some(window),
+                    cx,
+                );
+
+                assert!(app.shift_click_block_in_pane(EditorPane::Secondary, 2, window, cx));
+
+                let secondary = app.editor.secondary_pane.as_ref().expect("secondary pane");
+                assert_eq!(secondary.selection.range, Some((0, 2)));
+                assert_eq!(secondary.selection.anchor, Some(0));
+                assert!(!secondary.selection.drag_completed);
+                assert_eq!(secondary.editor.active_ix, 2);
+                assert_eq!(app.editor.active_pane, EditorPane::Secondary);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), "Three".len());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn secondary_up_jumps_to_first_visible_block(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 2;
+                }
+                app.editor.blocks_list_state.reset(3, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    2,
+                    Some(window),
+                    cx,
+                );
+
+                let key_down = KeyDownEvent {
+                    keystroke: Keystroke::parse("secondary-up").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(
+                    EditorPane::Primary,
+                    &key_down,
+                    window,
+                    cx
+                ));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 0);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 0);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn secondary_shift_down_extends_selection_to_last_visible_block(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a4".to_string(),
+                        text: "Four".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 1;
+                }
+                app.editor.blocks_list_state.reset(4, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    0,
+                    Some(window),
+                    cx,
+                );
+
+                let key_down = KeyDownEvent {
+                    keystroke: Keystroke::parse("secondary-shift-down").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(
+                    EditorPane::Primary,
+                    &key_down,
+                    window,
+                    cx
+                ));
+                assert_eq!(app.editor.primary_selection.range, Some((1, 3)));
+                assert_eq!(app.editor.primary_selection.anchor, Some(1));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 3);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 0);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn plain_up_repeats_block_navigation(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 2;
+                }
+                app.editor.blocks_list_state.reset(3, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    0,
+                    Some(window),
+                    cx,
+                );
+
+                let up = KeyDownEvent {
+                    keystroke: Keystroke::parse("up").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &up, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 1);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 0);
+
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &up, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 0);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 0);
+
+                assert!(!app.handle_block_input_key_down(EditorPane::Primary, &up, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 0);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn plain_down_repeats_block_navigation(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 0;
+                }
+                app.editor.blocks_list_state.reset(3, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    3,
+                    Some(window),
+                    cx,
+                );
+
+                let down = KeyDownEvent {
+                    keystroke: Keystroke::parse("down").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &down, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 1);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 3);
+
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &down, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 2);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 5);
+
+                assert!(!app.handle_block_input_key_down(EditorPane::Primary, &down, window, cx));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 2);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn plain_up_collapses_selection_to_first_block(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a4".to_string(),
+                        text: "Four".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 2;
+                }
+                app.editor.blocks_list_state.reset(4, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.set_selection_range_for_pane(EditorPane::Primary, 1, 3);
+                if let Some(selection) = app.selection_for_pane_mut(EditorPane::Primary) {
+                    selection.anchor = Some(1);
+                }
+
+                let up = KeyDownEvent {
+                    keystroke: Keystroke::parse("up").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &up, window, cx));
+                assert_eq!(app.editor.primary_selection.range, None);
+                assert_eq!(app.editor.primary_selection.anchor, Some(1));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 1);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 0);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn plain_down_collapses_selection_to_last_block(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "One".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Two".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a3".to_string(),
+                        text: "Three".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a4".to_string(),
+                        text: "Four".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 2;
+                }
+                app.editor.blocks_list_state.reset(4, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.set_selection_range_for_pane(EditorPane::Primary, 1, 3);
+                if let Some(selection) = app.selection_for_pane_mut(EditorPane::Primary) {
+                    selection.anchor = Some(1);
+                }
+
+                let down = KeyDownEvent {
+                    keystroke: Keystroke::parse("down").expect("parse keystroke"),
+                    is_held: false,
+                    prefer_character_input: false,
+                };
+                assert!(app.handle_block_input_key_down(EditorPane::Primary, &down, window, cx));
+                assert_eq!(app.editor.primary_selection.range, None);
+                assert_eq!(app.editor.primary_selection.anchor, Some(3));
+                assert_eq!(app.editor.editor.as_ref().expect("editor").active_ix, 3);
+                assert_eq!(app.editor.block_input.read(cx).cursor(), 4);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
     fn commit_block_drag_moves_single_block_before_target(cx: &mut TestAppContext) {
         cx.skip_drawing();
         let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
@@ -5896,6 +7034,86 @@ mod tests {
                 app.on_click_block_in_pane(EditorPane::Primary, 0, window, cx);
 
                 assert_eq!(app.editor.block_input.read(cx).cursor(), 2);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn block_input_defaults_to_multiline_mode(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.editor.block_input.update(cx, |input, cx| {
+                    input.set_value("Alpha\nBeta".to_string(), window, cx);
+                });
+
+                let input = app.editor.block_input.read(cx);
+                assert_eq!(input.value().to_string(), "Alpha\nBeta");
+                assert_eq!(input.cursor(), 0);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn block_input_cursor_x_handles_multiline_text(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![BlockSnapshot {
+                    uid: "a1".to_string(),
+                    text: "Alpha\nBeta".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                }]));
+                app.editor.blocks_list_state.reset(1, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+                app.sync_block_input_from_active_with_cursor_for_pane(
+                    EditorPane::Primary,
+                    "Alpha\nBeta".len(),
+                    Some(window),
+                    cx,
+                );
+
+                let cursor_x = app.block_input_cursor_x(window, cx);
+                assert!(cursor_x >= px(0.0));
             });
         })
         .unwrap();

@@ -1,16 +1,20 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
 
+const PALETTE_ROW_HEIGHT: f32 = 40.0;
+const PALETTE_HEADER_HEIGHT: f32 = 28.0;
+const PALETTE_ICON_SIZE: f32 = 28.0;
+
 fn command_palette_list_height_px(rows: &[PaletteRow]) -> f32 {
     let mut measured = 0.0;
-    for row in rows.iter().take(12) {
+    for row in rows.iter().take(10) {
         measured += match row {
-            PaletteRow::Header { .. } => 24.0,
-            PaletteRow::Item(_) => COMPACT_ROW_HEIGHT,
+            PaletteRow::Header { .. } => PALETTE_HEADER_HEIGHT,
+            PaletteRow::Item(_) => PALETTE_ROW_HEIGHT,
         };
     }
 
-    measured.clamp(120.0, 400.0)
+    measured.clamp(160.0, 480.0)
 }
 
 fn command_palette_icon_for_action(action: &PaletteAction) -> SandpaperIcon {
@@ -80,6 +84,20 @@ fn settings_tab_from_index(index: usize) -> SettingsTab {
         .get(index)
         .copied()
         .unwrap_or(SettingsTab::General)
+}
+
+fn split_text_lines_for_render(text: &str) -> Vec<String> {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                " ".to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect()
 }
 
 impl SettingsSheetView {
@@ -187,7 +205,7 @@ impl Render for CommandPaletteDialogView {
             .count();
         let list_height = px(command_palette_list_height_px(&rows));
 
-        let (list_active, list_hover, foreground, muted, border, secondary, ring, accent) = {
+        let (list_active, list_hover, foreground, muted, border, secondary, accent) = {
             let theme = cx.theme();
             (
                 theme.list_active,
@@ -196,12 +214,9 @@ impl Render for CommandPaletteDialogView {
                 theme.muted_foreground,
                 theme.border,
                 theme.secondary,
-                theme.ring,
                 theme.accent,
             )
         };
-        let popover = cx.theme().popover;
-
         let mut active_ix = active_ix;
         if active_ix >= rows.len() {
             active_ix = 0;
@@ -229,18 +244,20 @@ impl Render for CommandPaletteDialogView {
         let list = if item_count == 0 {
             div()
                 .h_full()
-                .px_3()
-                .py_4()
-                .text_xs()
-                .text_color(muted)
-                .child("No matches")
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .child(Icon::new(SandpaperIcon::Search).size_4().text_color(muted))
+                .child(div().text_sm().text_color(muted).child("No matches"))
                 .into_any_element()
         } else {
             let item_sizes = Rc::new(
                 rows.iter()
                     .map(|row| match row {
-                        PaletteRow::Header { .. } => size(px(0.), px(24.0)),
-                        PaletteRow::Item(_) => size(px(0.), px(COMPACT_ROW_HEIGHT + 6.0)),
+                        PaletteRow::Header { .. } => size(px(0.), px(PALETTE_HEADER_HEIGHT)),
+                        PaletteRow::Item(_) => size(px(0.), px(PALETTE_ROW_HEIGHT)),
                     })
                     .collect::<Vec<_>>(),
             );
@@ -252,22 +269,26 @@ impl Render for CommandPaletteDialogView {
                 move |_this, range: std::ops::Range<usize>, _window, cx| {
                     range
                         .map(|idx| match rows_for_list[idx].clone() {
-                            PaletteRow::Header { id, label } => div()
-                                .id(format!("command-palette-header-{}", id))
-                                .px_3()
-                                .pt_2()
-                                .pb_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .child(label.to_ascii_uppercase())
-                                .into_any_element(),
+                            PaletteRow::Header { id, label } => {
+                                let is_first = idx == 0;
+                                div()
+                                    .id(format!("command-palette-header-{}", id))
+                                    .px_4()
+                                    .when(is_first, |s| s.pt_2())
+                                    .when(!is_first, |s| s.pt_3())
+                                    .pb_1()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child(label.to_ascii_uppercase())
+                                    .into_any_element()
+                            }
                             PaletteRow::Item(item) => {
                                 let is_active = idx == active_ix;
                                 let hint = item.hint.clone();
                                 let icon_kind = command_palette_icon_for_action(&item.action);
                                 let icon_bg = if is_active {
-                                    accent.opacity(0.18)
+                                    accent.opacity(0.15)
                                 } else {
                                     secondary
                                 };
@@ -277,15 +298,9 @@ impl Render for CommandPaletteDialogView {
                                     .id(format!("command-palette-item-{}", item.id))
                                     .mx_1()
                                     .my(px(1.0))
-                                    .px_2()
-                                    .py_1()
+                                    .px_3()
+                                    .py(px(6.0))
                                     .rounded_md()
-                                    .border_1()
-                                    .border_color(if is_active {
-                                        ring.opacity(0.6)
-                                    } else {
-                                        gpui::transparent_black()
-                                    })
                                     .bg(if is_active {
                                         list_active
                                     } else {
@@ -305,21 +320,21 @@ impl Render for CommandPaletteDialogView {
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap_2()
+                                            .gap(px(10.0))
                                             .text_sm()
                                             .text_color(foreground)
                                             .child(
                                                 div()
-                                                    .w(px(20.0))
-                                                    .h(px(20.0))
-                                                    .rounded_sm()
+                                                    .w(px(PALETTE_ICON_SIZE))
+                                                    .h(px(PALETTE_ICON_SIZE))
+                                                    .rounded_md()
                                                     .bg(icon_bg)
                                                     .flex()
                                                     .items_center()
                                                     .justify_center()
                                                     .child(
                                                         Icon::new(icon_kind)
-                                                            .size_3()
+                                                            .size_4()
                                                             .text_color(icon_fg),
                                                     ),
                                             )
@@ -333,7 +348,7 @@ impl Render for CommandPaletteDialogView {
                                             .text_color(muted)
                                             .bg(secondary)
                                             .rounded_sm()
-                                            .px_1()
+                                            .px(px(6.0))
                                             .py(px(2.0))
                                             .child(hint),
                                     );
@@ -355,48 +370,87 @@ impl Render for CommandPaletteDialogView {
             .into_any_element()
         };
 
+        // Action bar footer
+        let action_bar = div()
+            .border_t_1()
+            .border_color(border)
+            .bg(secondary.opacity(0.5))
+            .px_4()
+            .py(px(8.0))
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .bg(secondary)
+                            .rounded_sm()
+                            .px_1()
+                            .py(px(1.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child("\u{21B5}"),
+                    )
+                    .child(div().text_xs().text_color(muted).child("Open")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .bg(secondary)
+                            .rounded_sm()
+                            .px_1()
+                            .py(px(1.0))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child("esc"),
+                    )
+                    .child(div().text_xs().text_color(muted).child("Close")),
+            );
+
         div()
             .id("command-palette")
             .key_context("CommandPalette")
             .flex()
             .flex_col()
-            .rounded_xl()
-            .border_1()
-            .border_color(border)
-            .bg(popover)
             .overflow_hidden()
             .min_h_0()
+            // Search bar
             .child(
-                div().p_3().border_b_1().border_color(border).child(
-                    div()
-                        .rounded_md()
-                        .border_1()
-                        .border_color(border)
-                        .bg(secondary)
-                        .px_2()
-                        .child(
-                            Input::new(&palette_input)
-                                .small()
-                                .appearance(false)
-                                .bordered(false)
-                                .focus_bordered(false)
-                                .cleanable(true)
-                                .prefix(
-                                    Icon::new(SandpaperIcon::Search)
-                                        .small()
-                                        .text_color(cx.theme().muted_foreground),
-                                ),
+                div().px_4().py_3().border_b_1().border_color(border).child(
+                    Input::new(&palette_input)
+                        .appearance(false)
+                        .bordered(false)
+                        .focus_bordered(false)
+                        .cleanable(true)
+                        .prefix(
+                            Icon::new(SandpaperIcon::Search)
+                                .size_4()
+                                .text_color(foreground),
                         ),
                 ),
             )
+            // Results list
             .child(
                 div()
                     .px_2()
-                    .py_2()
+                    .py_1()
                     .h(list_height)
-                    .max_h(px(400.0))
+                    .max_h(px(480.0))
                     .child(list),
             )
+            // Action bar
+            .child(action_bar)
     }
 }
 
@@ -521,7 +575,9 @@ impl Render for NotificationsDialogView {
                                             .text_sm()
                                             .text_color(theme.foreground)
                                             .font_weight(gpui::FontWeight::MEDIUM)
-                                            .child(item.title.clone()),
+                                            .child(crate::app::store::helpers::single_line_text(
+                                                &item.title,
+                                            )),
                                     ),
                             )
                             .child(
@@ -543,21 +599,49 @@ impl Render for NotificationsDialogView {
                                     ),
                             ),
                     )
-                    .child(
-                        div()
+                    .child({
+                        let mut message = div()
                             .mt_2()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
                             .text_sm()
-                            .text_color(theme.foreground)
-                            .child(item.message.clone()),
-                    );
+                            .text_color(theme.foreground);
+                        for (line_ix, line) in split_text_lines_for_render(item.message.as_ref())
+                            .iter()
+                            .enumerate()
+                        {
+                            message = message.child(
+                                div()
+                                    .id(format!("notification-{}-message-{line_ix}", item.id))
+                                    .child(line.clone()),
+                            );
+                        }
+                        message
+                    });
 
                 if let Some(details) = item.details.clone() {
                     card = card.child(
                         div()
                             .mt_2()
+                            .flex()
+                            .flex_col()
+                            .gap(px(2.0))
                             .text_xs()
                             .text_color(theme.muted_foreground)
-                            .child(details),
+                            .children(
+                                split_text_lines_for_render(details.as_ref())
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(line_ix, line)| {
+                                        div()
+                                            .id(format!(
+                                                "notification-{}-details-{line_ix}",
+                                                item.id
+                                            ))
+                                            .child(line)
+                                    }),
+                            ),
                     );
                 }
 
@@ -831,11 +915,15 @@ impl Render for PageDialogView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::TestAppContext;
+    use gpui_component::Root;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     #[test]
     fn command_palette_list_height_has_minimum() {
         let rows: Vec<PaletteRow> = Vec::new();
-        assert_eq!(command_palette_list_height_px(&rows), 120.0);
+        assert_eq!(command_palette_list_height_px(&rows), 160.0);
     }
 
     #[test]
@@ -851,7 +939,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert!(command_palette_list_height_px(&rows) <= 400.0);
+        assert!(command_palette_list_height_px(&rows) <= 480.0);
     }
 
     #[test]
@@ -878,5 +966,52 @@ mod tests {
     #[test]
     fn settings_tab_lookup_defaults_to_general_for_invalid_index() {
         assert_eq!(settings_tab_from_index(usize::MAX), SettingsTab::General);
+    }
+
+    #[test]
+    fn split_text_lines_for_render_handles_crlf_and_empty_lines() {
+        let lines = split_text_lines_for_render("first\r\n\r\nsecond");
+        assert_eq!(lines, vec!["first", " ", "second"]);
+    }
+
+    #[gpui::test]
+    fn notifications_dialog_renders_multiline_notification_without_panicking(
+        cx: &mut TestAppContext,
+    ) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        app.update(cx, |app, _cx| {
+            app.ui.notifications.push(NotificationItem {
+                id: "n1".into(),
+                kind: NotificationKind::PluginError,
+                title: "Plugin\nerror".into(),
+                message: "line 1\nline 2".into(),
+                details: Some("context line\nstack line".into()),
+                created_at_ms: chrono::Utc::now().timestamp_millis(),
+                read: false,
+            });
+        });
+
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.open_notifications(window, cx);
+            });
+            assert!(window.has_active_dialog(cx));
+        })
+        .unwrap();
     }
 }

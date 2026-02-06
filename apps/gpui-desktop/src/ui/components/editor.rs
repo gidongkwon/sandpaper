@@ -2960,19 +2960,16 @@ impl AppStore {
                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
                     this.set_active_pane(pane, cx);
                     this.update_block_drag_target_for_visible_row_in_pane(pane, visible_ix, cx);
-                    if let Some(selection) = this.selection_for_pane_mut(pane) {
-                        if !event.modifiers.shift {
-                            selection.anchor = Some(visible_ix);
-                        }
-                        selection.range = None;
-                        selection.dragging = true;
-                        selection.drag_completed = false;
-                    }
-                    cx.notify();
+                    this.begin_block_pointer_selection_in_pane(
+                        pane,
+                        visible_ix,
+                        event.position,
+                        event.modifiers.shift,
+                    );
                 }),
             )
             .on_mouse_move(
-                cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
                     if this
                         .editor
                         .drag_source
@@ -2982,16 +2979,12 @@ impl AppStore {
                         return;
                     }
                     this.update_block_drag_target_for_visible_row_in_pane(pane, visible_ix, cx);
-                    if let Some(selection) = this.selection_for_pane_mut(pane) {
-                        if !selection.dragging {
-                            return;
-                        }
-                        let Some(anchor) = selection.anchor else {
-                            return;
-                        };
-                        selection.set_range(anchor, visible_ix);
-                        cx.notify();
-                    }
+                    this.update_block_pointer_selection_in_pane(
+                        pane,
+                        visible_ix,
+                        event.position,
+                        cx,
+                    );
                 }),
             )
             .on_mouse_up(
@@ -3007,13 +3000,7 @@ impl AppStore {
                         cx.stop_propagation();
                         return;
                     }
-                    if let Some(selection) = this.selection_for_pane_mut(pane) {
-                        if selection.dragging {
-                            selection.dragging = false;
-                            selection.drag_completed = selection.has_range();
-                            cx.notify();
-                        }
-                    }
+                    this.end_block_pointer_selection_in_pane(pane, cx);
                 }),
             )
             .on_mouse_up_out(
@@ -3029,13 +3016,7 @@ impl AppStore {
                         cx.stop_propagation();
                         return;
                     }
-                    if let Some(selection) = this.selection_for_pane_mut(pane) {
-                        if selection.dragging {
-                            selection.dragging = false;
-                            selection.drag_completed = selection.has_range();
-                            cx.notify();
-                        }
-                    }
+                    this.end_block_pointer_selection_in_pane(pane, cx);
                 }),
             )
             .on_click(cx.listener(move |this, event, window, cx| {
