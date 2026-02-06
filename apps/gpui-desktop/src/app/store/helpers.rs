@@ -30,6 +30,12 @@ pub(crate) fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+pub(crate) fn single_line_text(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', " ")
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct PageCursor {
     pub block_uid: String,
@@ -37,7 +43,8 @@ pub(crate) struct PageCursor {
 }
 
 pub(crate) fn format_snippet(text: &str, max_len: usize) -> String {
-    let trimmed = text.trim();
+    let normalized = single_line_text(text);
+    let trimmed = normalized.trim();
     if trimmed.len() <= max_len {
         return trimmed.to_string();
     }
@@ -291,20 +298,111 @@ pub(crate) fn count_case_insensitive_occurrences(text: &str, needle: &str) -> us
     text_lower.match_indices(&needle_lower).count()
 }
 
-pub(crate) fn filter_slash_commands<'a>(
-    query: &str,
-    commands: &[(&'a str, &'a str)],
-) -> Vec<(&'a str, &'a str)> {
-    let query = query.trim();
-    if query.is_empty() {
-        return commands.to_vec();
+fn wikilink_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel_start) = text[cursor..].find("[[") {
+        let start = cursor + rel_start;
+        let inner_start = start + 2;
+        if inner_start >= text.len() {
+            break;
+        }
+        let Some(rel_end) = text[inner_start..].find("]]") else {
+            break;
+        };
+        let end = inner_start + rel_end + 2;
+        ranges.push((start, end.min(text.len())));
+        cursor = end;
+        if cursor >= text.len() {
+            break;
+        }
+    }
+    ranges
+}
+
+pub(crate) fn count_case_insensitive_occurrences_outside_wikilinks(
+    text: &str,
+    needle: &str,
+) -> usize {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return 0;
     }
 
-    let mut scored: Vec<(i64, usize, (&'a str, &'a str))> = Vec::new();
-    for (ix, (id, label)) in commands.iter().copied().enumerate() {
-        let score = fuzzy_score(query, id).or_else(|| fuzzy_score(query, label));
+    let ranges = wikilink_ranges(text);
+    if ranges.is_empty() {
+        return count_case_insensitive_occurrences(text, needle);
+    }
+
+    let mut count = 0usize;
+    let mut cursor = 0usize;
+    for (start, end) in ranges {
+        if start > cursor {
+            count += count_case_insensitive_occurrences(&text[cursor..start], needle);
+        }
+        cursor = end.min(text.len());
+    }
+    if cursor < text.len() {
+        count += count_case_insensitive_occurrences(&text[cursor..], needle);
+    }
+
+    count
+}
+
+fn find_case_insensitive_range(text: &str, needle: &str) -> Option<(usize, usize)> {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return None;
+    }
+    let needle_folded: Vec<char> = needle.chars().flat_map(|ch| ch.to_lowercase()).collect();
+    if needle_folded.is_empty() {
+        return None;
+    }
+
+    for (start, _) in text.char_indices() {
+        let mut needle_ix = 0usize;
+        let mut matched = true;
+
+        for (rel, ch) in text[start..].char_indices() {
+            for folded in ch.to_lowercase() {
+                if needle_ix >= needle_folded.len() {
+                    break;
+                }
+                if folded != needle_folded[needle_ix] {
+                    matched = false;
+                    break;
+                }
+                needle_ix += 1;
+            }
+
+            if !matched {
+                break;
+            }
+
+            if needle_ix >= needle_folded.len() {
+                let end = start + rel + ch.len_utf8();
+                return Some((start, end));
+            }
+        }
+    }
+
+    None
+}
+
+pub(crate) fn filter_slash_commands<'a>(
+    query: &str,
+    commands: &'a [super::SlashCommandDef],
+) -> Vec<&'a super::SlashCommandDef> {
+    let query = query.trim();
+    if query.is_empty() {
+        return commands.iter().collect();
+    }
+
+    let mut scored: Vec<(i64, usize, &'a super::SlashCommandDef)> = Vec::new();
+    for (ix, cmd) in commands.iter().enumerate() {
+        let score = fuzzy_score(query, cmd.id).or_else(|| fuzzy_score(query, cmd.label));
         if let Some(score) = score {
-            scored.push((score, ix, (id, label)));
+            scored.push((score, ix, cmd));
         }
     }
     scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
@@ -419,6 +517,27 @@ fn strip_prefix<'a>(text: &'a str, prefix: &str) -> &'a str {
     }
 }
 
+/// Strip markdown prefixes from text when converting to a typed block.
+/// Removes heading hashes, quote markers, task checkboxes, and divider dashes.
+pub(crate) fn clean_text_for_block_type(text: &str, block_type: BlockType) -> String {
+    let trimmed = text.trim();
+    match block_type {
+        BlockType::Heading1 | BlockType::Heading2 | BlockType::Heading3 => {
+            strip_heading_prefix(trimmed).to_string()
+        }
+        BlockType::Quote => strip_prefix(trimmed, "> ").to_string(),
+        BlockType::Todo => {
+            let t = strip_prefix(trimmed, "- [x] ");
+            let t = strip_prefix(t, "- [ ] ");
+            let t = strip_prefix(t, "[x] ");
+            let t = strip_prefix(t, "[ ] ");
+            t.to_string()
+        }
+        BlockType::Divider => String::new(),
+        _ => trimmed.to_string(),
+    }
+}
+
 pub(crate) fn link_first_unlinked_reference(
     text: &str,
     title: &str,
@@ -428,13 +547,32 @@ pub(crate) fn link_first_unlinked_reference(
     if title.is_empty() {
         return None;
     }
-    let lowered = text.to_lowercase();
-    let title_lower = title.to_lowercase();
-    let match_start = lowered.find(&title_lower)?;
-    let match_end = match_start + title_lower.len();
-    if match_end > text.len() {
-        return None;
-    }
+    let ranges = wikilink_ranges(text);
+    let (match_start, match_end) = if ranges.is_empty() {
+        find_case_insensitive_range(text, title)?
+    } else {
+        let mut cursor = 0usize;
+        let mut found: Option<(usize, usize)> = None;
+        for (start, end) in ranges {
+            if start > cursor {
+                let segment = &text[cursor..start];
+                if let Some((rel_start, rel_end)) = find_case_insensitive_range(segment, title) {
+                    found = Some((cursor + rel_start, cursor + rel_end));
+                    break;
+                }
+            }
+            cursor = end.min(text.len());
+        }
+
+        if found.is_none() && cursor < text.len() {
+            let segment = &text[cursor..];
+            if let Some((rel_start, rel_end)) = find_case_insensitive_range(segment, title) {
+                found = Some((cursor + rel_start, cursor + rel_end));
+            }
+        }
+
+        found?
+    };
 
     let mut next_text = String::with_capacity(text.len() + 4);
     next_text.push_str(&text[..match_start]);
@@ -481,4 +619,42 @@ pub(crate) fn score_palette_page(
     };
 
     Some(best + recency_boost)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_snippet_replaces_newlines_with_spaces() {
+        assert_eq!(format_snippet("first\nsecond", 64), "first second");
+        assert_eq!(format_snippet("a\r\nb", 64), "a b");
+    }
+
+    #[test]
+    fn single_line_text_replaces_crlf_and_lf() {
+        assert_eq!(single_line_text("a\nb"), "a b");
+        assert_eq!(single_line_text("a\r\nb"), "a b");
+        assert_eq!(single_line_text("a\rb"), "a b");
+    }
+
+    #[test]
+    fn clean_todo_text_removes_markdown_checkbox_prefixes() {
+        assert_eq!(
+            clean_text_for_block_type("- [ ] pending item", BlockType::Todo),
+            "pending item"
+        );
+        assert_eq!(
+            clean_text_for_block_type("- [x] completed item", BlockType::Todo),
+            "completed item"
+        );
+        assert_eq!(
+            clean_text_for_block_type("[ ] bare pending item", BlockType::Todo),
+            "bare pending item"
+        );
+        assert_eq!(
+            clean_text_for_block_type("[x] bare completed item", BlockType::Todo),
+            "bare completed item"
+        );
+    }
 }

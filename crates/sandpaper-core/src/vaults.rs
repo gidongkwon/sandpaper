@@ -49,8 +49,8 @@ impl VaultStore {
     }
 
     pub fn default_store() -> Result<Self, VaultError> {
-        let project_dirs = ProjectDirs::from("app", "sandpaper", "Sandpaper")
-            .ok_or(VaultError::ProjectDir)?;
+        let project_dirs =
+            ProjectDirs::from("app", "sandpaper", "Sandpaper").ok_or(VaultError::ProjectDir)?;
         let config_dir = project_dirs.config_dir();
         Ok(Self::new(config_dir.join("vaults.json")))
     }
@@ -146,9 +146,7 @@ mod tests {
             .expect("create vault");
 
         let vault_b_id = vault_b.id.clone();
-        let config = store
-            .set_active_vault(&vault_b_id)
-            .expect("set active");
+        let config = store.set_active_vault(&vault_b_id).expect("set active");
         assert_eq!(config.active_id.as_deref(), Some(vault_b_id.as_str()));
         assert_eq!(config.vaults.len(), 2);
         assert_ne!(vault_a.id, vault_b_id);

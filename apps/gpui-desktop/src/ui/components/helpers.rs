@@ -2,28 +2,6 @@ use crate::app::prelude::*;
 use crate::app::store::*;
 
 impl AppStore {
-    pub(super) fn render_header_row(
-        &self,
-        title: &str,
-        trailing: gpui::AnyElement,
-        cx: &App,
-    ) -> gpui::AnyElement {
-        let theme = cx.theme();
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(title.to_string()),
-            )
-            .child(trailing)
-            .into_any_element()
-    }
-
     pub(super) fn render_settings_row(
         &self,
         label: &str,
@@ -34,14 +12,16 @@ impl AppStore {
         let theme = cx.theme();
         div()
             .flex()
-            .items_center()
-            .justify_between()
-            .gap_3()
+            .items_start()
+            .gap_6()
+            .py_3()
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap_0()
+                    .flex_1()
+                    .min_w_0()
                     .child(
                         div()
                             .text_sm()
@@ -55,7 +35,7 @@ impl AppStore {
                             .child(description.to_string()),
                     ),
             )
-            .child(control)
+            .child(div().mt(px(2.0)).flex_shrink_0().child(control))
             .into_any_element()
     }
 
@@ -72,9 +52,9 @@ impl AppStore {
         let mut card = div()
             .flex()
             .flex_col()
-            .gap_1()
-            .px_2()
-            .py_2()
+            .gap_2()
+            .px_3()
+            .py_3()
             .rounded_md()
             .bg(background)
             .child(

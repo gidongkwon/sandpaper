@@ -1,5 +1,6 @@
 pub mod app;
 pub mod assets;
+pub mod blocks;
 pub mod db;
 pub mod editor;
 pub mod links;

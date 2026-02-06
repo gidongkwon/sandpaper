@@ -1,3 +1,4 @@
+use crate::blocks::BlockType;
 use crate::db::BlockSnapshot;
 use uuid::Uuid;
 
@@ -29,6 +30,7 @@ impl EditorModel {
                 uid: Uuid::new_v4().to_string(),
                 text: String::new(),
                 indent: 0,
+                block_type: BlockType::Text,
             });
         }
         if self.active_ix >= self.blocks.len() {
@@ -57,6 +59,7 @@ impl EditorModel {
                 uid: Uuid::new_v4().to_string(),
                 text,
                 indent,
+                block_type: BlockType::Text,
             },
         );
         self.active_ix = insert_ix;
@@ -187,9 +190,7 @@ impl EditorModel {
             return false;
         }
         let removed: Vec<_> = self.blocks.drain(range.clone()).collect();
-        let insert_at = self
-            .subtree_range_from(next_start - removed.len())
-            .end;
+        let insert_at = self.subtree_range_from(next_start - removed.len()).end;
         self.blocks
             .splice(insert_at..insert_at, removed.into_iter());
         self.active_ix = insert_at;
@@ -203,6 +204,7 @@ impl EditorModel {
             uid: Uuid::new_v4().to_string(),
             text: block.text,
             indent: block.indent,
+            block_type: block.block_type,
         };
         self.blocks.insert(insert_ix, clone);
         self.active_ix = insert_ix;
@@ -226,6 +228,7 @@ impl EditorModel {
                 uid: Uuid::new_v4().to_string(),
                 text: block.text.clone(),
                 indent: block.indent,
+                block_type: block.block_type,
             })
             .collect();
         if clones.is_empty() {
@@ -233,8 +236,7 @@ impl EditorModel {
         }
         let insert_at = end;
         let count = clones.len();
-        self.blocks
-            .splice(insert_at..insert_at, clones.into_iter());
+        self.blocks.splice(insert_at..insert_at, clones.into_iter());
         self.active_ix = insert_at;
         Some(insert_at..insert_at + count)
     }
@@ -249,6 +251,7 @@ impl EditorModel {
                 uid: Uuid::new_v4().to_string(),
                 text: String::new(),
                 indent: 0,
+                block_type: BlockType::Text,
             }];
             self.active_ix = 0;
             return Some(Cursor {
@@ -402,6 +405,7 @@ impl EditorModel {
 #[cfg(test)]
 mod tests {
     use super::{Cursor, EditorModel};
+    use crate::blocks::BlockType;
     use crate::db::BlockSnapshot;
 
     fn block(uid: &str, text: &str, indent: i64) -> BlockSnapshot {
@@ -409,6 +413,7 @@ mod tests {
             uid: uid.to_string(),
             text: text.to_string(),
             indent,
+            block_type: BlockType::Text,
         }
     }
 
@@ -450,7 +455,11 @@ mod tests {
 
     #[test]
     fn delete_active_if_empty_moves_to_next_when_possible() {
-        let mut model = EditorModel::new(vec![block("a", "one", 0), block("b", "", 0), block("c", "two", 0)]);
+        let mut model = EditorModel::new(vec![
+            block("a", "one", 0),
+            block("b", "", 0),
+            block("c", "two", 0),
+        ]);
         model.set_active_ix(1);
         let cursor = model.delete_active_if_empty().expect("should delete");
         assert_eq!(model.blocks.len(), 2);
@@ -683,10 +692,7 @@ mod tests {
 
     #[test]
     fn adjust_range_indent_clamps() {
-        let mut model = EditorModel::new(vec![
-            block("a", "one", 0),
-            block("b", "two", 1),
-        ]);
+        let mut model = EditorModel::new(vec![block("a", "one", 0), block("b", "two", 1)]);
         assert!(model.adjust_range_indent(0..2, -1));
         assert_eq!(model.blocks[0].indent, 0);
         assert_eq!(model.blocks[1].indent, 0);

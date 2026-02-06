@@ -1,10 +1,10 @@
+use chrono::{DateTime, Duration, Utc};
 use rquickjs::{
     function::Opt, CatchResultExt, CaughtError, Context, FromJs, Function, IntoJs, Object,
     Persistent, Runtime, Value as JsValue,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -276,28 +276,19 @@ impl PluginRegistry {
         Ok(state)
     }
 
-    pub fn get_install_source(
-        &self,
-        plugin_id: &str,
-    ) -> Result<Option<String>, PluginError> {
+    pub fn get_install_source(&self, plugin_id: &str) -> Result<Option<String>, PluginError> {
         let state = self.load_state()?;
         Ok(state.install_sources.get(plugin_id).cloned())
     }
 
-    pub fn clear_install_source(
-        &self,
-        plugin_id: &str,
-    ) -> Result<PluginState, PluginError> {
+    pub fn clear_install_source(&self, plugin_id: &str) -> Result<PluginState, PluginError> {
         let mut state = self.load_state()?;
         state.install_sources.remove(plugin_id);
         self.save_state(&state)?;
         Ok(state)
     }
 
-    pub fn remove_plugin_state(
-        &self,
-        plugin_id: &str,
-    ) -> Result<PluginState, PluginError> {
+    pub fn remove_plugin_state(&self, plugin_id: &str) -> Result<PluginState, PluginError> {
         let mut state = self.load_state()?;
         state.enabled.remove(plugin_id);
         state.install_sources.remove(plugin_id);
@@ -311,7 +302,10 @@ impl PluginRegistry {
     }
 }
 
-pub fn discover_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<PluginDescriptor>, PluginError> {
+pub fn discover_plugins(
+    root: &Path,
+    registry: &PluginRegistry,
+) -> Result<Vec<PluginDescriptor>, PluginError> {
     let plugins_dir = root.join("plugins");
     if !plugins_dir.exists() {
         return Ok(Vec::new());
@@ -347,7 +341,10 @@ pub fn discover_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<Pl
     Ok(plugins)
 }
 
-pub fn list_plugins(root: &Path, registry: &PluginRegistry) -> Result<Vec<PluginInfo>, PluginError> {
+pub fn list_plugins(
+    root: &Path,
+    registry: &PluginRegistry,
+) -> Result<Vec<PluginInfo>, PluginError> {
     let plugins = discover_plugins(root, registry)?;
     Ok(plugins
         .into_iter()
@@ -538,17 +535,11 @@ fn validate_manifest_schema(value: &Value) -> Result<(), PluginError> {
     let obj = value
         .as_object()
         .ok_or_else(|| PluginError::Runtime("manifest-root-invalid".into()))?;
-    let id = obj
-        .get("id")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let id = obj.get("id").and_then(Value::as_str).unwrap_or_default();
     if id.trim().is_empty() {
         return Err(PluginError::Runtime("manifest-id-missing".into()));
     }
-    let name = obj
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
+    let name = obj.get("name").and_then(Value::as_str).unwrap_or_default();
     if name.trim().is_empty() {
         return Err(PluginError::Runtime("manifest-name-missing".into()));
     }
@@ -566,7 +557,9 @@ fn validate_manifest_schema(value: &Value) -> Result<(), PluginError> {
     }
     if let Some(schema) = obj.get("settingsSchema") {
         if !schema.is_object() {
-            return Err(PluginError::Runtime("manifest-settings-schema-invalid".into()));
+            return Err(PluginError::Runtime(
+                "manifest-settings-schema-invalid".into(),
+            ));
         }
     }
     if let Some(range) = obj.get("apiVersion") {
@@ -661,15 +654,15 @@ fn version_in_range(version: &str, range: &VersionRange) -> Result<bool, PluginE
     let current = parse_semver(version)
         .ok_or_else(|| PluginError::Runtime("manifest-version-invalid".into()))?;
     if let Some(min) = range.min.as_deref() {
-        let min_version =
-            parse_semver(min).ok_or_else(|| PluginError::Runtime("manifest-version-min-invalid".into()))?;
+        let min_version = parse_semver(min)
+            .ok_or_else(|| PluginError::Runtime("manifest-version-min-invalid".into()))?;
         if current < min_version {
             return Ok(false);
         }
     }
     if let Some(max) = range.max.as_deref() {
-        let max_version =
-            parse_semver(max).ok_or_else(|| PluginError::Runtime("manifest-version-max-invalid".into()))?;
+        let max_version = parse_semver(max)
+            .ok_or_else(|| PluginError::Runtime("manifest-version-max-invalid".into()))?;
         if current > max_version {
             return Ok(false);
         }
@@ -834,6 +827,7 @@ struct PluginRuntimeRegistry {
     toolbar_actions: Vec<PluginToolbarAction>,
     renderers: Vec<PluginRenderer>,
     renderer_handlers: HashMap<(String, String), RendererHandlers>,
+    toolbar_action_handlers: HashMap<(String, String), Persistent<Function<'static>>>,
 }
 
 struct PluginFence {
@@ -888,9 +882,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
         Ok(Self {
             _runtime: runtime,
             context,
-            registry: std::rc::Rc::new(std::cell::RefCell::new(
-                PluginRuntimeRegistry::default(),
-            )),
+            registry: std::rc::Rc::new(std::cell::RefCell::new(PluginRuntimeRegistry::default())),
             load_plugin_fn,
             to_json_fn,
             settings: HashMap::new(),
@@ -907,7 +899,12 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
         self.settings = settings;
         self.permissions = plugins
             .iter()
-            .map(|plugin| (plugin.manifest.id.clone(), plugin.manifest.permissions.clone()))
+            .map(|plugin| {
+                (
+                    plugin.manifest.id.clone(),
+                    plugin.manifest.permissions.clone(),
+                )
+            })
             .collect();
         self.settings_schema = plugins
             .iter()
@@ -926,8 +923,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
         let load_plugin_fn = self.load_plugin_fn.clone();
         self.context.with(|ctx| {
             for plugin in plugins {
-                let api =
-                    Self::build_api(ctx.clone(), registry.clone(), &plugin.manifest.id)?;
+                let api = Self::build_api(ctx.clone(), registry.clone(), &plugin.manifest.id)?;
                 let entry = plugin
                     .manifest
                     .main
@@ -936,14 +932,17 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                 let entry_path = plugin.path.join(entry);
                 let source = fs::read_to_string(&entry_path)?;
                 let load_fn = load_plugin_fn.clone().restore(&ctx)?;
-                let load_context =
-                    PluginErrorContext::new("load").with_plugin(&plugin.manifest.id);
-                let exports: JsValue = load_fn
-                    .call((source, api.clone()))
-                    .catch(&ctx)
-                    .map_err(|err| {
-                        PluginError::Runtime(runtime_error_from_caught(err, load_context.clone()))
-                    })?;
+                let load_context = PluginErrorContext::new("load").with_plugin(&plugin.manifest.id);
+                let exports: JsValue =
+                    load_fn
+                        .call((source, api.clone()))
+                        .catch(&ctx)
+                        .map_err(|err| {
+                            PluginError::Runtime(runtime_error_from_caught(
+                                err,
+                                load_context.clone(),
+                            ))
+                        })?;
                 if let Ok(register_fn) = Function::from_value(exports.clone()) {
                     let register_context =
                         PluginErrorContext::new("register").with_plugin(&plugin.manifest.id);
@@ -992,14 +991,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
         block_uid: &str,
         text: &str,
     ) -> Result<PluginBlockView, PluginError> {
-        self.call_block_handler(
-            plugin_id,
-            renderer_id,
-            block_uid,
-            text,
-            None,
-            None,
-        )
+        self.call_block_handler(plugin_id, renderer_id, block_uid, text, None, None)
     }
 
     pub fn handle_block_action(
@@ -1114,6 +1106,37 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
         });
         api.set("registerPanel", register_panel)?;
 
+        let register_toolbar_action = Function::new(ctx.clone(), {
+            let registry = registry.clone();
+            let plugin_id = plugin_id.clone();
+            move |def: Object, handler: Option<Function>| -> rquickjs::Result<()> {
+                let id: String = def.get("id")?;
+                let title: String = def.get("title")?;
+                let tooltip: Option<String> = def.get("tooltip").ok();
+
+                registry
+                    .borrow_mut()
+                    .toolbar_actions
+                    .push(PluginToolbarAction {
+                        plugin_id: plugin_id.clone(),
+                        id: id.clone(),
+                        title,
+                        tooltip,
+                    });
+
+                if let Some(handler) = handler {
+                    let ctx = handler.ctx().clone();
+                    registry
+                        .borrow_mut()
+                        .toolbar_action_handlers
+                        .insert((plugin_id.clone(), id), Persistent::save(&ctx, handler));
+                }
+
+                Ok(())
+            }
+        });
+        api.set("registerToolbarAction", register_toolbar_action)?;
+
         Ok(api)
     }
 
@@ -1145,17 +1168,11 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
             registry
                 .renderers
                 .iter()
-                .find(|renderer| {
-                    renderer.plugin_id == plugin_id && renderer.id == renderer_id
-                })
+                .find(|renderer| renderer.plugin_id == plugin_id && renderer.id == renderer_id)
                 .map(|renderer| renderer.permissions.clone())
                 .unwrap_or_default()
         };
-        let allowed_permissions = self
-            .permissions
-            .get(plugin_id)
-            .cloned()
-            .unwrap_or_default();
+        let allowed_permissions = self.permissions.get(plugin_id).cloned().unwrap_or_default();
         let missing_permissions = renderer_permissions
             .iter()
             .filter(|perm| !allowed_permissions.contains(perm))
@@ -1211,39 +1228,39 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                 let fetch_fn = Function::new(
                     ctx.clone(),
                     move |url: String, options: Opt<Object>| -> rquickjs::Result<Object> {
-                    let mut method = "GET".to_string();
-                    let mut body: Option<String> = None;
-                    if let Some(opts) = options.0 {
-                        if let Ok(value) = opts.get::<_, String>("method") {
-                            method = value;
+                        let mut method = "GET".to_string();
+                        let mut body: Option<String> = None;
+                        if let Some(opts) = options.0 {
+                            if let Ok(value) = opts.get::<_, String>("method") {
+                                method = value;
+                            }
+                            if let Ok(value) = opts.get::<_, String>("body") {
+                                body = Some(value);
+                            }
                         }
-                        if let Ok(value) = opts.get::<_, String>("body") {
-                            body = Some(value);
+                        let request = ureq::request(method.as_str(), url.as_str());
+                        let result = if let Some(body) = body {
+                            request.send_string(&body)
+                        } else {
+                            request.call()
+                        };
+                        let response = Object::new(fetch_ctx.clone())?;
+                        match result {
+                            Ok(resp) => {
+                                let status = resp.status();
+                                let text = resp.into_string().unwrap_or_default();
+                                response.set("ok", status >= 200 && status < 300)?;
+                                response.set("status", status)?;
+                                response.set("text", text)?;
+                            }
+                            Err(err) => {
+                                response.set("ok", false)?;
+                                response.set("status", 0)?;
+                                response.set("text", err.to_string())?;
+                            }
                         }
-                    }
-                    let request = ureq::request(method.as_str(), url.as_str());
-                    let result = if let Some(body) = body {
-                        request.send_string(&body)
-                    } else {
-                        request.call()
-                    };
-                    let response = Object::new(fetch_ctx.clone())?;
-                    match result {
-                        Ok(resp) => {
-                            let status = resp.status();
-                            let text = resp.into_string().unwrap_or_default();
-                            response.set("ok", status >= 200 && status < 300)?;
-                            response.set("status", status)?;
-                            response.set("text", text)?;
-                        }
-                        Err(err) => {
-                            response.set("ok", false)?;
-                            response.set("status", 0)?;
-                            response.set("text", err.to_string())?;
-                        }
-                    }
-                    Ok(response)
-                },
+                        Ok(response)
+                    },
                 );
                 network_obj.set("fetch", fetch_fn)?;
                 ctx_obj.set("network", network_obj)?;
@@ -1271,12 +1288,10 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
             if let Some(action_id) = action_id {
                 error_context = error_context.with_action(action_id);
             }
-            let value: JsValue = handler_fn
-                .call((ctx_obj,))
-                .catch(&ctx)
-                .map_err(|err| PluginError::Runtime(runtime_error_from_caught(err, error_context)))?;
-            let mut view =
-                self.parse_block_view(ctx, value, plugin_id, renderer_id, block_uid)?;
+            let value: JsValue = handler_fn.call((ctx_obj,)).catch(&ctx).map_err(|err| {
+                PluginError::Runtime(runtime_error_from_caught(err, error_context))
+            })?;
+            let mut view = self.parse_block_view(ctx, value, plugin_id, renderer_id, block_uid)?;
             let has_clipboard_control = view.controls.iter().any(|control| {
                 control
                     .get("type")
@@ -1284,8 +1299,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                     .map(|kind| kind == "clipboard")
                     .unwrap_or(false)
             });
-            if has_clipboard_control
-                && !renderer_permissions.iter().any(|perm| perm == "clipboard")
+            if has_clipboard_control && !renderer_permissions.iter().any(|perm| perm == "clipboard")
             {
                 return Ok(permission_blocked_view(
                     plugin_id,
@@ -1300,9 +1314,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                 if let Some(ttl) = cache.ttl_seconds {
                     cache_ttl = Some(ttl);
                     let ttl_string = ttl.to_string();
-                    if config
-                        .get(CACHE_TTL_KEY)
-                        .map(|value| value.as_str())
+                    if config.get(CACHE_TTL_KEY).map(|value| value.as_str())
                         != Some(ttl_string.as_str())
                     {
                         config.insert(CACHE_TTL_KEY.to_string(), ttl_string);
@@ -1310,9 +1322,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                     }
                 }
                 if let Some(timestamp) = cache.timestamp.clone() {
-                    if config
-                        .get(CACHE_TS_KEY)
-                        .map(|value| value.as_str())
+                    if config.get(CACHE_TS_KEY).map(|value| value.as_str())
                         != Some(timestamp.as_str())
                     {
                         config.insert(CACHE_TS_KEY.to_string(), timestamp);
@@ -1330,11 +1340,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                     .is_none()
             {
                 let now = Utc::now().to_rfc3339();
-                if config
-                    .get(CACHE_TS_KEY)
-                    .map(|value| value.as_str())
-                    != Some(now.as_str())
-                {
+                if config.get(CACHE_TS_KEY).map(|value| value.as_str()) != Some(now.as_str()) {
                     config.insert(CACHE_TS_KEY.to_string(), now);
                     config_updated = true;
                 }
@@ -1671,14 +1677,14 @@ fn runtime_error_from_caught(
     context: PluginErrorContext,
 ) -> PluginRuntimeError {
     match err {
-        CaughtError::Exception(ex) => PluginRuntimeError::new(
-            ex.message()
-                .unwrap_or_else(|| "js-exception".to_string()),
-        )
-        .with_stack(ex.stack())
-        .with_context(context),
-        CaughtError::Value(value) => PluginRuntimeError::new(format!("js-exception: {value:?}"))
-            .with_context(context),
+        CaughtError::Exception(ex) => {
+            PluginRuntimeError::new(ex.message().unwrap_or_else(|| "js-exception".to_string()))
+                .with_stack(ex.stack())
+                .with_context(context)
+        }
+        CaughtError::Value(value) => {
+            PluginRuntimeError::new(format!("js-exception: {value:?}")).with_context(context)
+        }
         CaughtError::Error(error) => {
             PluginRuntimeError::new(error.to_string()).with_context(context)
         }
@@ -1984,8 +1990,7 @@ mod tests {
             r#"{"id":"alpha","name":"Alpha","version":"0.1.0"}"#,
         )
         .expect("write manifest");
-        fs::write(source_dir.join("index.js"), "module.exports = () => {};")
-            .expect("write entry");
+        fs::write(source_dir.join("index.js"), "module.exports = () => {};").expect("write entry");
 
         let registry = PluginRegistry::new(dir.path().join("plugins/state.json"));
         let info = install_plugin(dir.path(), &registry, &source_dir).expect("install");
@@ -2005,9 +2010,7 @@ mod tests {
         registry
             .set_install_source("alpha", "/tmp/alpha")
             .expect("set source");
-        let stored = registry
-            .get_install_source("alpha")
-            .expect("get source");
+        let stored = registry.get_install_source("alpha").expect("get source");
         assert_eq!(stored.as_deref(), Some("/tmp/alpha"));
 
         registry
@@ -2313,6 +2316,54 @@ mod tests {
         assert_eq!(view.summary.as_deref(), Some("stale"));
     }
 
+    #[test]
+    fn runtime_registers_toolbar_actions() {
+        let dir = tempdir().expect("tempdir");
+        let plugins_dir = write_toolbar_action_plugin(dir.path());
+        let registry = PluginRegistry::new(plugins_dir.join("state.json"));
+        let mut runtime = PluginRuntime::new().expect("runtime");
+        let plugins = discover_plugins(dir.path(), &registry).expect("discover");
+
+        let result = runtime
+            .load_plugins(&plugins, HashMap::new())
+            .expect("load");
+
+        assert_eq!(result.toolbar_actions.len(), 1);
+        let action = &result.toolbar_actions[0];
+        assert_eq!(action.plugin_id, "toolbar");
+        assert_eq!(action.id, "toolbar.action");
+        assert_eq!(action.title, "Do action");
+        assert_eq!(action.tooltip.as_deref(), Some("Do it"));
+    }
+
+    fn write_toolbar_action_plugin(root: &std::path::Path) -> PathBuf {
+        let plugins_dir = root.join("plugins");
+        fs::create_dir_all(&plugins_dir).expect("plugins dir");
+        let plugin_dir = plugins_dir.join("toolbar");
+        fs::create_dir_all(&plugin_dir).expect("plugin dir");
+        fs::write(
+            plugin_dir.join("plugin.json"),
+            r#"{
+  "id": "toolbar",
+  "name": "Toolbar Test",
+  "version": "0.1.0",
+  "main": "index.js"
+}"#,
+        )
+        .expect("write manifest");
+        fs::write(
+            plugin_dir.join("index.js"),
+            r#"module.exports = (api) => {
+  api.registerToolbarAction(
+    { id: "toolbar.action", title: "Do action", tooltip: "Do it" },
+    () => {}
+  );
+};"#,
+        )
+        .expect("write plugin entry");
+        plugins_dir
+    }
+
     fn write_settings_plugin(root: &std::path::Path) -> PathBuf {
         let plugins_dir = root.join("plugins");
         fs::create_dir_all(&plugins_dir).expect("plugins dir");
@@ -2383,19 +2434,11 @@ mod tests {
         let mut runtime = PluginRuntime::new().expect("runtime");
         let plugins = discover_plugins(dir.path(), &registry).expect("discover");
         let mut settings = HashMap::new();
-        settings.insert(
-            "settings".to_string(),
-            serde_json::json!({ "units": "f" }),
-        );
+        settings.insert("settings".to_string(), serde_json::json!({ "units": "f" }));
         runtime.load_plugins(&plugins, settings).expect("load");
 
         let view = runtime
-            .render_block(
-                "settings",
-                "settings.block",
-                "b1",
-                "```settings units=c",
-            )
+            .render_block("settings", "settings.block", "b1", "```settings units=c")
             .expect("render");
         assert_eq!(view.summary.as_deref(), Some("c"));
     }

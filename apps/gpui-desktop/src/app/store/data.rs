@@ -151,7 +151,6 @@ impl AppStore {
             if stripped.trim().is_empty() {
                 continue;
             }
-            let lowered = stripped.to_lowercase();
             for page in pages.iter() {
                 let title = page.title.trim();
                 if title.is_empty() {
@@ -161,8 +160,11 @@ impl AppStore {
                 if seen.contains(&key) {
                     continue;
                 }
-                let count = helpers::count_case_insensitive_occurrences(&stripped, title);
-                if count > 0 && lowered.contains(&title.to_lowercase()) {
+                let count = helpers::count_case_insensitive_occurrences_outside_wikilinks(
+                    &block.text,
+                    title,
+                );
+                if count > 0 {
                     seen.insert(key);
                     self.editor.unlinked_references.push(UnlinkedReference {
                         block_uid: block.uid.clone(),
@@ -278,6 +280,14 @@ impl AppStore {
         }
 
         self.editor.review_items = display_items;
+        if self.editor.review_items.is_empty() {
+            self.editor.review_selected_index = 0;
+        } else {
+            self.editor.review_selected_index = self
+                .editor
+                .review_selected_index
+                .min(self.editor.review_items.len() - 1);
+        }
         cx.notify();
     }
 

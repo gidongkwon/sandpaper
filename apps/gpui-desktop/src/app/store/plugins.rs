@@ -1,4 +1,5 @@
 use super::*;
+use rfd::FileDialog;
 use sandpaper_core::plugins::{PluginError, PluginErrorContext};
 use serde_json::Value;
 
@@ -150,11 +151,6 @@ pub(crate) fn setting_value_to_string(value: &Value) -> String {
     }
 }
 
-enum PluginCommandDecision {
-    Execute(PluginCommand),
-    PermissionRequested,
-}
-
 impl PluginsState {
     fn has_permission(&self, plugin_id: &str, permission: &str) -> bool {
         self.plugins
@@ -187,19 +183,6 @@ impl PluginsState {
             permission: permission.to_string(),
             action,
         });
-    }
-
-    fn run_command(&mut self, command: PluginCommand) -> PluginCommandDecision {
-        let plugin_id = command.plugin_id.clone();
-        if !self.has_permission(&plugin_id, "data.write") {
-            self.request_permission(
-                &plugin_id,
-                "data.write",
-                Some(PluginPermissionAction::RunCommand(command)),
-            );
-            return PluginCommandDecision::PermissionRequested;
-        }
-        PluginCommandDecision::Execute(command)
     }
 }
 
@@ -305,6 +288,10 @@ impl AppStore {
         self.plugins.plugin_runtime = None;
         self.plugins.plugin_active_panel = None;
         self.plugins.plugin_permission_prompt = None;
+        self.plugins.plugin_installing = false;
+        self.plugins.plugin_install_status = None;
+        self.plugins.plugin_manage_busy.clear();
+        self.plugins.plugin_manage_status.clear();
         self.settings.plugin_settings_selected = None;
         self.plugins.plugin_settings_values.clear();
         self.plugins.plugin_settings_saved.clear();
@@ -584,9 +571,10 @@ impl AppStore {
         } = match load_result {
             Ok(result) => result,
             Err(err) => {
-                let message = format_runtime_error(&err);
-                self.plugins.plugin_error = Some(message.into());
-                self.plugins.plugin_error_details = Some(err);
+                let message: SharedString = format_runtime_error(&err).into();
+                self.plugins.plugin_error = Some(message.clone());
+                self.plugins.plugin_error_details = Some(err.clone());
+                self.push_plugin_error_notification(message, Some(err));
                 self.plugins.plugins.clear();
                 self.plugins.plugin_status = None;
                 self.plugins.plugin_busy = false;
@@ -629,8 +617,10 @@ impl AppStore {
                 });
             }
             Err(err) => {
+                let message: SharedString = format_runtime_error(&err).into();
                 self.plugins.plugin_error_details = Some(err.clone());
-                self.plugins.plugin_error = Some(format_runtime_error(&err).into());
+                self.plugins.plugin_error = Some(message.clone());
+                self.push_plugin_error_notification(message, Some(err));
                 self.plugins.plugin_status = None;
             }
         }
@@ -658,11 +648,209 @@ impl AppStore {
         self.load_plugins(window, cx);
     }
 
+    pub(crate) fn clear_plugin_install_status(&mut self, cx: &mut Context<Self>) {
+        self.plugins.plugin_install_status = None;
+        cx.notify();
+    }
+
+    pub(crate) fn install_plugin_from_folder_picker(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.plugins.plugin_installing {
+            return;
+        }
+
+        let Some(vault_root) = self.app.active_vault_root.clone() else {
+            self.plugins.plugin_install_status = Some("Vault not available.".into());
+            cx.notify();
+            return;
+        };
+
+        let folder = FileDialog::new().set_directory(&vault_root).pick_folder();
+        let Some(folder) = folder else {
+            return;
+        };
+
+        self.install_plugin_from_dir(folder, window, cx);
+    }
+
+    pub(crate) fn install_plugin_from_dir(
+        &mut self,
+        source_dir: PathBuf,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.plugins.plugin_installing {
+            return;
+        }
+
+        let Some(vault_root) = self.app.active_vault_root.clone() else {
+            self.plugins.plugin_install_status = Some("Vault not available.".into());
+            cx.notify();
+            return;
+        };
+
+        self.plugins.plugin_installing = true;
+        self.plugins.plugin_install_status = None;
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = crate::services::plugins::install(&vault_root, &source_dir);
+            this.update(cx, |this, cx| {
+                this.plugins.plugin_installing = false;
+                match result {
+                    Ok(info) => {
+                        this.plugins.plugin_install_status =
+                            Some(format!("Installed {}.", info.name).into());
+                        this.load_plugins(None, cx);
+                    }
+                    Err(err) => {
+                        this.plugins.plugin_install_status =
+                            Some(format!("Install failed: {}", format_runtime_error(&err)).into());
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn update_plugin(&mut self, plugin_id: String, cx: &mut Context<Self>) {
+        if self.plugins.plugin_manage_busy.contains(&plugin_id) {
+            return;
+        }
+
+        let Some(vault_root) = self.app.active_vault_root.clone() else {
+            self.plugins
+                .plugin_manage_status
+                .insert(plugin_id, "Vault not available.".into());
+            cx.notify();
+            return;
+        };
+
+        self.plugins.plugin_manage_busy.insert(plugin_id.clone());
+        self.plugins
+            .plugin_manage_status
+            .insert(plugin_id.clone(), "Updating…".into());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = crate::services::plugins::update(&vault_root, &plugin_id);
+            this.update(cx, |this, cx| {
+                this.plugins.plugin_manage_busy.remove(&plugin_id);
+                match result {
+                    Ok(info) => {
+                        this.plugins
+                            .plugin_manage_status
+                            .insert(plugin_id.clone(), format!("Updated {}.", info.name).into());
+                        this.load_plugins(None, cx);
+                    }
+                    Err(err) => {
+                        this.plugins.plugin_manage_status.insert(
+                            plugin_id.clone(),
+                            format!("Update failed: {}", format_runtime_error(&err)).into(),
+                        );
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn remove_plugin(&mut self, plugin_id: String, cx: &mut Context<Self>) {
+        if self.plugins.plugin_manage_busy.contains(&plugin_id) {
+            return;
+        }
+
+        let Some(vault_root) = self.app.active_vault_root.clone() else {
+            self.plugins
+                .plugin_manage_status
+                .insert(plugin_id, "Vault not available.".into());
+            cx.notify();
+            return;
+        };
+
+        self.plugins.plugin_manage_busy.insert(plugin_id.clone());
+        self.plugins
+            .plugin_manage_status
+            .insert(plugin_id.clone(), "Removing…".into());
+        cx.notify();
+
+        cx.spawn(async move |this, cx| {
+            let result = crate::services::plugins::remove(&vault_root, &plugin_id);
+            this.update(cx, |this, cx| {
+                this.plugins.plugin_manage_busy.remove(&plugin_id);
+                match result {
+                    Ok(_) => {
+                        this.plugins
+                            .plugin_manage_status
+                            .insert(plugin_id.clone(), "Removed.".into());
+                        this.load_plugins(None, cx);
+                    }
+                    Err(err) => {
+                        this.plugins.plugin_manage_status.insert(
+                            plugin_id.clone(),
+                            format!("Remove failed: {}", format_runtime_error(&err)).into(),
+                        );
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub(crate) fn set_plugin_enabled(
+        &mut self,
+        plugin_id: String,
+        enabled: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault_root) = self.app.active_vault_root.clone() else {
+            self.plugins
+                .plugin_manage_status
+                .insert(plugin_id, "Vault not available.".into());
+            cx.notify();
+            return;
+        };
+
+        let registry = plugin_registry_for_vault(&vault_root);
+        match registry.set_enabled(&plugin_id, enabled) {
+            Ok(_) => {
+                self.plugins.plugin_manage_status.insert(
+                    plugin_id.clone(),
+                    if enabled {
+                        "Enabled.".into()
+                    } else {
+                        "Disabled.".into()
+                    },
+                );
+                self.load_plugins(Some(window), cx);
+            }
+            Err(err) => {
+                let err = describe_plugin_error(&err);
+                self.plugins.plugin_manage_status.insert(
+                    plugin_id.clone(),
+                    format!("Enable failed: {}", format_runtime_error(&err)).into(),
+                );
+            }
+        }
+        cx.notify();
+    }
+
     pub(crate) fn request_plugin_permission(
         &mut self,
         plugin_id: &str,
         permission: &str,
         action: Option<PluginPermissionAction>,
+        window: Option<&mut Window>,
         cx: &mut Context<Self>,
     ) {
         let already_prompting = self.plugins.plugin_permission_prompt.is_some();
@@ -674,21 +862,19 @@ impl AppStore {
             return;
         }
 
+        let (plugin_name, permission) = self
+            .plugins
+            .plugin_permission_prompt
+            .as_ref()
+            .map(|prompt| (prompt.plugin_name.clone(), prompt.permission.clone()))
+            .unwrap_or_else(|| ("Plugin".to_string(), "permission".to_string()));
         let app = cx.entity();
-        self.with_window(cx, move |window, cx| {
+        if let Some(window) = window {
             if window.root::<Root>().flatten().is_none() {
                 return;
             }
 
             window.open_dialog(cx, move |dialog, _window, cx| {
-                let (plugin_name, permission) = app
-                    .read(cx)
-                    .plugins
-                    .plugin_permission_prompt
-                    .as_ref()
-                    .map(|prompt| (prompt.plugin_name.clone(), prompt.permission.clone()))
-                    .unwrap_or_else(|| ("Plugin".to_string(), "permission".to_string()));
-
                 dialog
                     .title("Grant permission")
                     .confirm()
@@ -735,7 +921,63 @@ impl AppStore {
                         }
                     })
             });
-        });
+        } else {
+            self.with_window(cx, move |window, cx| {
+                if window.root::<Root>().flatten().is_none() {
+                    return;
+                }
+
+                window.open_dialog(cx, move |dialog, _window, cx| {
+                    dialog
+                        .title("Grant permission")
+                        .confirm()
+                        .button_props(
+                            gpui_component::dialog::DialogButtonProps::default()
+                                .ok_text("Allow")
+                                .cancel_text("Cancel"),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(cx.theme().foreground)
+                                        .child(format!("Allow {plugin_name} to use {permission}?")),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("This can be changed later in Settings → Plugins."),
+                                ),
+                        )
+                        .on_ok({
+                            let app = app.clone();
+                            move |_event, window, cx| {
+                                app.update(cx, |app, cx| {
+                                    app.grant_plugin_permission_action(window, cx)
+                                })
+                            }
+                        })
+                        .on_cancel({
+                            let app = app.clone();
+                            move |_event, _window, cx| {
+                                app.update(cx, |app, cx| app.clear_plugin_permission_prompt(cx));
+                                true
+                            }
+                        })
+                        .on_close({
+                            let app = app.clone();
+                            move |_event, _window, cx| {
+                                app.update(cx, |app, cx| app.clear_plugin_permission_prompt(cx));
+                            }
+                        })
+                });
+            });
+        }
 
         cx.notify();
     }
@@ -803,19 +1045,28 @@ impl AppStore {
             PluginPermissionAction::RunCommand(command) => {
                 self.run_plugin_command(command, window, cx);
             }
+            PluginPermissionAction::RunToolbarAction(action) => {
+                self.run_plugin_toolbar_action(action, window, cx);
+            }
             PluginPermissionAction::OpenPanel(panel) => {
-                self.open_plugin_panel(panel, cx);
+                self.open_plugin_panel(panel, window, cx);
             }
         }
     }
 
-    pub(crate) fn open_plugin_panel(&mut self, panel: PluginPanel, cx: &mut Context<Self>) {
+    pub(crate) fn open_plugin_panel(
+        &mut self,
+        panel: PluginPanel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let plugin_id = panel.plugin_id.clone();
         if !self.plugins.has_permission(&plugin_id, "ui") {
             self.request_plugin_permission(
                 &plugin_id,
                 "ui",
                 Some(PluginPermissionAction::OpenPanel(panel)),
+                Some(window),
                 cx,
             );
             return;
@@ -826,6 +1077,9 @@ impl AppStore {
         }
 
         self.plugins.plugin_active_panel = Some(panel);
+        self.settings.context_panel_open = true;
+        self.settings.context_panel_tab = WorkspacePanel::Plugins;
+        self.persist_settings();
         cx.notify();
     }
 
@@ -840,13 +1094,17 @@ impl AppStore {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let command = match self.plugins.run_command(command) {
-            PluginCommandDecision::Execute(command) => command,
-            PluginCommandDecision::PermissionRequested => {
-                cx.notify();
-                return;
-            }
-        };
+        let plugin_id = command.plugin_id.clone();
+        if !self.plugins.has_permission(&plugin_id, "data.write") {
+            self.request_plugin_permission(
+                &plugin_id,
+                "data.write",
+                Some(PluginPermissionAction::RunCommand(command)),
+                Some(window),
+                cx,
+            );
+            return;
+        }
 
         if self.app.mode != Mode::Editor {
             self.set_mode(Mode::Editor, cx);
@@ -860,6 +1118,51 @@ impl AppStore {
             uid: Uuid::new_v4().to_string(),
             text: format!("Plugin action: {}", command.title),
             indent: 0,
+            block_type: BlockType::Text,
+        };
+
+        let next_active = editor.active_ix.saturating_add(1);
+        editor.blocks.insert(0, new_block);
+        editor.active_ix = next_active.min(editor.blocks.len().saturating_sub(1));
+
+        self.update_block_list_for_pane(EditorPane::Primary);
+        self.mark_dirty_for_pane(EditorPane::Primary, cx);
+        self.schedule_references_refresh(cx);
+        window.focus(&self.editor.block_input.focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn run_plugin_toolbar_action(
+        &mut self,
+        action: PluginToolbarAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let plugin_id = action.plugin_id.clone();
+        if !self.plugins.has_permission(&plugin_id, "data.write") {
+            self.request_plugin_permission(
+                &plugin_id,
+                "data.write",
+                Some(PluginPermissionAction::RunToolbarAction(action)),
+                Some(window),
+                cx,
+            );
+            return;
+        }
+
+        if self.app.mode != Mode::Editor {
+            self.set_mode(Mode::Editor, cx);
+        }
+
+        let Some(editor) = self.editor.editor.as_mut() else {
+            return;
+        };
+
+        let new_block = BlockSnapshot {
+            uid: Uuid::new_v4().to_string(),
+            text: format!("Plugin toolbar: {}", action.title),
+            indent: 0,
+            block_type: BlockType::Text,
         };
 
         let next_active = editor.active_ix.saturating_add(1);
@@ -1079,7 +1382,8 @@ mod tests {
     use super::{
         apply_settings_schema_defaults, build_plugin_settings_state, coerce_setting_value,
         compute_missing_permissions, get_plugin_settings, list_permissions_for_plugins,
-        set_plugin_settings, setting_kind, AppStore, PluginPermissionInfo, PluginSettingKind,
+        set_plugin_settings, setting_kind, AppStore, PluginPermissionAction, PluginPermissionInfo,
+        PluginSettingKind, PluginToolbarAction,
     };
     use gpui::{AppContext, Entity, TestAppContext};
     use sandpaper_core::db::Database;
@@ -1321,7 +1625,7 @@ mod tests {
                 missing_permissions: vec!["data.write".to_string()],
             }];
 
-            app.request_plugin_permission("alpha", "data.write", None, cx);
+            app.request_plugin_permission("alpha", "data.write", None, None, cx);
             let prompt = app
                 .plugins
                 .plugin_permission_prompt
@@ -1343,6 +1647,141 @@ mod tests {
                     .expect("list permissions");
                 assert!(permissions.contains(&"data.write".to_string()));
                 assert!(app.plugins.plugin_permission_prompt.is_none());
+            });
+
+            window.close_dialog(cx);
+            assert!(!window.has_active_dialog(cx));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn request_plugin_permission_opens_dialog_from_window(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        use gpui_component::{Root, WindowExt as _};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        app.update(cx, |app, _cx| {
+            app.plugins.plugins = vec![PluginPermissionInfo {
+                id: "hn-top".to_string(),
+                name: "HN Top".to_string(),
+                version: "0.1.0".to_string(),
+                description: None,
+                permissions: vec!["network".to_string()],
+                settings_schema: None,
+                enabled: true,
+                path: "/tmp/hn-top".to_string(),
+                granted_permissions: Vec::new(),
+                missing_permissions: vec!["network".to_string()],
+            }];
+        });
+
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.request_plugin_permission("hn-top", "network", None, Some(window), cx);
+            });
+
+            assert!(window.has_active_dialog(cx));
+            window.close_dialog(cx);
+            assert!(!window.has_active_dialog(cx));
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn plugin_permission_prompt_runs_toolbar_action(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        use gpui_component::{Root, WindowExt as _};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        use tempfile::tempdir;
+
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let vault_root = tempdir().expect("tempdir");
+        let plugin_dir = vault_root.path().join("plugins").join("alpha");
+        std::fs::create_dir_all(&plugin_dir).expect("plugin dir");
+        std::fs::write(
+            plugin_dir.join("plugin.json"),
+            r#"{"id":"alpha","name":"Alpha","version":"0.1.0","permissions":["data.write"]}"#,
+        )
+        .expect("write manifest");
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        app.update(cx, |app, cx| {
+            let db = Database::new_in_memory().expect("db init");
+            db.run_migrations().expect("migrations");
+            app.app.db = Some(db);
+            app.app.active_vault_root = Some(vault_root.path().to_path_buf());
+            app.open_page("test", cx);
+
+            app.plugins.plugins = vec![PluginPermissionInfo {
+                id: "alpha".to_string(),
+                name: "Alpha".to_string(),
+                version: "0.1.0".to_string(),
+                description: None,
+                permissions: vec!["data.write".to_string()],
+                settings_schema: None,
+                enabled: true,
+                path: "/tmp/alpha".to_string(),
+                granted_permissions: Vec::new(),
+                missing_permissions: vec!["data.write".to_string()],
+            }];
+
+            app.request_plugin_permission(
+                "alpha",
+                "data.write",
+                Some(PluginPermissionAction::RunToolbarAction(
+                    PluginToolbarAction {
+                        plugin_id: "alpha".to_string(),
+                        id: "alpha.toolbar".to_string(),
+                        title: "Toolbar action".to_string(),
+                        tooltip: None,
+                    },
+                )),
+                None,
+                cx,
+            );
+        });
+
+        cx.update_window(*window, |_root, window, cx| {
+            assert!(window.has_active_dialog(cx));
+
+            app.update(cx, |app, cx| {
+                assert!(app.grant_plugin_permission_action(window, cx));
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert!(editor
+                    .blocks
+                    .iter()
+                    .any(|block| { block.text.contains("Plugin toolbar:") }));
             });
 
             window.close_dialog(cx);

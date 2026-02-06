@@ -1,3 +1,4 @@
+use crate::blocks::BlockType;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -180,6 +181,32 @@ const MIGRATIONS: &[Migration] = &[
         name: "assets-original-name",
         up: "ALTER TABLE assets ADD COLUMN original_name TEXT;",
     },
+    Migration {
+        version: 3,
+        name: "page-properties",
+        up: "CREATE TABLE IF NOT EXISTS property_definitions (
+            id INTEGER PRIMARY KEY,
+            key TEXT UNIQUE NOT NULL,
+            label TEXT NOT NULL,
+            value_type TEXT NOT NULL DEFAULT 'text',
+            options TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS page_properties (
+            id INTEGER PRIMARY KEY,
+            page_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            value_type TEXT NOT NULL DEFAULT 'text',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE,
+            UNIQUE(page_id, key)
+        );
+
+        CREATE INDEX IF NOT EXISTS page_properties_page
+          ON page_properties(page_id, sort_order);",
+    },
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -187,6 +214,26 @@ pub struct PageRecord {
     pub id: i64,
     pub uid: String,
     pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PagePropertyRecord {
+    pub id: i64,
+    pub page_id: i64,
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PropertyDefinition {
+    pub id: i64,
+    pub key: String,
+    pub label: String,
+    pub value_type: String,
+    pub options: Option<String>,
+    pub sort_order: i64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -212,6 +259,8 @@ pub struct BlockSnapshot {
     pub uid: String,
     pub text: String,
     pub indent: i64,
+    #[serde(default)]
+    pub block_type: BlockType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -406,6 +455,20 @@ impl Database {
         rows.collect()
     }
 
+    pub fn random_pages(&self, limit: usize) -> rusqlite::Result<Vec<PageRecord>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, uid, title FROM pages ORDER BY RANDOM() LIMIT ?1")?;
+        let rows = stmt.query_map([limit as i64], |row| {
+            Ok(PageRecord {
+                id: row.get(0)?,
+                uid: row.get(1)?,
+                title: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn delete_page(&self, page_id: i64) -> rusqlite::Result<()> {
         self.conn
             .execute("DELETE FROM pages WHERE id = ?1", [page_id])?;
@@ -486,9 +549,9 @@ impl Database {
     }
 
     pub fn search_blocks(&self, query: &str) -> rusqlite::Result<Vec<i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?1 ORDER BY rowid",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?1 ORDER BY rowid")?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
     }
@@ -542,15 +605,16 @@ impl Database {
     }
 
     pub fn load_blocks_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<BlockSnapshot>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT uid, text, props FROM blocks WHERE page_id = ?1 ORDER BY sort_key",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT uid, text, props FROM blocks WHERE page_id = ?1 ORDER BY sort_key")?;
         let rows = stmt.query_map([page_id], |row| {
             let props: String = row.get(2)?;
             Ok(BlockSnapshot {
                 uid: row.get(0)?,
                 text: row.get(1)?,
                 indent: parse_indent(&props),
+                block_type: parse_block_type(&props),
             })
         })?;
         rows.collect()
@@ -570,14 +634,8 @@ impl Database {
             )?;
             for (index, block) in blocks.iter().enumerate() {
                 let sort_key = format!("{:06}", index);
-                let props = serde_json::json!({ "indent": block.indent }).to_string();
-                stmt.execute(params![
-                    block.uid,
-                    page_id,
-                    sort_key,
-                    block.text,
-                    props
-                ])?;
+                let props = serialize_block_props(block);
+                stmt.execute(params![block.uid, page_id, sort_key, block.text, props])?;
             }
         }
         tx.commit()?;
@@ -585,9 +643,9 @@ impl Database {
     }
 
     pub fn search_pages(&self, query: &str) -> rusqlite::Result<Vec<i64>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?1 ORDER BY rowid",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT rowid FROM pages_fts WHERE pages_fts MATCH ?1 ORDER BY rowid")?;
         let rows = stmt.query_map([query], |row| row.get(0))?;
         rows.collect()
     }
@@ -642,21 +700,16 @@ impl Database {
     }
 
     pub fn upsert_tag(&self, name: &str) -> rusqlite::Result<TagRecord> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
-            [name],
-        )?;
+        self.conn
+            .execute("INSERT OR IGNORE INTO tags (name) VALUES (?1)", [name])?;
 
-        self.conn.query_row(
-            "SELECT id, name FROM tags WHERE name = ?1",
-            [name],
-            |row| {
+        self.conn
+            .query_row("SELECT id, name FROM tags WHERE name = ?1", [name], |row| {
                 Ok(TagRecord {
                     id: row.get(0)?,
                     name: row.get(1)?,
                 })
-            },
-        )
+            })
     }
 
     pub fn attach_tag(&self, block_id: i64, tag_id: i64) -> rusqlite::Result<()> {
@@ -690,6 +743,105 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    // --- Page properties ---
+
+    pub fn set_page_property(
+        &self,
+        page_id: i64,
+        key: &str,
+        value: &str,
+        value_type: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO page_properties (page_id, key, value, value_type)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(page_id, key) DO UPDATE SET value = ?3, value_type = ?4",
+            params![page_id, key, value, value_type],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_page_properties(&self, page_id: i64) -> rusqlite::Result<Vec<PagePropertyRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, page_id, key, value, value_type, sort_order
+             FROM page_properties
+             WHERE page_id = ?1
+             ORDER BY sort_order ASC, key ASC",
+        )?;
+        let rows = stmt.query_map([page_id], |row| {
+            Ok(PagePropertyRecord {
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                key: row.get(2)?,
+                value: row.get(3)?,
+                value_type: row.get(4)?,
+                sort_order: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn delete_page_property(&self, page_id: i64, key: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM page_properties WHERE page_id = ?1 AND key = ?2",
+            params![page_id, key],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_property_definition(
+        &self,
+        key: &str,
+        label: &str,
+        value_type: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO property_definitions (key, label, value_type)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET label = ?2, value_type = ?3",
+            params![key, label, value_type],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_property_definitions(&self) -> rusqlite::Result<Vec<PropertyDefinition>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, key, label, value_type, options, sort_order
+             FROM property_definitions
+             ORDER BY sort_order ASC, key ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(PropertyDefinition {
+                id: row.get(0)?,
+                key: row.get(1)?,
+                label: row.get(2)?,
+                value_type: row.get(3)?,
+                options: row.get(4)?,
+                sort_order: row.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn query_pages_with_properties(
+        &self,
+        filter_key: Option<&str>,
+        filter_value: Option<&str>,
+    ) -> rusqlite::Result<Vec<(PageRecord, Vec<PagePropertyRecord>)>> {
+        let pages = self.list_pages()?;
+        let mut results = Vec::new();
+        for page in pages {
+            let props = self.get_page_properties(page.id)?;
+            if let (Some(fk), Some(fv)) = (filter_key, filter_value) {
+                if !props.iter().any(|p| p.key == fk && p.value.contains(fv)) {
+                    continue;
+                }
+            }
+            results.push((page, props));
+        }
+        Ok(results)
     }
 
     pub fn grant_plugin_permission(
@@ -744,7 +896,9 @@ impl Database {
 
     pub fn get_kv(&self, key: &str) -> rusqlite::Result<Option<String>> {
         self.conn
-            .query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| row.get(0))
+            .query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| {
+                row.get(0)
+            })
             .optional()
     }
 
@@ -842,8 +996,8 @@ impl Database {
         Ok(self.conn.last_insert_rowid())
     }
 
-pub fn list_sync_ops_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<SyncOp>> {
-    let mut stmt = self.conn.prepare(
+    pub fn list_sync_ops_for_page(&self, page_id: i64) -> rusqlite::Result<Vec<SyncOp>> {
+        let mut stmt = self.conn.prepare(
             "SELECT id, op_id, page_id, device_id, op_type, payload, created_at
              FROM sync_ops
              WHERE page_id = ?1
@@ -1012,9 +1166,29 @@ fn parse_indent(props: &str) -> i64 {
         .unwrap_or(0)
 }
 
+fn parse_block_type(props: &str) -> BlockType {
+    let parsed: serde_json::Value = match serde_json::from_str(props) {
+        Ok(value) => value,
+        Err(_) => return BlockType::default(),
+    };
+    match parsed.get("block_type") {
+        Some(value) => serde_json::from_value(value.clone()).unwrap_or_default(),
+        None => BlockType::default(),
+    }
+}
+
+fn serialize_block_props(block: &BlockSnapshot) -> String {
+    let mut props = serde_json::json!({ "indent": block.indent });
+    if !block.block_type.is_text() {
+        props["block_type"] = serde_json::to_value(block.block_type).unwrap_or_default();
+    }
+    props.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BlockSnapshot, Database};
+    use crate::blocks::BlockType;
 
     fn table_exists(db: &Database, name: &str) -> bool {
         db.conn
@@ -1057,15 +1231,8 @@ mod tests {
             "{}",
         )
         .expect("block a");
-        db.insert_block(
-            page_id,
-            "block-b",
-            None,
-            "000002",
-            "No refs here",
-            "{}",
-        )
-        .expect("block b");
+        db.insert_block(page_id, "block-b", None, "000002", "No refs here", "{}")
+            .expect("block b");
 
         let records = db.list_blocks_with_block_refs().expect("refs");
         assert_eq!(records.len(), 1);
@@ -1126,7 +1293,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Test page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Test page")
+            .expect("insert page");
         let block_id = db
             .insert_block(page_id, "block-uid", None, "a", "hello world", "{}")
             .expect("insert block");
@@ -1152,7 +1321,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Test page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Test page")
+            .expect("insert page");
         let block_id = db
             .insert_block(page_id, "block-uid", None, "a", "hello world", "{}")
             .expect("insert block");
@@ -1169,7 +1340,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Search page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Search page")
+            .expect("insert page");
         db.insert_block(page_id, "block-uid", None, "a", "alpha note", "{}")
             .expect("insert block");
         db.insert_block(page_id, "block-uid-2", None, "b", "beta note", "{}")
@@ -1189,7 +1362,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Search page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Search page")
+            .expect("insert page");
         db.insert_block(page_id, "block-uid", None, "a", "alpha note", "{}")
             .expect("insert block");
         db.insert_block(page_id, "block-uid-2", None, "b", "beta note", "{}")
@@ -1217,20 +1392,20 @@ mod tests {
                 uid: "block-1".to_string(),
                 text: "First line".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Indented line".to_string(),
                 indent: 2,
+                block_type: BlockType::Text,
             },
         ];
 
         db.replace_blocks_for_page(page_id, &blocks)
             .expect("replace blocks");
 
-        let loaded = db
-            .load_blocks_for_page(page_id)
-            .expect("load blocks");
+        let loaded = db.load_blocks_for_page(page_id).expect("load blocks");
         assert_eq!(loaded, blocks);
     }
 
@@ -1239,7 +1414,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Daily Notes").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Daily Notes")
+            .expect("insert page");
         let results = db.search_pages("Daily").expect("search");
         assert_eq!(results, vec![page_id]);
 
@@ -1257,9 +1434,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db
-            .insert_page("page-uid", "Inbox")
-            .expect("insert page");
+        let page_id = db.insert_page("page-uid", "Inbox").expect("insert page");
         let page = db
             .get_page_by_uid("page-uid")
             .expect("get page")
@@ -1329,8 +1504,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.grant_plugin_permission("alpha", "fs")
-            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "fs").expect("grant fs");
         db.grant_plugin_permission("alpha", "network")
             .expect("grant network");
 
@@ -1352,13 +1526,11 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.grant_plugin_permission("alpha", "fs")
-            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "fs").expect("grant fs");
         db.grant_plugin_permission("alpha", "network")
             .expect("grant network");
 
-        db.clear_plugin_permissions("alpha")
-            .expect("clear perms");
+        db.clear_plugin_permissions("alpha").expect("clear perms");
 
         let permissions = db
             .list_plugin_permissions("alpha")
@@ -1384,8 +1556,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.set_kv("export.last", "2026-01-31")
-            .expect("set kv");
+        db.set_kv("export.last", "2026-01-31").expect("set kv");
         let loaded = db.get_kv("export.last").expect("get kv");
         assert_eq!(loaded, Some("2026-01-31".to_string()));
     }
@@ -1395,8 +1566,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.set_kv("export.last", "2026-01-31")
-            .expect("set kv");
+        db.set_kv("export.last", "2026-01-31").expect("set kv");
         db.delete_kv("export.last").expect("delete kv");
 
         let loaded = db.get_kv("export.last").expect("get kv");
@@ -1408,15 +1578,15 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Sync page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Sync page")
+            .expect("insert page");
 
         let payload = br#"{\"kind\":\"add\",\"block\":\"b1\"}"#;
         db.insert_sync_op(page_id, "op-1", "device-1", "add", payload)
             .expect("insert op");
 
-        let ops = db
-            .list_sync_ops_for_page(page_id)
-            .expect("list ops");
+        let ops = db.list_sync_ops_for_page(page_id).expect("list ops");
 
         assert_eq!(ops.len(), 1);
         assert_eq!(ops[0].op_id, "op-1");
@@ -1429,7 +1599,9 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db.insert_page("page-uid", "Sync page").expect("insert page");
+        let page_id = db
+            .insert_page("page-uid", "Sync page")
+            .expect("insert page");
         let payload = br#"{\"kind\":\"edit\",\"block\":\"b1\"}"#;
 
         db.insert_sync_op(page_id, "op-1", "device-1", "edit", payload)

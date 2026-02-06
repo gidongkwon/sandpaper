@@ -13,9 +13,9 @@ impl AppStore {
         Some(
             div()
                 .id("plugin-error-banner")
-                .px_3()
-                .py_2()
-                .bg(theme.colors.list)
+                .px_4()
+                .py_3()
+                .bg(theme.warning)
                 .border_b_1()
                 .border_color(theme.border)
                 .flex()
@@ -73,48 +73,40 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let panel = self.plugins.plugin_active_panel.clone()?;
-        let theme = cx.theme();
+        let border = cx.theme().border;
+        let sidebar_bg = cx.theme().sidebar;
+        let muted_fg = cx.theme().muted_foreground;
+        let fg = cx.theme().foreground;
         let title = panel.title.clone();
         let plugin_id = panel.plugin_id.clone();
+        let header = self.render_context_panel_header(&title, cx);
 
         Some(
             div()
                 .id("plugin-panel")
-                .absolute()
-                .top(px(64.0))
-                .right(px(24.0))
-                .w(px(280.0))
-                .p_3()
-                .rounded_lg()
-                .bg(theme.popover)
-                .border_1()
-                .border_color(theme.border)
-                .child(
-                    self.render_header_row(
-                        &title,
-                        Button::new("plugin-panel-close")
-                            .label("Close")
-                            .xsmall()
-                            .ghost()
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.close_plugin_panel(cx);
-                            }))
-                            .into_any_element(),
-                        cx,
-                    ),
-                )
+                .w(px(360.0))
+                .h_full()
+                .border_l_1()
+                .border_color(border)
+                .bg(sidebar_bg)
+                .flex()
+                .flex_col()
+                .min_h_0()
+                .child(header)
                 .child(
                     div()
-                        .mt_2()
+                        .px_4()
+                        .pt_3()
                         .text_xs()
-                        .text_color(theme.muted_foreground)
+                        .text_color(muted_fg)
                         .child(format!("Plugin: {plugin_id}")),
                 )
                 .child(
                     div()
-                        .mt_3()
+                        .px_4()
+                        .pt_2()
                         .text_sm()
-                        .text_color(theme.foreground)
+                        .text_color(fg)
                         .child("Active panel placeholder"),
                 )
                 .into_any_element(),
@@ -241,11 +233,61 @@ impl AppStore {
                     let id = plugin.id.clone();
                     let id_for_button = id.clone();
                     let id_for_row = id.clone();
+                    let id_for_toggle = id.clone();
+                    let id_for_update = id.clone();
+                    let id_for_remove = id.clone();
                     let has_schema = plugin
                         .settings_schema
                         .as_ref()
                         .is_some_and(|schema| !schema.properties.is_empty());
+                    let manage_busy = self.plugins.plugin_manage_busy.contains(&plugin.id);
+                    let missing_count = plugin.missing_permissions.len();
                     let mut right_group = div().flex().items_center().gap_1();
+                    if missing_count > 0 {
+                        right_group = right_group.child(
+                            div()
+                                .px_1()
+                                .py(px(1.0))
+                                .rounded_sm()
+                                .bg(theme.danger)
+                                .text_xs()
+                                .text_color(theme.danger_foreground)
+                                .child(format!("{missing_count}")),
+                        );
+                    }
+                    right_group = right_group.child(
+                        Switch::new(format!("plugin-enabled-{id}"))
+                            .checked(plugin.enabled)
+                            .on_click(cx.listener(move |this, checked, window, cx| {
+                                this.set_plugin_enabled(
+                                    id_for_toggle.clone(),
+                                    *checked,
+                                    window,
+                                    cx,
+                                );
+                            }))
+                            .into_any_element(),
+                    );
+                    right_group = right_group.child(
+                        Button::new(format!("plugin-update-{id}"))
+                            .label("Update")
+                            .xsmall()
+                            .ghost()
+                            .disabled(manage_busy)
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.update_plugin(id_for_update.clone(), cx);
+                            })),
+                    );
+                    right_group = right_group.child(
+                        Button::new(format!("plugin-remove-{id}"))
+                            .label("Remove")
+                            .xsmall()
+                            .ghost()
+                            .disabled(manage_busy)
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.remove_plugin(id_for_remove.clone(), cx);
+                            })),
+                    );
                     if self.plugins.plugin_settings_dirty.contains(&plugin.id) {
                         right_group = right_group.child(
                             div()
@@ -292,6 +334,17 @@ impl AppStore {
                             this.select_plugin_settings(id_for_row.clone(), window, cx);
                         }));
                     list = list.child(row);
+
+                    if let Some(status) = self.plugins.plugin_manage_status.get(&plugin.id).cloned()
+                    {
+                        list = list.child(
+                            div()
+                                .px_2()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(status),
+                        );
+                    }
                 }
             }
             list
@@ -299,6 +352,7 @@ impl AppStore {
 
         let right_panel = if let Some(plugin) = selected_plugin.clone() {
             let status = self.plugins.plugin_settings_status.get(&plugin.id).cloned();
+            let manage_status = self.plugins.plugin_manage_status.get(&plugin.id).cloned();
             let has_schema = plugin
                 .settings_schema
                 .as_ref()
@@ -329,6 +383,125 @@ impl AppStore {
             };
 
             let theme = cx.theme();
+            let mut command_rows = div().flex().flex_col().gap_2();
+            let mut command_count = 0usize;
+            if let Some(status) = self.plugins.plugin_status.as_ref() {
+                for command in status
+                    .commands
+                    .iter()
+                    .filter(|cmd| cmd.plugin_id == plugin.id)
+                {
+                    command_count += 1;
+                    let command = command.clone();
+                    let title = command.title.clone();
+                    let description = command
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| format!("Command · {}", command.id));
+                    command_rows = command_rows.child(
+                        self.render_settings_row(
+                            &title,
+                            description.as_str(),
+                            Button::new(format!("plugin-command-run-{}-{}", plugin.id, command.id))
+                                .label("Run")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, window, cx| {
+                                    this.run_plugin_command(command.clone(), window, cx);
+                                }))
+                                .into_any_element(),
+                            cx,
+                        ),
+                    );
+                }
+            }
+            if command_count == 0 {
+                command_rows = command_rows.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child("No commands registered."),
+                );
+            }
+
+            let mut panel_rows = div().flex().flex_col().gap_2();
+            let mut panel_count = 0usize;
+            if let Some(status) = self.plugins.plugin_status.as_ref() {
+                for panel in status
+                    .panels
+                    .iter()
+                    .filter(|panel| panel.plugin_id == plugin.id)
+                {
+                    panel_count += 1;
+                    let panel = panel.clone();
+                    let title = panel.title.clone();
+                    let location = panel
+                        .location
+                        .clone()
+                        .unwrap_or_else(|| "Panel".to_string());
+                    panel_rows = panel_rows.child(
+                        self.render_settings_row(
+                            &title,
+                            location.as_str(),
+                            Button::new(format!("plugin-panel-open-{}-{}", plugin.id, panel.id))
+                                .label("Open")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, window, cx| {
+                                    this.open_plugin_panel(panel.clone(), window, cx);
+                                }))
+                                .into_any_element(),
+                            cx,
+                        ),
+                    );
+                }
+            }
+            if panel_count == 0 {
+                panel_rows = panel_rows.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child("No panels registered."),
+                );
+            }
+
+            let mut permission_rows = div().flex().flex_col().gap_2();
+            if plugin.missing_permissions.is_empty() {
+                permission_rows = permission_rows.child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child("All requested permissions are granted."),
+                );
+            } else {
+                for perm in plugin.missing_permissions.iter() {
+                    let plugin_id = plugin.id.clone();
+                    let perm = perm.clone();
+                    let label = perm.clone();
+                    permission_rows = permission_rows.child(
+                        self.render_settings_row(
+                            &label,
+                            "Missing permission",
+                            Button::new(format!("plugin-grant-{}-{}", plugin_id, perm))
+                                .label("Grant")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, window, cx| {
+                                    this.request_plugin_permission(
+                                        &plugin_id,
+                                        &perm,
+                                        None,
+                                        Some(window),
+                                        cx,
+                                    );
+                                }))
+                                .into_any_element(),
+                            cx,
+                        ),
+                    );
+                }
+            }
+
             div()
                 .flex()
                 .flex_col()
@@ -337,7 +510,7 @@ impl AppStore {
                     div()
                         .text_sm()
                         .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .child(plugin.name.clone()),
                 )
                 .child(
@@ -351,7 +524,93 @@ impl AppStore {
                             "No settings schema"
                         }),
                 )
-                .child(div().mt_3().child(field_panel))
+                .child(
+                    div()
+                        .mt_2()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(format!("Version {}", plugin.version)),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(format!("Path {}", plugin.path)),
+                        )
+                        .child(div().text_xs().text_color(theme.muted_foreground).child(
+                            if plugin.enabled {
+                                "Enabled"
+                            } else {
+                                "Disabled"
+                            },
+                        )),
+                )
+                .child(
+                    manage_status
+                        .map(|msg| {
+                            div()
+                                .mt_2()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(msg)
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| div().mt_2().into_any_element()),
+                )
+                .child(
+                    div().mt_4().child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.foreground)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child("Permissions"),
+                            )
+                            .child(permission_rows),
+                    ),
+                )
+                .child(
+                    div().mt_4().child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.foreground)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child("Commands"),
+                            )
+                            .child(command_rows),
+                    ),
+                )
+                .child(
+                    div().mt_4().child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.foreground)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .child("Panels"),
+                            )
+                            .child(panel_rows),
+                    ),
+                )
+                .child(div().mt_4().child(field_panel))
                 .child(
                     div()
                         .mt_3()
@@ -410,25 +669,96 @@ impl AppStore {
                 .into_any_element()
         };
 
-        div()
+        let theme = cx.theme();
+        let installing = self.plugins.plugin_installing;
+        let install_status = self.plugins.plugin_install_status.clone();
+        let mut install_section = div()
             .flex()
-            .gap_3()
-            .flex_1()
-            .min_h_0()
+            .flex_col()
+            .gap_2()
             .child(
                 div()
-                    .w(px(220.0))
-                    .min_h_0()
-                    .overflow_scrollbar()
-                    .child(list),
+                    .text_sm()
+                    .text_color(theme.foreground)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .child("Add plugin"),
             )
             .child(
                 div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Install a plugin from a folder that contains a plugin.json manifest."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("plugin-install-picker")
+                            .label(if installing {
+                                "Installing…"
+                            } else {
+                                "Install plugin…"
+                            })
+                            .xsmall()
+                            .primary()
+                            .disabled(installing)
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.install_plugin_from_folder_picker(window, cx);
+                            })),
+                    )
+                    .child(
+                        Button::new("plugin-install-clear")
+                            .label("Clear")
+                            .xsmall()
+                            .ghost()
+                            .disabled(install_status.is_none())
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.clear_plugin_install_status(cx);
+                            })),
+                    ),
+            );
+
+        if let Some(status) = install_status {
+            let lowered = status.to_string().to_lowercase();
+            let color = if lowered.contains("failed") || lowered.contains("not available") {
+                theme.danger_foreground
+            } else {
+                theme.muted_foreground
+            };
+            install_section =
+                install_section.child(div().text_xs().text_color(color).child(status));
+        }
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .flex_1()
+            .min_h_0()
+            .child(install_section)
+            .child(
+                div()
+                    .flex()
+                    .gap_3()
                     .flex_1()
-                    .min_w_0()
                     .min_h_0()
-                    .overflow_scrollbar()
-                    .child(right_panel),
+                    .child(
+                        div()
+                            .w(px(240.0))
+                            .min_h_0()
+                            .overflow_scrollbar()
+                            .child(list),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .min_h_0()
+                            .overflow_scrollbar()
+                            .child(right_panel),
+                    ),
             )
             .into_any_element()
     }

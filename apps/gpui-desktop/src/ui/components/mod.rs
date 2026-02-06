@@ -1,3 +1,4 @@
+mod block_renderers;
 mod editor;
 mod helpers;
 mod layout;

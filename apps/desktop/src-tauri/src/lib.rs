@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
 use sandpaper_core::vaults::{VaultConfig, VaultRecord, VaultStore};
+use sandpaper_core::blocks::BlockType;
 use sandpaper_core::db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
 use sandpaper_core::plugins::{
     check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, remove_plugin,
@@ -1172,6 +1173,7 @@ fn apply_sync_ops_to_blocks(
             uid: block.id,
             text: block.text,
             indent: block.indent,
+            block_type: BlockType::Text,
         })
         .collect()
 }
@@ -1508,21 +1510,25 @@ fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> 
             uid: uuid::Uuid::new_v4().to_string(),
             text: "Summary".to_string(),
             indent: 0,
+            block_type: BlockType::Text,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "What moved forward?".to_string(),
             indent: 1,
+            block_type: BlockType::Text,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "Loose threads".to_string(),
             indent: 1,
+            block_type: BlockType::Text,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "Next steps".to_string(),
             indent: 1,
+            block_type: BlockType::Text,
         },
     ];
     db.replace_blocks_for_page(page_id, &blocks)
@@ -1730,6 +1736,7 @@ fn export_markdown() -> Result<MarkdownExportStatus, String> {
                     uid: block.uid.clone(),
                     text: block.text.clone(),
                     indent: block.indent,
+                    block_type: BlockType::Text,
                 })
                 .collect(),
         };
@@ -2161,11 +2168,13 @@ mod tests {
                 uid: "block-1".to_string(),
                 text: "First line".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Child line".to_string(),
                 indent: 1,
+                block_type: BlockType::Text,
             },
         ];
         db.replace_blocks_for_page(page_id, &blocks)
@@ -2191,11 +2200,13 @@ mod tests {
                 uid: "block-1".to_string(),
                 text: "First line updated".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Child line".to_string(),
                 indent: 2,
+                block_type: BlockType::Text,
             },
         ];
         db.replace_blocks_for_page(page_id, &updated_blocks)
@@ -2393,11 +2404,13 @@ mod tests {
                     uid: "b1".to_string(),
                     text: "First".to_string(),
                     indent: 0,
+                    block_type: BlockType::Text,
                 },
                 BlockSnapshot {
                     uid: "b2".to_string(),
                     text: "Child".to_string(),
                     indent: 1,
+                    block_type: BlockType::Text,
                 },
             ],
         };
@@ -2426,11 +2439,13 @@ mod tests {
                 uid: "b1".to_string(),
                 text: "First".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "b2".to_string(),
                 text: "Second".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
         ];
 
@@ -2503,6 +2518,7 @@ mod tests {
             uid: "b1".to_string(),
             text: "Local text".to_string(),
             indent: 0,
+            block_type: BlockType::Text,
         }];
 
         let ops = vec![SyncOpPayload {
@@ -2548,11 +2564,13 @@ mod tests {
                 uid: "b1".to_string(),
                 text: "First".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "b2".to_string(),
                 text: "Second".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
         ];
         let next = vec![
@@ -2560,11 +2578,13 @@ mod tests {
                 uid: "b1".to_string(),
                 text: "First updated".to_string(),
                 indent: 1,
+                block_type: BlockType::Text,
             },
             BlockSnapshot {
                 uid: "b3".to_string(),
                 text: "Third".to_string(),
                 indent: 0,
+                block_type: BlockType::Text,
             },
         ];
 

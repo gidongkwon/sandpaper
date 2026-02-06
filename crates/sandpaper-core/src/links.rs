@@ -128,9 +128,7 @@ pub fn replace_wikilinks_in_text(text: &str, from_title: &str, to_title: &str) -
             .map(|value| value.trim())
             .filter(|value| !value.is_empty());
 
-        if target_base.is_empty()
-            || app::sanitize_kebab(target_base) != normalized_from
-        {
+        if target_base.is_empty() || app::sanitize_kebab(target_base) != normalized_from {
             output.push_str(&text[start..inner_end + 2]);
             cursor = inner_end + 2;
             continue;
@@ -148,9 +146,7 @@ pub fn replace_wikilinks_in_text(text: &str, from_title: &str, to_title: &str) -
         let alias_suffix = alias_part
             .map(|value| format!("|{value}"))
             .unwrap_or_default();
-        output.push_str(&format!(
-            "[[{next_target}{heading_suffix}{alias_suffix}]]"
-        ));
+        output.push_str(&format!("[[{next_target}{heading_suffix}{alias_suffix}]]"));
         cursor = inner_end + 2;
     }
 

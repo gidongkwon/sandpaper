@@ -1,6 +1,28 @@
 use super::editor::update_wikilinks_in_db;
 use super::helpers::{default_vault_path, expand_tilde};
 use super::*;
+use gpui_component::{Theme, ThemeMode};
+
+fn daily_note_title(date: chrono::NaiveDate) -> String {
+    date.format("%Y-%m-%d").to_string()
+}
+
+fn ensure_daily_note_in_db(db: &Database, date: chrono::NaiveDate) -> Result<bool, String> {
+    let title = daily_note_title(date);
+    let daily_uid = app::sanitize_kebab(&title);
+
+    let pages = db.list_pages().map_err(|err| format!("{err:?}"))?;
+    let exists = pages.iter().any(|page| {
+        app::sanitize_kebab(&page.uid) == daily_uid || app::sanitize_kebab(&page.title) == daily_uid
+    });
+    if exists {
+        return Ok(false);
+    }
+
+    db.insert_page(&daily_uid, &title)
+        .map_err(|err| format!("{err:?}"))?;
+    Ok(true)
+}
 
 impl AppStore {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -15,6 +37,7 @@ impl AppStore {
         let mut app = Self {
             focus_handle,
             window_handle,
+            agent_debug: None,
             app: app_state,
             editor,
             plugins,
@@ -25,40 +48,27 @@ impl AppStore {
 
         app.boot(cx);
 
-        let sub_block_input = cx.observe(&app.editor.block_input, |this, input, cx| {
-            let (text, cursor) = {
-                let input = input.read(cx);
-                (input.value().to_string(), input.cursor())
-            };
-
-            let pane = this.editor.active_pane;
-            let (uid, active_ix, text_changed) = {
-                let Some(editor) = this.editor_for_pane_mut(pane) else {
+        let sub_block_input = cx.subscribe(
+            &app.editor.block_input,
+            |this, input, event: &gpui_component::input::InputEvent, cx| {
+                if !matches!(event, gpui_component::input::InputEvent::Change) {
+                    return;
+                }
+                if this.editor.text_history_suppression_depth > 0
+                    || this.editor.is_replaying_history
+                {
+                    return;
+                }
+                let Some(binding) = this.editor.block_input_binding.clone() else {
                     return;
                 };
-                if editor.active_ix >= editor.blocks.len() {
-                    return;
-                }
-
-                let uid = editor.blocks[editor.active_ix].uid.clone();
-                let active_ix = editor.active_ix;
-                let text_changed = editor.blocks[active_ix].text != text;
-                if text_changed {
-                    editor.blocks[active_ix].text = text.clone();
-                }
-                (uid, active_ix, text_changed)
-            };
-
-            this.record_page_cursor_for_pane(pane, &uid, cursor);
-
-            if text_changed {
-                this.mark_dirty_for_pane(pane, cx);
-                this.schedule_references_refresh(cx);
-            }
-
-            this.update_slash_menu(pane, &uid, active_ix, cursor, &text, cx);
-            this.update_wikilink_menu(pane, &uid, active_ix, cursor, &text, cx);
-        });
+                let (text, cursor) = {
+                    let input = input.read(cx);
+                    (input.value().to_string(), input.cursor())
+                };
+                this.apply_block_input_change_for_binding(&binding, text, cursor, cx);
+            },
+        );
 
         app._subscriptions.push(sub_block_input);
 
@@ -77,6 +87,7 @@ impl AppStore {
         });
 
         app._subscriptions.push(sub_palette_input);
+        app.init_agent_debug(cx);
 
         app
     }
@@ -97,6 +108,12 @@ impl AppStore {
         self.editor.link_preview_cache.clear();
         self.editor.page_cursors.clear();
         self.editor.recent_pages.clear();
+        self.editor.undo_stack.clear();
+        self.editor.redo_stack.clear();
+        self.editor.text_history_suppression_depth = 0;
+        self.editor.is_replaying_history = false;
+        self.editor.block_clipboard = None;
+        self.editor.block_input_binding = None;
         self.ui.capture_confirmation = None;
         self.app.active_vault_root = None;
         self.reset_plugins_state();
@@ -120,10 +137,19 @@ impl AppStore {
 
                 if let Some(uid) = active_uid {
                     self.open_page(&uid, cx);
+                } else if self.editor.pages.iter().any(|page| page.uid == "inbox") {
+                    self.open_page("inbox", cx);
                 } else if let Some(first) = self.editor.pages.first().cloned() {
                     self.open_page(&first.uid, cx);
                 } else {
-                    self.open_page_dialog(PageDialogMode::Create, cx);
+                    self.open_page("Inbox", cx);
+                }
+
+                if let Some(db) = self.app.db.as_ref() {
+                    if ensure_daily_note_in_db(db, Local::now().date_naive()).unwrap_or(false) {
+                        self.editor.pages = db.list_pages().unwrap_or_default();
+                        self.refresh_search_results();
+                    }
                 }
             }
             Err(AppError::NoVaultConfigured) => {
@@ -226,10 +252,76 @@ impl AppStore {
 
     fn on_vault_changed(&mut self, cx: &mut Context<Self>) {
         if let Some(db) = self.app.db.as_ref() {
-            let _ = self.settings.load_from_db(db);
+            let loaded_existing = self.settings.load_from_db(db).unwrap_or(false);
+            if !loaded_existing {
+                self.persist_settings();
+                self.with_window(cx, |window, cx| {
+                    if window.root::<Root>().flatten().is_none() {
+                        return;
+                    }
+                    window.push_notification(
+                        (
+                            gpui_component::notification::NotificationType::Success,
+                            "Interface updated to new defaults.",
+                        ),
+                        cx,
+                    );
+                });
+            }
         }
+        // Restore persisted mode
+        let restored_mode = self.settings.last_mode;
+        if restored_mode != self.app.mode {
+            self.set_mode(restored_mode, cx);
+        }
+        self.apply_theme_preference(cx);
         self.refresh_search_results();
+        self.load_review_items(cx);
         self.load_plugins(None, cx);
+    }
+
+    pub(crate) fn apply_theme_preference(&mut self, cx: &mut Context<Self>) {
+        let mode = match self.settings.theme_preference {
+            ThemePreference::System => Theme::global(cx).mode,
+            ThemePreference::Light => ThemeMode::Light,
+            ThemePreference::Dark => ThemeMode::Dark,
+        };
+        Theme::change(mode, None, cx);
+        cx.refresh_windows();
+    }
+
+    pub(crate) fn set_theme_preference(
+        &mut self,
+        preference: ThemePreference,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.theme_preference == preference {
+            return;
+        }
+        self.settings.theme_preference = preference;
+        self.persist_settings();
+        self.apply_theme_preference(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_context_panel_tab(&mut self, tab: WorkspacePanel, cx: &mut Context<Self>) {
+        self.settings.context_panel_open = true;
+        self.settings.context_panel_tab = tab;
+        if tab == WorkspacePanel::Review {
+            self.load_review_items(cx);
+        }
+        self.persist_settings();
+        cx.notify();
+    }
+
+    pub(crate) fn cycle_context_panel(&mut self, cx: &mut Context<Self>) {
+        let next = match self.settings.context_panel_tab {
+            WorkspacePanel::Review => WorkspacePanel::Backlinks,
+            WorkspacePanel::Backlinks => WorkspacePanel::Connections,
+            WorkspacePanel::Connections => WorkspacePanel::Plugins,
+            WorkspacePanel::Plugins => WorkspacePanel::Review,
+        };
+        self.set_context_panel_tab(next, cx);
     }
 
     pub(crate) fn refresh_vaults(&mut self) {
@@ -374,6 +466,7 @@ impl AppStore {
                 }
             }
         }
+        self.queue_shadow_write_for_pane(pane);
         self.schedule_autosave(cx);
     }
 
@@ -412,6 +505,8 @@ impl AppStore {
     }
 
     pub(crate) fn save(&mut self, cx: &mut Context<Self>) {
+        self.flush_bound_block_input(cx);
+
         let Some(db) = self.app.db.as_mut() else {
             self.app.save_state = SaveState::Error("Database not available.".into());
             cx.notify();
@@ -468,6 +563,10 @@ impl AppStore {
             self.app.save_state = SaveState::Saved;
         }
 
+        if saved_any {
+            self.schedule_shadow_write_flush(cx);
+        }
+
         cx.notify();
     }
 
@@ -501,6 +600,7 @@ impl AppStore {
         let mut editor = EditorModel::new(blocks);
 
         let _ = db.set_kv("active.page", &page.uid);
+        self.load_collapsed_state_for_page(&page.uid);
 
         self.editor.active_page = Some(page.clone());
         self.app.primary_dirty = false;
@@ -516,10 +616,15 @@ impl AppStore {
         self.record_recent_page(&page.uid);
 
         self.editor.editor = Some(editor);
+        self.update_block_list_for_pane(EditorPane::Primary);
         self.clear_selection_for_pane(EditorPane::Primary);
         self.sync_block_input_from_active_with_cursor(cursor, None, cx);
         self.close_slash_menu();
+        self.close_wikilink_menu();
+        self.close_outline_menu();
         self.refresh_references();
+        self.load_page_properties();
+        self.schedule_connections_refresh(cx);
         cx.notify();
     }
 
@@ -714,15 +819,177 @@ impl AppStore {
         }
     }
 
+    fn test_page_blocks() -> Vec<BlockSnapshot> {
+        fn block(block_type: BlockType, indent: i64, text: &str) -> BlockSnapshot {
+            BlockSnapshot {
+                uid: Uuid::new_v4().to_string(),
+                text: text.to_string(),
+                indent,
+                block_type,
+            }
+        }
+
+        vec![
+            block(
+                BlockType::Text,
+                0,
+                "Text block: plain content for cursor, selection, and link testing [[Inbox]].",
+            ),
+            block(BlockType::Heading1, 0, "Heading 1 block"),
+            block(BlockType::Heading2, 0, "Heading 2 block"),
+            block(BlockType::Heading3, 0, "Heading 3 block"),
+            block(
+                BlockType::Quote,
+                0,
+                "Quote block: quoted content for visual and copy checks.",
+            ),
+            block(
+                BlockType::Callout,
+                0,
+                "Callout block: highlighted note content for renderer checks.",
+            ),
+            block(
+                BlockType::Todo,
+                0,
+                "- [ ] Todo block: toggle this checkbox to verify state changes.",
+            ),
+            block(
+                BlockType::Code,
+                0,
+                "fn main() {\n  println!(\"code block sample\");\n}",
+            ),
+            block(BlockType::Divider, 0, ""),
+            block(
+                BlockType::Toggle,
+                0,
+                "Toggle block: expand/collapse child content",
+            ),
+            block(
+                BlockType::Text,
+                1,
+                "Toggle child text: nested content for collapse behavior.",
+            ),
+            block(
+                BlockType::DatabaseView,
+                0,
+                "Database view block: table should render from page properties.",
+            ),
+            block(BlockType::ColumnLayout, 0, "Two-column layout"),
+            block(BlockType::Column, 1, "Left column"),
+            block(
+                BlockType::Text,
+                2,
+                "Left column child text for indentation and ordering checks.",
+            ),
+            block(BlockType::Column, 1, "Right column"),
+            block(
+                BlockType::Text,
+                2,
+                "Right column child text for indentation and ordering checks.",
+            ),
+        ]
+    }
+
+    pub(crate) fn create_test_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let title = format!("Test Page {}", Local::now().format("%Y-%m-%d %H:%M:%S"));
+        let blocks = Self::test_page_blocks();
+
+        let (uid, pages) = {
+            let Some(db) = self.app.db.as_mut() else {
+                return;
+            };
+
+            let uid = match app::resolve_unique_page_uid(db, &title) {
+                Ok(uid) => uid,
+                Err(_) => return,
+            };
+
+            let page_id = match db.insert_page(&uid, &title) {
+                Ok(page_id) => page_id,
+                Err(_) => return,
+            };
+
+            if db.replace_blocks_for_page(page_id, &blocks).is_err() {
+                return;
+            }
+
+            let pages = db.list_pages().unwrap_or_default();
+            (uid, pages)
+        };
+
+        self.editor.pages = pages;
+        self.refresh_search_results();
+        self.set_mode(Mode::Editor, cx);
+        self.open_page(&uid, cx);
+        window.focus(&self.editor.block_input.focus_handle(cx), cx);
+        window.push_notification(
+            (
+                gpui_component::notification::NotificationType::Success,
+                "Test page created.",
+            ),
+            cx,
+        );
+        cx.notify();
+    }
+
     pub(crate) fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
+        let prev = self.app.mode;
         self.app.mode = mode;
-        if self.app.mode != Mode::Editor {
+
+        // Teardown for leaving Editor mode
+        if prev == Mode::Editor && mode != Mode::Editor {
+            if matches!(self.app.save_state, SaveState::Dirty) {
+                self.save(cx);
+            }
             self.close_slash_menu();
             self.clear_all_selections();
             self.editor.active_pane = EditorPane::Primary;
             self.plugins.plugin_active_panel = None;
         }
+
+        // Setup for entering modes
+        match mode {
+            Mode::Capture => {
+                // Will be focused by render_capture_mode
+            }
+            Mode::Editor => {}
+            Mode::Review => {
+                self.refresh_feed(cx);
+            }
+        }
+
+        // Persist mode across sessions
+        self.settings.last_mode = mode;
+        self.persist_settings();
+
         cx.notify();
+    }
+
+    pub(crate) fn switch_to_capture_action(
+        &mut self,
+        _: &SwitchToCapture,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_mode(Mode::Capture, cx);
+    }
+
+    pub(crate) fn switch_to_edit_action(
+        &mut self,
+        _: &SwitchToEdit,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_mode(Mode::Editor, cx);
+    }
+
+    pub(crate) fn switch_to_review_action(
+        &mut self,
+        _: &SwitchToReview,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_mode(Mode::Review, cx);
     }
 
     pub(crate) fn new_page(&mut self, _: &NewPage, _window: &mut Window, cx: &mut Context<Self>) {
@@ -738,41 +1005,258 @@ impl AppStore {
         self.open_page_dialog(PageDialogMode::Rename, cx);
     }
 
-    pub(crate) fn toggle_mode_editor(
+    pub(crate) fn toggle_sidebar_action(
         &mut self,
-        _: &ToggleModeEditor,
+        _: &ToggleSidebar,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.set_mode(Mode::Editor, cx);
+        self.settings.sidebar_collapsed = !self.settings.sidebar_collapsed;
+        self.persist_settings();
+        cx.notify();
     }
 
-    pub(crate) fn toggle_mode_capture(
+    pub(crate) fn begin_sidebar_resize(&mut self, start_x: f32, cx: &mut Context<Self>) {
+        if self.settings.focus_mode || self.settings.sidebar_collapsed {
+            return;
+        }
+        self.ui.sidebar_resize = Some(SidebarResizeState {
+            start_x,
+            start_width: self.settings.sidebar_width,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn update_sidebar_resize(&mut self, current_x: f32, cx: &mut Context<Self>) {
+        let Some(state) = self.ui.sidebar_resize else {
+            return;
+        };
+        let next_width = state.start_width + (current_x - state.start_x);
+        self.settings.sidebar_width = SettingsState::clamp_sidebar_width(next_width);
+        cx.notify();
+    }
+
+    pub(crate) fn end_sidebar_resize(&mut self, cx: &mut Context<Self>) {
+        if self.ui.sidebar_resize.take().is_some() {
+            self.settings.sidebar_width =
+                SettingsState::clamp_sidebar_width(self.settings.sidebar_width);
+            self.persist_settings();
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_context_panel_action(
         &mut self,
-        _: &ToggleModeCapture,
+        _: &ToggleContextPanel,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings.context_panel_open = !self.settings.context_panel_open;
+        self.persist_settings();
+        cx.notify();
+    }
+
+    pub(crate) fn open_review_panel_action(
+        &mut self,
+        _: &OpenReviewPanel,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_context_panel_tab(WorkspacePanel::Review, cx);
+    }
+
+    pub(crate) fn cycle_context_panel_action(
+        &mut self,
+        _: &CycleContextPanel,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.cycle_context_panel(cx);
+    }
+
+    pub(crate) fn focus_quick_add_action(
+        &mut self,
+        _: &FocusQuickAdd,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.set_mode(Mode::Capture, cx);
         window.focus(&self.editor.capture_input.focus_handle(cx), cx);
     }
 
-    pub(crate) fn toggle_mode_review(
+    pub(crate) fn load_page_properties(&mut self) {
+        let Some(db) = self.app.db.as_ref() else {
+            self.editor.page_properties.clear();
+            return;
+        };
+        let Some(page) = self.editor.active_page.as_ref() else {
+            self.editor.page_properties.clear();
+            return;
+        };
+        self.editor.page_properties = db.get_page_properties(page.id).unwrap_or_default();
+    }
+
+    pub(crate) fn set_page_property(
         &mut self,
-        _: &ToggleModeReview,
+        key: &str,
+        value: &str,
+        value_type: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(db) = self.app.db.as_ref() else {
+            return;
+        };
+        let Some(page) = self.editor.active_page.as_ref() else {
+            return;
+        };
+        let _ = db.set_page_property(page.id, key, value, value_type);
+        self.load_page_properties();
+        cx.notify();
+    }
+
+    pub(crate) fn delete_page_property(&mut self, key: &str, cx: &mut Context<Self>) {
+        let Some(db) = self.app.db.as_ref() else {
+            return;
+        };
+        let Some(page) = self.editor.active_page.as_ref() else {
+            return;
+        };
+        let _ = db.delete_page_property(page.id, key);
+        self.load_page_properties();
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_focus_mode_action(
+        &mut self,
+        _: &ToggleFocusMode,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.set_mode(Mode::Review, cx);
-        self.load_review_items(cx);
+        self.settings.focus_mode = !self.settings.focus_mode;
+        self.persist_settings();
+        cx.notify();
+    }
+
+    pub(crate) fn open_quick_capture_action(
+        &mut self,
+        _: &OpenQuickCapture,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ui.capture_overlay_open = true;
+        self.ui.capture_overlay_target = self.settings.quick_add_target;
+        window.focus(&self.editor.capture_input.focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn dismiss_quick_capture(&mut self, cx: &mut Context<Self>) {
+        self.ui.capture_overlay_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn submit_quick_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let raw_text = self
+            .editor
+            .capture_input
+            .read(cx)
+            .value()
+            .trim()
+            .to_string();
+        if raw_text.is_empty() {
+            return;
+        }
+
+        let target = self.ui.capture_overlay_target;
+        let mut text = raw_text;
+
+        match target {
+            QuickAddTarget::Inbox => {
+                self.open_page("inbox", cx);
+            }
+            QuickAddTarget::CurrentPage => {
+                if self.editor.active_page.is_none() {
+                    self.open_page("inbox", cx);
+                }
+            }
+            QuickAddTarget::TaskInbox => {
+                self.open_page("inbox", cx);
+                text = format!("- [ ] {text}");
+            }
+            QuickAddTarget::DailyNote => {
+                if let Some(db) = self.app.db.as_ref() {
+                    let _ = ensure_daily_note_in_db(db, chrono::Local::now().date_naive());
+                }
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                self.open_page(&today, cx);
+            }
+        }
+
+        let block_type = if matches!(target, QuickAddTarget::TaskInbox) {
+            BlockType::Todo
+        } else {
+            BlockType::Text
+        };
+
+        let uid = {
+            let Some(editor) = self.editor.editor.as_mut() else {
+                return;
+            };
+            let block = BlockSnapshot {
+                uid: Uuid::new_v4().to_string(),
+                text: text.clone(),
+                indent: 0,
+                block_type,
+            };
+            let uid = block.uid.clone();
+            editor.blocks.insert(0, block);
+            editor.active_ix = 0;
+            uid
+        };
+        self.update_block_list_for_pane(EditorPane::Primary);
+
+        self.editor.highlighted_block_uid = Some(uid);
+        self.schedule_highlight_clear(cx);
+        self.mark_dirty_for_pane(EditorPane::Primary, cx);
+        self.schedule_references_refresh(cx);
+
+        // Record capture history
+        let page_uid = self
+            .editor
+            .active_page
+            .as_ref()
+            .map(|p| p.uid.clone())
+            .unwrap_or_default();
+        self.editor.capture_recent.insert(
+            0,
+            CaptureHistoryItem {
+                text: text.clone(),
+                target,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                page_uid,
+            },
+        );
+        if self.editor.capture_recent.len() > 20 {
+            self.editor.capture_recent.truncate(20);
+        }
+
+        // Clear the capture input and close overlay
+        self.editor.capture_input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+        });
+        self.ui.capture_overlay_open = false;
+        self.ui.capture_confirmation = Some("Captured".into());
+        self.schedule_capture_confirmation_clear(cx);
+        cx.notify();
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::px;
     use gpui::TestAppContext;
     use gpui_component::Root;
+    use sandpaper_core::blocks::BlockType;
+    use sandpaper_core::db::BlockSnapshot;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -800,6 +1284,194 @@ mod tests {
 
         cx.update_window(*window, |_root, window, cx| {
             assert!(window.has_active_dialog(cx));
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn ensure_daily_note_creates_page_without_changing_active() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+        db.insert_page("inbox", "Inbox").expect("insert inbox");
+        db.set_kv("active.page", "inbox").expect("set active");
+
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).expect("date");
+        let created = ensure_daily_note_in_db(&db, date).expect("ensure");
+        assert!(created);
+
+        let active = db.get_kv("active.page").expect("get kv");
+        assert_eq!(active.as_deref(), Some("inbox"));
+
+        let daily = db
+            .get_page_by_uid("2026-01-31")
+            .expect("get daily page")
+            .expect("daily page exists");
+        assert_eq!(daily.title, "2026-01-31");
+    }
+
+    #[test]
+    fn ensure_daily_note_is_noop_when_title_matches() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+        db.insert_page("inbox", "Inbox").expect("insert inbox");
+        db.insert_page("custom", "2026-01-31")
+            .expect("insert daily by title");
+
+        let before = db.list_pages().expect("list pages").len();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 1, 31).expect("date");
+        let created = ensure_daily_note_in_db(&db, date).expect("ensure");
+        assert!(!created);
+
+        let after = db.list_pages().expect("list pages").len();
+        assert_eq!(before, after);
+    }
+
+    #[gpui::test]
+    fn create_test_page_builds_all_block_types(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                app.app.db = Some(db);
+
+                app.create_test_page(window, cx);
+
+                let active_page = app.editor.active_page.clone().expect("active page");
+                assert!(active_page.title.starts_with("Test Page"));
+
+                let editor = app.editor.editor.as_ref().expect("editor");
+                let blocks = &editor.blocks;
+
+                let expected = [
+                    BlockType::Text,
+                    BlockType::Heading1,
+                    BlockType::Heading2,
+                    BlockType::Heading3,
+                    BlockType::Quote,
+                    BlockType::Callout,
+                    BlockType::Code,
+                    BlockType::Divider,
+                    BlockType::Toggle,
+                    BlockType::Todo,
+                    BlockType::ColumnLayout,
+                    BlockType::Column,
+                    BlockType::DatabaseView,
+                ];
+
+                for block_type in expected {
+                    assert!(
+                        blocks.iter().any(|block| block.block_type == block_type),
+                        "missing block type {:?}",
+                        block_type
+                    );
+                }
+
+                let text_block = blocks
+                    .iter()
+                    .find(|block| block.block_type == BlockType::Text)
+                    .expect("text block");
+                assert!(!text_block.text.is_empty());
+
+                let todo_block = blocks
+                    .iter()
+                    .find(|block| block.block_type == BlockType::Todo)
+                    .expect("todo block");
+                assert!(todo_block.text.contains("[ ]"));
+
+                let code_block = blocks
+                    .iter()
+                    .find(|block| block.block_type == BlockType::Code)
+                    .expect("code block");
+                assert!(code_block.text.contains("fn main"));
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn suppressed_programmatic_input_does_not_mutate_active_block(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![
+                    BlockSnapshot {
+                        uid: "a1".to_string(),
+                        text: "Alpha".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                    BlockSnapshot {
+                        uid: "a2".to_string(),
+                        text: "Beta".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    },
+                ]));
+                if let Some(editor) = app.editor.editor.as_mut() {
+                    editor.active_ix = 1;
+                }
+                app.editor.blocks_list_state.reset(2, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                app.editor.text_history_suppression_depth = 1;
+                app.editor.block_input.update(cx, |input, cx| {
+                    input.set_value("WRONG".to_string(), window, cx);
+                });
+                app.editor.text_history_suppression_depth = 0;
+
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert_eq!(editor.blocks[0].text, "Alpha");
+                assert_eq!(editor.blocks[1].text, "Beta");
+            });
+        })
+        .unwrap();
+
+        cx.run_until_parked();
+
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert_eq!(editor.blocks[0].text, "Alpha");
+                assert_eq!(editor.blocks[1].text, "Beta");
+                assert!(app.editor.undo_stack.is_empty());
+            });
         })
         .unwrap();
     }

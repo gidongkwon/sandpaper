@@ -39,10 +39,10 @@ Goal: deliver a **GPUI native desktop app** in `apps/gpui-desktop` with full fea
 - [x] Outline ops (split/merge/indent/outdent/move)
 - [x] Multi-pane editor (2–3 panes)
 - [x] Selection (mouse drag, shift-click, shortcuts)
-- [ ] Folding + breadcrumbs
+- [x] Folding + breadcrumbs
 - [x] Backlinks panel
 - [x] Backlinks toggle
-- [ ] Diagram/linking/markdown rendering parity where applicable
+- [x] Diagram/linking/markdown rendering parity where applicable
 
 ### Quick capture mode
 - [x] Capture pane + save flow
@@ -53,17 +53,17 @@ Goal: deliver a **GPUI native desktop app** in `apps/gpui-desktop` with full fea
 
 ### Overlays
 - [x] Command palette
-- [ ] Notifications panel
-- [ ] Settings modal
+- [x] Notifications panel
+- [x] Settings modal
 - [x] Confirm dialog (create/rename page)
-- [ ] Permission prompts (plugins)
+- [x] Permission prompts (plugins)
 
 ### Plugins
-- [ ] Plugin discovery + enable/disable
-- [ ] Permission model + grant flow
+- [x] Plugin discovery + enable/disable
+- [x] Permission model + grant flow
 - [ ] Plugin panel embedding
-- [ ] Plugin block renderer integration
-- [ ] Plugin toolbar actions + settings schema UI
+- [x] Plugin block renderer integration
+- [x] Plugin toolbar actions + settings schema UI (toolbar execution placeholder)
 
 ### Sync
 - [ ] Sync config UI
@@ -78,6 +78,7 @@ Goal: deliver a **GPUI native desktop app** in `apps/gpui-desktop` with full fea
 ### Perf + diagnostics
 - [ ] Perf HUD parity (input-to-paint, scroll FPS)
 - [ ] Plugin error reporting UI
+- [x] Local agent debug API (inspect tree, curated actions, snapshot metadata)
 
 ## Milestones (suggested)
 1. **Shell + vault + page list** (native navigation works)

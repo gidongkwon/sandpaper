@@ -1,53 +1,164 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use gpui_component::TitleBar;
 
 impl AppStore {
     fn render_topbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let mode_label = match self.app.mode {
-            Mode::Editor => "Editor",
-            Mode::Capture => "Capture",
-            Mode::Review => "Review",
-        };
-
-        let vault_label: SharedString = self
+        let active_vault = self
             .app
             .active_vault_id
             .as_ref()
-            .and_then(|id| self.app.vaults.iter().find(|vault| &vault.id == id))
+            .and_then(|id| self.app.vaults.iter().find(|vault| &vault.id == id));
+        let vault_label: SharedString = active_vault
             .map(|vault| vault.name.clone().into())
-            .unwrap_or_else(|| "Vaults".into());
-
-        let save_label: SharedString = match &self.app.save_state {
-            SaveState::Saved => "Saved".into(),
-            SaveState::Dirty => "Unsaved changes".into(),
-            SaveState::Saving => "Saving…".into(),
-            SaveState::Error(err) => format!("Save failed: {err}").into(),
+            .unwrap_or_else(|| "No vault".into());
+        let sidebar_icon = if self.settings.sidebar_collapsed {
+            SandpaperIcon::PanelLeftExpand
+        } else {
+            SandpaperIcon::PanelLeftContract
+        };
+        let sidebar_hint = shortcut_hint(ShortcutSpec::new("cmd-b", "ctrl-b"));
+        let command_hint = shortcut_hint(ShortcutSpec::new("cmd-k", "ctrl-k"));
+        let unread_notifications = self.unread_notifications_count();
+        let notifications_label: SharedString = if unread_notifications > 0 {
+            format!("Notifications ({unread_notifications})").into()
+        } else {
+            "Notifications".into()
         };
 
-        let mut status_group = div()
+        let vault_fg = theme.muted_foreground;
+        let vault_hover_fg = theme.foreground;
+        // Mode pills
+        let current_mode = self.app.mode;
+        let mut mode_pills = div().flex().items_center().gap_1();
+        for (mode, label) in [
+            (Mode::Capture, "Capture"),
+            (Mode::Editor, "Edit"),
+            (Mode::Review, "Review"),
+        ] {
+            let mut btn = Button::new(format!("mode-{label}")).label(label).xsmall();
+            btn = if current_mode == mode {
+                btn.primary()
+            } else {
+                btn.ghost()
+            };
+            mode_pills =
+                mode_pills.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
+                    this.set_mode(mode, cx);
+                })));
+        }
+
+        let divider_color = theme.border;
+        let left_group = div()
             .flex()
             .items_center()
-            .gap_2()
+            .gap_3()
             .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(format!("Sandpaper · {mode_label}")),
+                Button::new("toggle-sidebar")
+                    .with_size(px(24.0))
+                    .ghost()
+                    .icon(sidebar_icon)
+                    .tooltip(format!("Toggle sidebar ({sidebar_hint})"))
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.settings.sidebar_collapsed = !this.settings.sidebar_collapsed;
+                        this.persist_settings();
+                        cx.notify();
+                    })),
             )
+            .child(mode_pills)
+            .child(div().w(px(1.0)).h(px(14.0)).bg(divider_color))
             .child(
                 div()
-                    .ml_2()
+                    .id("vault-name")
                     .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(self.app.boot_status.clone()),
+                    .text_color(vault_fg)
+                    .cursor_pointer()
+                    .hover(move |s| s.text_color(vault_hover_fg))
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.open_vaults(&OpenVaults, window, cx);
+                    }))
+                    .child(vault_label),
             );
 
+        let right_group = div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(
+                Button::new("open-command-palette")
+                    .with_size(px(24.0))
+                    .ghost()
+                    .icon(SandpaperIcon::Search)
+                    .tooltip(format!("Command palette ({command_hint})"))
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.open_command_palette(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("notifications-button")
+                    .with_size(px(24.0))
+                    .ghost()
+                    .icon(SandpaperIcon::Alert)
+                    .tooltip(notifications_label)
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.open_notifications(window, cx);
+                    })),
+            )
+            .child(
+                Button::new("settings-button")
+                    .with_size(px(24.0))
+                    .ghost()
+                    .icon(SandpaperIcon::Settings)
+                    .tooltip("Settings")
+                    .on_click(cx.listener(|this, _event, window, cx| {
+                        this.open_settings(SettingsTab::General, window, cx);
+                    })),
+            );
+
+        TitleBar::new().child(
+            div()
+                .h_full()
+                .flex_1()
+                .min_w_0()
+                .px_4()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(left_group)
+                .child(right_group),
+        )
+    }
+
+    fn render_status_bar(&mut self, cx: &mut Context<Self>) -> gpui::Div {
+        let theme = cx.theme();
+        let save_icon = match &self.app.save_state {
+            SaveState::Saved => "·",
+            SaveState::Dirty => "○",
+            SaveState::Saving => "…",
+            SaveState::Error(_) => "!",
+        };
+        let save_label: SharedString = match &self.app.save_state {
+            SaveState::Saved => "Saved".into(),
+            SaveState::Dirty => "Unsaved".into(),
+            SaveState::Saving => "Saving".into(),
+            SaveState::Error(err) => format!("Error: {err}").into(),
+        };
+        let save_color = match &self.app.save_state {
+            SaveState::Error(_) => theme.danger_foreground,
+            _ => theme.muted_foreground.opacity(0.7),
+        };
+
+        let mut left = div().flex().items_center().gap_2().child(
+            div()
+                .text_xs()
+                .text_color(theme.muted_foreground.opacity(0.7))
+                .child(self.app.boot_status.clone()),
+        );
+
         if let Some(note) = self.ui.capture_confirmation.clone() {
-            status_group = status_group.child(
+            left = left.child(
                 div()
-                    .ml_2()
                     .px_2()
                     .py(px(1.0))
                     .rounded_sm()
@@ -58,47 +169,316 @@ impl AppStore {
             );
         }
 
-        let right_group = div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(save_label),
-            )
-            .child(
-                Button::new("settings-button")
-                    .xsmall()
-                    .ghost()
-                    .icon(IconName::Settings)
-                    .tooltip("Settings")
-                    .on_click(cx.listener(|this, _event, window, cx| {
-                        this.open_settings(SettingsTab::General, window, cx);
-                    })),
-            )
-            .child(
-                Button::new("vaults-button")
-                    .label(vault_label)
-                    .xsmall()
-                    .icon(IconName::FolderOpen)
-                    .on_click(cx.listener(|this, _event, window, cx| {
-                        this.open_vaults(&OpenVaults, window, cx);
-                    })),
-            );
-
         div()
-            .h(px(48.0))
-            .px_3()
+            .h(px(22.0))
+            .px_4()
             .flex()
             .items_center()
             .justify_between()
-            .bg(theme.title_bar)
+            .bg(theme.background)
+            .border_t_1()
+            .border_color(theme.border.opacity(0.5))
+            .child(left)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(save_color)
+                    .child(save_icon)
+                    .child(save_label),
+            )
+    }
+
+    fn render_sidebar_resizer(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let hover_border = theme.border;
+        div()
+            .id("sidebar-resizer")
+            .w(px(4.0))
+            .h_full()
+            .hover(move |s| s.bg(hover_border).cursor_pointer())
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    this.begin_sidebar_resize(f32::from(event.position.x), cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .into_any_element()
+    }
+
+    pub(crate) fn render_context_panel_header(
+        &mut self,
+        title: &str,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let active_tab = self.settings.context_panel_tab;
+        let selected_index = match active_tab {
+            WorkspacePanel::Review => 0,
+            WorkspacePanel::Backlinks => 1,
+            WorkspacePanel::Connections => 2,
+            WorkspacePanel::Plugins => 3,
+        };
+        let tabs = TabBar::new("context-panel-tabs")
+            .underline()
+            .xsmall()
+            .selected_index(selected_index)
+            .on_click(cx.listener(|this, ix: &usize, _window, cx| {
+                let tab = match *ix {
+                    0 => WorkspacePanel::Review,
+                    1 => WorkspacePanel::Backlinks,
+                    2 => WorkspacePanel::Connections,
+                    _ => WorkspacePanel::Plugins,
+                };
+                this.set_context_panel_tab(tab, cx);
+            }))
+            .child(Tab::new().label("Review"))
+            .child(Tab::new().label("Backlinks"))
+            .child(Tab::new().label("Connections"))
+            .child(Tab::new().label("Plugins"));
+
+        div()
+            .px_4()
+            .py_2()
             .border_b_1()
-            .border_color(theme.title_bar_border)
-            .child(status_group)
-            .child(right_group)
+            .border_color(theme.border)
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child(title.to_string()),
+                    )
+                    .child(
+                        Button::new("ctx-panel-close")
+                            .with_size(px(18.0))
+                            .ghost()
+                            .icon(SandpaperIcon::Dismiss)
+                            .tooltip("Close panel")
+                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                this.settings.context_panel_open = false;
+                                this.persist_settings();
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(tabs)
+            .into_any_element()
+    }
+
+    fn render_empty_context_panel(
+        &mut self,
+        title: &str,
+        message: &str,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let border = cx.theme().border;
+        let sidebar_bg = cx.theme().sidebar;
+        let muted_fg = cx.theme().muted_foreground;
+        let header = self.render_context_panel_header(title, cx);
+        div()
+            .w(px(360.0))
+            .h_full()
+            .border_l_1()
+            .border_color(border)
+            .bg(sidebar_bg)
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .child(header)
+            .child(
+                div()
+                    .p_4()
+                    .text_xs()
+                    .text_color(muted_fg)
+                    .child(message.to_string()),
+            )
+            .into_any_element()
+    }
+
+    fn render_connections_panel(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let border = theme.border;
+        let sidebar_bg = theme.sidebar;
+        let fg = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let accent = theme.accent;
+        let hover_bg = theme.list_hover;
+        let header = self.render_context_panel_header("Connections", cx);
+
+        let related = self.editor.related_pages.clone();
+        let random = self.editor.random_pages.clone();
+
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scrollbar();
+
+        // Related Notes section
+        body = body.child(
+            div()
+                .text_xs()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(muted_fg)
+                .child("RELATED NOTES"),
+        );
+
+        if related.is_empty() {
+            body = body.child(
+                div()
+                    .text_xs()
+                    .text_color(muted_fg)
+                    .child("No related pages found yet."),
+            );
+        } else {
+            for item in &related {
+                let uid = item.page_uid.clone();
+                let title: SharedString = item.page_title.clone().into();
+                let mut reason_pills = div().flex().items_center().gap_1().flex_wrap();
+                for reason in &item.reasons {
+                    let label: SharedString = match reason {
+                        connections::ConnectionReason::SharedLink(target) => {
+                            format!("link: {target}").into()
+                        }
+                        connections::ConnectionReason::DirectLink => "direct".into(),
+                    };
+                    reason_pills = reason_pills.child(
+                        div()
+                            .px_1()
+                            .py(px(1.0))
+                            .rounded_sm()
+                            .bg(accent.opacity(0.15))
+                            .text_color(accent)
+                            .text_xs()
+                            .child(label),
+                    );
+                }
+
+                body = body.child(
+                    div()
+                        .id(SharedString::from(format!("related-{uid}")))
+                        .rounded_md()
+                        .px_2()
+                        .py_1()
+                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.open_page(&uid, cx);
+                        }))
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.0))
+                        .child(div().text_sm().text_color(fg).child(title))
+                        .child(reason_pills),
+                );
+            }
+        }
+
+        // Random Discovery section
+        body = body.child(
+            div()
+                .mt_2()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(muted_fg)
+                        .child("RANDOM DISCOVERY"),
+                )
+                .child(
+                    Button::new("refresh-random")
+                        .with_size(px(18.0))
+                        .ghost()
+                        .icon(SandpaperIcon::ArrowSwap)
+                        .tooltip("Refresh random pages")
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.refresh_connections(cx);
+                        })),
+                ),
+        );
+
+        if random.is_empty() {
+            body = body.child(
+                div()
+                    .text_xs()
+                    .text_color(muted_fg)
+                    .child("No pages to discover."),
+            );
+        } else {
+            for page in &random {
+                let uid = page.uid.clone();
+                let title: SharedString = page.title.clone().into();
+                body = body.child(
+                    div()
+                        .id(SharedString::from(format!("random-{uid}")))
+                        .rounded_md()
+                        .px_2()
+                        .py_1()
+                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.open_page(&uid, cx);
+                        }))
+                        .child(div().text_sm().text_color(fg).child(title)),
+                );
+            }
+        }
+
+        div()
+            .w(px(360.0))
+            .h_full()
+            .border_l_1()
+            .border_color(border)
+            .bg(sidebar_bg)
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .child(header)
+            .child(body)
+            .into_any_element()
+    }
+
+    fn render_context_panel(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if !self.settings.context_panel_open {
+            return None;
+        }
+
+        match self.settings.context_panel_tab {
+            WorkspacePanel::Review => Some(self.render_review_pane(cx).into_any_element()),
+            WorkspacePanel::Backlinks => {
+                Some(self.render_backlinks_panel(cx).unwrap_or_else(|| {
+                    self.render_empty_context_panel(
+                        "Backlinks",
+                        "Open a page to view backlinks and unlinked references.",
+                        cx,
+                    )
+                }))
+            }
+            WorkspacePanel::Plugins => Some(self.render_plugin_panel(cx).unwrap_or_else(|| {
+                self.render_empty_context_panel(
+                    "Plugin Panel",
+                    "Open a plugin panel from the command palette or plugin settings.",
+                    cx,
+                )
+            })),
+            WorkspacePanel::Connections => Some(self.render_connections_panel(cx)),
+        }
     }
 
     pub(crate) fn render_root(
@@ -106,51 +486,115 @@ impl AppStore {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let focus_mode = self.settings.focus_mode;
+
         let mut root = div()
             .id("sandpaper-app")
             .key_context("Sandpaper")
             .on_action(cx.listener(Self::open_vaults))
             .on_action(cx.listener(Self::new_page))
             .on_action(cx.listener(Self::rename_page))
-            .on_action(cx.listener(Self::toggle_mode_editor))
-            .on_action(cx.listener(Self::toggle_mode_capture))
-            .on_action(cx.listener(Self::toggle_mode_review))
+            .on_action(cx.listener(Self::toggle_sidebar_action))
+            .on_action(cx.listener(Self::toggle_context_panel_action))
+            .on_action(cx.listener(Self::open_review_panel_action))
+            .on_action(cx.listener(Self::cycle_context_panel_action))
+            .on_action(cx.listener(Self::focus_quick_add_action))
             .on_action(cx.listener(Self::open_command_palette_action))
             .on_action(cx.listener(Self::close_command_palette_action))
             .on_action(cx.listener(Self::palette_move_up))
             .on_action(cx.listener(Self::palette_move_down))
             .on_action(cx.listener(Self::palette_run))
-            .on_mouse_move(cx.listener(|this, _event: &MouseMoveEvent, _window, cx| {
+            .on_action(cx.listener(Self::toggle_focus_mode_action))
+            .on_action(cx.listener(Self::open_quick_capture_action))
+            .on_action(cx.listener(Self::switch_to_capture_action))
+            .on_action(cx.listener(Self::switch_to_edit_action))
+            .on_action(cx.listener(Self::switch_to_review_action))
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
+                if this.ui.sidebar_resize.is_some() {
+                    if event.dragging() {
+                        this.update_sidebar_resize(f32::from(event.position.x), cx);
+                    }
+                    return;
+                }
+
                 if this.editor.link_preview.is_some() && !this.editor.link_preview_hovering_link {
                     this.schedule_link_preview_close(cx);
                 }
             }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                    this.end_sidebar_resize(cx);
+                    let _ = this.commit_block_drag_if_active(cx);
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, _event: &MouseUpEvent, _window, cx| {
+                    this.end_sidebar_resize(cx);
+                    let _ = this.commit_block_drag_if_active(cx);
+                }),
+            )
             .track_focus(self.focus_handle())
             .flex()
             .flex_col()
             .size_full()
-            .bg(cx.theme().background)
-            .child(self.render_topbar(cx));
+            .bg(cx.theme().background);
 
-        if let Some(banner) = self.render_plugin_error_banner(cx) {
-            root = root.child(banner);
+        if focus_mode {
+            root = root.child(self.render_focus_topbar(cx));
+        } else {
+            root = root.child(self.render_topbar(cx));
         }
 
-        root = root.child(
-            div()
-                .flex()
-                .flex_1()
-                .min_h_0()
-                .child(self.render_sidebar(cx))
-                .child(self.render_editor(cx)),
-        );
+        if !focus_mode {
+            if let Some(banner) = self.render_plugin_error_banner(cx) {
+                root = root.child(banner);
+            }
+        }
+
+        let mut body = div().flex().flex_1().min_h_0();
+        match self.app.mode {
+            Mode::Capture => {
+                body = body.child(self.render_capture_mode(cx));
+            }
+            Mode::Editor => {
+                if !focus_mode {
+                    body = body.child(self.render_sidebar(cx));
+                    if !self.settings.sidebar_collapsed {
+                        body = body.child(self.render_sidebar_resizer(cx));
+                    }
+                }
+                body = body.child(self.render_editor(cx));
+                if !focus_mode {
+                    if let Some(panel) = self.render_context_panel(cx) {
+                        body = body.child(panel);
+                    }
+                }
+            }
+            Mode::Review => {
+                if !focus_mode {
+                    body = body.child(self.render_sidebar(cx));
+                    if !self.settings.sidebar_collapsed {
+                        body = body.child(self.render_sidebar_resizer(cx));
+                    }
+                }
+                body = body.child(self.render_review_feed(cx));
+            }
+        }
+
+        root = root.child(body);
+
+        if !focus_mode && self.settings.status_bar_visible {
+            root = root.child(self.render_status_bar(cx));
+        }
 
         if let Some(preview) = self.render_link_preview(window, cx) {
-            root = root.child(gpui::deferred(preview).with_priority(10));
+            root = root.child(preview);
         }
 
-        if let Some(panel) = self.render_plugin_panel(cx) {
-            root = root.child(panel);
+        if self.ui.capture_overlay_open {
+            root = root.child(self.render_capture_overlay(cx));
         }
 
         root = root
@@ -159,5 +603,547 @@ impl AppStore {
             .children(Root::render_notification_layer(window, cx));
 
         root
+    }
+
+    fn render_focus_topbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let muted_fg = theme.muted_foreground;
+
+        TitleBar::new().child(
+            div()
+                .h_full()
+                .flex_1()
+                .min_w_0()
+                .px_4()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(div().text_xs().text_color(muted_fg).child("Focus Mode"))
+                .child(
+                    Button::new("exit-focus-mode")
+                        .xsmall()
+                        .ghost()
+                        .label("Exit Focus")
+                        .icon(SandpaperIcon::ArrowMinimize)
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.settings.focus_mode = false;
+                            this.persist_settings();
+                            cx.notify();
+                        })),
+                ),
+        )
+    }
+
+    fn render_capture_overlay(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let bg = theme.background;
+        let border = theme.border;
+        let muted_fg = theme.muted_foreground;
+        let active_target = self.ui.capture_overlay_target;
+
+        let input = Input::new(&self.editor.capture_input)
+            .appearance(false)
+            .bordered(true)
+            .focus_bordered(true)
+            .small();
+
+        let mut target_row = div().flex().items_center().gap_1();
+        for (target, label) in [
+            (QuickAddTarget::Inbox, "Inbox"),
+            (QuickAddTarget::DailyNote, "Daily Note"),
+            (QuickAddTarget::CurrentPage, "Current Page"),
+        ] {
+            let mut btn = Button::new(format!("capture-target-{label}"))
+                .label(label)
+                .xsmall();
+            btn = if active_target == target {
+                btn.primary()
+            } else {
+                btn.ghost()
+            };
+            target_row =
+                target_row.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
+                    this.ui.capture_overlay_target = target;
+                    cx.notify();
+                })));
+        }
+
+        let hint = shortcut_hint(ShortcutSpec::new("cmd-enter", "ctrl-enter"));
+
+        // Semi-transparent backdrop
+        let backdrop = div()
+            .id("capture-overlay-backdrop")
+            .absolute()
+            .inset_0()
+            .bg(gpui::black().opacity(0.4))
+            .on_click(cx.listener(|this, _event, _window, cx| {
+                this.dismiss_quick_capture(cx);
+            }));
+
+        let card = div()
+            .absolute()
+            .top(px(120.0))
+            .left_auto()
+            .right_auto()
+            .mx_auto()
+            .w(px(520.0))
+            .rounded_lg()
+            .bg(bg)
+            .border_1()
+            .border_color(border)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .p_4()
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .child("Quick Capture"),
+            )
+            .child(
+                div()
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" {
+                            this.dismiss_quick_capture(cx);
+                            cx.stop_propagation();
+                        }
+                        if event.keystroke.key == "enter" && event.keystroke.modifiers.platform {
+                            this.submit_quick_capture(window, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .child(input),
+            )
+            .child(target_row)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted_fg)
+                            .child(format!("Submit: {hint}")),
+                    )
+                    .child(
+                        Button::new("capture-submit")
+                            .xsmall()
+                            .primary()
+                            .label("Capture")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.submit_quick_capture(window, cx);
+                            })),
+                    ),
+            );
+
+        // Center the card horizontally
+        let card_container = div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .justify_center()
+            .child(card);
+
+        div()
+            .absolute()
+            .inset_0()
+            .child(backdrop)
+            .child(card_container)
+            .into_any_element()
+    }
+
+    fn render_capture_mode(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let bg = theme.background;
+        let border = theme.border;
+        let fg = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let active_target = self.ui.capture_overlay_target;
+
+        let input = Input::new(&self.editor.capture_input)
+            .appearance(false)
+            .bordered(true)
+            .focus_bordered(true)
+            .small();
+
+        let mut target_row = div().flex().items_center().gap_1();
+        for (target, label) in [
+            (QuickAddTarget::Inbox, "Inbox"),
+            (QuickAddTarget::DailyNote, "Daily Note"),
+            (QuickAddTarget::CurrentPage, "Current Page"),
+        ] {
+            let mut btn = Button::new(format!("cap-target-{label}"))
+                .label(label)
+                .xsmall();
+            btn = if active_target == target {
+                btn.primary()
+            } else {
+                btn.ghost()
+            };
+            target_row =
+                target_row.child(btn.on_click(cx.listener(move |this, _event, _window, cx| {
+                    this.ui.capture_overlay_target = target;
+                    cx.notify();
+                })));
+        }
+
+        let hint = shortcut_hint(ShortcutSpec::new("cmd-enter", "ctrl-enter"));
+
+        let mut card = div()
+            .w(px(520.0))
+            .rounded_lg()
+            .bg(bg)
+            .border_1()
+            .border_color(border)
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_6()
+            .child(
+                div()
+                    .text_base()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(fg)
+                    .child("Quick Capture"),
+            )
+            .child(
+                div()
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" {
+                            this.set_mode(Mode::Editor, cx);
+                            cx.stop_propagation();
+                        }
+                        if event.keystroke.key == "enter" && event.keystroke.modifiers.platform {
+                            this.submit_quick_capture(window, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .child(input),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(target_row)
+                    .child(
+                        Button::new("capture-submit-mode")
+                            .xsmall()
+                            .primary()
+                            .label("Capture")
+                            .on_click(cx.listener(|this, _event, window, cx| {
+                                this.submit_quick_capture(window, cx);
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted_fg.opacity(0.7))
+                    .child(format!("{hint} submit  ·  esc back to editor")),
+            );
+
+        // Recent captures
+        if !self.editor.capture_recent.is_empty() {
+            card = card.child(
+                div()
+                    .mt_1()
+                    .pt_3()
+                    .border_t_1()
+                    .border_color(border)
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(muted_fg)
+                    .child("RECENT CAPTURES"),
+            );
+            let hover_bg = theme.list_hover;
+            for (i, item) in self.editor.capture_recent.iter().enumerate() {
+                let text: SharedString = if item.text.len() > 80 {
+                    format!("{}...", &item.text[..80]).into()
+                } else {
+                    item.text.clone().into()
+                };
+                let target_label: SharedString = item.target.as_str().into();
+                let page_uid = item.page_uid.clone();
+                card = card.child(
+                    div()
+                        .id(SharedString::from(format!("capture-recent-{i}")))
+                        .rounded_md()
+                        .px_2()
+                        .py_1()
+                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .on_click(cx.listener(move |this, _event, _window, cx| {
+                            this.open_page(&page_uid, cx);
+                            this.set_mode(Mode::Editor, cx);
+                        }))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(div().text_sm().text_color(fg).flex_1().child(text))
+                        .child(
+                            div()
+                                .px_1()
+                                .py(px(1.0))
+                                .rounded_sm()
+                                .bg(theme.accent.opacity(0.15))
+                                .text_color(theme.accent)
+                                .text_xs()
+                                .child(target_label),
+                        ),
+                );
+            }
+        }
+
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .justify_center()
+            .items_start()
+            .pt(px(80.0))
+            .child(card)
+            .into_any_element()
+    }
+
+    fn render_review_feed(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let fg = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let sidebar_bg = theme.sidebar;
+        let border = theme.border;
+        let accent = theme.accent;
+        let hover_bg = theme.list_hover;
+
+        let mut feed = div()
+            .w_full()
+            .max_w(px(720.0))
+            .mx_auto()
+            .flex()
+            .flex_col()
+            .gap_3();
+
+        // Header with refresh button
+        feed = feed.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_base()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(fg)
+                        .child("Knowledge Feed"),
+                )
+                .child(
+                    Button::new("refresh-feed")
+                        .with_size(px(24.0))
+                        .ghost()
+                        .icon(SandpaperIcon::ArrowSwap)
+                        .tooltip("Refresh feed")
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.refresh_feed(cx);
+                        })),
+                ),
+        );
+
+        if self.editor.feed_items.is_empty() {
+            feed = feed.child(div().p_6().text_sm().text_color(muted_fg).child(
+                "No items in your feed yet. Create some pages and add review items to get started.",
+            ));
+        }
+
+        let items = self.editor.feed_items.clone();
+        for (i, item) in items.iter().enumerate() {
+            match item {
+                FeedItem::SectionHeader(label) => {
+                    feed = feed.child(
+                        div()
+                            .mt_2()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(muted_fg)
+                            .child(label.clone()),
+                    );
+                }
+                FeedItem::ReviewDue(review) => {
+                    let snippet: SharedString = if review.text.len() > 96 {
+                        format!("{}...", &review.text[..96]).into()
+                    } else {
+                        review.text.clone().into()
+                    };
+                    let page_title: SharedString = review.page_title.clone().into();
+                    let page_uid = review.page_uid.clone();
+                    let item_id = review.id;
+                    feed = feed.child(
+                        div()
+                            .id(SharedString::from(format!("feed-review-{i}")))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(border)
+                            .bg(sidebar_bg)
+                            .p_3()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(div().text_sm().text_color(fg).child(snippet))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(div().text_xs().text_color(muted_fg).child(page_title))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                Button::new(format!("feed-done-{i}"))
+                                                    .xsmall()
+                                                    .ghost()
+                                                    .icon(SandpaperIcon::Checkmark)
+                                                    .tooltip("Mark done")
+                                                    .on_click(cx.listener(
+                                                        move |this, _event, _window, cx| {
+                                                            this.review_mark_done(item_id, cx);
+                                                            this.refresh_feed(cx);
+                                                        },
+                                                    )),
+                                            )
+                                            .child(
+                                                Button::new(format!("feed-snooze-{i}"))
+                                                    .xsmall()
+                                                    .ghost()
+                                                    .icon(SandpaperIcon::Subtract)
+                                                    .tooltip("Snooze")
+                                                    .on_click(cx.listener(
+                                                        move |this, _event, _window, cx| {
+                                                            this.review_snooze_day(item_id, cx);
+                                                            this.refresh_feed(cx);
+                                                        },
+                                                    )),
+                                            ),
+                                    ),
+                            )
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg))
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.open_page(&page_uid, cx);
+                                this.set_mode(Mode::Editor, cx);
+                            })),
+                    );
+                }
+                FeedItem::RelatedPage(related) => {
+                    let title: SharedString = related.page_title.clone().into();
+                    let uid = related.page_uid.clone();
+                    let mut reason_pills = div().flex().items_center().gap_1().flex_wrap();
+                    for reason in &related.reasons {
+                        let label: SharedString = match reason {
+                            connections::ConnectionReason::SharedLink(target) => {
+                                format!("link: {target}").into()
+                            }
+                            connections::ConnectionReason::DirectLink => "direct".into(),
+                        };
+                        reason_pills = reason_pills.child(
+                            div()
+                                .px_1()
+                                .py(px(1.0))
+                                .rounded_sm()
+                                .bg(accent.opacity(0.15))
+                                .text_color(accent)
+                                .text_xs()
+                                .child(label),
+                        );
+                    }
+                    feed = feed.child(
+                        div()
+                            .id(SharedString::from(format!("feed-related-{i}")))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(border)
+                            .bg(sidebar_bg)
+                            .p_3()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(div().text_sm().text_color(fg).child(title))
+                            .child(reason_pills)
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg))
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.open_page(&uid, cx);
+                                this.set_mode(Mode::Editor, cx);
+                            })),
+                    );
+                }
+                FeedItem::RecentEdit { page, .. } => {
+                    let title: SharedString = page.title.clone().into();
+                    let uid = page.uid.clone();
+                    feed = feed.child(
+                        div()
+                            .id(SharedString::from(format!("feed-recent-{i}")))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(border)
+                            .bg(sidebar_bg)
+                            .p_3()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(div().text_sm().text_color(fg).child(title))
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg))
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.open_page(&uid, cx);
+                                this.set_mode(Mode::Editor, cx);
+                            })),
+                    );
+                }
+                FeedItem::RandomDiscovery(page) => {
+                    let title: SharedString = page.title.clone().into();
+                    let uid = page.uid.clone();
+                    feed = feed.child(
+                        div()
+                            .id(SharedString::from(format!("feed-discover-{i}")))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(border)
+                            .bg(accent.opacity(0.04))
+                            .p_3()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .child(div().text_sm().text_color(fg).child(title))
+                            .child(
+                                Button::new(format!("feed-explore-{i}"))
+                                    .xsmall()
+                                    .ghost()
+                                    .icon(SandpaperIcon::ArrowRight)
+                                    .tooltip("Explore")
+                                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                                        this.open_page(&uid, cx);
+                                        this.set_mode(Mode::Editor, cx);
+                                    })),
+                            )
+                            .cursor_pointer()
+                            .hover(move |s| s.bg(hover_bg)),
+                    );
+                }
+            }
+        }
+
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .overflow_y_scrollbar()
+            .p_6()
+            .child(feed)
+            .into_any_element()
     }
 }

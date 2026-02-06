@@ -1,26 +1,18 @@
 use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
+use gpui_component::{popover::Popover, Anchor};
 impl AppStore {
     pub(super) fn render_editor(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let editor_body = match self.app.mode {
-            Mode::Editor => {
-                let mut body = div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.render_blocks_list(cx));
-                if let Some(pane) = self.render_secondary_pane(cx) {
-                    body = body.child(pane);
-                }
-                if let Some(panel) = self.render_backlinks_panel(cx) {
-                    body = body.child(panel);
-                }
-                body.into_any_element()
-            }
-            Mode::Capture => self.render_capture_pane(cx).into_any_element(),
-            Mode::Review => self.render_review_pane(cx).into_any_element(),
-        };
+        let mut editor_body = div()
+            .flex()
+            .flex_1()
+            .min_h_0()
+            .child(self.render_blocks_list(cx));
+        if let Some(pane) = self.render_secondary_pane(cx) {
+            editor_body = editor_body.child(pane);
+        }
+        let editor_body = editor_body.into_any_element();
 
         let container = div()
             .flex_1()
@@ -31,30 +23,99 @@ impl AppStore {
             .flex_col()
             .bg(cx.theme().background)
             .key_context("SandpaperEditor")
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.handle_selection_clipboard_key_down(event, window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(Self::insert_block_below))
             .on_action(cx.listener(Self::indent_block))
             .on_action(cx.listener(Self::outdent_block))
             .on_action(cx.listener(Self::move_block_up))
             .on_action(cx.listener(Self::move_block_down))
             .on_action(cx.listener(Self::duplicate_block))
+            .on_action(cx.listener(Self::select_all_blocks_action))
             .on_action(cx.listener(Self::delete_selection_action))
             .on_action(cx.listener(Self::clear_selection_action))
             .on_action(cx.listener(Self::toggle_split_pane_action))
+            .on_action(cx.listener(Self::undo_edit_action))
+            .on_action(cx.listener(Self::redo_edit_action))
             .child(editor_body);
 
         container
     }
 
-    fn render_placeholder(&mut self, label: &str, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_editor_empty_state(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
+        let open_vaults_hint = shortcut_hint(ShortcutSpec::new("cmd-shift-v", "ctrl-alt-v"));
+        let command_hint = shortcut_hint(ShortcutSpec::new("cmd-k", "ctrl-k"));
+        let quick_add_hint = shortcut_hint(ShortcutSpec::new("cmd-l", "ctrl-l"));
+        let fg = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let card_border = theme.border;
+
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .text_sm()
-            .text_color(theme.muted_foreground)
-            .child(label.to_string())
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(400.0))
+                    .mx_auto()
+                    .p_6()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(card_border)
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(
+                        div()
+                            .text_base()
+                            .text_color(fg)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child("Start writing"),
+                    )
+                    .child(div().text_sm().text_color(muted_fg).child(
+                        "Create a page to get started, or use the command palette to explore.",
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .mt_1()
+                            .child(
+                                Button::new("empty-new-page")
+                                    .label(format!("New page ({new_page_hint})"))
+                                    .small()
+                                    .primary()
+                                    .on_click(cx.listener(|this, _event, _window, cx| {
+                                        this.open_page_dialog(PageDialogMode::Create, cx);
+                                    })),
+                            )
+                            .child(
+                                Button::new("empty-open-vaults")
+                                    .label(format!("Open vaults ({open_vaults_hint})"))
+                                    .small()
+                                    .ghost()
+                                    .on_click(cx.listener(|this, _event, window, cx| {
+                                        this.open_vaults(&OpenVaults, window, cx);
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted_fg.opacity(0.7))
+                            .child(format!(
+                                "{command_hint} commands  ·  {quick_add_hint} quick add"
+                            )),
+                    ),
+            )
     }
 
     fn render_blocks_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -81,12 +142,13 @@ impl AppStore {
             div()
                 .flex_1()
                 .min_h_0()
-                .child(self.render_placeholder("Select or create a page to start writing.", cx))
+                .child(self.render_editor_empty_state(cx))
                 .into_any_element()
         };
 
         let theme = cx.theme();
         let is_active = self.editor.active_pane == EditorPane::Primary;
+        let has_split = self.editor.secondary_pane.is_some();
         let mut container = div()
             .id("blocks")
             .flex_1()
@@ -94,15 +156,20 @@ impl AppStore {
             .h_full()
             .flex()
             .flex_col()
-            .p_3()
-            .bg(theme.background)
-            .border_1()
-            .rounded_lg()
-            .border_color(if is_active && self.editor.secondary_pane.is_some() {
-                theme.ring
-            } else {
-                theme.border
-            });
+            .p_6();
+
+        if has_split {
+            container = container
+                .border_1()
+                .rounded_lg()
+                .border_color(if is_active { theme.ring } else { theme.border });
+        }
+
+        if self.editor.secondary_pane.is_none() {
+            let max_width = self.settings.editor_max_width;
+            let max_width = SettingsState::clamp_editor_max_width(max_width);
+            container = container.w_full().max_w(px(max_width)).mx_auto();
+        }
 
         if let Some(header) = self.render_editor_header(cx) {
             container = container.child(header);
@@ -172,7 +239,11 @@ impl AppStore {
             return None;
         };
         let theme = cx.theme();
-        let block_count = self
+        let fg = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let list_hover = theme.list_hover;
+        let border_color = theme.border;
+        let _block_count = self
             .editor
             .editor
             .as_ref()
@@ -183,152 +254,275 @@ impl AppStore {
         } else {
             active_page.title.as_str()
         };
-        let breadcrumbs = self.build_breadcrumb_items();
+        let mut breadcrumbs = self.build_breadcrumb_items();
+        if breadcrumbs.len() > 4 {
+            let first = breadcrumbs.first().cloned();
+            let tail = breadcrumbs[breadcrumbs.len() - 2..].to_vec();
+            breadcrumbs.clear();
+            if let Some(first) = first {
+                breadcrumbs.push(first);
+            }
+            breadcrumbs.push(BreadcrumbItem {
+                uid: "__ellipsis".to_string(),
+                label: "…".to_string(),
+            });
+            breadcrumbs.extend(tail);
+        }
 
-        let mut title_group = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .text_lg()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(title.to_string()),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format!("{block_count} blocks")),
-            );
+        let mut title_group = div().flex().flex_col().gap(px(2.0)).child(
+            div()
+                .id("editor-page-title")
+                .text_lg()
+                .text_color(fg)
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .cursor_pointer()
+                .hover(move |s| s.bg(list_hover).rounded_sm().cursor_pointer())
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.open_page_dialog(PageDialogMode::Rename, cx);
+                }))
+                .child(title.to_string()),
+        );
 
         if breadcrumbs.len() > 1 {
             let mut trail = div().id("editor-breadcrumbs").flex().items_center().gap_1();
-            let crumb_hover = theme.list_hover;
             for (idx, item) in breadcrumbs.iter().enumerate() {
                 let is_last = idx == breadcrumbs.len() - 1;
                 let uid = item.uid.clone();
                 let label = item.label.clone();
+                let is_ellipsis = uid == "__ellipsis";
                 let mut crumb = div()
                     .id(format!("breadcrumb-{}", uid))
                     .px_1()
                     .py(px(1.0))
                     .rounded_sm()
-                    .bg(if is_last {
-                        theme.list_active
-                    } else {
-                        theme.secondary
-                    })
-                    .hover(move |s| s.bg(crumb_hover).cursor_pointer())
                     .text_xs()
-                    .text_color(if is_last {
-                        theme.foreground
-                    } else {
-                        theme.muted_foreground
-                    })
-                    .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.focus_block_by_uid(&uid, Some(window), cx);
-                        cx.notify();
-                    }))
+                    .text_color(if is_last { fg } else { muted_fg })
+                    .when(is_last, |this| this.font_weight(gpui::FontWeight::MEDIUM))
                     .child(label);
+
+                if !is_last && !is_ellipsis {
+                    crumb = crumb
+                        .hover(move |s| s.bg(list_hover).cursor_pointer())
+                        .on_click(cx.listener(move |this, _event, window, cx| {
+                            this.focus_block_by_uid(&uid, Some(window), cx);
+                            cx.notify();
+                        }));
+                }
                 if !is_last {
-                    crumb = crumb.child(
-                        div()
-                            .ml_1()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child("/"),
-                    );
+                    crumb = crumb.child(div().ml_1().text_xs().text_color(border_color).child("/"));
                 }
                 trail = trail.child(crumb);
             }
             title_group = title_group.child(trail);
         }
 
-        let mut actions = div()
+        let actions = div()
             .flex()
             .items_center()
-            .gap_2()
-            .child(
-                Button::new("editor-rename")
-                    .label("Rename")
-                    .xsmall()
-                    .ghost()
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.open_page_dialog(PageDialogMode::Rename, cx);
-                    })),
-            )
+            .gap_1()
+            .child({
+                let mut container = div().relative().child(
+                    Button::new("editor-outline")
+                        .with_size(px(22.0))
+                        .ghost()
+                        .icon(SandpaperIcon::Menu)
+                        .tooltip("Outline")
+                        .on_click(cx.listener(|this, _event, _window, cx| {
+                            this.toggle_outline_menu(EditorPane::Primary, cx);
+                        })),
+                );
+                if self.editor.outline_menu.open
+                    && self.editor.outline_menu.pane == EditorPane::Primary
+                {
+                    let menu = self.render_outline_menu_for_pane(EditorPane::Primary, cx);
+                    container = container.child(menu);
+                }
+                container
+            })
             .child(
                 Button::new("editor-split")
-                    .label(if self.editor.secondary_pane.is_some() {
+                    .with_size(px(22.0))
+                    .ghost()
+                    .icon(SandpaperIcon::SplitVertical)
+                    .tooltip(if self.editor.secondary_pane.is_some() {
                         "Close split"
                     } else {
-                        "Split"
+                        "Split pane"
                     })
-                    .xsmall()
-                    .ghost()
                     .on_click(cx.listener(|this, _event, _window, cx| {
                         this.toggle_split_pane(cx);
                     })),
             )
-            .child(
-                Button::new("editor-duplicate")
-                    .label("Duplicate to split")
-                    .xsmall()
-                    .ghost()
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.copy_primary_to_secondary(cx);
-                    })),
-            );
+            .child(self.render_backlinks_toggle(cx));
 
-        if self.editor.secondary_pane.is_some() {
-            actions = actions
-                .child(
-                    Button::new("editor-swap")
-                        .label("Swap panes")
-                        .xsmall()
-                        .ghost()
-                        .on_click(cx.listener(|this, _event, _window, cx| {
-                            this.swap_panes(cx);
-                        })),
-                )
-                .child(
-                    Button::new("editor-sync-scroll")
-                        .label(if self.settings.sync_scroll {
-                            "Sync scroll: On"
-                        } else {
-                            "Sync scroll: Off"
-                        })
-                        .xsmall()
-                        .ghost()
-                        .on_click(cx.listener(|this, _event, _window, cx| {
-                            this.settings.sync_scroll = !this.settings.sync_scroll;
-                            this.persist_settings();
-                            cx.notify();
-                        })),
-                );
+        let header_row = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(title_group)
+            .child(actions);
+
+        let mut container = div()
+            .id("editor-header")
+            .mb_4()
+            .pb_3()
+            .border_b_1()
+            .border_color(border_color.opacity(0.5))
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(header_row);
+
+        if let Some(props_section) = self.render_page_properties(cx) {
+            container = container.child(props_section);
         }
 
-        actions = actions.child(self.render_backlinks_toggle(cx));
+        Some(container.into_any_element())
+    }
 
-        Some(
-            div()
-                .id("editor-header")
-                .mb_3()
+    fn render_page_properties(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if self.editor.active_page.is_none() {
+            return None;
+        }
+        let theme = cx.theme();
+        let is_open = self.editor.properties_open;
+        let prop_count = self.editor.page_properties.len();
+
+        // Toggle header
+        let toggle_label = if prop_count > 0 {
+            format!("Properties ({prop_count})")
+        } else {
+            "Properties".to_string()
+        };
+        let toggle_icon = if is_open {
+            SandpaperIcon::ChevronDown
+        } else {
+            SandpaperIcon::ChevronRight
+        };
+        let toggle_color = theme.muted_foreground;
+
+        let header = div()
+            .id("properties-toggle")
+            .w_full()
+            .flex()
+            .items_center()
+            .gap_1()
+            .py(px(3.0))
+            .px_1()
+            .rounded_sm()
+            .cursor_pointer()
+            .hover(move |s| s.bg(theme.list_hover))
+            .on_click(cx.listener(|this, _event, _window, cx| {
+                this.editor.properties_open = !this.editor.properties_open;
+                cx.notify();
+            }))
+            .child(Icon::new(toggle_icon).size_3().text_color(toggle_color))
+            .child(div().text_xs().text_color(toggle_color).child(toggle_label));
+
+        if !is_open {
+            return Some(header.into_any_element());
+        }
+
+        // Build property rows
+        let mut rows = div().flex().flex_col().gap_1().pl_4();
+        let muted = theme.muted_foreground;
+        let fg = theme.foreground;
+        let row_hover = theme.list_hover;
+
+        for prop in &self.editor.page_properties {
+            let key = prop.key.clone();
+            let value = prop.value.clone();
+            let value_type = prop.value_type.clone();
+            let delete_key = key.clone();
+
+            let value_display = match value_type.as_str() {
+                "checkbox" => {
+                    let checked = value == "true";
+                    div()
+                        .child(
+                            Icon::new(if checked {
+                                SandpaperIcon::Checkmark
+                            } else {
+                                SandpaperIcon::Subtract
+                            })
+                            .size_3p5()
+                            .text_color(if checked {
+                                theme.accent
+                            } else {
+                                muted
+                            }),
+                        )
+                        .into_any_element()
+                }
+                _ => div()
+                    .text_xs()
+                    .text_color(fg)
+                    .child(value.clone())
+                    .into_any_element(),
+            };
+
+            let row = div()
+                .id(SharedString::from(format!("prop-{}", key)))
                 .flex()
                 .items_center()
-                .justify_between()
-                .child(title_group)
-                .child(actions)
-                .into_any_element(),
-        )
+                .gap_2()
+                .py(px(2.0))
+                .px_1()
+                .rounded_sm()
+                .hover(move |s| s.bg(row_hover))
+                .child(
+                    div()
+                        .w(px(100.0))
+                        .text_xs()
+                        .text_color(muted)
+                        .overflow_hidden()
+                        .child(key),
+                )
+                .child(div().flex_1().child(value_display))
+                .child(
+                    div().opacity(0.0).hover(|s| s.opacity(1.0)).child(
+                        Button::new(SharedString::from(format!("del-prop-{}", delete_key)))
+                            .with_size(px(16.0))
+                            .ghost()
+                            .icon(SandpaperIcon::Dismiss)
+                            .on_click(cx.listener(move |this, _event, _window, cx| {
+                                this.delete_page_property(&delete_key, cx);
+                            })),
+                    ),
+                );
+
+            rows = rows.child(row);
+        }
+
+        // Add property button
+        let add_btn = div().pt_1().child(
+            Button::new("add-property")
+                .label("+ Add property")
+                .ghost()
+                .xsmall()
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    // Add a default text property with a generated key
+                    let key = format!("property-{}", this.editor.page_properties.len() + 1);
+                    this.set_page_property(&key, "", "text", cx);
+                })),
+        );
+
+        let section = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(header)
+            .child(rows)
+            .child(add_btn);
+
+        Some(section.into_any_element())
     }
 
     fn render_backlinks_toggle(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let total = self.editor.backlinks.len() + self.editor.block_backlinks.len();
-        let is_open = self.settings.backlinks_open;
-        let label = if total > 0 {
+        let is_open = self.settings.context_panel_open
+            && self.settings.context_panel_tab == WorkspacePanel::Backlinks;
+        let tooltip = if total > 0 {
             format!(
                 "{} ({total})",
                 if is_open {
@@ -343,16 +537,35 @@ impl AppStore {
             "Show backlinks".to_string()
         };
 
-        Button::new("backlinks-toggle")
-            .label(label)
-            .xsmall()
-            .ghost()
-            .on_click(cx.listener(|this, _event, _window, cx| {
-                this.settings.backlinks_open = !this.settings.backlinks_open;
-                this.persist_settings();
-                cx.notify();
-            }))
-            .into_any_element()
+        let theme = cx.theme();
+        let mut button = div().flex().items_center().gap_1().child(
+            Button::new("backlinks-toggle")
+                .with_size(px(22.0))
+                .ghost()
+                .icon(SandpaperIcon::LinkMultiple)
+                .tooltip(tooltip)
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    if this.settings.context_panel_open
+                        && this.settings.context_panel_tab == WorkspacePanel::Backlinks
+                    {
+                        this.settings.context_panel_open = false;
+                    } else {
+                        this.settings.context_panel_open = true;
+                        this.settings.context_panel_tab = WorkspacePanel::Backlinks;
+                    }
+                    this.persist_settings();
+                    cx.notify();
+                })),
+        );
+        if total > 0 {
+            button = button.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(format!("{total}")),
+            );
+        }
+        button.into_any_element()
     }
 
     fn render_selection_toolbar_for_pane(
@@ -374,12 +587,10 @@ impl AppStore {
             div()
                 .id(format!("{id_prefix}-toolbar"))
                 .mb_2()
-                .px_2()
-                .py_2()
-                .rounded_md()
+                .px_3()
+                .py(px(10.0))
+                .rounded_lg()
                 .bg(theme.colors.list)
-                .border_1()
-                .border_color(theme.border)
                 .child(
                     div()
                         .flex()
@@ -390,6 +601,36 @@ impl AppStore {
                                 .text_xs()
                                 .text_color(theme.muted_foreground)
                                 .child("Selection"),
+                        )
+                        .child(
+                            Button::new(format!("{id_prefix}-copy"))
+                                .label("Copy")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, _window, cx| {
+                                    this.set_active_pane(pane, cx);
+                                    this.copy_selection_blocks_in_pane(pane, cx);
+                                })),
+                        )
+                        .child(
+                            Button::new(format!("{id_prefix}-cut"))
+                                .label("Cut")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, _window, cx| {
+                                    this.set_active_pane(pane, cx);
+                                    this.cut_selection_blocks_in_pane(pane, cx);
+                                })),
+                        )
+                        .child(
+                            Button::new(format!("{id_prefix}-paste"))
+                                .label("Paste")
+                                .xsmall()
+                                .ghost()
+                                .on_click(cx.listener(move |this, _event, window, cx| {
+                                    this.set_active_pane(pane, cx);
+                                    this.paste_selection_blocks_in_pane(pane, window, cx);
+                                })),
                         )
                         .child(
                             Button::new(format!("{id_prefix}-duplicate"))
@@ -468,6 +709,7 @@ impl AppStore {
 
     fn render_slash_menu_at(
         &mut self,
+        pane: EditorPane,
         origin: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -486,10 +728,7 @@ impl AppStore {
         let selected_index = self.editor.slash_menu.selected_index;
 
         let mut menu = div()
-            .absolute()
-            .top(origin.y)
-            .left(origin.x)
-            .w(px(220.0))
+            .w(px(240.0))
             .rounded_md()
             .bg(theme.popover)
             .border_1()
@@ -509,7 +748,7 @@ impl AppStore {
             .child(
                 div()
                     .px_3()
-                    .py_2()
+                    .py(px(10.0))
                     .text_xs()
                     .text_color(theme.muted_foreground)
                     .child(title),
@@ -521,13 +760,16 @@ impl AppStore {
             menu = menu.child(
                 div()
                     .px_3()
-                    .py_2()
+                    .py(px(10.0))
                     .text_sm()
                     .text_color(theme.muted_foreground)
                     .child("No matches"),
             );
         } else {
-            for (ix, (id, label)) in commands.into_iter().enumerate() {
+            for (ix, cmd) in commands.into_iter().enumerate() {
+                let id = cmd.id;
+                let label = cmd.label;
+                let action = cmd.action;
                 let is_selected = ix == selected_index;
                 let row_bg = if is_selected {
                     selected_bg
@@ -538,7 +780,7 @@ impl AppStore {
                     div()
                         .id(format!("slash-{id}"))
                         .px_3()
-                        .py_2()
+                        .py(px(10.0))
                         .text_sm()
                         .text_color(theme.foreground)
                         .bg(row_bg)
@@ -558,18 +800,43 @@ impl AppStore {
                             },
                         ))
                         .on_click(cx.listener(move |this, _event, window, cx| {
-                            this.apply_slash_command(id, window, cx);
+                            this.apply_slash_command(id, action, window, cx);
                         }))
                         .child(label),
                 );
             }
         }
 
-        menu.into_any_element()
+        let pane_id = match pane {
+            EditorPane::Primary => "primary",
+            EditorPane::Secondary => "secondary",
+        };
+        let popover_id = format!("slash-menu-popover-{pane_id}");
+        let trigger_id = format!("slash-menu-trigger-{pane_id}");
+
+        Popover::new(popover_id)
+            .absolute()
+            .left(origin.x)
+            .top(origin.y)
+            .w(px(1.0))
+            .h(px(1.0))
+            .anchor(Anchor::TopLeft)
+            .appearance(false)
+            .open(self.editor.slash_menu.open && self.editor.slash_menu.pane == pane)
+            .on_open_change(cx.listener(|this, open: &bool, _window, cx| {
+                if !*open {
+                    this.close_slash_menu();
+                    cx.notify();
+                }
+            }))
+            .trigger(Self::popover_anchor_trigger(trigger_id))
+            .child(menu)
+            .into_any_element()
     }
 
     fn render_wikilink_menu_at(
         &mut self,
+        pane: EditorPane,
         origin: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
@@ -581,10 +848,7 @@ impl AppStore {
         let selected_index = self.editor.wikilink_menu.selected_index;
 
         let mut menu = div()
-            .absolute()
-            .top(origin.y)
-            .left(origin.x)
-            .w(px(260.0))
+            .w(px(280.0))
             .rounded_md()
             .bg(theme.popover)
             .border_1()
@@ -604,7 +868,7 @@ impl AppStore {
             .child(
                 div()
                     .px_3()
-                    .py_2()
+                    .py(px(10.0))
                     .text_xs()
                     .text_color(theme.muted_foreground)
                     .child("Link suggestions"),
@@ -676,12 +940,260 @@ impl AppStore {
             }
         }
 
-        menu.into_any_element()
+        let pane_id = match pane {
+            EditorPane::Primary => "primary",
+            EditorPane::Secondary => "secondary",
+        };
+        let popover_id = format!("wikilink-menu-popover-{pane_id}");
+        let trigger_id = format!("wikilink-menu-trigger-{pane_id}");
+
+        Popover::new(popover_id)
+            .absolute()
+            .left(origin.x)
+            .top(origin.y)
+            .w(px(1.0))
+            .h(px(1.0))
+            .anchor(Anchor::TopLeft)
+            .appearance(false)
+            .open(self.editor.wikilink_menu.open && self.editor.wikilink_menu.pane == pane)
+            .on_open_change(cx.listener(|this, open: &bool, _window, cx| {
+                if !*open {
+                    this.close_wikilink_menu();
+                    cx.notify();
+                }
+            }))
+            .trigger(Self::popover_anchor_trigger(trigger_id))
+            .child(menu)
+            .into_any_element()
+    }
+
+    fn render_outline_menu_for_pane(
+        &mut self,
+        pane: EditorPane,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        let Some(editor) = self.editor_for_pane(pane) else {
+            return div().into_any_element();
+        };
+        let Some(list_state) = self.list_state_for_pane(pane) else {
+            return div().into_any_element();
+        };
+
+        let hover_bg = theme.list_hover;
+        let selected_bg = theme.list_active;
+        let menu_bg = theme.popover;
+
+        let id_prefix = match pane {
+            EditorPane::Primary => "outline-menu",
+            EditorPane::Secondary => "secondary-outline-menu",
+        };
+
+        let mut menu = div()
+            .id(id_prefix)
+            .w(px(300.0))
+            .rounded_md()
+            .bg(menu_bg)
+            .border_1()
+            .border_color(theme.border)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|_this, _event, _window, cx| {
+                    cx.stop_propagation();
+                }),
+            )
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child("Outline"),
+            )
+            .child(
+                div()
+                    .px_2()
+                    .pb_2()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id(format!("{id_prefix}-fold-all"))
+                            .px_3()
+                            .py_2()
+                            .rounded_sm()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .bg(menu_bg)
+                            .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_click(cx.listener(move |this, _event, window, cx| {
+                                this.fold_outline_to_level(pane, 0, Some(window), cx);
+                                this.close_outline_menu();
+                                cx.notify();
+                            }))
+                            .child("Fold all"),
+                    )
+                    .child(
+                        div()
+                            .id(format!("{id_prefix}-fold-1"))
+                            .px_3()
+                            .py_2()
+                            .rounded_sm()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .bg(menu_bg)
+                            .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_click(cx.listener(move |this, _event, window, cx| {
+                                this.fold_outline_to_level(pane, 1, Some(window), cx);
+                                this.close_outline_menu();
+                                cx.notify();
+                            }))
+                            .child("Fold to level 1"),
+                    )
+                    .child(
+                        div()
+                            .id(format!("{id_prefix}-fold-2"))
+                            .px_3()
+                            .py_2()
+                            .rounded_sm()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .bg(menu_bg)
+                            .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_click(cx.listener(move |this, _event, window, cx| {
+                                this.fold_outline_to_level(pane, 2, Some(window), cx);
+                                this.close_outline_menu();
+                                cx.notify();
+                            }))
+                            .child("Fold to level 2"),
+                    )
+                    .child(
+                        div()
+                            .id(format!("{id_prefix}-unfold-all"))
+                            .px_3()
+                            .py_2()
+                            .rounded_sm()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .bg(menu_bg)
+                            .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|_this, _event, _window, cx| {
+                                    cx.stop_propagation();
+                                }),
+                            )
+                            .on_click(cx.listener(move |this, _event, window, cx| {
+                                this.unfold_all_outline(pane, Some(window), cx);
+                                this.close_outline_menu();
+                                cx.notify();
+                            }))
+                            .child("Unfold all"),
+                    ),
+            );
+
+        let mut list = div()
+            .id(format!("{id_prefix}-list"))
+            .h(px(320.0))
+            .overflow_scroll();
+        for (ix, actual_ix) in list_state.visible_to_actual.iter().copied().enumerate() {
+            let Some(block) = editor.blocks.get(actual_ix) else {
+                continue;
+            };
+            let label = if block.text.trim().is_empty() {
+                "Untitled".to_string()
+            } else {
+                format_snippet(&block.text, 36)
+            };
+            let item_bg = if editor.active_ix == actual_ix {
+                selected_bg
+            } else {
+                menu_bg
+            };
+            let indent_px = px(8.0 + (block.indent.max(0) as f32) * 12.0);
+            let uid = block.uid.clone();
+            list = list.child(
+                div()
+                    .id(format!("{id_prefix}-item-{ix}"))
+                    .px_2()
+                    .py(px(6.0))
+                    .rounded_sm()
+                    .bg(item_bg)
+                    .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|_this, _event, _window, cx| {
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_click(cx.listener(move |this, _event, window, cx| {
+                        this.focus_block_by_uid_in_pane(pane, &uid, Some(window), cx);
+                        this.close_outline_menu();
+                        cx.notify();
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(div().w(indent_px).h(px(1.0)).bg(menu_bg))
+                            .child(div().text_sm().text_color(theme.foreground).child(label)),
+                    ),
+            );
+        }
+
+        menu = menu.child(div().border_t_1().border_color(theme.border).child(list));
+
+        let trigger_id = format!("{id_prefix}-trigger");
+        let popover_id = format!("{id_prefix}-popover");
+        Popover::new(popover_id)
+            .absolute()
+            .top(px(24.0))
+            .right(px(0.0))
+            .w(px(1.0))
+            .h(px(1.0))
+            .anchor(Anchor::TopRight)
+            .appearance(false)
+            .open(self.editor.outline_menu.open && self.editor.outline_menu.pane == pane)
+            .on_open_change(cx.listener(|this, open: &bool, _window, cx| {
+                if !*open {
+                    this.close_outline_menu();
+                    cx.notify();
+                }
+            }))
+            .trigger(Self::popover_anchor_trigger(trigger_id))
+            .child(menu)
+            .into_any_element()
     }
 
     pub(super) fn render_link_preview(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let preview = self.editor.link_preview.clone()?;
@@ -690,42 +1202,6 @@ impl AppStore {
         }
 
         let theme = cx.theme();
-        let viewport = window.viewport_size();
-        let panel_width = px(280.0);
-        let margin = px(12.0);
-        let header_height = px(36.0);
-        let body_height = if preview.loading || preview.blocks.is_empty() {
-            px(28.0)
-        } else {
-            px(22.0) * preview.blocks.len() as f32
-        };
-        let estimated_height = header_height + body_height + px(8.0);
-        let min_x = margin;
-        let max_x = if viewport.width > panel_width + margin {
-            viewport.width - panel_width - margin
-        } else {
-            min_x
-        };
-        let min_y = margin;
-        let max_y = if viewport.height > estimated_height + margin {
-            viewport.height - estimated_height - margin
-        } else {
-            min_y
-        };
-        let mut clamped_x = preview.position.x;
-        if clamped_x < min_x {
-            clamped_x = min_x;
-        }
-        if clamped_x > max_x {
-            clamped_x = max_x;
-        }
-        let mut clamped_y = preview.position.y;
-        if clamped_y < min_y {
-            clamped_y = min_y;
-        }
-        if clamped_y > max_y {
-            clamped_y = max_y;
-        }
 
         let open_title = preview.title.clone();
         let preview_title = preview.title.clone();
@@ -733,11 +1209,8 @@ impl AppStore {
         let preview_loading = preview.loading;
 
         let mut panel = div()
-            .id("link-preview")
-            .absolute()
-            .top(clamped_y)
-            .left(clamped_x)
-            .w(panel_width)
+            .id("link-preview-panel")
+            .w(px(280.0))
             .rounded_md()
             .bg(theme.popover)
             .border_1()
@@ -771,18 +1244,18 @@ impl AppStore {
                         div()
                             .text_sm()
                             .text_color(theme.foreground)
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .font_weight(gpui::FontWeight::MEDIUM)
                             .child(preview_title),
                     )
                     .child(
                         Button::new("link-preview-open")
-                            .label("Open")
                             .xsmall()
                             .ghost()
+                            .icon(SandpaperIcon::ArrowRight)
+                            .tooltip("Open page")
                             .on_click(cx.listener(move |this, _event, _window, cx| {
                                 this.open_page(&open_title, cx);
-                                this.editor.link_preview = None;
-                                this.editor.link_preview_hovering_link = false;
+                                this.close_link_preview();
                                 cx.notify();
                             })),
                     ),
@@ -808,6 +1281,7 @@ impl AppStore {
             );
         } else {
             for (ix, block_text) in preview_blocks.iter().enumerate() {
+                let snippet = crate::app::store::helpers::format_snippet(block_text, 140);
                 panel = panel.child(
                     div()
                         .id(format!("link-preview-block-{ix}"))
@@ -815,39 +1289,226 @@ impl AppStore {
                         .py_2()
                         .text_xs()
                         .text_color(theme.foreground)
-                        .child(block_text.clone()),
+                        .child(snippet),
                 );
             }
         }
 
-        Some(panel.into_any_element())
+        Some(
+            Popover::new("link-preview-popover")
+                .absolute()
+                .left(preview.position.x)
+                .top(preview.position.y)
+                .w(px(1.0))
+                .h(px(1.0))
+                .anchor(Anchor::TopLeft)
+                .appearance(false)
+                .open(true)
+                .on_open_change(cx.listener(|this, open: &bool, _window, cx| {
+                    if !*open {
+                        this.close_link_preview();
+                        cx.notify();
+                    }
+                }))
+                .trigger(Self::popover_anchor_trigger("link-preview-trigger"))
+                .child(panel)
+                .into_any_element(),
+        )
     }
 
-    fn render_wikilink_text(
+    fn popover_anchor_trigger(id: impl Into<String>) -> Button {
+        Button::new(id.into())
+            .label("")
+            .ghost()
+            .xsmall()
+            .tab_stop(false)
+            .w(px(1.0))
+            .h(px(1.0))
+            .opacity(0.0)
+    }
+
+    fn render_inline_markdown_text(
         &mut self,
         pane: EditorPane,
         block_uid: &str,
         text: &str,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        if text.contains('\n') || text.contains('\r') {
+            let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+            let foreground = {
+                let theme = cx.theme();
+                theme.foreground
+            };
+            let mut body = div().flex().flex_col().gap(px(2.0));
+            for (line_ix, line) in normalized.split('\n').enumerate() {
+                let line_id = format!("{block_uid}-line-{line_ix}");
+                let line_text = if line.is_empty() { " " } else { line };
+                body = body
+                    .child(self.render_inline_markdown_text(pane, &line_id, line_text, window, cx));
+            }
+
+            return div().text_color(foreground).child(body).into_any_element();
+        }
+
+        if let Some(list) = crate::app::store::markdown::parse_markdown_list(text) {
+            let (foreground, muted_foreground) = {
+                let theme = cx.theme();
+                (theme.foreground, theme.muted_foreground)
+            };
+            let mut body = div().flex().flex_col().gap_1();
+            for (ix, item) in list.items.iter().enumerate() {
+                let prefix: SharedString = match list.kind {
+                    crate::app::store::markdown::MarkdownListKind::Ordered => {
+                        format!("{}.", ix + 1).into()
+                    }
+                    crate::app::store::markdown::MarkdownListKind::Unordered => "•".into(),
+                };
+                let item_id = format!("{block_uid}-mdlist-{ix}");
+                body = body.child(
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap_2()
+                        .child(
+                            div()
+                                .w(px(18.0))
+                                .text_sm()
+                                .text_color(muted_foreground)
+                                .child(prefix),
+                        )
+                        .child(div().flex_1().min_w_0().child(
+                            self.render_inline_markdown_text(pane, &item_id, item, window, cx),
+                        )),
+                );
+            }
+
+            return div()
+                .text_sm()
+                .text_color(foreground)
+                .child(body)
+                .into_any_element();
+        }
+
         let theme = cx.theme();
-        let tokens = helpers::parse_wikilink_tokens(text);
+        let tokens = crate::app::store::markdown::parse_inline_markdown_tokens(text);
         let mut display = String::new();
-        let mut link_ranges: Vec<std::ops::Range<usize>> = Vec::new();
-        let mut link_targets: Vec<String> = Vec::new();
+        let mut highlight_ranges: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+        let mut interactive_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+
+        enum InlineAction {
+            Wikilink(String),
+            External(String),
+        }
+
+        let mut actions: Vec<InlineAction> = Vec::new();
+
+        let link_color = theme.accent;
+        let underline = UnderlineStyle {
+            thickness: px(1.0),
+            color: Some(link_color),
+            wavy: false,
+        };
+        let strike = gpui::StrikethroughStyle {
+            thickness: px(1.0),
+            color: Some(theme.muted_foreground),
+        };
+        let code_bg = theme.secondary.opacity(0.9);
 
         for token in tokens {
             match token {
-                helpers::WikilinkToken::Text(value) => {
+                crate::app::store::markdown::InlineMarkdownToken::Text(value) => {
                     display.push_str(&value);
                 }
-                helpers::WikilinkToken::Link { target, label } => {
+                crate::app::store::markdown::InlineMarkdownToken::Wikilink { target, label } => {
                     let start = display.len();
                     display.push_str(&label);
                     let end = display.len();
                     if start < end {
-                        link_ranges.push(start..end);
-                        link_targets.push(target);
+                        interactive_ranges.push(start..end);
+                        actions.push(InlineAction::Wikilink(target));
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                color: Some(link_color),
+                                underline: Some(underline),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+                crate::app::store::markdown::InlineMarkdownToken::Link { href, label } => {
+                    let start = display.len();
+                    display.push_str(&label);
+                    let end = display.len();
+                    if start < end {
+                        interactive_ranges.push(start..end);
+                        actions.push(InlineAction::External(href));
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                color: Some(link_color),
+                                underline: Some(underline),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+                crate::app::store::markdown::InlineMarkdownToken::Code(value) => {
+                    let start = display.len();
+                    display.push_str(&value);
+                    let end = display.len();
+                    if start < end {
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                background_color: Some(code_bg),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+                crate::app::store::markdown::InlineMarkdownToken::Bold(value) => {
+                    let start = display.len();
+                    display.push_str(&value);
+                    let end = display.len();
+                    if start < end {
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                font_weight: Some(gpui::FontWeight::BOLD),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+                crate::app::store::markdown::InlineMarkdownToken::Italic(value) => {
+                    let start = display.len();
+                    display.push_str(&value);
+                    let end = display.len();
+                    if start < end {
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                font_style: Some(gpui::FontStyle::Italic),
+                                ..Default::default()
+                            },
+                        ));
+                    }
+                }
+                crate::app::store::markdown::InlineMarkdownToken::Strike(value) => {
+                    let start = display.len();
+                    display.push_str(&value);
+                    let end = display.len();
+                    if start < end {
+                        highlight_ranges.push((
+                            start..end,
+                            HighlightStyle {
+                                strikethrough: Some(strike),
+                                ..Default::default()
+                            },
+                        ));
                     }
                 }
             }
@@ -857,40 +1518,31 @@ impl AppStore {
             display.push(' ');
         }
 
-        if link_targets.is_empty() {
+        if interactive_ranges.is_empty() {
+            let mut styled = StyledText::new(display);
+            if !highlight_ranges.is_empty() {
+                highlight_ranges.sort_by_key(|(range, _)| range.start);
+                styled = styled.with_highlights(highlight_ranges);
+            }
             return div()
-                .text_sm()
                 .text_color(theme.foreground)
-                .child(display)
+                .child(styled)
                 .into_any_element();
         }
 
-        let link_color = theme.accent;
-        let underline = UnderlineStyle {
-            thickness: px(1.0),
-            color: Some(link_color),
-            wavy: false,
-        };
-        let mut highlights = Vec::with_capacity(link_ranges.len());
-        for range in link_ranges.iter() {
-            highlights.push((
-                range.clone(),
-                HighlightStyle {
-                    color: Some(link_color),
-                    underline: Some(underline),
-                    ..Default::default()
-                },
-            ));
+        let mut styled = StyledText::new(display);
+        if !highlight_ranges.is_empty() {
+            highlight_ranges.sort_by_key(|(range, _)| range.start);
+            styled = styled.with_highlights(highlight_ranges);
         }
 
-        let styled = StyledText::new(display).with_highlights(highlights);
         let entity = cx.entity();
         let click_entity = entity.clone();
         let hover_entity = entity.clone();
-        let link_targets = Rc::new(link_targets);
-        let hover_targets = link_targets.clone();
-        let click_targets = link_targets.clone();
-        let hover_ranges = Rc::new(link_ranges);
+        let actions = Rc::new(actions);
+        let hover_actions = actions.clone();
+        let click_actions = actions.clone();
+        let hover_ranges = Rc::new(interactive_ranges);
         let click_ranges = hover_ranges.as_ref().clone();
         let hover_ranges_clone = hover_ranges.clone();
         let id_prefix = match pane {
@@ -899,31 +1551,41 @@ impl AppStore {
         };
 
         let interactive =
-            InteractiveText::new(format!("wikilink-text-{id_prefix}-{block_uid}"), styled)
+            InteractiveText::new(format!("inline-md-{id_prefix}-{block_uid}"), styled)
                 .on_click(click_ranges, move |idx, _window, cx| {
-                    if let Some(target) = click_targets.get(idx) {
-                        let target = target.clone();
-                        click_entity.update(cx, |this, cx| {
-                            this.open_page(&target, cx);
-                            this.editor.link_preview = None;
-                            this.editor.link_preview_hovering_link = false;
-                        });
+                    if let Some(action) = click_actions.get(idx) {
+                        match action {
+                            InlineAction::Wikilink(target) => {
+                                let target = target.clone();
+                                click_entity.update(cx, |this, cx| {
+                                    this.open_page(&target, cx);
+                                    this.close_link_preview();
+                                });
+                            }
+                            InlineAction::External(url) => {
+                                cx.open_url(url.as_str());
+                            }
+                        }
                     }
                     cx.stop_propagation();
                 })
                 .on_hover(move |hover_ix, event, _window, cx| {
-                    let mut hovered_target = None;
+                    let mut hovered_wikilink_target = None;
                     if let Some(ix) = hover_ix {
                         for (range_ix, range) in hover_ranges_clone.iter().enumerate() {
                             if range.contains(&ix) {
-                                hovered_target = hover_targets.get(range_ix).cloned();
+                                if let Some(action) = hover_actions.get(range_ix) {
+                                    if let InlineAction::Wikilink(target) = action {
+                                        hovered_wikilink_target = Some(target.clone());
+                                    }
+                                }
                                 break;
                             }
                         }
                     }
 
                     hover_entity.update(cx, |this, cx| {
-                        if let Some(target) = hovered_target {
+                        if let Some(target) = hovered_wikilink_target {
                             this.editor.link_preview_hovering_link = true;
                             this.keep_link_preview_open();
                             this.open_link_preview(&target, event.position, cx);
@@ -935,23 +1597,655 @@ impl AppStore {
                 });
 
         div()
-            .text_sm()
             .text_color(theme.foreground)
             .child(interactive)
             .into_any_element()
     }
 
-    fn render_backlinks_panel(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if self.app.mode != Mode::Editor {
+    fn render_code_preview(
+        &mut self,
+        block_uid: &str,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let fence = crate::app::store::markdown::parse_inline_fence(text)?;
+        if matches!(fence.lang.as_str(), "mermaid" | "diagram") {
             return None;
         }
-        if !self.settings.backlinks_open {
+
+        let theme = cx.theme();
+        let copied = self
+            .editor
+            .copied_block_uid
+            .as_ref()
+            .is_some_and(|uid| uid == block_uid);
+        let copy_label: SharedString = if copied {
+            "Copied".into()
+        } else {
+            "Copy".into()
+        };
+        let badge: SharedString = fence.lang.to_uppercase().into();
+        let renderer_title: SharedString = self
+            .plugins
+            .plugin_status
+            .as_ref()
+            .and_then(|status| {
+                status
+                    .renderers
+                    .iter()
+                    .find(|renderer| renderer.kind == "code")
+                    .map(|renderer| renderer.title.clone())
+            })
+            .unwrap_or_else(|| "Code renderer".to_string())
+            .into();
+
+        let uid = block_uid.to_string();
+        let content = fence.content.clone();
+        let copy_button = Button::new(format!("code-preview-copy-{uid}"))
+            .label(copy_label)
+            .xsmall()
+            .ghost()
+            .on_click(cx.listener(move |this, _event, _window, cx| {
+                this.copy_block_text_to_clipboard(&uid, &content, cx);
+                cx.stop_propagation();
+            }));
+
+        let monospace = {
+            let mut font = gpui::font("SF Mono");
+            font.fallbacks = Some(gpui::FontFallbacks::from_fonts(vec![
+                "Menlo".to_string(),
+                "Monaco".to_string(),
+                "Consolas".to_string(),
+                "Liberation Mono".to_string(),
+                "Courier New".to_string(),
+                "monospace".to_string(),
+            ]));
+            font
+        };
+        let content_text: SharedString = fence.content.clone().into();
+        let run = TextRun {
+            len: content_text.len(),
+            font: monospace,
+            color: theme.foreground,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let code_block = StyledText::new(content_text).with_runs(vec![run]);
+
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.foreground)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child("Code preview"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py(px(1.0))
+                                    .rounded_sm()
+                                    .bg(theme.secondary)
+                                    .text_xs()
+                                    .text_color(theme.foreground)
+                                    .child(badge),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(renderer_title),
+                            ),
+                    ),
+            )
+            .child(copy_button);
+
+        Some(
+            div()
+                .mt_2()
+                .p_3()
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.colors.list)
+                .child(header)
+                .child(
+                    div()
+                        .mt_2()
+                        .p_2()
+                        .rounded_sm()
+                        .bg(theme.background)
+                        .overflow_hidden()
+                        .text_xs()
+                        .text_color(theme.foreground)
+                        .child(code_block),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn render_plugin_block_preview(
+        &mut self,
+        pane: EditorPane,
+        block_uid: &str,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let fence = crate::app::store::markdown::parse_inline_fence(text)?;
+        let renderer = self.plugins.plugin_status.as_ref().and_then(|status| {
+            status
+                .renderers
+                .iter()
+                .find(|renderer| {
+                    renderer.kind == "block"
+                        && renderer
+                            .languages
+                            .iter()
+                            .any(|lang| lang.eq_ignore_ascii_case(&fence.lang))
+                })
+                .cloned()
+        })?;
+
+        self.ensure_plugin_block_preview(pane, block_uid, text, &renderer, cx);
+
+        let preview_key = Self::plugin_preview_state_key(pane, block_uid);
+        let (loading, error, view) = self
+            .editor
+            .plugin_block_previews
+            .get(&preview_key)
+            .map(|state| (state.loading, state.error.clone(), state.view.clone()))
+            .unwrap_or((true, None, None));
+
+        let theme = cx.theme();
+        let id_prefix = match pane {
+            EditorPane::Primary => "primary",
+            EditorPane::Secondary => "secondary",
+        };
+
+        let header = div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .child(renderer.title.clone()),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(if loading { "Loading..." } else { "" }),
+            );
+
+        let mut card = div()
+            .mt_2()
+            .p_3()
+            .rounded_md()
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.colors.list)
+            .child(header);
+
+        if let Some(error) = error {
+            card = card.child(
+                div()
+                    .mt_2()
+                    .text_xs()
+                    .text_color(theme.danger_foreground)
+                    .child(error.to_string()),
+            );
+        }
+
+        if let Some(view) = view {
+            if view.body.is_none() {
+                if let Some(message) = view.message.clone().or(view.summary.clone()) {
+                    let color = if view.status.as_deref() == Some("error") {
+                        theme.danger_foreground
+                    } else {
+                        theme.muted_foreground
+                    };
+                    card = card.child(div().mt_2().text_xs().text_color(color).child(message));
+                }
+            }
+
+            if let Some(body) = view.body.as_ref() {
+                let kind = body.get("kind").and_then(Value::as_str).unwrap_or("");
+                if kind == "text" {
+                    if let Some(text) = body.get("text").and_then(Value::as_str) {
+                        card = card.child(
+                            div()
+                                .mt_2()
+                                .text_sm()
+                                .text_color(theme.muted_foreground)
+                                .child(text.to_string()),
+                        );
+                    }
+                } else if kind == "list" {
+                    let items = body
+                        .get("items")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    if !items.is_empty() {
+                        let mut list = div().mt_2().flex().flex_col().gap_1();
+                        for (ix, item) in items.iter().enumerate() {
+                            let Some(text) = item.as_str() else {
+                                continue;
+                            };
+                            list = list.child(
+                                div()
+                                    .id(format!("{id_prefix}-plugin-block-{block_uid}-item-{ix}"))
+                                    .flex()
+                                    .items_start()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .w(px(12.0))
+                                            .text_sm()
+                                            .text_color(theme.muted_foreground)
+                                            .child("•"),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_sm()
+                                            .text_color(theme.muted_foreground)
+                                            .child(text.to_string()),
+                                    ),
+                            );
+                        }
+                        card = card.child(list);
+                    }
+                } else if kind == "stats" {
+                    let items = body
+                        .get("items")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    if !items.is_empty() {
+                        let mut stats = div().mt_2().flex().flex_col().gap_1();
+                        for (ix, item) in items.iter().enumerate() {
+                            let Some(obj) = item.as_object() else {
+                                continue;
+                            };
+                            let label = obj
+                                .get("label")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let value = obj
+                                .get("value")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            stats = stats.child(
+                                div()
+                                    .id(format!("{id_prefix}-plugin-block-{block_uid}-stat-{ix}"))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.muted_foreground)
+                                            .child(label),
+                                    )
+                                    .child(
+                                        div().text_xs().text_color(theme.foreground).child(value),
+                                    ),
+                            );
+                        }
+                        card = card.child(stats);
+                    }
+                } else {
+                    let pretty =
+                        serde_json::to_string_pretty(body).unwrap_or_else(|_| body.to_string());
+                    card = card.child(
+                        div()
+                            .mt_2()
+                            .p_2()
+                            .rounded_sm()
+                            .bg(theme.background)
+                            .overflow_hidden()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(pretty),
+                    );
+                }
+            }
+
+            if !view.controls.is_empty() {
+                let mut controls = div().mt_2().flex().flex_wrap().gap_2();
+                for (control_ix, control) in view.controls.iter().enumerate() {
+                    let Some(obj) = control.as_object() else {
+                        continue;
+                    };
+                    let control_type = obj.get("type").and_then(Value::as_str).unwrap_or("");
+                    let control_id = obj.get("id").and_then(Value::as_str).unwrap_or("");
+                    let label = obj.get("label").and_then(Value::as_str).unwrap_or("");
+                    if control_type == "button" {
+                        let uid = block_uid.to_string();
+                        let action_id = control_id.to_string();
+                        let renderer = renderer.clone();
+                        controls = controls.child(
+                            Button::new(format!(
+                                "{id_prefix}-plugin-block-{uid}-control-{control_ix}"
+                            ))
+                            .label(label.to_string())
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(
+                                move |this, _event, _window, cx| {
+                                    this.run_plugin_block_action(
+                                        pane, &uid, &renderer, &action_id, None, cx,
+                                    );
+                                    cx.stop_propagation();
+                                },
+                            )),
+                        );
+                    } else if control_type == "select" {
+                        let selected = obj
+                            .get("value")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string();
+                        let options = obj
+                            .get("options")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default();
+                        if options.is_empty() {
+                            continue;
+                        }
+
+                        let mut group = div().flex().flex_col().gap_1();
+                        if !label.is_empty() {
+                            group = group.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .child(label.to_string()),
+                            );
+                        }
+                        let mut option_buttons = div().flex().flex_wrap().gap_1();
+                        for (option_ix, option) in options.iter().enumerate() {
+                            let Some(opt) = option.as_object() else {
+                                continue;
+                            };
+                            let opt_value = opt
+                                .get("value")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let opt_label = opt
+                                .get("label")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let is_selected = !opt_value.is_empty() && opt_value == selected;
+                            let uid = block_uid.to_string();
+                            let action_id = control_id.to_string();
+                            let renderer = renderer.clone();
+                            let value = opt_value.clone();
+                            let mut button = Button::new(format!(
+                                "{id_prefix}-plugin-block-{uid}-select-{control_ix}-{option_ix}"
+                            ))
+                            .label(opt_label)
+                            .xsmall();
+                            button = if is_selected {
+                                button.primary()
+                            } else {
+                                button.ghost()
+                            };
+                            option_buttons = option_buttons.child(button.on_click(cx.listener(
+                                move |this, _event, _window, cx| {
+                                    this.run_plugin_block_action(
+                                        pane,
+                                        &uid,
+                                        &renderer,
+                                        &action_id,
+                                        Some(&value),
+                                        cx,
+                                    );
+                                    cx.stop_propagation();
+                                },
+                            )));
+                        }
+                        group = group.child(option_buttons);
+                        controls = controls.child(group);
+                    } else if control_type == "clipboard" {
+                        let text = obj.get("text").and_then(Value::as_str).unwrap_or("");
+                        let copy_text = text.to_string();
+                        controls = controls.child(
+                            Button::new(format!(
+                                "{id_prefix}-plugin-block-{block_uid}-clip-{control_ix}"
+                            ))
+                            .label(label.to_string())
+                            .xsmall()
+                            .ghost()
+                            .on_click(cx.listener(
+                                move |_this, _event, _window, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        copy_text.clone(),
+                                    ));
+                                    cx.stop_propagation();
+                                },
+                            )),
+                        );
+                    }
+                }
+                card = card.child(controls);
+            }
+        }
+
+        Some(card.into_any_element())
+    }
+
+    fn render_diagram_preview(
+        &mut self,
+        block_uid: &str,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let fence = crate::app::store::markdown::parse_inline_fence(text)?;
+        if !matches!(fence.lang.as_str(), "mermaid" | "diagram") {
+            return None;
+        }
+
+        self.ensure_diagram_preview(block_uid, &fence.content, cx);
+
+        let theme = cx.theme();
+        let badge: SharedString = fence.lang.to_uppercase().into();
+        let renderer_title: SharedString = self
+            .plugins
+            .plugin_status
+            .as_ref()
+            .and_then(|status| {
+                status
+                    .renderers
+                    .iter()
+                    .find(|renderer| renderer.kind == "diagram")
+                    .map(|renderer| renderer.title.clone())
+            })
+            .unwrap_or_else(|| "Diagram renderer".to_string())
+            .into();
+
+        let (loading, error, image) = self
+            .editor
+            .diagram_previews
+            .get(block_uid)
+            .map(|state| (state.loading, state.error.clone(), state.image.clone()))
+            .unwrap_or((true, None, None));
+
+        let header = div().flex().items_center().justify_between().gap_2().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_0()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.foreground)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child("Diagram preview"),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .px_2()
+                                .py(px(1.0))
+                                .rounded_sm()
+                                .bg(theme.secondary)
+                                .text_xs()
+                                .text_color(theme.foreground)
+                                .child(badge),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.muted_foreground)
+                                .child(renderer_title),
+                        ),
+                ),
+        );
+
+        let diagram_area = if let Some(image) = image {
+            div()
+                .mt_2()
+                .h(px(180.0))
+                .w_full()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.background)
+                .child(gpui::img(image).size_full())
+                .into_any_element()
+        } else if loading {
+            div()
+                .mt_2()
+                .h(px(180.0))
+                .w_full()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.background)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child("Rendering diagram...")
+                .into_any_element()
+        } else {
+            div()
+                .mt_2()
+                .h(px(180.0))
+                .w_full()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.background)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .text_color(theme.danger_foreground)
+                .child(
+                    error
+                        .unwrap_or_else(|| "Unable to render diagram preview.".into())
+                        .to_string(),
+                )
+                .into_any_element()
+        };
+
+        let monospace = {
+            let mut font = gpui::font("SF Mono");
+            font.fallbacks = Some(gpui::FontFallbacks::from_fonts(vec![
+                "Menlo".to_string(),
+                "Monaco".to_string(),
+                "Consolas".to_string(),
+                "Liberation Mono".to_string(),
+                "Courier New".to_string(),
+                "monospace".to_string(),
+            ]));
+            font
+        };
+        let content_text: SharedString = fence.content.clone().into();
+        let run = TextRun {
+            len: content_text.len(),
+            font: monospace,
+            color: theme.foreground,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let code_block = StyledText::new(content_text).with_runs(vec![run]);
+
+        Some(
+            div()
+                .mt_2()
+                .p_3()
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.colors.list)
+                .child(header)
+                .child(diagram_area)
+                .child(
+                    div()
+                        .mt_2()
+                        .p_2()
+                        .rounded_sm()
+                        .bg(theme.background)
+                        .overflow_hidden()
+                        .text_xs()
+                        .text_color(theme.foreground)
+                        .child(code_block),
+                )
+                .into_any_element(),
+        )
+    }
+
+    pub(super) fn render_backlinks_panel(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if !self.settings.context_panel_open {
             return None;
         }
         if self.editor.active_page.is_none() {
             return None;
         }
-        let theme = cx.theme();
+        let border = cx.theme().border;
+        let sidebar_bg = cx.theme().sidebar;
+        let list_hover = cx.theme().list_hover;
+        let muted = cx.theme().muted_foreground;
+        let foreground = cx.theme().foreground;
 
         let active_block_text = self
             .editor
@@ -962,50 +2256,20 @@ impl AppStore {
 
         let has_page_backlinks = !self.editor.backlinks.is_empty();
         let has_block_backlinks = !self.editor.block_backlinks.is_empty();
-        let list_bg = theme.colors.list;
-        let list_hover = theme.list_hover;
-        let muted = theme.muted_foreground;
-        let foreground = theme.foreground;
+
+        let header = self.render_context_panel_header("Backlinks", cx);
 
         let mut panel = div()
             .id("backlinks-panel")
-            .w(px(320.0))
+            .w(px(360.0))
             .h_full()
             .border_l_1()
-            .border_color(theme.border)
-            .bg(theme.background)
+            .border_color(border)
+            .bg(sidebar_bg)
             .flex()
             .flex_col()
             .min_h_0()
-            .child(
-                div()
-                    .px_3()
-                    .py_2()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .border_b_1()
-                    .border_color(theme.border)
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.foreground)
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .child("Backlinks"),
-                    )
-                    .child(
-                        Button::new("backlinks-close")
-                            .xsmall()
-                            .ghost()
-                            .icon(IconName::Close)
-                            .tooltip("Close backlinks")
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.settings.backlinks_open = false;
-                                this.persist_settings();
-                                cx.notify();
-                            })),
-                    ),
-            );
+            .child(header);
 
         let mut body = div()
             .id("backlinks-body")
@@ -1017,10 +2281,23 @@ impl AppStore {
             body = body.child(
                 div()
                     .px_3()
-                    .py_3()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("No backlinks yet."),
+                    .py_4()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(foreground)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .child("No backlinks yet"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("Link pages with [[wikilinks]] to see backlinks here."),
+                    ),
             );
         }
 
@@ -1029,11 +2306,12 @@ impl AppStore {
                 div()
                     .px_3()
                     .pt_3()
+                    .pb_1()
                     .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Page backlinks"),
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child("PAGE BACKLINKS"),
             );
-            body = body.child(div().h(px(6.0)));
             body = body.children(self.editor.backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
                 let page_uid = entry.page_uid.clone();
@@ -1043,10 +2321,11 @@ impl AppStore {
                 let split_block_uid = block_uid.clone();
                 div()
                     .id(format!("backlinks-page-{}", entry.block_uid))
-                    .px_3()
+                    .mx_3()
+                    .px_2()
                     .py_2()
+                    .mb_1()
                     .rounded_md()
-                    .bg(list_bg)
                     .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
@@ -1059,6 +2338,8 @@ impl AppStore {
                                     .flex()
                                     .flex_col()
                                     .gap_1()
+                                    .flex_1()
+                                    .min_w_0()
                                     .child(div().text_sm().text_color(foreground).child(snippet))
                                     .child(
                                         div()
@@ -1072,11 +2353,14 @@ impl AppStore {
                                     .flex()
                                     .items_center()
                                     .gap_1()
+                                    .opacity(0.0)
+                                    .hover(move |s| s.opacity(1.0))
                                     .child(
                                         Button::new(format!("backlinks-open-{}", block_uid))
-                                            .label("Open")
                                             .xsmall()
                                             .ghost()
+                                            .icon(SandpaperIcon::ArrowRight)
+                                            .tooltip("Open")
                                             .on_click(cx.listener(
                                                 move |this, _event, window, cx| {
                                                     this.open_page_and_focus_block(
@@ -1090,9 +2374,10 @@ impl AppStore {
                                     )
                                     .child(
                                         Button::new(format!("backlinks-split-{}", block_uid))
-                                            .label("Split")
                                             .xsmall()
                                             .ghost()
+                                            .icon(SandpaperIcon::SplitVertical)
+                                            .tooltip("Open in split")
                                             .on_click(cx.listener(
                                                 move |this, _event, _window, cx| {
                                                     this.open_secondary_pane_for_page(
@@ -1122,18 +2407,24 @@ impl AppStore {
             body = body.child(
                 div()
                     .px_3()
-                    .pt_3()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child("Block backlinks"),
-            );
-            body = body.child(
-                div()
-                    .px_3()
-                    .pt_1()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format!("Linked to {block_label}")),
+                    .pt_4()
+                    .pb_1()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(muted)
+                            .child("BLOCK BACKLINKS"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted.opacity(0.7))
+                            .child(format!("Linked to {block_label}")),
+                    ),
             );
             body = body.children(self.editor.block_backlinks.iter().cloned().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
@@ -1144,10 +2435,11 @@ impl AppStore {
                 let split_block_uid = block_uid.clone();
                 div()
                     .id(format!("backlinks-block-{}", entry.block_uid))
-                    .px_3()
+                    .mx_3()
+                    .px_2()
                     .py_2()
+                    .mb_1()
                     .rounded_md()
-                    .bg(list_bg)
                     .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
@@ -1160,6 +2452,8 @@ impl AppStore {
                                     .flex()
                                     .flex_col()
                                     .gap_1()
+                                    .flex_1()
+                                    .min_w_0()
                                     .child(div().text_sm().text_color(foreground).child(snippet))
                                     .child(
                                         div()
@@ -1173,11 +2467,14 @@ impl AppStore {
                                     .flex()
                                     .items_center()
                                     .gap_1()
+                                    .opacity(0.0)
+                                    .hover(move |s| s.opacity(1.0))
                                     .child(
                                         Button::new(format!("backlinks-block-open-{}", block_uid))
-                                            .label("Open")
                                             .xsmall()
                                             .ghost()
+                                            .icon(SandpaperIcon::ArrowRight)
+                                            .tooltip("Open")
                                             .on_click(cx.listener(
                                                 move |this, _event, window, cx| {
                                                     this.open_page_and_focus_block(
@@ -1191,9 +2488,10 @@ impl AppStore {
                                     )
                                     .child(
                                         Button::new(format!("backlinks-block-split-{}", block_uid))
-                                            .label("Split")
                                             .xsmall()
                                             .ghost()
+                                            .icon(SandpaperIcon::SplitVertical)
+                                            .tooltip("Open in split")
                                             .on_click(cx.listener(
                                                 move |this, _event, _window, cx| {
                                                     this.open_secondary_pane_for_page(
@@ -1220,16 +2518,15 @@ impl AppStore {
     }
 
     fn render_secondary_pane(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let (title, block_count, list_state) = {
+        let (title, list_state) = {
             let pane = self.editor.secondary_pane.as_ref()?;
             let title = if pane.page.title.trim().is_empty() {
                 "Untitled".to_string()
             } else {
                 pane.page.title.clone()
             };
-            let block_count = pane.editor.blocks.len();
             let list_state = pane.list_state.clone();
-            (title, block_count, list_state)
+            (title, list_state)
         };
 
         let list = v_virtual_list(
@@ -1252,23 +2549,13 @@ impl AppStore {
         let toolbar = self.render_selection_toolbar_for_pane(EditorPane::Secondary, cx);
         let theme = cx.theme();
 
-        let mut title_group = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(title),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format!("{block_count} blocks")),
-            );
+        let mut title_group = div().flex().flex_col().gap(px(2.0)).child(
+            div()
+                .text_sm()
+                .text_color(theme.foreground)
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .child(title),
+        );
 
         if breadcrumbs.len() > 1 {
             let mut trail = div()
@@ -1286,11 +2573,6 @@ impl AppStore {
                     .px_1()
                     .py(px(1.0))
                     .rounded_sm()
-                    .bg(if is_last {
-                        theme.list_active
-                    } else {
-                        theme.secondary
-                    })
                     .hover(move |s| s.bg(crumb_hover).cursor_pointer())
                     .text_xs()
                     .text_color(if is_last {
@@ -1298,6 +2580,7 @@ impl AppStore {
                     } else {
                         theme.muted_foreground
                     })
+                    .when(is_last, |this| this.font_weight(gpui::FontWeight::MEDIUM))
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.focus_block_by_uid_in_pane(
                             EditorPane::Secondary,
@@ -1309,13 +2592,7 @@ impl AppStore {
                     }))
                     .child(label);
                 if !is_last {
-                    crumb = crumb.child(
-                        div()
-                            .ml_1()
-                            .text_xs()
-                            .text_color(theme.muted_foreground)
-                            .child("/"),
-                    );
+                    crumb = crumb.child(div().ml_1().text_xs().text_color(theme.border).child("/"));
                 }
                 trail = trail.child(crumb);
             }
@@ -1362,11 +2639,33 @@ impl AppStore {
                                 .flex()
                                 .items_center()
                                 .gap_2()
+                                .child({
+                                    let mut container = div().relative().child(
+                                        Button::new("secondary-outline")
+                                            .icon(SandpaperIcon::Menu)
+                                            .with_size(px(20.0))
+                                            .ghost()
+                                            .tooltip("Outline")
+                                            .on_click(cx.listener(|this, _event, _window, cx| {
+                                                this.toggle_outline_menu(EditorPane::Secondary, cx);
+                                            })),
+                                    );
+                                    if self.editor.outline_menu.open
+                                        && self.editor.outline_menu.pane == EditorPane::Secondary
+                                    {
+                                        let menu = self.render_outline_menu_for_pane(
+                                            EditorPane::Secondary,
+                                            cx,
+                                        );
+                                        container = container.child(menu);
+                                    }
+                                    container
+                                })
                                 .child(
                                     Button::new("secondary-open")
                                         .xsmall()
                                         .ghost()
-                                        .icon(IconName::ArrowLeft)
+                                        .icon(SandpaperIcon::ArrowLeft)
                                         .tooltip("Open in primary")
                                         .on_click(cx.listener(move |this, _event, window, cx| {
                                             this.copy_secondary_to_primary(window, cx);
@@ -1376,7 +2675,7 @@ impl AppStore {
                                     Button::new("secondary-swap")
                                         .xsmall()
                                         .ghost()
-                                        .icon(IconName::Replace)
+                                        .icon(SandpaperIcon::ArrowSwap)
                                         .tooltip("Swap panes")
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             this.swap_panes(cx);
@@ -1386,7 +2685,7 @@ impl AppStore {
                                     Button::new("secondary-close")
                                         .xsmall()
                                         .ghost()
-                                        .icon(IconName::Close)
+                                        .icon(SandpaperIcon::Dismiss)
                                         .tooltip("Close split")
                                         .on_click(cx.listener(|this, _event, _window, cx| {
                                             if this
@@ -1417,21 +2716,32 @@ impl AppStore {
     fn render_block_row_for_pane(
         &mut self,
         pane: EditorPane,
-        ix: usize,
+        visible_ix: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let Some(editor) = self.editor_for_pane(pane) else {
             return div().into_any_element();
         };
-        if ix >= editor.blocks.len() {
+        let Some(list_state) = self.list_state_for_pane(pane) else {
+            return div().into_any_element();
+        };
+        let Some(actual_ix) = list_state.visible_to_actual.get(visible_ix).copied() else {
+            return div().into_any_element();
+        };
+        if actual_ix >= editor.blocks.len() {
             return div().into_any_element();
         }
+        let next_visible_actual_ix = list_state
+            .visible_to_actual
+            .get(visible_ix.saturating_add(1))
+            .copied()
+            .unwrap_or(editor.blocks.len());
 
-        let block = editor.blocks[ix].clone();
-        let is_active = editor.active_ix == ix;
+        let block = editor.blocks[actual_ix].clone();
+        let is_active = editor.active_ix == actual_ix;
         let selection = self.selection_for_pane(pane);
-        let is_selected = selection.is_some_and(|selection| selection.contains(ix));
+        let is_selected = selection.is_some_and(|selection| selection.contains(visible_ix));
         let has_selection = selection.is_some_and(|selection| selection.has_range());
         let is_highlighted = pane == EditorPane::Primary
             && self
@@ -1440,10 +2750,43 @@ impl AppStore {
                 .as_ref()
                 .is_some_and(|uid| uid == &block.uid);
         let indent_px = px(12.0 + (block.indent.max(0) as f32) * 18.0);
+        let has_children = list_state
+            .has_children_by_actual
+            .get(actual_ix)
+            .copied()
+            .unwrap_or(false);
+        let is_collapsed = has_children
+            && self
+                .page_for_pane(pane)
+                .and_then(|page| self.editor.collapsed_by_page_uid.get(&page.uid))
+                .is_some_and(|collapsed| collapsed.contains(&block.uid));
 
         let show_input = is_active && !has_selection && self.editor.active_pane == pane;
+        let is_drag_source = self
+            .editor
+            .drag_source
+            .as_ref()
+            .is_some_and(|source| source.pane == pane && source.block_uid == block.uid);
+        let drop_insert_before_ix = self
+            .editor
+            .drag_target
+            .as_ref()
+            .filter(|target| target.pane == pane)
+            .map(|target| target.insert_before_ix);
+        let is_drop_target_before_row = drop_insert_before_ix == Some(actual_ix);
+        let is_drop_target_end = drop_insert_before_ix == Some(editor.blocks.len())
+            && next_visible_actual_ix == editor.blocks.len();
+        let handle_visible = is_drag_source
+            || is_active
+            || is_selected
+            || self.editor.hovered_block_uid.as_deref() == Some(block.uid.as_str());
+        let drag_active_in_pane = self
+            .editor
+            .drag_source
+            .as_ref()
+            .is_some_and(|source| source.pane == pane);
         let actions = if show_input {
-            self.render_block_actions_for_pane(pane, ix, cx)
+            self.render_block_actions_for_pane(pane, actual_ix, cx)
                 .into_any_element()
         } else {
             div().into_any_element()
@@ -1455,6 +2798,18 @@ impl AppStore {
                 .focus_bordered(false)
                 .small();
             div()
+                .capture_action(
+                    cx.listener(|this, _: &gpui_component::input::Undo, window, cx| {
+                        this.undo_edit_action(&UndoEdit, window, cx);
+                        cx.stop_propagation();
+                    }),
+                )
+                .capture_action(
+                    cx.listener(|this, _: &gpui_component::input::Redo, window, cx| {
+                        this.redo_edit_action(&RedoEdit, window, cx);
+                        cx.stop_propagation();
+                    }),
+                )
                 .capture_key_down(cx.listener(move |this, event, window, cx| {
                     if this.handle_block_input_key_down(pane, event, window, cx) {
                         cx.stop_propagation();
@@ -1463,54 +2818,126 @@ impl AppStore {
                 .child(input)
                 .into_any_element()
         } else {
-            self.render_wikilink_text(pane, &block.uid, &block.text, cx)
+            let display_text = match block.block_type {
+                BlockType::Heading1
+                | BlockType::Heading2
+                | BlockType::Heading3
+                | BlockType::Quote
+                | BlockType::Todo
+                | BlockType::Divider => crate::app::store::helpers::clean_text_for_block_type(
+                    &block.text,
+                    block.block_type,
+                ),
+                _ => block.text.clone(),
+            };
+            self.render_inline_markdown_text(pane, &block.uid, &display_text, window, cx)
         };
 
         let mut content_container = div().flex_1().min_w_0().relative().child(content);
         if show_input
             && self.editor.slash_menu.open
             && self.editor.slash_menu.pane == pane
-            && self.editor.slash_menu.block_ix == Some(ix)
+            && self.editor.slash_menu.block_ix == Some(actual_ix)
         {
             let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
             let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
-            let menu = gpui::deferred(self.render_slash_menu_at(menu_origin, cx)).with_priority(10);
+            let menu = self.render_slash_menu_at(pane, menu_origin, cx);
             content_container = content_container.child(menu);
         }
         if show_input
             && self.editor.wikilink_menu.open
             && self.editor.wikilink_menu.pane == pane
-            && self.editor.wikilink_menu.block_ix == Some(ix)
+            && self.editor.wikilink_menu.block_ix == Some(actual_ix)
         {
             let cursor_x = self.block_input_cursor_x(window, cx) + px(BLOCK_INPUT_PADDING_X);
             let menu_origin = point(cursor_x.max(px(0.0)), px(BLOCK_ROW_HEIGHT));
-            let menu =
-                gpui::deferred(self.render_wikilink_menu_at(menu_origin, cx)).with_priority(10);
+            let menu = self.render_wikilink_menu_at(pane, menu_origin, cx);
             content_container = content_container.child(menu);
         }
 
-        let theme = cx.theme();
-        let base_bg = if pane == EditorPane::Secondary {
-            theme.sidebar
-        } else {
-            theme.background
+        let (base_bg, selected_bg, active_bg, hover_bg, highlight_bg, muted_fg, drop_line_color) = {
+            let theme = cx.theme();
+            (
+                if pane == EditorPane::Secondary {
+                    theme.sidebar
+                } else {
+                    theme.background
+                },
+                theme.selection,
+                theme.list_hover,
+                theme.list_hover,
+                theme.accent.opacity(0.25),
+                theme.muted_foreground,
+                theme.foreground.opacity(0.85),
+            )
         };
-        let selected_bg = theme.selection;
-        let active_bg = theme.list_active;
-        let hover_bg = theme.list_hover;
-        let highlight_bg = theme.accent.opacity(0.25);
+        let drag_handle_id = match pane {
+            EditorPane::Primary => format!("block-drag-handle-{}", block.uid),
+            EditorPane::Secondary => format!("secondary-block-drag-handle-{}", block.uid),
+        };
+        let drag_handle = div()
+            .w(px(18.0))
+            .flex()
+            .items_start()
+            .justify_center()
+            .pt(px(4.0))
+            .child(
+                div()
+                    .id(drag_handle_id)
+                    .w(px(14.0))
+                    .h(px(18.0))
+                    .rounded_sm()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .opacity(if handle_visible { 1.0 } else { 0.0 })
+                    .hover(move |s| s.bg(hover_bg).opacity(1.0).cursor_pointer())
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event: &MouseDownEvent, _window, cx| {
+                            this.begin_block_drag_in_pane(pane, visible_ix, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(
+                        move |this, _event: &MouseMoveEvent, _window, cx| {
+                            this.update_block_drag_target_for_visible_row_in_pane(
+                                pane, visible_ix, cx,
+                            );
+                            cx.stop_propagation();
+                        },
+                    ))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
+                            if this
+                                .editor
+                                .drag_source
+                                .as_ref()
+                                .is_some_and(|source| source.pane == pane)
+                            {
+                                let _ = this.commit_block_drag_for_pane(pane, cx);
+                                cx.stop_propagation();
+                            }
+                        }),
+                    )
+                    .child(
+                        Icon::new(SandpaperIcon::DragHandle)
+                            .size(px(12.0))
+                            .text_color(muted_fg),
+                    ),
+            );
 
-        div()
+        let mut container = div()
             .id(match pane {
                 EditorPane::Primary => block.uid.clone(),
                 EditorPane::Secondary => format!("secondary-{}", block.uid),
             })
             .w_full()
             .flex()
-            .items_center()
-            .gap_2()
-            .py_1()
-            .px_2()
+            .flex_col()
+            .gap_0()
+            .relative()
             .rounded_md()
             .bg(if is_selected {
                 selected_bg
@@ -1532,9 +2959,10 @@ impl AppStore {
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
                     this.set_active_pane(pane, cx);
+                    this.update_block_drag_target_for_visible_row_in_pane(pane, visible_ix, cx);
                     if let Some(selection) = this.selection_for_pane_mut(pane) {
                         if !event.modifiers.shift {
-                            selection.anchor = Some(ix);
+                            selection.anchor = Some(visible_ix);
                         }
                         selection.range = None;
                         selection.dragging = true;
@@ -1545,6 +2973,15 @@ impl AppStore {
             )
             .on_mouse_move(
                 cx.listener(move |this, _event: &MouseMoveEvent, _window, cx| {
+                    if this
+                        .editor
+                        .drag_source
+                        .as_ref()
+                        .is_some_and(|source| source.pane == pane)
+                    {
+                        return;
+                    }
+                    this.update_block_drag_target_for_visible_row_in_pane(pane, visible_ix, cx);
                     if let Some(selection) = this.selection_for_pane_mut(pane) {
                         if !selection.dragging {
                             return;
@@ -1552,7 +2989,7 @@ impl AppStore {
                         let Some(anchor) = selection.anchor else {
                             return;
                         };
-                        selection.set_range(anchor, ix);
+                        selection.set_range(anchor, visible_ix);
                         cx.notify();
                     }
                 }),
@@ -1560,6 +2997,16 @@ impl AppStore {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
+                    if this
+                        .editor
+                        .drag_source
+                        .as_ref()
+                        .is_some_and(|source| source.pane == pane)
+                    {
+                        let _ = this.commit_block_drag_for_pane(pane, cx);
+                        cx.stop_propagation();
+                        return;
+                    }
                     if let Some(selection) = this.selection_for_pane_mut(pane) {
                         if selection.dragging {
                             selection.dragging = false;
@@ -1572,6 +3019,16 @@ impl AppStore {
             .on_mouse_up_out(
                 MouseButton::Left,
                 cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
+                    if this
+                        .editor
+                        .drag_source
+                        .as_ref()
+                        .is_some_and(|source| source.pane == pane)
+                    {
+                        let _ = this.commit_block_drag_for_pane(pane, cx);
+                        cx.stop_propagation();
+                        return;
+                    }
                     if let Some(selection) = this.selection_for_pane_mut(pane) {
                         if selection.dragging {
                             selection.dragging = false;
@@ -1582,19 +3039,144 @@ impl AppStore {
                 }),
             )
             .on_click(cx.listener(move |this, event, window, cx| {
-                this.on_click_block_with_event_in_pane(pane, ix, event, window, cx);
+                this.on_click_block_with_event_in_pane(pane, visible_ix, event, window, cx);
             }))
-            .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
             .child(
                 div()
-                    .w(px(10.0))
-                    .h(px(10.0))
-                    .rounded_full()
-                    .bg(theme.border),
-            )
-            .child(content_container)
-            .child(actions)
-            .into_any_element()
+                    .w_full()
+                    .flex()
+                    .items_start()
+                    .gap_1()
+                    .child(drag_handle)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.render_typed_block_inner(
+                                &block,
+                                content_container,
+                                actions,
+                                indent_px,
+                                has_children,
+                                is_collapsed,
+                                pane,
+                                actual_ix,
+                                base_bg,
+                                cx,
+                            )),
+                    ),
+            );
+
+        if is_drag_source {
+            container = container.opacity(0.55);
+        }
+        let show_drop_line = self
+            .editor
+            .drag_source
+            .as_ref()
+            .is_some_and(|source| source.pane == pane && source.block_uid != block.uid);
+        if show_drop_line && is_drop_target_before_row {
+            container = container.child(
+                div()
+                    .absolute()
+                    .top(px(0.0))
+                    .left(px(0.0))
+                    .right(px(0.0))
+                    .h(px(2.0))
+                    .bg(drop_line_color),
+            );
+        }
+        if show_drop_line && is_drop_target_end {
+            container = container.child(
+                div()
+                    .absolute()
+                    .bottom(px(0.0))
+                    .left(px(0.0))
+                    .right(px(0.0))
+                    .h(px(2.0))
+                    .bg(drop_line_color),
+            );
+        }
+        if drag_active_in_pane {
+            container = container.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex_1()
+                            .on_mouse_move(cx.listener(
+                                move |this, _event: &MouseMoveEvent, _window, cx| {
+                                    this.update_block_drag_target_for_visible_drop_slot_in_pane(
+                                        pane, visible_ix, false, cx,
+                                    );
+                                    cx.stop_propagation();
+                                },
+                            ))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
+                                    let _ = this.commit_block_drag_for_pane(pane, cx);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .on_mouse_move(cx.listener(
+                                move |this, _event: &MouseMoveEvent, _window, cx| {
+                                    this.update_block_drag_target_for_visible_drop_slot_in_pane(
+                                        pane, visible_ix, true, cx,
+                                    );
+                                    cx.stop_propagation();
+                                },
+                            ))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, _event: &MouseUpEvent, _window, cx| {
+                                    let _ = this.commit_block_drag_for_pane(pane, cx);
+                                    cx.stop_propagation();
+                                }),
+                            ),
+                    ),
+            );
+        }
+
+        let preview = self
+            .render_plugin_block_preview(pane, &block.uid, &block.text, cx)
+            .or_else(|| self.render_code_preview(&block.uid, &block.text, cx))
+            .or_else(|| self.render_diagram_preview(&block.uid, &block.text, cx));
+        if let Some(preview) = preview {
+            container = container.child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .px_2()
+                    .pb_2()
+                    .child(div().w(px(18.0)).h(px(1.0)).bg(base_bg))
+                    // Reserve space for indent + collapse toggle + bullet
+                    .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
+                    .child(div().w(px(28.0)).h(px(1.0)))
+                    .child(div().flex_1().min_w_0().child(preview)),
+            );
+        }
+
+        // Focus mode: dim non-active blocks
+        if self.settings.focus_mode {
+            let active_ix = self.editor_for_pane(pane).map(|e| e.active_ix).unwrap_or(0);
+            let distance = (actual_ix as isize - active_ix as isize).unsigned_abs();
+            let opacity = match distance {
+                0 => 1.0,
+                1 => 0.6,
+                _ => 0.25,
+            };
+            container = container.opacity(opacity);
+        }
+
+        container.into_any_element()
     }
 
     fn render_block_actions_for_pane(
@@ -1615,12 +3197,15 @@ impl AppStore {
         div()
             .flex()
             .items_center()
-            .gap_1()
+            .gap(px(2.0))
+            .opacity(0.0)
+            .hover(|s| s.opacity(1.0))
             .child(
                 Button::new(format!("{id_prefix}-insert-{ix}"))
-                    .label("Insert")
-                    .xsmall()
+                    .icon(SandpaperIcon::Add)
+                    .with_size(px(18.0))
                     .ghost()
+                    .tooltip("Insert below")
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.insert_block_after_in_pane(pane, insert_ix, window, cx);
@@ -1628,9 +3213,10 @@ impl AppStore {
             )
             .child(
                 Button::new(format!("{id_prefix}-review-{ix}"))
-                    .label("Review")
-                    .xsmall()
+                    .icon(SandpaperIcon::Eye)
+                    .with_size(px(18.0))
                     .ghost()
+                    .tooltip("Add to review")
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.set_active_pane(pane, cx);
                         this.add_review_from_block_in_pane(pane, review_ix, cx);
@@ -1638,9 +3224,10 @@ impl AppStore {
             )
             .child(
                 Button::new(format!("{id_prefix}-link-{ix}"))
-                    .label("Link")
-                    .xsmall()
+                    .icon(SandpaperIcon::Open)
+                    .with_size(px(18.0))
                     .ghost()
+                    .tooltip("Link to page")
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.link_block_to_page_in_pane(pane, link_ix, window, cx);
@@ -1648,9 +3235,10 @@ impl AppStore {
             )
             .child(
                 Button::new(format!("{id_prefix}-duplicate-{ix}"))
-                    .label("Duplicate")
-                    .xsmall()
+                    .icon(SandpaperIcon::Copy)
+                    .with_size(px(18.0))
                     .ghost()
+                    .tooltip("Duplicate block")
                     .on_click(cx.listener(move |this, _event, window, cx| {
                         this.set_active_pane(pane, cx);
                         this.duplicate_block_at_in_pane(pane, duplicate_ix, window, cx);
@@ -1658,72 +3246,38 @@ impl AppStore {
             )
     }
 
-    fn render_capture_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        div()
-            .flex_1()
-            .h_full()
-            .px_6()
-            .py_4()
-            .child(
-                div()
-                    .text_lg()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Quick Capture"),
-            )
-            .child(div().h(px(12.0)))
-            .child(
-                div()
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key == "enter" && event.keystroke.modifiers.secondary() {
-                            this.add_capture(window, cx);
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .child(Input::new(&self.editor.capture_input).h(px(160.0))),
-            )
-            .child(div().h(px(12.0)))
-            .child(
-                Button::new("capture-submit")
-                    .label("Capture")
-                    .xsmall()
-                    .primary()
-                    .on_click(cx.listener(|this, _event, window, cx| {
-                        this.add_capture(window, cx);
-                    })),
-            )
-    }
+    pub(super) fn render_review_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let border = cx.theme().border;
+        let sidebar_bg = cx.theme().sidebar;
+        let muted = cx.theme().muted_foreground;
+        let foreground = cx.theme().foreground;
+        let list_active = cx.theme().list_active;
+        let list_hover = cx.theme().list_hover;
+        let count = self.editor.review_items.len();
+        let header = self.render_context_panel_header("Review Queue", cx);
+        let selected_ix = if count == 0 {
+            0
+        } else {
+            self.editor.review_selected_index.min(count - 1)
+        };
 
-    fn render_review_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let mut body = div()
-            .flex_1()
-            .h_full()
-            .px_6()
-            .py_4()
-            .child(
-                div()
-                    .text_lg()
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("Review Queue"),
-            )
-            .child(div().h(px(12.0)));
+        let mut list = div().id("review-list").flex_1().min_h_0().overflow_scroll();
 
         if self.editor.review_items.is_empty() {
-            body = body.child(
+            list = list.child(
                 div()
+                    .py_4()
                     .text_sm()
-                    .text_color(theme.muted_foreground)
+                    .text_color(muted)
                     .child("No review items due yet."),
             );
         } else {
-            for item in self.editor.review_items.iter() {
+            for (ix, item) in self.editor.review_items.iter().enumerate() {
+                let is_selected = ix == selected_ix;
                 let block_uid = item.block_uid.clone();
                 let page_uid = item.page_uid.clone();
                 let item_id = item.id;
-                let snippet = format_snippet(&item.text, 80);
+                let snippet = format_snippet(&item.text, 96);
                 let page_title = item.page_title.clone();
                 let due_label = chrono::Local
                     .timestamp_millis_opt(item.due_at)
@@ -1731,77 +3285,156 @@ impl AppStore {
                     .map(|dt| dt.format("%b %d, %H:%M").to_string())
                     .unwrap_or_else(|| "Due soon".to_string());
 
-                body = body.child(
+                list = list.child(
                     div()
-                        .rounded_md()
-                        .bg(theme.colors.list)
-                        .border_1()
-                        .border_color(theme.border)
+                        .id(format!("review-row-{item_id}"))
                         .px_3()
-                        .py_3()
-                        .mb_3()
-                        .child(div().text_sm().text_color(theme.foreground).child(snippet))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(page_title),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.muted_foreground)
-                                .child(format!("Due {due_label}")),
-                        )
+                        .py_2()
+                        .rounded_md()
+                        .when(is_selected, |this| {
+                            this.bg(list_active).border_1().border_color(border)
+                        })
+                        .hover(move |s| s.bg(list_hover).cursor_pointer())
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(div().text_sm().text_color(foreground).child(snippet))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
-                                .gap_2()
-                                .pt_2()
+                                .justify_between()
                                 .child(
-                                    Button::new(format!("review-open-{item_id}"))
-                                        .label("Open")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(move |this, _event, window, cx| {
-                                            this.open_page_and_focus_block(
-                                                &page_uid, &block_uid, window, cx,
-                                            );
-                                        })),
+                                    div()
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(format!("{page_title}  ·  {due_label}")),
                                 )
                                 .child(
-                                    Button::new(format!("review-done-{item_id}"))
-                                        .label("Done")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                                            this.review_mark_done(item_id, cx);
-                                        })),
-                                )
-                                .child(
-                                    Button::new(format!("review-snooze-day-{item_id}"))
-                                        .label("Snooze 1 day")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                                            this.review_snooze_day(item_id, cx);
-                                        })),
-                                )
-                                .child(
-                                    Button::new(format!("review-snooze-week-{item_id}"))
-                                        .label("Snooze 1 week")
-                                        .xsmall()
-                                        .ghost()
-                                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                                            this.review_snooze_week(item_id, cx);
-                                        })),
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(2.0))
+                                        .child(
+                                            Button::new(format!("review-done-{item_id}"))
+                                                .icon(SandpaperIcon::Checkmark)
+                                                .with_size(px(18.0))
+                                                .ghost()
+                                                .tooltip("Done (D)")
+                                                .on_click(cx.listener(
+                                                    move |this, _event, _window, cx| {
+                                                        this.review_mark_done(item_id, cx);
+                                                    },
+                                                )),
+                                        )
+                                        .child(
+                                            Button::new(format!("review-snooze-day-{item_id}"))
+                                                .icon(SandpaperIcon::Subtract)
+                                                .with_size(px(18.0))
+                                                .ghost()
+                                                .tooltip("Snooze 1 day (S)")
+                                                .on_click(cx.listener(
+                                                    move |this, _event, _window, cx| {
+                                                        this.review_snooze_day(item_id, cx);
+                                                    },
+                                                )),
+                                        )
+                                        .child(
+                                            Button::new(format!("review-snooze-week-{item_id}"))
+                                                .label("1w")
+                                                .xsmall()
+                                                .ghost()
+                                                .tooltip("Snooze 1 week (W)")
+                                                .on_click(cx.listener(
+                                                    move |this, _event, _window, cx| {
+                                                        this.review_snooze_week(item_id, cx);
+                                                    },
+                                                )),
+                                        ),
                                 ),
-                        ),
+                        )
+                        .on_click(cx.listener(move |this, _event, window, cx| {
+                            this.editor.review_selected_index = ix;
+                            this.open_page_and_focus_block(&page_uid, &block_uid, window, cx);
+                            cx.notify();
+                        })),
                 );
             }
         }
 
-        body
+        div()
+            .id("review-panel")
+            .w(px(360.0))
+            .h_full()
+            .border_l_1()
+            .border_color(border)
+            .bg(sidebar_bg)
+            .flex()
+            .flex_col()
+            .min_h_0()
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.modifiers.modified() {
+                    return;
+                }
+                let count = this.editor.review_items.len();
+                if count == 0 {
+                    return;
+                }
+                let selected = this.editor.review_selected_index.min(count - 1);
+                match event.keystroke.key.as_str() {
+                    "j" | "down" => {
+                        this.editor.review_selected_index = (selected + 1).min(count - 1);
+                        cx.notify();
+                        cx.stop_propagation();
+                    }
+                    "k" | "up" => {
+                        this.editor.review_selected_index = selected.saturating_sub(1);
+                        cx.notify();
+                        cx.stop_propagation();
+                    }
+                    "enter" => {
+                        if let Some(item) = this.editor.review_items.get(selected).cloned() {
+                            this.open_page_and_focus_block(
+                                &item.page_uid,
+                                &item.block_uid,
+                                window,
+                                cx,
+                            );
+                            cx.stop_propagation();
+                        }
+                    }
+                    "d" => {
+                        if let Some(item) = this.editor.review_items.get(selected) {
+                            this.review_mark_done(item.id, cx);
+                            cx.stop_propagation();
+                        }
+                    }
+                    "s" => {
+                        if let Some(item) = this.editor.review_items.get(selected) {
+                            this.review_snooze_day(item.id, cx);
+                            cx.stop_propagation();
+                        }
+                    }
+                    "w" => {
+                        if let Some(item) = this.editor.review_items.get(selected) {
+                            this.review_snooze_week(item.id, cx);
+                            cx.stop_propagation();
+                        }
+                    }
+                    _ => {}
+                }
+            }))
+            .child(header)
+            .child(
+                div()
+                    .px_3()
+                    .py(px(6.0))
+                    .text_xs()
+                    .text_color(muted.opacity(0.7))
+                    .child(format!(
+                        "{count} due  ·  j/k navigate  ·  d done  ·  s snooze"
+                    )),
+            )
+            .child(div().px_3().pb_3().flex_1().min_h_0().child(list))
     }
 }

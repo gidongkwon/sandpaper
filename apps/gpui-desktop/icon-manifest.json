@@ -1,0 +1,138 @@
+{
+  "package": "@fluentui/svg-icons",
+  "version": "1.1.318",
+  "style": "regular",
+  "size": 20,
+  "icons": [
+    {
+      "id": "search",
+      "target": "search_20_regular.svg",
+      "candidates": ["search_20_regular.svg"]
+    },
+    {
+      "id": "warning",
+      "target": "warning_20_regular.svg",
+      "candidates": ["warning_20_regular.svg"]
+    },
+    {
+      "id": "menu",
+      "target": "menu_20_regular.svg",
+      "candidates": ["apps_list_20_regular.svg", "list_20_regular.svg"]
+    },
+    {
+      "id": "drag-handle",
+      "target": "drag_handle_20_regular.svg",
+      "candidates": ["grid_dots_20_regular.svg", "more_vertical_20_regular.svg"]
+    },
+    {
+      "id": "panel-left-expand",
+      "target": "panel_left_expand_20_regular.svg",
+      "candidates": ["panel_left_expand_20_regular.svg"]
+    },
+    {
+      "id": "panel-left-contract",
+      "target": "panel_left_contract_20_regular.svg",
+      "candidates": ["panel_left_contract_20_regular.svg"]
+    },
+    {
+      "id": "panel-right-expand",
+      "target": "panel_right_expand_20_regular.svg",
+      "candidates": ["panel_right_expand_20_regular.svg"]
+    },
+    {
+      "id": "panel-right-contract",
+      "target": "panel_right_contract_20_regular.svg",
+      "candidates": ["panel_right_contract_20_regular.svg"]
+    },
+    {
+      "id": "chevron-down",
+      "target": "chevron_down_20_regular.svg",
+      "candidates": ["chevron_down_20_regular.svg"]
+    },
+    {
+      "id": "chevron-right",
+      "target": "chevron_right_20_regular.svg",
+      "candidates": ["chevron_right_20_regular.svg"]
+    },
+    {
+      "id": "arrow-left",
+      "target": "arrow_left_20_regular.svg",
+      "candidates": ["arrow_left_20_regular.svg"]
+    },
+    {
+      "id": "arrow-right",
+      "target": "arrow_right_20_regular.svg",
+      "candidates": ["arrow_right_20_regular.svg"]
+    },
+    {
+      "id": "checkmark",
+      "target": "checkmark_20_regular.svg",
+      "candidates": ["checkmark_20_regular.svg"]
+    },
+    {
+      "id": "add",
+      "target": "add_20_regular.svg",
+      "candidates": ["add_20_regular.svg"]
+    },
+    {
+      "id": "subtract",
+      "target": "subtract_20_regular.svg",
+      "candidates": ["subtract_20_regular.svg"]
+    },
+    {
+      "id": "dismiss",
+      "target": "dismiss_20_regular.svg",
+      "candidates": ["dismiss_20_regular.svg"]
+    },
+    {
+      "id": "copy",
+      "target": "copy_20_regular.svg",
+      "candidates": ["copy_20_regular.svg"]
+    },
+    {
+      "id": "open",
+      "target": "open_20_regular.svg",
+      "candidates": ["open_20_regular.svg"]
+    },
+    {
+      "id": "arrow-swap",
+      "target": "arrow_swap_20_regular.svg",
+      "candidates": ["arrow_swap_20_regular.svg"]
+    },
+    {
+      "id": "eye",
+      "target": "eye_20_regular.svg",
+      "candidates": ["eye_20_regular.svg"]
+    },
+    {
+      "id": "alert",
+      "target": "alert_20_regular.svg",
+      "candidates": ["alert_20_regular.svg"]
+    },
+    {
+      "id": "settings",
+      "target": "settings_20_regular.svg",
+      "candidates": ["settings_20_regular.svg"]
+    },
+    {
+      "id": "arrow-minimize",
+      "target": "arrow_minimize_20_regular.svg",
+      "candidates": ["arrow_minimize_20_regular.svg"]
+    },
+    {
+      "id": "grid",
+      "target": "grid_20_regular.svg",
+      "candidates": ["grid_20_regular.svg"]
+    },
+    {
+      "id": "split-vertical",
+      "target": "split_vertical_20_regular.svg",
+      "candidates": ["split_vertical_20_regular.svg"]
+    },
+    {
+      "id": "link-multiple",
+      "target": "link_multiple_20_regular.svg",
+      "candidates": ["link_multiple_20_regular.svg"]
+    }
+  ]
+}

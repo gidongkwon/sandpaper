@@ -1,0 +1,139 @@
+{
+  "package": "@fluentui/svg-icons",
+  "version": "1.1.318",
+  "source": "unpkg",
+  "sourceUrl": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318",
+  "fetchedAt": "2026-02-06T12:15:59Z",
+  "icons": [
+    {
+      "target": "search_20_regular.svg",
+      "source": "search_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/search_20_regular.svg"
+    },
+    {
+      "target": "warning_20_regular.svg",
+      "source": "warning_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/warning_20_regular.svg"
+    },
+    {
+      "target": "menu_20_regular.svg",
+      "source": "apps_list_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/apps_list_20_regular.svg"
+    },
+    {
+      "target": "drag_handle_20_regular.svg",
+      "source": "grid_dots_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/grid_dots_20_regular.svg"
+    },
+    {
+      "target": "panel_left_expand_20_regular.svg",
+      "source": "panel_left_expand_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/panel_left_expand_20_regular.svg"
+    },
+    {
+      "target": "panel_left_contract_20_regular.svg",
+      "source": "panel_left_contract_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/panel_left_contract_20_regular.svg"
+    },
+    {
+      "target": "panel_right_expand_20_regular.svg",
+      "source": "panel_right_expand_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/panel_right_expand_20_regular.svg"
+    },
+    {
+      "target": "panel_right_contract_20_regular.svg",
+      "source": "panel_right_contract_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/panel_right_contract_20_regular.svg"
+    },
+    {
+      "target": "chevron_down_20_regular.svg",
+      "source": "chevron_down_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/chevron_down_20_regular.svg"
+    },
+    {
+      "target": "chevron_right_20_regular.svg",
+      "source": "chevron_right_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/chevron_right_20_regular.svg"
+    },
+    {
+      "target": "arrow_left_20_regular.svg",
+      "source": "arrow_left_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/arrow_left_20_regular.svg"
+    },
+    {
+      "target": "arrow_right_20_regular.svg",
+      "source": "arrow_right_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/arrow_right_20_regular.svg"
+    },
+    {
+      "target": "checkmark_20_regular.svg",
+      "source": "checkmark_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/checkmark_20_regular.svg"
+    },
+    {
+      "target": "add_20_regular.svg",
+      "source": "add_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/add_20_regular.svg"
+    },
+    {
+      "target": "subtract_20_regular.svg",
+      "source": "subtract_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/subtract_20_regular.svg"
+    },
+    {
+      "target": "dismiss_20_regular.svg",
+      "source": "dismiss_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/dismiss_20_regular.svg"
+    },
+    {
+      "target": "copy_20_regular.svg",
+      "source": "copy_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/copy_20_regular.svg"
+    },
+    {
+      "target": "open_20_regular.svg",
+      "source": "open_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/open_20_regular.svg"
+    },
+    {
+      "target": "arrow_swap_20_regular.svg",
+      "source": "arrow_swap_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/arrow_swap_20_regular.svg"
+    },
+    {
+      "target": "eye_20_regular.svg",
+      "source": "eye_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/eye_20_regular.svg"
+    },
+    {
+      "target": "alert_20_regular.svg",
+      "source": "alert_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/alert_20_regular.svg"
+    },
+    {
+      "target": "settings_20_regular.svg",
+      "source": "settings_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/settings_20_regular.svg"
+    },
+    {
+      "target": "arrow_minimize_20_regular.svg",
+      "source": "arrow_minimize_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/arrow_minimize_20_regular.svg"
+    },
+    {
+      "target": "grid_20_regular.svg",
+      "source": "grid_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/grid_20_regular.svg"
+    },
+    {
+      "target": "split_vertical_20_regular.svg",
+      "source": "split_vertical_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/split_vertical_20_regular.svg"
+    },
+    {
+      "target": "link_multiple_20_regular.svg",
+      "source": "link_multiple_20_regular.svg",
+      "url": "https://unpkg.com/%40fluentui%2Fsvg-icons@1.1.318/icons/link_multiple_20_regular.svg"
+    }
+  ]
+}
