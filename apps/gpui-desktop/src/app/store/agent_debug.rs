@@ -481,6 +481,23 @@ impl ActionExecutor for AppStore {
                         self.mark_dirty_for_pane(pane, cx);
                         cx.notify();
                     }
+                    SlashAction::InsertImage => {
+                        if let Some(editor) = self.editor_for_pane_mut(pane) {
+                            let idx = editor.active_ix;
+                            if idx < editor.blocks.len() {
+                                let cleaned = helpers::clean_text_for_block_type(
+                                    &editor.blocks[idx].text,
+                                    BlockType::Image,
+                                );
+                                editor.blocks[idx].text = cleaned;
+                                editor.blocks[idx].block_type = BlockType::Image;
+                            }
+                        }
+                        self.sync_block_input_from_active_for_pane(pane, None, cx);
+                        self.update_block_list_for_pane(pane);
+                        self.mark_dirty_for_pane(pane, cx);
+                        cx.notify();
+                    }
                     SlashAction::TextTransform => {
                         return Err(DebugResponse::error(
                             422,

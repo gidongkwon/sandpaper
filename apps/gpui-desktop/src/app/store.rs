@@ -215,6 +215,7 @@ pub(crate) const POPUP_STACK_PRIORITY_BASE: usize = 100;
 pub(crate) enum SlashAction {
     TextTransform,
     SetBlockType(BlockType),
+    InsertImage,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,6 +285,11 @@ pub(crate) const SLASH_COMMANDS: &[SlashCommandDef] = &[
         id: "database",
         label: "Database view",
         action: SlashAction::SetBlockType(BlockType::DatabaseView),
+    },
+    SlashCommandDef {
+        id: "image",
+        label: "Image",
+        action: SlashAction::InsertImage,
     },
     SlashCommandDef {
         id: "bold",
@@ -986,7 +992,7 @@ mod tests {
     };
     use super::PaneSelection;
     use super::{format_shortcut_hint_for_platform, Platform};
-    use super::{SlashAction, SlashCommandDef};
+    use super::{SlashAction, SlashCommandDef, SLASH_COMMANDS};
     use sandpaper_core::blocks::BlockType;
     use sandpaper_core::db::BlockSnapshot;
 
@@ -1212,6 +1218,16 @@ mod tests {
         ];
         let filtered = filter_slash_commands("xyz", &commands);
         assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn slash_commands_include_image_insert_action() {
+        let image = SLASH_COMMANDS
+            .iter()
+            .find(|command| command.id == "image")
+            .expect("image slash command");
+        assert_eq!(image.label, "Image");
+        assert_eq!(image.action, SlashAction::InsertImage);
     }
 
     #[test]

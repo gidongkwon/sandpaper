@@ -3,6 +3,13 @@ use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
 use gpui_component::{popover::Popover, Anchor};
 impl AppStore {
+    fn external_paths_include_supported_images(paths: &gpui::ExternalPaths) -> bool {
+        paths
+            .paths()
+            .iter()
+            .any(|path| Self::image_mime_type_for_path(path.as_path()).is_some())
+    }
+
     pub(super) fn render_editor(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut editor_body = div()
             .flex()
@@ -149,6 +156,8 @@ impl AppStore {
         let theme = cx.theme();
         let is_active = self.editor.active_pane == EditorPane::Primary;
         let has_split = self.editor.secondary_pane.is_some();
+        let drop_bg = theme.list_hover.opacity(0.35);
+        let drop_border = theme.ring;
         let mut container = div()
             .id("blocks")
             .flex_1()
@@ -179,7 +188,25 @@ impl AppStore {
             container = container.child(toolbar);
         }
 
-        container.child(list)
+        container
+            .drag_over::<gpui::ExternalPaths>(move |style, paths, _window, _cx| {
+                if Self::external_paths_include_supported_images(paths) {
+                    style.bg(drop_bg).border_color(drop_border)
+                } else {
+                    style
+                }
+            })
+            .on_drop(cx.listener(
+                |this, paths: &gpui::ExternalPaths, window, cx| {
+                    this.insert_image_blocks_from_paths_in_pane(
+                        EditorPane::Primary,
+                        paths.paths(),
+                        Some(window),
+                        cx,
+                    );
+                },
+            ))
+            .child(list)
     }
 
     fn build_breadcrumb_items(&self) -> Vec<BreadcrumbItem> {
@@ -2062,6 +2089,121 @@ impl AppStore {
         Some(card.into_any_element())
     }
 
+    fn render_image_preview(
+        &mut self,
+        block_type: BlockType,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if !matches!(block_type, BlockType::Image) {
+            return None;
+        }
+
+        let theme = cx.theme();
+        let source = crate::app::store::helpers::extract_image_source(text);
+        let body = match source {
+            Some(source) if source.starts_with("http://") || source.starts_with("https://") => {
+                div()
+                    .mt_2()
+                    .h(px(180.0))
+                    .w_full()
+                    .rounded_sm()
+                    .border_1()
+                    .border_color(theme.border)
+                    .bg(theme.background)
+                    .overflow_hidden()
+                    .child(
+                        gpui::img(source)
+                            .size_full()
+                            .object_fit(gpui::ObjectFit::Contain),
+                    )
+                    .into_any_element()
+            }
+            Some(source) if source.starts_with("/assets/") => {
+                match self.app.active_vault_root.as_ref() {
+                    Some(vault_root) => {
+                        let image_path = vault_root.join(source.trim_start_matches('/'));
+                        if !image_path.exists() {
+                            div()
+                                .mt_2()
+                                .h(px(180.0))
+                                .w_full()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.background)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_xs()
+                                .text_color(theme.danger_foreground)
+                                .child("Local asset not found in vault.")
+                                .into_any_element()
+                        } else {
+                            div()
+                                .mt_2()
+                                .h(px(180.0))
+                                .w_full()
+                                .rounded_sm()
+                                .border_1()
+                                .border_color(theme.border)
+                                .bg(theme.background)
+                                .overflow_hidden()
+                                .child(
+                                    gpui::img(image_path)
+                                        .size_full()
+                                        .object_fit(gpui::ObjectFit::Contain),
+                                )
+                                .into_any_element()
+                        }
+                    }
+                    None => div()
+                        .mt_2()
+                        .h(px(180.0))
+                        .w_full()
+                        .rounded_sm()
+                        .border_1()
+                        .border_color(theme.border)
+                        .bg(theme.background)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_xs()
+                        .text_color(theme.danger_foreground)
+                        .child("Vault path unavailable for local asset preview.")
+                        .into_any_element(),
+                }
+            }
+            _ => div()
+                .mt_2()
+                .h(px(180.0))
+                .w_full()
+                .rounded_sm()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.background)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .text_color(theme.danger_foreground)
+                .child("Enter an HTTP(S) URL or /assets path.")
+                .into_any_element(),
+        };
+
+        Some(
+            div()
+                .mt_2()
+                .p_3()
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .bg(theme.colors.list)
+                .child(body)
+                .into_any_element(),
+        )
+    }
+
     fn render_diagram_preview(
         &mut self,
         block_uid: &str,
@@ -2548,6 +2690,8 @@ impl AppStore {
         let is_active = self.editor.active_pane == EditorPane::Secondary;
         let toolbar = self.render_selection_toolbar_for_pane(EditorPane::Secondary, cx);
         let theme = cx.theme();
+        let secondary_drop_bg = theme.list_hover.opacity(0.35);
+        let secondary_drop_border = theme.ring;
 
         let mut title_group = div().flex().flex_col().gap(px(2.0)).child(
             div()
@@ -2611,7 +2755,25 @@ impl AppStore {
             body = body.child(toolbar);
         }
 
-        body = body.child(list);
+        body = body
+            .drag_over::<gpui::ExternalPaths>(move |style, paths, _window, _cx| {
+                if Self::external_paths_include_supported_images(paths) {
+                    style.bg(secondary_drop_bg).border_color(secondary_drop_border)
+                } else {
+                    style
+                }
+            })
+            .on_drop(cx.listener(
+                |this, paths: &gpui::ExternalPaths, window, cx| {
+                    this.insert_image_blocks_from_paths_in_pane(
+                        EditorPane::Secondary,
+                        paths.paths(),
+                        Some(window),
+                        cx,
+                    );
+                },
+            ))
+            .child(list);
 
         Some(
             div()
@@ -2818,19 +2980,23 @@ impl AppStore {
                 .child(input)
                 .into_any_element()
         } else {
-            let display_text = match block.block_type {
-                BlockType::Heading1
-                | BlockType::Heading2
-                | BlockType::Heading3
-                | BlockType::Quote
-                | BlockType::Todo
-                | BlockType::Divider => crate::app::store::helpers::clean_text_for_block_type(
-                    &block.text,
-                    block.block_type,
-                ),
-                _ => block.text.clone(),
-            };
-            self.render_inline_markdown_text(pane, &block.uid, &display_text, window, cx)
+            if matches!(block.block_type, BlockType::Image) {
+                div().into_any_element()
+            } else {
+                let display_text = match block.block_type {
+                    BlockType::Heading1
+                    | BlockType::Heading2
+                    | BlockType::Heading3
+                    | BlockType::Quote
+                    | BlockType::Todo
+                    | BlockType::Divider => crate::app::store::helpers::clean_text_for_block_type(
+                        &block.text,
+                        block.block_type,
+                    ),
+                    _ => block.text.clone(),
+                };
+                self.render_inline_markdown_text(pane, &block.uid, &display_text, window, cx)
+            }
         };
 
         let mut content_container = div().flex_1().min_w_0().relative().child(content);
@@ -3128,6 +3294,7 @@ impl AppStore {
 
         let preview = self
             .render_plugin_block_preview(pane, &block.uid, &block.text, cx)
+            .or_else(|| self.render_image_preview(block.block_type, &block.text, cx))
             .or_else(|| self.render_code_preview(&block.uid, &block.text, cx))
             .or_else(|| self.render_diagram_preview(&block.uid, &block.text, cx));
         if let Some(preview) = preview {

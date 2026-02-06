@@ -42,6 +42,15 @@ fn format_block_as_markdown(indent: &str, text: &str, uid: &str, block_type: Blo
             format!("{indent}- [{check}] {clean}{cs}^{uid}")
         }
         BlockType::Divider => format!("{indent}--- ^{uid}"),
+        BlockType::Image => {
+            if let Some((alt, source)) = super::helpers::extract_markdown_image_parts(text) {
+                format!("{indent}- ![{alt}]({source}) <!--sp:{{\"type\":\"image\"}}--> ^{uid}")
+            } else {
+                let source =
+                    super::helpers::extract_image_source(text).unwrap_or_else(|| text.to_string());
+                format!("{indent}- ![]({source}) <!--sp:{{\"type\":\"image\"}}--> ^{uid}")
+            }
+        }
         BlockType::Code => format!("{indent}```\n{indent}{text}\n{indent}```{spacer}^{uid}"),
         BlockType::Callout
         | BlockType::Toggle
@@ -433,6 +442,34 @@ mod tests {
         let markdown = build_shadow_markdown("p2", "Complex", &blocks);
         assert!(markdown.contains("<!--sp:{\"type\":\"callout\"}-->"));
         assert!(markdown.contains("<!--sp:{\"type\":\"toggle\"}-->"));
+    }
+
+    #[test]
+    fn build_shadow_markdown_encodes_image_block_as_markdown_image() {
+        let blocks = vec![BlockSnapshot {
+            uid: "img1".into(),
+            text: "/assets/abc123".into(),
+            indent: 0,
+            block_type: BlockType::Image,
+        }];
+
+        let markdown = build_shadow_markdown("p3", "Images", &blocks);
+        assert!(markdown.contains("- ![](/assets/abc123) <!--sp:{\"type\":\"image\"}--> ^img1"));
+    }
+
+    #[test]
+    fn build_shadow_markdown_preserves_image_alt_text_from_block_markdown() {
+        let blocks = vec![BlockSnapshot {
+            uid: "img2".into(),
+            text: "![cat.png](/assets/abc123)".into(),
+            indent: 0,
+            block_type: BlockType::Image,
+        }];
+
+        let markdown = build_shadow_markdown("p4", "Images", &blocks);
+        assert!(
+            markdown.contains("- ![cat.png](/assets/abc123) <!--sp:{\"type\":\"image\"}--> ^img2")
+        );
     }
 
     #[test]

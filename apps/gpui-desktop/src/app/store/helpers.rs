@@ -517,6 +517,63 @@ fn strip_prefix<'a>(text: &'a str, prefix: &str) -> &'a str {
     }
 }
 
+fn normalize_image_source(source: &str) -> Option<String> {
+    let source = source.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let source = if source.starts_with('<') && source.ends_with('>') && source.len() > 2 {
+        &source[1..source.len() - 1]
+    } else {
+        source
+    };
+
+    if source.starts_with("http://") || source.starts_with("https://") {
+        return Some(source.to_string());
+    }
+
+    if source.starts_with("/assets/") && source.len() > "/assets/".len() {
+        return Some(source.to_string());
+    }
+
+    None
+}
+
+pub(crate) fn extract_markdown_image_parts(text: &str) -> Option<(String, String)> {
+    let text = text.trim();
+    if !text.starts_with("![") {
+        return None;
+    }
+
+    let bracket_close = text.find("](")?;
+    if bracket_close < 2 {
+        return None;
+    }
+    let paren_close = text.rfind(')')?;
+    if paren_close <= bracket_close + 2 || paren_close + 1 != text.len() {
+        return None;
+    }
+
+    let alt = text[2..bracket_close].to_string();
+    let source_raw = &text[bracket_close + 2..paren_close];
+    let source = normalize_image_source(source_raw)?;
+    Some((alt, source))
+}
+
+pub(crate) fn extract_image_source(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    if let Some((_alt, source)) = extract_markdown_image_parts(text) {
+        return Some(source);
+    }
+
+    normalize_image_source(text)
+}
+
 /// Strip markdown prefixes from text when converting to a typed block.
 /// Removes heading hashes, quote markers, task checkboxes, and divider dashes.
 pub(crate) fn clean_text_for_block_type(text: &str, block_type: BlockType) -> String {
@@ -533,6 +590,7 @@ pub(crate) fn clean_text_for_block_type(text: &str, block_type: BlockType) -> St
             let t = strip_prefix(t, "[ ] ");
             t.to_string()
         }
+        BlockType::Image => extract_image_source(trimmed).unwrap_or_else(|| trimmed.to_string()),
         BlockType::Divider => String::new(),
         _ => trimmed.to_string(),
     }
@@ -655,6 +713,43 @@ mod tests {
         assert_eq!(
             clean_text_for_block_type("[x] bare completed item", BlockType::Todo),
             "bare completed item"
+        );
+    }
+
+    #[test]
+    fn extract_image_source_supports_markdown_http_and_assets_path() {
+        assert_eq!(
+            extract_image_source("![alt](https://example.com/cat.png)"),
+            Some("https://example.com/cat.png".to_string())
+        );
+        assert_eq!(
+            extract_markdown_image_parts("![cat.png](/assets/abc123)"),
+            Some(("cat.png".to_string(), "/assets/abc123".to_string()))
+        );
+        assert_eq!(
+            extract_image_source("https://example.com/cat.png"),
+            Some("https://example.com/cat.png".to_string())
+        );
+        assert_eq!(
+            extract_image_source("/assets/abc123"),
+            Some("/assets/abc123".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_image_source_rejects_unsupported_schemes() {
+        assert_eq!(extract_image_source("file:///tmp/cat.png"), None);
+        assert_eq!(extract_image_source("data:image/png;base64,abc"), None);
+    }
+
+    #[test]
+    fn clean_image_text_normalizes_markdown_image_source() {
+        assert_eq!(
+            clean_text_for_block_type(
+                "![A cat](https://example.com/cat.png)",
+                BlockType::Image
+            ),
+            "https://example.com/cat.png"
         );
     }
 }

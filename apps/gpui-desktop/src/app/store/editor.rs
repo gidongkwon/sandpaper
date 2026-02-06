@@ -1,5 +1,7 @@
 use super::helpers::now_millis;
 use super::*;
+use rfd::FileDialog;
+use std::path::Path;
 
 const HISTORY_MAX_ENTRIES: usize = 200;
 const TEXT_HISTORY_COALESCE_WINDOW_MS: i64 = 750;
@@ -491,6 +493,7 @@ impl AppStore {
             BlockType::Heading3 => height + 8.0,
             BlockType::Quote => height + 4.0,
             BlockType::Callout | BlockType::Code => height + 10.0,
+            BlockType::Image => height.max(BLOCK_ROW_HEIGHT + 220.0),
             BlockType::DatabaseView => height.max(BLOCK_ROW_HEIGHT + 260.0),
             BlockType::ColumnLayout => height.max(BLOCK_ROW_HEIGHT + 56.0),
             _ => height,
@@ -4728,6 +4731,139 @@ impl AppStore {
             })
     }
 
+    pub(crate) fn image_mime_type_for_path(path: &Path) -> Option<&'static str> {
+        let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+        match ext.as_str() {
+            "png" => Some("image/png"),
+            "jpg" | "jpeg" => Some("image/jpeg"),
+            "webp" => Some("image/webp"),
+            "gif" => Some("image/gif"),
+            "svg" => Some("image/svg+xml"),
+            "bmp" => Some("image/bmp"),
+            "tif" | "tiff" => Some("image/tiff"),
+            "ico" => Some("image/ico"),
+            _ => None,
+        }
+    }
+
+    fn sanitize_markdown_image_alt(value: &str) -> String {
+        let mut out = String::new();
+        for ch in value.trim().chars() {
+            if matches!(ch, '[' | ']' | '(' | ')') {
+                continue;
+            }
+            if matches!(ch, '\n' | '\r') {
+                out.push(' ');
+                continue;
+            }
+            out.push(ch);
+        }
+        out.trim().to_string()
+    }
+
+    fn markdown_image_text(source: &str, original_name: Option<&str>) -> String {
+        let alt = original_name
+            .map(Self::sanitize_markdown_image_alt)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_default();
+        format!("![{alt}]({source})")
+    }
+
+    fn import_image_file_for_active_vault(&self, path: &Path) -> Option<String> {
+        let mime_type = Self::image_mime_type_for_path(path)?;
+        let file_name = path.file_name()?.to_str().unwrap_or("image");
+        let bytes = std::fs::read(path).ok()?;
+        let db = self.app.db.as_ref()?;
+        let vault_root = self.app.active_vault_root.as_ref()?;
+        let store = sandpaper_core::assets::AssetStore::new(db, vault_root);
+        let record = store.store_bytes(file_name, mime_type, &bytes).ok()?;
+        let source = format!("/{}", record.path.trim_start_matches('/'));
+        Some(Self::markdown_image_text(&source, Some(file_name)))
+    }
+
+    fn pick_image_source_for_slash_command(&self) -> Option<String> {
+        if cfg!(test) {
+            return None;
+        }
+
+        let path = FileDialog::new()
+            .add_filter(
+                "Images",
+                &["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tif", "tiff", "ico"],
+            )
+            .pick_file()?;
+        self.import_image_file_for_active_vault(&path)
+    }
+
+    pub(crate) fn insert_image_blocks_from_paths_in_pane(
+        &mut self,
+        pane: EditorPane,
+        paths: &[PathBuf],
+        window: Option<&mut Window>,
+        cx: &mut Context<Self>,
+    ) -> usize {
+        if paths.is_empty() {
+            return 0;
+        }
+
+        let history_before = self.pane_snapshot(pane, cx);
+        let imported_sources: Vec<String> = paths
+            .iter()
+            .filter_map(|path| self.import_image_file_for_active_vault(path))
+            .collect();
+        if imported_sources.is_empty() {
+            return 0;
+        }
+
+        let inserted_count = imported_sources.len();
+        {
+            let Some(editor) = self.editor_for_pane_mut(pane) else {
+                return 0;
+            };
+
+            let (insert_ix, indent) = if editor.blocks.is_empty() {
+                (0usize, 0i64)
+            } else {
+                let active_ix = editor.active_ix.min(editor.blocks.len().saturating_sub(1));
+                (active_ix.saturating_add(1), editor.blocks[active_ix].indent)
+            };
+
+            let mut next_ix = insert_ix;
+            for source in imported_sources {
+                let block = BlockSnapshot {
+                    uid: Uuid::new_v4().to_string(),
+                    text: source,
+                    indent,
+                    block_type: BlockType::Image,
+                };
+                editor.blocks.insert(next_ix, block);
+                next_ix = next_ix.saturating_add(1);
+            }
+
+            editor.active_ix = insert_ix;
+        };
+
+        self.set_active_pane(pane, cx);
+        self.update_block_list_for_pane(pane);
+        self.clear_selection_for_pane(pane);
+        match window {
+            Some(window) => {
+                self.sync_block_input_from_active_for_pane(pane, Some(window), cx);
+                window.focus(&self.editor.block_input.focus_handle(cx), cx);
+            }
+            None => {
+                self.sync_block_input_from_active_for_pane(pane, None, cx);
+            }
+        }
+        self.close_slash_menu();
+        self.close_wikilink_menu();
+        self.close_outline_menu();
+        self.mark_dirty_for_pane(pane, cx);
+        self.schedule_references_refresh(cx);
+        self.record_structural_history_if_changed(pane, history_before, cx);
+        inserted_count
+    }
+
     pub(crate) fn apply_slash_command(
         &mut self,
         command_id: &str,
@@ -4745,20 +4881,21 @@ impl AppStore {
             return;
         };
         let query = self.editor.slash_menu.query.clone();
-        let Some(editor) = self.editor_for_pane_mut(pane) else {
-            return;
+        let text = {
+            let Some(editor) = self.editor_for_pane(pane) else {
+                return;
+            };
+            if block_ix >= editor.blocks.len() {
+                return;
+            }
+            if expected_uid
+                .as_ref()
+                .is_some_and(|uid| &editor.blocks[block_ix].uid != uid)
+            {
+                return;
+            }
+            editor.blocks[block_ix].text.clone()
         };
-        if block_ix >= editor.blocks.len() {
-            return;
-        }
-        if expected_uid
-            .as_ref()
-            .is_some_and(|uid| &editor.blocks[block_ix].uid != uid)
-        {
-            return;
-        }
-
-        let text = editor.blocks[block_ix].text.clone();
         let command_end = slash_index + 1 + query.len();
         if slash_index >= text.len() || command_end > text.len() {
             return;
@@ -4773,20 +4910,51 @@ impl AppStore {
         let before = text[..slash_index].to_string();
         let after = text[command_end..].to_string();
 
-        let (next_text, next_cursor) = match action {
+        let (next_block_type, next_text, next_cursor) = match action {
             SlashAction::SetBlockType(block_type) => {
                 let raw = format!("{before}{after}");
                 let cleaned = helpers::clean_text_for_block_type(&raw, block_type);
                 let cursor = cleaned.len();
-                editor.blocks[block_ix].block_type = block_type;
-                (cleaned, cursor)
+                (Some(block_type), cleaned, cursor)
             }
             SlashAction::TextTransform => {
                 let today = Local::now().format("%Y-%m-%d").to_string();
-                helpers::apply_slash_command_text(command_id, &before, &after, &today)
+                let (next_text, next_cursor) =
+                    helpers::apply_slash_command_text(command_id, &before, &after, &today);
+                (None, next_text, next_cursor)
+            }
+            SlashAction::InsertImage => {
+                let raw = format!("{before}{after}");
+                let fallback_source = helpers::extract_image_source(&raw);
+                let source = self
+                    .pick_image_source_for_slash_command()
+                    .unwrap_or_else(|| {
+                        if let Some(source) = fallback_source {
+                            Self::markdown_image_text(&source, None)
+                        } else {
+                            raw.trim().to_string()
+                        }
+                    });
+                let cursor = source.len();
+                (Some(BlockType::Image), source, cursor)
             }
         };
 
+        let Some(editor) = self.editor_for_pane_mut(pane) else {
+            return;
+        };
+        if block_ix >= editor.blocks.len() {
+            return;
+        }
+        if expected_uid
+            .as_ref()
+            .is_some_and(|uid| &editor.blocks[block_ix].uid != uid)
+        {
+            return;
+        }
+        if let Some(block_type) = next_block_type {
+            editor.blocks[block_ix].block_type = block_type;
+        }
         editor.blocks[block_ix].text = next_text.clone();
         editor.active_ix = block_ix;
         self.set_active_pane(pane, cx);
@@ -5072,6 +5240,15 @@ mod tests {
 
         assert_eq!(db, px(294.0));
         assert_eq!(columns, px(90.0));
+    }
+
+    #[test]
+    fn row_height_for_image_reserves_preview_space() {
+        let image = AppStore::row_height_for_block_type_and_text(
+            BlockType::Image,
+            "https://example.com/cat.png",
+        );
+        assert_eq!(image, px(254.0));
     }
 
     #[test]
@@ -6583,6 +6760,132 @@ mod tests {
                 assert_eq!(editor.blocks[1].uid, "a3");
                 assert_eq!(editor.blocks[2].uid, "a4");
                 assert_eq!(editor.blocks[3].uid, "a2");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn drop_image_paths_inserts_image_blocks_into_active_pane(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+        let vault_dir = tempfile::tempdir().expect("tempdir");
+        let vault_root = vault_dir.path().to_path_buf();
+        let image_path = vault_root.join("cat.png");
+        std::fs::write(&image_path, b"png-bytes").expect("write image");
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                app.app.db = Some(db);
+                app.app.active_vault_root = Some(vault_root.clone());
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![BlockSnapshot {
+                    uid: "a1".to_string(),
+                    text: "A".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                }]));
+                app.editor.blocks_list_state.reset(1, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                let inserted = app.insert_image_blocks_from_paths_in_pane(
+                    EditorPane::Primary,
+                    &[image_path.clone()],
+                    Some(window),
+                    cx,
+                );
+                assert_eq!(inserted, 1);
+
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert_eq!(editor.blocks.len(), 2);
+                assert_eq!(editor.active_ix, 1);
+                assert_eq!(editor.blocks[1].block_type, BlockType::Image);
+                assert!(editor.blocks[1].text.starts_with("![cat.png](/assets/"));
+                let source = helpers::extract_image_source(&editor.blocks[1].text)
+                    .expect("image source");
+                let stored = vault_root.join(source.trim_start_matches('/'));
+                assert!(stored.exists());
+                assert!(app.app.primary_dirty);
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn drop_non_image_paths_does_not_mutate_editor(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+        let vault_dir = tempfile::tempdir().expect("tempdir");
+        let vault_root = vault_dir.path().to_path_buf();
+        let text_path = vault_root.join("notes.txt");
+        std::fs::write(&text_path, b"hello").expect("write text");
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                app.app.db = Some(db);
+                app.app.active_vault_root = Some(vault_root.clone());
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "page-a".to_string(),
+                    title: "Page A".to_string(),
+                });
+                app.editor.editor = Some(EditorModel::new(vec![BlockSnapshot {
+                    uid: "a1".to_string(),
+                    text: "A".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                }]));
+                app.editor.blocks_list_state.reset(1, px(BLOCK_ROW_HEIGHT));
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                let inserted = app.insert_image_blocks_from_paths_in_pane(
+                    EditorPane::Primary,
+                    &[text_path.clone()],
+                    Some(window),
+                    cx,
+                );
+                assert_eq!(inserted, 0);
+
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert_eq!(editor.blocks.len(), 1);
+                assert_eq!(editor.blocks[0].block_type, BlockType::Text);
+                assert!(!app.app.primary_dirty);
             });
         })
         .unwrap();

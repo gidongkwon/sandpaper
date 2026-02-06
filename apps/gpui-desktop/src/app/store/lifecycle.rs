@@ -874,6 +874,11 @@ impl AppStore {
                 0,
                 "Database view block: table should render from page properties.",
             ),
+            block(
+                BlockType::Image,
+                0,
+                "https://images.example/cat.png",
+            ),
             block(BlockType::ColumnLayout, 0, "Two-column layout"),
             block(BlockType::Column, 1, "Left column"),
             block(
@@ -1369,6 +1374,7 @@ mod tests {
                     BlockType::Divider,
                     BlockType::Toggle,
                     BlockType::Todo,
+                    BlockType::Image,
                     BlockType::ColumnLayout,
                     BlockType::Column,
                     BlockType::DatabaseView,

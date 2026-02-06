@@ -46,6 +46,7 @@ impl AppStore {
                 collapse_bg,
                 cx,
             ),
+            BlockType::Image => self.render_image_inner(actions, indent_px, base_bg),
             BlockType::Code => {
                 self.render_code_block_inner(content_container, actions, indent_px, base_bg, cx)
             }
@@ -137,6 +138,21 @@ impl AppStore {
                     .bg(muted_fg.opacity(0.4)),
             )
             .child(content_container)
+            .child(actions)
+    }
+
+    fn render_image_inner(
+        &self,
+        actions: gpui::AnyElement,
+        indent_px: gpui::Pixels,
+        base_bg: gpui::Hsla,
+    ) -> gpui::Div {
+        div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_2()
+            .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
             .child(actions)
     }
 
