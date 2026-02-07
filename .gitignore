@@ -4,3 +4,5 @@ dist
 **/dist
 apps/**/src-tauri/target
 apps/**/src-tauri/gen
+crates/**/target
+crates/**/Cargo.lock
