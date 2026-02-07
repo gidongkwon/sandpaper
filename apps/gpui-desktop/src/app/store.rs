@@ -471,6 +471,7 @@ pub(crate) enum PaletteAction {
     SwitchMode(Mode),
     UndoEdit,
     RedoEdit,
+    OpenKeyboardShortcuts,
 }
 
 #[derive(Clone, Debug)]
@@ -738,6 +739,7 @@ actions!(
         SwitchToReview,
         UndoEdit,
         RedoEdit,
+        OpenKeyboardShortcuts,
     ]
 );
 
@@ -881,6 +883,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-1", SwitchToCapture, None),
         KeyBinding::new("cmd-2", SwitchToEdit, None),
         KeyBinding::new("cmd-3", SwitchToReview, None),
+        KeyBinding::new("cmd-/", OpenKeyboardShortcuts, None),
     ]);
 
     #[cfg(not(target_os = "macos"))]
@@ -906,6 +909,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-1", SwitchToCapture, None),
         KeyBinding::new("ctrl-2", SwitchToEdit, None),
         KeyBinding::new("ctrl-3", SwitchToReview, None),
+        KeyBinding::new("ctrl-/", OpenKeyboardShortcuts, None),
     ]);
 }
 

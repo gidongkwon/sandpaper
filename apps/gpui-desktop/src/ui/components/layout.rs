@@ -662,6 +662,7 @@ impl AppStore {
             .on_action(cx.listener(Self::switch_to_capture_action))
             .on_action(cx.listener(Self::switch_to_edit_action))
             .on_action(cx.listener(Self::switch_to_review_action))
+            .on_action(cx.listener(Self::open_keyboard_shortcuts_action))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
                 if this.ui.sidebar_resize.is_some() {
                     if event.dragging() {

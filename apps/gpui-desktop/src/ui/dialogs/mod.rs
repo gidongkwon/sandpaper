@@ -49,6 +49,7 @@ fn command_palette_icon_for_action(action: &PaletteAction) -> SandpaperIcon {
         PaletteAction::SwitchMode(_) => SandpaperIcon::ArrowSwap,
         PaletteAction::UndoEdit => SandpaperIcon::ArrowLeft,
         PaletteAction::RedoEdit => SandpaperIcon::ArrowRight,
+        PaletteAction::OpenKeyboardShortcuts => SandpaperIcon::Settings,
     }
 }
 
@@ -946,6 +947,246 @@ impl Render for PageDialogView {
         }
 
         content.text_color(foreground)
+    }
+}
+
+pub(crate) struct KeyboardShortcutsDialogView {
+    _app: Entity<AppStore>,
+    _subscription: Subscription,
+}
+
+struct ShortcutEntry {
+    description: &'static str,
+    spec: ShortcutSpec,
+}
+
+struct ShortcutGroup {
+    label: &'static str,
+    entries: Vec<ShortcutEntry>,
+}
+
+fn shortcut_groups() -> Vec<ShortcutGroup> {
+    vec![
+        ShortcutGroup {
+            label: "Global",
+            entries: vec![
+                ShortcutEntry {
+                    description: "Command palette",
+                    spec: ShortcutSpec::new("cmd-k", "ctrl-k"),
+                },
+                ShortcutEntry {
+                    description: "New page",
+                    spec: ShortcutSpec::new("cmd-n", "ctrl-n"),
+                },
+                ShortcutEntry {
+                    description: "Rename page",
+                    spec: ShortcutSpec::new("cmd-r", "f2"),
+                },
+                ShortcutEntry {
+                    description: "Open vaults",
+                    spec: ShortcutSpec::new("cmd-shift-v", "ctrl-alt-v"),
+                },
+                ShortcutEntry {
+                    description: "Toggle sidebar",
+                    spec: ShortcutSpec::new("cmd-b", "ctrl-b"),
+                },
+                ShortcutEntry {
+                    description: "Quick add",
+                    spec: ShortcutSpec::new("cmd-l", "ctrl-l"),
+                },
+                ShortcutEntry {
+                    description: "Quick capture",
+                    spec: ShortcutSpec::new("cmd-shift-space", "ctrl-shift-space"),
+                },
+                ShortcutEntry {
+                    description: "Toggle focus mode",
+                    spec: ShortcutSpec::new("cmd-shift-f", "ctrl-shift-f"),
+                },
+                ShortcutEntry {
+                    description: "Keyboard shortcuts",
+                    spec: ShortcutSpec::new("cmd-/", "ctrl-/"),
+                },
+            ],
+        },
+        ShortcutGroup {
+            label: "Navigation",
+            entries: vec![
+                ShortcutEntry {
+                    description: "Cycle context panel",
+                    spec: ShortcutSpec::new("cmd-shift-p", "ctrl-shift-p"),
+                },
+                ShortcutEntry {
+                    description: "Open review panel",
+                    spec: ShortcutSpec::new("cmd-shift-r", "ctrl-shift-r"),
+                },
+                ShortcutEntry {
+                    description: "Capture mode",
+                    spec: ShortcutSpec::new("cmd-1", "ctrl-1"),
+                },
+                ShortcutEntry {
+                    description: "Edit mode",
+                    spec: ShortcutSpec::new("cmd-2", "ctrl-2"),
+                },
+                ShortcutEntry {
+                    description: "Review mode",
+                    spec: ShortcutSpec::new("cmd-3", "ctrl-3"),
+                },
+            ],
+        },
+        ShortcutGroup {
+            label: "Editor",
+            entries: vec![
+                ShortcutEntry {
+                    description: "New block below",
+                    spec: ShortcutSpec::new("enter", "enter"),
+                },
+                ShortcutEntry {
+                    description: "Indent block",
+                    spec: ShortcutSpec::new("tab", "tab"),
+                },
+                ShortcutEntry {
+                    description: "Outdent block",
+                    spec: ShortcutSpec::new("shift-tab", "shift-tab"),
+                },
+                ShortcutEntry {
+                    description: "Move block up",
+                    spec: ShortcutSpec::new("alt-cmd-up", "alt-ctrl-up"),
+                },
+                ShortcutEntry {
+                    description: "Move block down",
+                    spec: ShortcutSpec::new("alt-cmd-down", "alt-ctrl-down"),
+                },
+                ShortcutEntry {
+                    description: "Duplicate block",
+                    spec: ShortcutSpec::new("cmd-d", "ctrl-d"),
+                },
+                ShortcutEntry {
+                    description: "Select all blocks",
+                    spec: ShortcutSpec::new("cmd-shift-a", "ctrl-shift-a"),
+                },
+                ShortcutEntry {
+                    description: "Delete selection",
+                    spec: ShortcutSpec::new("backspace", "backspace"),
+                },
+                ShortcutEntry {
+                    description: "Clear selection",
+                    spec: ShortcutSpec::new("escape", "escape"),
+                },
+                ShortcutEntry {
+                    description: "Toggle split pane",
+                    spec: ShortcutSpec::new("cmd-\\", "ctrl-\\"),
+                },
+                ShortcutEntry {
+                    description: "Undo",
+                    spec: ShortcutSpec::new("cmd-z", "ctrl-z"),
+                },
+                ShortcutEntry {
+                    description: "Redo",
+                    spec: ShortcutSpec::new("cmd-shift-z", "ctrl-shift-z"),
+                },
+            ],
+        },
+    ]
+}
+
+impl KeyboardShortcutsDialogView {
+    pub(crate) fn new(app: Entity<AppStore>, cx: &mut Context<Self>) -> Self {
+        let subscription = cx.observe(&app, |_this, _app, cx| {
+            cx.notify();
+        });
+
+        Self {
+            _app: app,
+            _subscription: subscription,
+        }
+    }
+}
+
+impl Render for KeyboardShortcutsDialogView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = cx.theme();
+        let foreground = theme.foreground;
+        let muted_fg = theme.muted_foreground;
+        let border = theme.border;
+        let sidebar_bg = theme.sidebar;
+
+        let groups = shortcut_groups();
+
+        let mut content = div()
+            .id("keyboard-shortcuts-dialog")
+            .flex()
+            .flex_col()
+            .max_h(px(480.0))
+            .child(
+                div()
+                    .px_4()
+                    .py_3()
+                    .border_b_1()
+                    .border_color(border)
+                    .text_size(tokens::FONT_LG)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(foreground)
+                    .child("Keyboard Shortcuts"),
+            );
+
+        let mut list = div()
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scrollbar()
+            .px_4()
+            .py_2()
+            .flex()
+            .flex_col()
+            .gap_3();
+
+        for group in &groups {
+            let mut section = div().flex().flex_col().gap_1();
+
+            section = section.child(
+                div()
+                    .text_size(tokens::FONT_SM)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(muted_fg)
+                    .pb_1()
+                    .child(group.label),
+            );
+
+            for entry in &group.entries {
+                let hint = shortcut_hint(entry.spec);
+
+                section = section.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .py(tokens::SPACE_1)
+                        .px(tokens::SPACE_2)
+                        .rounded(tokens::SPACE_2)
+                        .hover(|s| s.bg(sidebar_bg))
+                        .child(
+                            div()
+                                .text_size(tokens::FONT_BASE)
+                                .text_color(foreground)
+                                .child(entry.description),
+                        )
+                        .child(
+                            div()
+                                .text_size(tokens::FONT_SM)
+                                .text_color(muted_fg)
+                                .px(tokens::SPACE_3)
+                                .py(tokens::SPACE_1)
+                                .rounded(tokens::SPACE_2)
+                                .bg(sidebar_bg)
+                                .child(hint),
+                        ),
+                );
+            }
+
+            list = list.child(section);
+        }
+
+        content = content.child(list);
+        content
     }
 }
 

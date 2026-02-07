@@ -33,7 +33,9 @@ impl PaletteSection {
 
 fn section_for_action(action: &PaletteAction) -> PaletteSection {
     match action {
-        PaletteAction::OpenSettings => PaletteSection::Settings,
+        PaletteAction::OpenSettings | PaletteAction::OpenKeyboardShortcuts => {
+            PaletteSection::Settings
+        }
         PaletteAction::ReloadPlugins
         | PaletteAction::OpenPluginSettings
         | PaletteAction::RunPluginToolbarAction(_)
@@ -305,6 +307,12 @@ impl AppStore {
                 shortcut_hint(ShortcutSpec::new("cmd-shift-space", "ctrl-shift-space")).to_string(),
             ),
             action: PaletteAction::OpenQuickCapture,
+        });
+        items.push(PaletteItem {
+            id: "keyboard-shortcuts".to_string(),
+            label: "Keyboard shortcuts".to_string(),
+            hint: Some(shortcut_hint(ShortcutSpec::new("cmd-/", "ctrl-/")).to_string()),
+            action: PaletteAction::OpenKeyboardShortcuts,
         });
 
         let capture_hint = shortcut_hint(ShortcutSpec::new("cmd-1", "ctrl-1")).to_string();
@@ -762,6 +770,9 @@ impl AppStore {
             }
             PaletteAction::RedoEdit => {
                 self.redo_edit_action(&RedoEdit, window, cx);
+            }
+            PaletteAction::OpenKeyboardShortcuts => {
+                self.open_keyboard_shortcuts(window, cx);
             }
         }
     }

@@ -1166,6 +1166,39 @@ impl AppStore {
         cx.notify();
     }
 
+    pub(crate) fn open_keyboard_shortcuts_action(
+        &mut self,
+        _: &OpenKeyboardShortcuts,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_keyboard_shortcuts(window, cx);
+    }
+
+    pub(crate) fn open_keyboard_shortcuts(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if window.root::<Root>().flatten().is_none() {
+            return;
+        }
+
+        let app = cx.entity();
+        let view =
+            cx.new(|cx| crate::ui::dialogs::KeyboardShortcutsDialogView::new(app.clone(), cx));
+        let popover_bg = cx.theme().popover;
+
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            dialog
+                .w(px(520.0))
+                .keyboard(true)
+                .p_0()
+                .bg(popover_bg)
+                .child(view.clone())
+        });
+    }
+
     pub(crate) fn open_quick_capture_action(
         &mut self,
         _: &OpenQuickCapture,
