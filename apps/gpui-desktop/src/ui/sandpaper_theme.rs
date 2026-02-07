@@ -17,6 +17,7 @@ pub(crate) struct SemanticColors {
     pub accent_subtle: Hsla,
     pub scrollbar_thumb: Hsla,
     pub scrollbar_track: Hsla,
+    pub ring: Hsla,
 }
 
 /// Sandpaper-specific theme extension stored as a GPUI global.
@@ -61,6 +62,8 @@ fn parse_semantic_colors(colors: &serde_json::Map<String, serde_json::Value>) ->
         resolve_hex(colors, "list.active.background").unwrap_or(Hsla::transparent_black());
     let scrollbar = resolve_hex(colors, "background").unwrap_or(Hsla::transparent_black());
 
+    let ring = resolve_hex(colors, "ring").unwrap_or(accent);
+
     SemanticColors {
         border_subtle: resolve_hex(colors, "border_subtle").unwrap_or_else(|| border.opacity(0.5)),
         foreground_muted: resolve_hex(colors, "foreground_muted").unwrap_or(muted_fg),
@@ -72,6 +75,7 @@ fn parse_semantic_colors(colors: &serde_json::Map<String, serde_json::Value>) ->
         scrollbar_thumb: resolve_hex(colors, "scrollbar_thumb")
             .unwrap_or_else(|| muted_fg.opacity(0.3)),
         scrollbar_track: resolve_hex(colors, "scrollbar_track").unwrap_or(scrollbar),
+        ring,
     }
 }
 
@@ -264,6 +268,7 @@ mod tests {
             assert!(st.light.accent_subtle.a > 0.0);
             assert!(st.light.scrollbar_thumb.a > 0.0);
             assert!(st.light.scrollbar_track.a > 0.0);
+            assert!(st.light.ring.a > 0.0);
 
             // Dark mode colors should also be parsed
             assert!(st.dark.border_subtle.a > 0.0);
@@ -274,6 +279,7 @@ mod tests {
             assert!(st.dark.accent_subtle.a > 0.0);
             assert!(st.dark.scrollbar_thumb.a > 0.0);
             assert!(st.dark.scrollbar_track.a > 0.0);
+            assert!(st.dark.ring.a > 0.0);
 
             // colors() should return light colors in light mode
             let colors = st.colors(&app);
