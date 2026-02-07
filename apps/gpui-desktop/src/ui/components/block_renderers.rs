@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
 
 impl AppStore {
@@ -111,7 +112,7 @@ impl AppStore {
         collapse_bg: gpui::Hsla,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
-        let muted_fg = cx.theme().muted_foreground;
+        let foreground_faint = cx.global::<SandpaperTheme>().colors(cx).foreground_faint;
         let collapse = self.render_collapse_toggle(
             block,
             has_children,
@@ -136,7 +137,7 @@ impl AppStore {
                     .w(px(5.0))
                     .h(px(5.0))
                     .rounded_full()
-                    .bg(muted_fg.opacity(0.4)),
+                    .bg(foreground_faint),
             )
             .child(content_container)
             .child(actions)
@@ -314,14 +315,15 @@ impl AppStore {
 
         let (check_border, check_bg, check_fg, todo_muted) = {
             let theme = cx.theme();
+            let semantic = cx.global::<SandpaperTheme>().colors(cx);
             (
                 if checked {
                     theme.accent
                 } else {
-                    theme.muted_foreground.opacity(0.5)
+                    semantic.foreground_faint
                 },
                 if checked {
-                    theme.accent.opacity(0.15)
+                    semantic.accent_subtle
                 } else {
                     gpui::transparent_black()
                 },
@@ -512,6 +514,7 @@ impl AppStore {
     ) -> gpui::Div {
         let theme = cx.theme();
         let border = theme.border;
+        let border_subtle = cx.global::<SandpaperTheme>().colors(cx).border_subtle;
         let muted = theme.muted_foreground;
         let fg = theme.foreground;
         let header_bg = theme.secondary;
@@ -572,7 +575,7 @@ impl AppStore {
                 .px_2()
                 .py(px(3.0))
                 .border_b_1()
-                .border_color(border.opacity(0.5))
+                .border_color(border_subtle)
                 .cursor_pointer()
                 .hover(move |s| s.bg(hover_bg))
                 .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -695,7 +698,7 @@ impl AppStore {
         }
 
         let theme = cx.theme();
-        let border = theme.border;
+        let border_subtle = cx.global::<SandpaperTheme>().colors(cx).border_subtle;
         let muted = theme.muted_foreground;
         let fg = theme.foreground;
         let hover_bg = theme.list_hover;
@@ -895,7 +898,7 @@ impl AppStore {
                     .flex_1()
                     .min_w(px(220.0))
                     .border_1()
-                    .border_color(border.opacity(0.5))
+                    .border_color(border_subtle)
                     .rounded_md()
                     .p_2()
                     .child(

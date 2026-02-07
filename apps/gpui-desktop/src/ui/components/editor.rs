@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
+use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
 use gpui_component::{popover::Popover, Anchor};
 impl AppStore {
@@ -55,6 +56,8 @@ impl AppStore {
 
     fn render_editor_empty_state(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let foreground_faint = semantic.foreground_faint;
         let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
         let open_vaults_hint = shortcut_hint(ShortcutSpec::new("cmd-shift-v", "ctrl-alt-v"));
         let command_hint = shortcut_hint(ShortcutSpec::new("cmd-k", "ctrl-k"));
@@ -118,7 +121,7 @@ impl AppStore {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(muted_fg.opacity(0.7))
+                            .text_color(foreground_faint)
                             .child(format!(
                                 "{command_hint} commands  ·  {quick_add_hint} quick add"
                             )),
@@ -267,6 +270,8 @@ impl AppStore {
             return None;
         };
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let border_subtle = semantic.border_subtle;
         let fg = theme.foreground;
         let muted_fg = theme.muted_foreground;
         let list_hover = theme.list_hover;
@@ -395,7 +400,7 @@ impl AppStore {
             .mb_4()
             .pb_3()
             .border_b_1()
-            .border_color(border_color.opacity(0.5))
+            .border_color(border_subtle)
             .flex()
             .flex_col()
             .gap_2()
@@ -2389,6 +2394,7 @@ impl AppStore {
         let list_hover = cx.theme().list_hover;
         let muted = cx.theme().muted_foreground;
         let foreground = cx.theme().foreground;
+        let foreground_faint = cx.global::<SandpaperTheme>().colors(cx).foreground_faint;
 
         let active_block_text = self
             .editor
@@ -2565,7 +2571,7 @@ impl AppStore {
                     .child(
                         div()
                             .text_xs()
-                            .text_color(muted.opacity(0.7))
+                            .text_color(foreground_faint)
                             .child(format!("Linked to {block_label}")),
                     ),
             );
@@ -3024,6 +3030,7 @@ impl AppStore {
 
         let (base_bg, selected_bg, active_bg, hover_bg, highlight_bg, muted_fg, drop_line_color) = {
             let theme = cx.theme();
+            let semantic = cx.global::<SandpaperTheme>().colors(cx);
             (
                 if pane == EditorPane::Secondary {
                     theme.sidebar
@@ -3033,7 +3040,7 @@ impl AppStore {
                 theme.selection,
                 theme.list_hover,
                 theme.list_hover,
-                theme.accent.opacity(0.25),
+                semantic.accent_subtle,
                 theme.muted_foreground,
                 theme.foreground.opacity(0.85),
             )
@@ -3402,6 +3409,7 @@ impl AppStore {
         let foreground = cx.theme().foreground;
         let list_active = cx.theme().list_active;
         let list_hover = cx.theme().list_hover;
+        let foreground_faint = cx.global::<SandpaperTheme>().colors(cx).foreground_faint;
         let count = self.editor.review_items.len();
         let header = self.render_context_panel_header("Review Queue", cx);
         let selected_ix = if count == 0 {
@@ -3579,7 +3587,7 @@ impl AppStore {
                     .px_3()
                     .py(tokens::SPACE_3)
                     .text_xs()
-                    .text_color(muted.opacity(0.7))
+                    .text_color(foreground_faint)
                     .child(format!(
                         "{count} due  ·  j/k navigate  ·  d done  ·  s snooze"
                     )),
