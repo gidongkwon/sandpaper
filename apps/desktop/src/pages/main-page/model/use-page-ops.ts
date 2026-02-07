@@ -8,6 +8,7 @@ import type {
   PageSummary
 } from "../../../entities/page/model/page-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
+import { writeLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 import { formatDailyNoteTitle, resolveUniqueLocalPageUid } from "./page-utils";
 import { updateBlocksWithWikilinks } from "./page-ops-utils";
 
@@ -75,7 +76,7 @@ export const createPageOps = (deps: PageOpsDeps) => {
     const vaultId = deps.activeVault()?.id;
     if (!vaultId) return;
     if (!deps.isTauri()) {
-      localStorage.setItem(`sandpaper:active-page:${vaultId}`, resolved);
+      writeLocalStorage(`sandpaper:active-page:${vaultId}`, resolved);
       return;
     }
     try {

@@ -12,6 +12,7 @@ import type {
   ReviewQueueSummary
 } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
+import { readLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 
 export type VaultLoaderDependencies = {
   isTauri: () => boolean;
@@ -86,7 +87,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     const vaultId = deps.activeVault()?.id;
     if (!vaultId) return;
     if (!deps.isTauri()) {
-      const stored = localStorage.getItem(`sandpaper:active-page:${vaultId}`);
+      const stored = readLocalStorage(`sandpaper:active-page:${vaultId}`);
       if (stored) {
         deps.setActivePageUid(deps.resolvePageUid(stored));
       }

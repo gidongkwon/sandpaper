@@ -1,4 +1,10 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -51,6 +57,7 @@ import { createSearchState } from "./use-search";
 import { createTypeScale } from "./use-type-scale";
 import { createVaultKeyState } from "./use-vault-key";
 import { createVaultState } from "./use-vaults";
+import { shouldFocusModeInput } from "./mode-focus-utils";
 import { type MainPageContextValue } from "./main-page-context";
 import {
   DEFAULT_PAGE_UID,
@@ -84,7 +91,7 @@ export const createMainPageState = () => {
   const [highlightedBlockId, setHighlightedBlockId] = createSignal<string | null>(
     null
   );
-  const [mode, setMode] = createSignal<Mode>("editor");
+  const [mode, setModeState] = createSignal<Mode>("editor");
   const [pageTitle, setPageTitle] = createSignal("Inbox");
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
   const [pageBusy, setPageBusy] = createSignal(false);
@@ -124,6 +131,27 @@ export const createMainPageState = () => {
     p95: null
   });
   const [scrollFps, setScrollFps] = createSignal(0);
+  const [captureFocusEpoch, setCaptureFocusEpoch] = createSignal(0);
+  const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
+  const [showShortcutHints, setShowShortcutHints] = createSignal(true);
+
+  let isPaletteOpen = () => false;
+
+  const STATUS_SURFACES_KEY = "sandpaper:ui:status-surfaces";
+  const SHORTCUT_HINTS_KEY = "sandpaper:ui:status-shortcut-hints";
+
+  const canUseStorage = () =>
+    typeof window !== "undefined" &&
+    typeof window.localStorage?.getItem === "function" &&
+    typeof window.localStorage?.setItem === "function";
+
+  const readStoredToggle = (key: string, fallback: boolean) => {
+    if (!canUseStorage()) return fallback;
+    const raw = window.localStorage.getItem(key);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+    return fallback;
+  };
 
   const isTauri = () =>
     typeof window !== "undefined" &&
@@ -228,6 +256,27 @@ export const createMainPageState = () => {
   createEffect(() => {
     if (notificationsOpen()) {
       markAllNotificationsRead();
+    }
+  });
+
+  const modifierKey = (() => {
+    if (typeof navigator === "undefined") return "Ctrl";
+    return /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Cmd" : "Ctrl";
+  })();
+
+  const shortcutHints = createMemo(() => {
+    switch (mode()) {
+      case "quick-capture":
+        return ["Enter queue", "Shift+Enter newline", "Esc back"];
+      case "review":
+        return [`${modifierKey}+K commands`, `${modifierKey}+B sidebar`];
+      case "editor":
+      default:
+        return [
+          `${modifierKey}+K commands`,
+          `${modifierKey}+N new page`,
+          `${modifierKey}+B sidebar`
+        ];
     }
   });
 
@@ -424,6 +473,43 @@ export const createMainPageState = () => {
     closePageDialog,
     confirmPageDialog
   } = pageDialog;
+
+  const focusModeInput = (nextMode: Mode) => {
+    if (nextMode === "quick-capture") {
+      setCaptureFocusEpoch((current) => current + 1);
+      return;
+    }
+    if (nextMode === "editor") {
+      const target = focusedId() ?? activeId() ?? blocks[0]?.id ?? null;
+      if (target) {
+        setJumpTarget({ id: target, caret: "preserve" });
+      }
+    }
+  };
+
+  const setMode = (value: Mode | ((current: Mode) => Mode)) => {
+    const previous = mode();
+    const resolved =
+      typeof value === "function"
+        ? (value as (current: Mode) => Mode)(previous)
+        : value;
+    setModeState(resolved);
+
+    if (
+      shouldFocusModeInput({
+        modeChanged: previous !== resolved,
+        paletteOpen: isPaletteOpen(),
+        settingsOpen: settingsOpen(),
+        notificationsOpen: notificationsOpen(),
+        pageDialogOpen: pageDialogOpen(),
+        permissionPromptOpen: Boolean(permissionPrompt())
+      })
+    ) {
+      focusModeInput(resolved);
+    }
+
+    return resolved;
+  };
 
   const reviewState = createReviewState({
     isTauri,
@@ -661,6 +747,7 @@ export const createMainPageState = () => {
     runPaletteCommand,
     registerPaletteInput
   } = commandPalette;
+  isPaletteOpen = paletteOpen;
 
   const vaultState = createVaultState({
     isTauri,
@@ -701,11 +788,14 @@ export const createMainPageState = () => {
   onMount(() => {
     const perfFlag =
       new URLSearchParams(window.location.search).has("perf") ||
-      localStorage.getItem("sandpaper:perf") === "1";
+      readStoredToggle("sandpaper:perf", false);
     setPerfEnabled(perfFlag);
     if (perfFlag) {
       setPerfStats(perfTracker.getStats());
     }
+
+    setShowStatusSurfaces(readStoredToggle(STATUS_SURFACES_KEY, true));
+    setShowShortcutHints(readStoredToggle(SHORTCUT_HINTS_KEY, true));
 
     void loadVaults();
 
@@ -719,6 +809,22 @@ export const createMainPageState = () => {
       shadowWriter.dispose();
       stopSyncLoop();
     });
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    window.localStorage.setItem(
+      STATUS_SURFACES_KEY,
+      showStatusSurfaces() ? "1" : "0"
+    );
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    window.localStorage.setItem(
+      SHORTCUT_HINTS_KEY,
+      showShortcutHints() ? "1" : "0"
+    );
   });
 
   const recordLatency = (label: string) => {
@@ -856,7 +962,8 @@ export const createMainPageState = () => {
       capture: {
         text: captureText,
         setText: setCaptureText,
-        onCapture: addCapture
+        onCapture: addCapture,
+        focusEpoch: captureFocusEpoch
       },
       review: {
         summary: reviewSummary,
@@ -900,6 +1007,12 @@ export const createMainPageState = () => {
           max: typeScale.max,
           step: typeScale.step,
           defaultPosition: typeScale.defaultPosition
+        },
+        statusSurfaces: {
+          showStatusSurfaces,
+          setShowStatusSurfaces,
+          showShortcutHints,
+          setShowShortcutHints
         },
         vault: {
           active: activeVault,
@@ -1041,6 +1154,9 @@ export const createMainPageState = () => {
       toggleSidebar,
       mode,
       setMode,
+      showStatusSurfaces,
+      showShortcutHints,
+      shortcutHints,
       syncStatus,
       syncStateLabel,
       syncStateDetail,

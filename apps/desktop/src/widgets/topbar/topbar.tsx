@@ -1,4 +1,4 @@
-import { Show, type Accessor, type Setter } from "solid-js";
+import { For, Show, type Accessor, type Setter } from "solid-js";
 import type { SyncStatus } from "../../entities/sync/model/sync-types";
 import type { Mode } from "../../shared/model/mode";
 import { IconButton } from "../../shared/ui/icon-button";
@@ -8,6 +8,9 @@ type TopbarProps = {
   toggleSidebar: () => void;
   mode: Accessor<Mode>;
   setMode: Setter<Mode>;
+  showStatusSurfaces: Accessor<boolean>;
+  showShortcutHints: Accessor<boolean>;
+  shortcutHints: Accessor<string[]>;
   syncStatus: Accessor<SyncStatus>;
   syncStateLabel: Accessor<string>;
   syncStateDetail: Accessor<string>;
@@ -21,6 +24,18 @@ type TopbarProps = {
 };
 
 export const Topbar = (props: TopbarProps) => {
+  const autosaveState = () => {
+    if (props.autosaveError()) return "error";
+    if (props.autosaved()) return "saved";
+    return "saving";
+  };
+
+  const autosaveLabel = () => {
+    if (props.autosaveError()) return "Save failed";
+    if (props.autosaved()) return "Saved";
+    return "Saving...";
+  };
+
   return (
     <header class="topbar">
       <div class="topbar__left">
@@ -58,18 +73,25 @@ export const Topbar = (props: TopbarProps) => {
       </nav>
 
       <div class="topbar__right">
-        <span class={`topbar__sync-indicator ${props.syncStatus().state}`} title={props.syncStateDetail()}>
-          <span class="topbar__sync-dot" />
-          <span class="topbar__sync-label">{props.syncStateLabel()}</span>
-        </span>
-        <span
-          class={`topbar__autosave ${
-            props.autosaveError() ? "is-error" : props.autosaved() ? "is-saved" : ""
-          }`}
-        >
-          {props.autosaveError() ??
-            (props.autosaved() ? `Saved ${props.autosaveStamp() ?? ""}` : "Saving...")}
-        </span>
+        <Show when={props.showStatusSurfaces()}>
+          <span class={`topbar__sync-indicator topbar__status-chip ${props.syncStatus().state}`} title={props.syncStateDetail()}>
+            <span class="topbar__sync-dot" />
+            <span class="topbar__sync-label">{props.syncStateLabel()}</span>
+          </span>
+          <span
+            class={`topbar__autosave topbar__status-chip is-${autosaveState()}`}
+            title={props.autosaveError() ?? props.autosaveStamp() ?? "Autosave status"}
+          >
+            {autosaveLabel()}
+          </span>
+          <Show when={props.showShortcutHints()}>
+            <div class="topbar__shortcut-hints" aria-label={`${props.mode()} shortcuts`}>
+              <For each={props.shortcutHints()}>
+                {(hint) => <span class="topbar__shortcut-hint">{hint}</span>}
+              </For>
+            </div>
+          </Show>
+        </Show>
         <IconButton
           class="topbar__notifications"
           label="Open notifications"

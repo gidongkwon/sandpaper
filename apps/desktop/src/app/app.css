@@ -352,17 +352,24 @@ button:disabled {
 .topbar__right {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
+}
+
+.topbar__status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
 .topbar__sync-indicator {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
   transition: background var(--duration-fast) var(--ease-out);
 }
 
@@ -392,17 +399,46 @@ button:disabled {
 }
 
 .topbar__autosave {
-  font-size: var(--text-xs);
   color: var(--text-tertiary);
-  transition: color var(--duration-base) var(--ease-out);
+  transition: color var(--duration-base) var(--ease-out),
+    background var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
 }
 
 .topbar__autosave.is-saved {
   color: var(--text-secondary);
+  border-color: var(--border-light);
+}
+
+.topbar__autosave.is-saving {
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-subtle);
 }
 
 .topbar__autosave.is-error {
   color: var(--error);
+  background: var(--error-soft);
+  border-color: var(--error);
+}
+
+.topbar__shortcut-hints {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.topbar__shortcut-hint {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .topbar__settings,
@@ -3675,6 +3711,10 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
+  .topbar__shortcut-hints {
+    display: none;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -3721,6 +3761,10 @@ button:disabled {
 @media (max-width: 600px) {
   .topbar {
     padding: 0 var(--space-2);
+  }
+
+  .topbar__sync-label {
+    display: none;
   }
 
   .mode-switch {

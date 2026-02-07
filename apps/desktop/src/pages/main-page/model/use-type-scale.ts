@@ -1,5 +1,9 @@
 import { createEffect, createSignal, onMount } from "solid-js";
 import {
+  readLocalStorage,
+  writeLocalStorage
+} from "../../../shared/lib/storage/safe-local-storage";
+import {
   TYPE_SCALE_DEFAULT,
   TYPE_SCALE_DEFAULT_POSITION,
   TYPE_SCALE_MAX,
@@ -15,11 +19,11 @@ export const createTypeScale = () => {
 
   createEffect(() => {
     document.documentElement.style.setProperty("--type-scale", String(typeScale()));
-    localStorage.setItem(STORAGE_KEY, String(typeScale()));
+    writeLocalStorage(STORAGE_KEY, String(typeScale()));
   });
 
   onMount(() => {
-    const savedScale = resolveStoredTypeScale(localStorage.getItem(STORAGE_KEY));
+    const savedScale = resolveStoredTypeScale(readLocalStorage(STORAGE_KEY));
     if (savedScale !== null) {
       setTypeScale(savedScale);
     }

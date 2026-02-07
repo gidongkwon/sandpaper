@@ -56,6 +56,12 @@ type SettingsModalProps = {
     step: number;
     defaultPosition: string;
   };
+  statusSurfaces: {
+    showStatusSurfaces: Accessor<boolean>;
+    setShowStatusSurfaces: Setter<boolean>;
+    showShortcutHints: Accessor<boolean>;
+    setShowShortcutHints: Setter<boolean>;
+  };
   vault: {
     active: Accessor<VaultRecord | null>;
     list: Accessor<VaultRecord[]>;
@@ -241,6 +247,7 @@ export const SettingsModal = (props: SettingsModalProps) => {
               <Show when={props.tab() === "general"}>
                 <SettingsGeneralTab
                   typeScale={typeScale}
+                  statusSurfaces={props.statusSurfaces}
                   activeVault={vault.active}
                 />
               </Show>

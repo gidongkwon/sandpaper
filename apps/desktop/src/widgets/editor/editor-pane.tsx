@@ -39,6 +39,7 @@ import {
   parseWikilinkToken
 } from "../../shared/lib/markdown/inline-parser";
 import { normalizePageUid } from "../../shared/lib/page/normalize-page-uid";
+import { getSafeLocalStorage } from "../../shared/lib/storage/safe-local-storage";
 import { getCaretPosition } from "../../shared/lib/textarea/get-caret-position";
 import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
 
@@ -251,8 +252,8 @@ export const EditorPane = (props: EditorPaneProps) => {
   const effectiveViewport = createMemo(() =>
     viewportHeight() === 0 ? 560 : viewportHeight()
   );
-  const canUseStorage =
-    typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  const storage = getSafeLocalStorage();
+  const canUseStorage = storage !== null;
   const collapsedStorageKey = createMemo(
     () => `sandpaper:outline:collapsed:${activePageUid()}`
   );
@@ -263,7 +264,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   const loadCollapsedState = (key: string) => {
     if (!canUseStorage) return [];
     try {
-      const raw = window.localStorage.getItem(key);
+      const raw = storage.getItem(key);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
@@ -275,7 +276,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   const persistCollapsedState = (key: string, collapsed: Set<string>) => {
     if (!canUseStorage) return;
     try {
-      window.localStorage.setItem(key, JSON.stringify(Array.from(collapsed)));
+      storage.setItem(key, JSON.stringify(Array.from(collapsed)));
     } catch {
       // Ignore storage failures.
     }

@@ -118,6 +118,12 @@ type PluginManageStatus = {
 const DEV_MODE_STORAGE_KEY = "sandpaper:plugin-dev-mode";
 
 export const createPlugins = (deps: PluginDependencies) => {
+  const storage =
+    typeof window === "undefined" ? null : window.localStorage;
+  const canUseStorage =
+    typeof storage?.getItem === "function" &&
+    typeof storage?.setItem === "function";
+
   const [plugins, setPlugins] = createSignal<PluginPermissionInfo[]>([]);
   const [pluginStatus, setPluginStatus] =
     createSignal<PluginRuntimeStatus | null>(null);
@@ -143,10 +149,9 @@ export const createPlugins = (deps: PluginDependencies) => {
   const [pluginManageStatus, setPluginManageStatus] = createSignal<
     Record<string, PluginManageStatus | null>
   >({});
-  const initialDevMode =
-    typeof window === "undefined"
-      ? false
-      : localStorage.getItem(DEV_MODE_STORAGE_KEY) === "1";
+  const initialDevMode = canUseStorage
+    ? storage.getItem(DEV_MODE_STORAGE_KEY) === "1"
+    : false;
   const [pluginDevMode, setPluginDevMode] = createSignal(initialDevMode);
 
   const findPlugin = (pluginId: string) =>
@@ -472,8 +477,8 @@ export const createPlugins = (deps: PluginDependencies) => {
   };
 
   createEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(DEV_MODE_STORAGE_KEY, pluginDevMode() ? "1" : "0");
+    if (!canUseStorage) return;
+    storage.setItem(DEV_MODE_STORAGE_KEY, pluginDevMode() ? "1" : "0");
   });
 
   createEffect(() => {

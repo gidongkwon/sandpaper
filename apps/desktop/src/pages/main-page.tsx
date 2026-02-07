@@ -18,6 +18,9 @@ function MainPage() {
           toggleSidebar={topbar.toggleSidebar}
           mode={topbar.mode}
           setMode={topbar.setMode}
+          showStatusSurfaces={topbar.showStatusSurfaces}
+          showShortcutHints={topbar.showShortcutHints}
+          shortcutHints={topbar.shortcutHints}
           syncStatus={topbar.syncStatus}
           syncStateLabel={topbar.syncStateLabel}
           syncStateDetail={topbar.syncStateDetail}

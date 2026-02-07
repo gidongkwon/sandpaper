@@ -5,6 +5,7 @@ import {
   readVaultKeyStatusFromStorage,
   writeVaultKeyStatusToStorage
 } from "./vault-key-utils";
+import { getSafeLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 
 type InvokeFn = typeof import("@tauri-apps/api/core").invoke;
 type VaultKeyResult = {
@@ -32,9 +33,7 @@ export const createVaultKeyState = (deps: VaultKeyDeps) => {
 
   const loadVaultKeyStatus = async () => {
     if (!deps.isTauri()) {
-      const status = readVaultKeyStatusFromStorage(
-        typeof window === "undefined" ? null : localStorage
-      );
+      const status = readVaultKeyStatusFromStorage(getSafeLocalStorage());
       setVaultKeyStatus(status);
       return;
     }
@@ -74,7 +73,7 @@ export const createVaultKeyState = (deps: VaultKeyDeps) => {
         });
       } else {
         const status = writeVaultKeyStatusToStorage(
-          typeof window === "undefined" ? null : localStorage,
+          getSafeLocalStorage(),
           {
             kdf: vaultKey.kdf,
             iterations: vaultKey.iterations,

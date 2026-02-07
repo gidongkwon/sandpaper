@@ -10,6 +10,10 @@ import type { Block, BlockSearchResult } from "../../../entities/block/model/blo
 import type { SearchResult } from "../../../entities/search/model/search-types";
 import { escapeRegExp } from "../../../shared/lib/string/escape-regexp";
 import {
+  readLocalStorage,
+  writeLocalStorage
+} from "../../../shared/lib/storage/safe-local-storage";
+import {
   commitSearchHistory,
   filterSearchResults,
   type SearchFilter
@@ -113,8 +117,7 @@ export const createSearchState = (deps: SearchDeps) => {
 
   createEffect(() => {
     const key = deps.historyKey();
-    if (typeof window === "undefined") return;
-    const stored = localStorage.getItem(key);
+    const stored = readLocalStorage(key);
     if (!stored) {
       setSearchHistory([]);
       return;
@@ -129,8 +132,7 @@ export const createSearchState = (deps: SearchDeps) => {
 
   createEffect(() => {
     const key = deps.historyKey();
-    if (typeof window === "undefined") return;
-    localStorage.setItem(key, JSON.stringify(searchHistory()));
+    writeLocalStorage(key, JSON.stringify(searchHistory()));
   });
 
   return {
