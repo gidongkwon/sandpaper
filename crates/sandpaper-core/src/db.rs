@@ -638,6 +638,17 @@ impl Database {
                 stmt.execute(params![block.uid, page_id, sort_key, block.text, props])?;
             }
         }
+        tx.execute(
+            "DELETE FROM review_queue
+             WHERE page_uid = (SELECT uid FROM pages WHERE id = ?1)
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM blocks
+                 WHERE blocks.page_id = ?1
+                   AND blocks.uid = review_queue.block_uid
+               )",
+            [page_id],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -1719,5 +1730,55 @@ mod tests {
             .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
             .expect("list after mark");
         assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn replace_blocks_for_page_removes_stale_review_queue_items() {
+        let mut db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+
+        let page_id = db.insert_page("inbox", "Inbox").expect("insert inbox");
+        db.replace_blocks_for_page(
+            page_id,
+            &[
+                BlockSnapshot {
+                    uid: "cap-1".to_string(),
+                    text: "first".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                },
+                BlockSnapshot {
+                    uid: "cap-2".to_string(),
+                    text: "second".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Text,
+                },
+            ],
+        )
+        .expect("seed blocks");
+
+        let due_at = chrono::Utc::now().timestamp_millis() - 1_000;
+        db.upsert_review_queue_item("inbox", "cap-1", due_at, None)
+            .expect("insert review cap-1");
+        db.upsert_review_queue_item("inbox", "cap-2", due_at, None)
+            .expect("insert review cap-2");
+
+        db.replace_blocks_for_page(
+            page_id,
+            &[BlockSnapshot {
+                uid: "cap-2".to_string(),
+                text: "second".to_string(),
+                indent: 0,
+                block_type: BlockType::Text,
+            }],
+        )
+        .expect("replace blocks");
+
+        let due = db
+            .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
+            .expect("list due");
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].page_uid, "inbox");
+        assert_eq!(due[0].block_uid, "cap-2");
     }
 }

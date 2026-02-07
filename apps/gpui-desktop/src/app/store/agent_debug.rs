@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::tokens;
 use crate::services::agent_debug::bridge::{DebugActRequest, DebugRequestKind, DebugResponse};
 use crate::services::agent_debug::screenshot::{PlatformScreenshotProvider, ScreenshotProvider};
 use serde_json::{json, Value};
@@ -256,7 +257,13 @@ impl ActionExecutor for AppStore {
                         let app = app_for_close.clone();
                         let view = view.clone();
                         sheet
-                            .title("Settings")
+                            .title(
+                                div()
+                                    .id("settings-sheet-title")
+                                    .text_size(tokens::FONT_XL)
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child("Settings"),
+                            )
                             .size(gpui::px(760.0))
                             .child(view)
                             .on_close(move |_event, _window, cx| {
@@ -393,6 +400,7 @@ impl ActionExecutor for AppStore {
             ("block-input", "insert_block_below") => {
                 let pane = self.editor.active_pane;
                 if let Some(editor) = self.editor_for_pane_mut(pane) {
+                    editor.ensure_non_empty();
                     let text_len = editor.active().text.len();
                     editor.split_active_and_insert_after(text_len);
                 }
@@ -871,6 +879,52 @@ mod tests {
                 let focus_tree = app.build_debug_tree(cx);
                 let hidden_mode_switcher = find_tree_element(&focus_tree, "topbar-mode-switcher");
                 assert_eq!(hidden_mode_switcher["visible"], Value::Bool(false));
+            });
+        })
+        .expect("window update");
+    }
+
+    #[gpui::test]
+    fn debug_insert_block_below_handles_empty_editor(cx: &mut TestAppContext) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                app.app.mode = Mode::Editor;
+                app.editor.active_page = Some(PageRecord {
+                    id: 1,
+                    uid: "inbox".to_string(),
+                    title: "Inbox".to_string(),
+                });
+                app.editor.editor = Some(EditorModel {
+                    blocks: Vec::new(),
+                    active_ix: 0,
+                });
+                app.update_block_list_for_pane(EditorPane::Primary);
+
+                let request = DebugActRequest {
+                    element_id: "block-input".to_string(),
+                    action: "insert_block_below".to_string(),
+                    args: None,
+                };
+                let result = app.execute_debug_action(&request, cx);
+                assert!(result.is_ok());
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert!(!editor.blocks.is_empty());
             });
         })
         .expect("window update");

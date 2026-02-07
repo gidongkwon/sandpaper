@@ -24,6 +24,22 @@ fn ensure_daily_note_in_db(db: &Database, date: chrono::NaiveDate) -> Result<boo
     Ok(true)
 }
 
+fn should_focus_mode_input(
+    mode_changed: bool,
+    palette_open: bool,
+    capture_overlay_open: bool,
+    settings_open: bool,
+    notifications_open: bool,
+    any_dialog_open: bool,
+) -> bool {
+    mode_changed
+        && !palette_open
+        && !capture_overlay_open
+        && !settings_open
+        && !notifications_open
+        && !any_dialog_open
+}
+
 impl AppStore {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
@@ -319,8 +335,10 @@ impl AppStore {
     }
 
     pub(crate) fn set_context_panel_tab(&mut self, tab: WorkspacePanel, cx: &mut Context<Self>) {
-        self.settings.context_panel_open = true;
-        self.ui.context_panel_epoch += 1;
+        if !self.settings.context_panel_open {
+            self.settings.context_panel_open = true;
+            self.ui.context_panel_epoch += 1;
+        }
         self.settings.context_panel_tab = tab;
         if tab == WorkspacePanel::Review {
             self.load_review_items(cx);
@@ -972,9 +990,7 @@ impl AppStore {
 
         // Setup for entering modes
         match mode {
-            Mode::Capture => {
-                // Will be focused by render_capture_mode
-            }
+            Mode::Capture => {}
             Mode::Editor => {}
             Mode::Review => {
                 self.refresh_feed(cx);
@@ -984,6 +1000,31 @@ impl AppStore {
         // Persist mode across sessions
         self.settings.last_mode = mode;
         self.persist_settings();
+
+        let any_dialog_open = self.ui.vault_dialog_open || self.ui.page_dialog_open;
+        let should_focus = should_focus_mode_input(
+            prev != mode,
+            self.ui.palette_open,
+            self.ui.capture_overlay_open,
+            self.settings.open,
+            self.ui.notifications_open,
+            any_dialog_open,
+        );
+        if should_focus {
+            match mode {
+                Mode::Capture => {
+                    self.with_window(cx, |window, cx| {
+                        window.focus(&self.editor.capture_input.focus_handle(cx), cx);
+                    });
+                }
+                Mode::Editor => {
+                    self.with_window(cx, |window, cx| {
+                        window.focus(&self.editor.block_input.focus_handle(cx), cx);
+                    });
+                }
+                Mode::Review => {}
+            }
+        }
 
         cx.notify();
     }
@@ -1263,6 +1304,31 @@ mod tests {
     use sandpaper_core::db::BlockSnapshot;
     use std::cell::RefCell;
     use std::rc::Rc;
+
+    #[test]
+    fn mode_focus_only_runs_when_overlay_stack_is_clear() {
+        assert!(!should_focus_mode_input(
+            false, false, false, false, false, false
+        ));
+        assert!(should_focus_mode_input(
+            true, false, false, false, false, false
+        ));
+        assert!(!should_focus_mode_input(
+            true, true, false, false, false, false
+        ));
+        assert!(!should_focus_mode_input(
+            true, false, true, false, false, false
+        ));
+        assert!(!should_focus_mode_input(
+            true, false, false, true, false, false
+        ));
+        assert!(!should_focus_mode_input(
+            true, false, false, false, true, false
+        ));
+        assert!(!should_focus_mode_input(
+            true, false, false, false, false, true
+        ));
+    }
 
     #[gpui::test]
     fn page_dialog_opens_as_dialog(cx: &mut TestAppContext) {

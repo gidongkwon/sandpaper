@@ -44,9 +44,8 @@ impl AppStore {
         let sidebar_bg = cx.theme().sidebar;
         let muted_fg = cx.theme().muted_foreground;
         let fg = cx.theme().foreground;
-        let title = crate::app::store::helpers::single_line_text(&panel.title);
         let plugin_id = panel.plugin_id.clone();
-        let header = self.render_context_panel_header(&title, cx);
+        let header = self.render_context_panel_header(cx);
 
         Some(
             div()
@@ -357,13 +356,14 @@ impl AppStore {
             let mut command_rows = div().flex().flex_col().gap_2();
             let mut command_count = 0usize;
             if let Some(status) = self.plugins.plugin_status.as_ref() {
-                for command in status
+                let commands: Vec<_> = status
                     .commands
                     .iter()
                     .filter(|cmd| cmd.plugin_id == plugin.id)
-                {
-                    command_count += 1;
-                    let command = command.clone();
+                    .cloned()
+                    .collect();
+                command_count = commands.len();
+                for (row_ix, command) in commands.into_iter().enumerate() {
                     let title = command.title.clone();
                     let description = command
                         .description
@@ -381,6 +381,7 @@ impl AppStore {
                                     this.run_plugin_command(command.clone(), window, cx);
                                 }))
                                 .into_any_element(),
+                            super::helpers::settings_row_has_divider(row_ix, command_count),
                             cx,
                         ),
                     );
@@ -398,13 +399,14 @@ impl AppStore {
             let mut panel_rows = div().flex().flex_col().gap_2();
             let mut panel_count = 0usize;
             if let Some(status) = self.plugins.plugin_status.as_ref() {
-                for panel in status
+                let panels: Vec<_> = status
                     .panels
                     .iter()
                     .filter(|panel| panel.plugin_id == plugin.id)
-                {
-                    panel_count += 1;
-                    let panel = panel.clone();
+                    .cloned()
+                    .collect();
+                panel_count = panels.len();
+                for (row_ix, panel) in panels.into_iter().enumerate() {
                     let title = panel.title.clone();
                     let location = panel
                         .location
@@ -422,6 +424,7 @@ impl AppStore {
                                     this.open_plugin_panel(panel.clone(), window, cx);
                                 }))
                                 .into_any_element(),
+                            super::helpers::settings_row_has_divider(row_ix, panel_count),
                             cx,
                         ),
                     );
@@ -445,7 +448,8 @@ impl AppStore {
                         .child("All requested permissions are granted."),
                 );
             } else {
-                for perm in plugin.missing_permissions.iter() {
+                let permission_count = plugin.missing_permissions.len();
+                for (row_ix, perm) in plugin.missing_permissions.iter().enumerate() {
                     let plugin_id = plugin.id.clone();
                     let perm = perm.clone();
                     let label = perm.clone();
@@ -467,6 +471,7 @@ impl AppStore {
                                     );
                                 }))
                                 .into_any_element(),
+                            super::helpers::settings_row_has_divider(row_ix, permission_count),
                             cx,
                         ),
                     );

@@ -269,19 +269,71 @@ impl AppStore {
             breadcrumbs.extend(tail);
         }
 
-        let mut title_group = div().flex().flex_col().gap(tokens::SPACE_1).child(
-            div()
-                .id("editor-page-title")
-                .text_lg()
-                .text_color(fg)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .cursor_pointer()
-                .hover(move |s| s.bg(list_hover).rounded_sm().cursor_pointer())
-                .on_click(cx.listener(|this, _event, _window, cx| {
-                    this.open_page_dialog(PageDialogMode::Rename, cx);
-                }))
-                .child(title.to_string()),
-        );
+        // Save state chip (only shown when not saved)
+        let save_chip = match &self.app.save_state {
+            SaveState::Saved => None,
+            SaveState::Dirty => Some(
+                div()
+                    .id("save-state-chip")
+                    .px(tokens::SPACE_3)
+                    .py(px(2.0))
+                    .rounded_md()
+                    .bg(theme.warning)
+                    .text_color(theme.warning_foreground)
+                    .text_size(tokens::FONT_XS)
+                    .child("Unsaved"),
+            ),
+            SaveState::Saving => Some(
+                div()
+                    .id("save-state-chip")
+                    .px(tokens::SPACE_3)
+                    .py(px(2.0))
+                    .rounded_md()
+                    .bg(list_hover)
+                    .text_color(semantic.foreground_muted)
+                    .text_size(tokens::FONT_XS)
+                    .child("Saving\u{2026}"),
+            ),
+            SaveState::Error(msg) => {
+                let tooltip_msg = msg.clone();
+                Some(
+                    div()
+                        .id("save-state-chip")
+                        .px(tokens::SPACE_3)
+                        .py(px(2.0))
+                        .rounded_md()
+                        .bg(theme.danger)
+                        .text_color(theme.danger_foreground)
+                        .text_size(tokens::FONT_XS)
+                        .tooltip(move |window, cx| {
+                            gpui_component::tooltip::Tooltip::new(tooltip_msg.clone())
+                                .build(window, cx)
+                        })
+                        .child("Save error"),
+                )
+            }
+        };
+
+        let title_row = div()
+            .flex()
+            .items_center()
+            .gap(tokens::SPACE_3)
+            .child(
+                div()
+                    .id("editor-page-title")
+                    .text_lg()
+                    .text_color(fg)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(list_hover).rounded_sm().cursor_pointer())
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.open_page_dialog(PageDialogMode::Rename, cx);
+                    }))
+                    .child(title.to_string()),
+            )
+            .children(save_chip);
+
+        let mut title_group = div().flex().flex_col().gap(tokens::SPACE_1).child(title_row);
 
         if breadcrumbs.len() > 1 {
             let mut trail = div().id("editor-breadcrumbs").flex().items_center().gap_1();
@@ -2365,13 +2417,15 @@ impl AppStore {
             .editor
             .editor
             .as_ref()
-            .map(|editor| editor.active().text.clone())
+            .and_then(|editor| editor.blocks.get(editor.active_ix))
+            .map(|block| block.text.clone())
             .unwrap_or_default();
 
         let has_page_backlinks = !self.editor.backlinks.is_empty();
         let has_block_backlinks = !self.editor.block_backlinks.is_empty();
+        let has_unlinked_refs = !self.editor.unlinked_references.is_empty();
 
-        let header = self.render_context_panel_header("Backlinks", cx);
+        let header = self.render_context_panel_header(cx);
 
         let mut panel = div()
             .id("backlinks-panel")
@@ -2391,12 +2445,12 @@ impl AppStore {
             .min_h_0()
             .overflow_scroll();
 
-        if !has_page_backlinks && !has_block_backlinks {
+        if !has_page_backlinks && !has_block_backlinks && !has_unlinked_refs {
             use crate::ui::components::empty_state::EmptyState;
             body = body.child(
                 EmptyState::new(
-                    "No backlinks yet",
-                    "Link pages with [[wikilinks]] to see backlinks here.",
+                    "No backlinks or references",
+                    "Link pages with [[wikilinks]] to see backlinks and unlinked references here.",
                 )
                 .icon(IconName::ExternalLink),
             );
@@ -2411,7 +2465,8 @@ impl AppStore {
                     .text_xs()
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(muted)
-                    .child("PAGE BACKLINKS"),
+
+                    .child("Page backlinks"),
             );
             body = body.children(self.editor.backlinks.iter().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
@@ -2518,7 +2573,8 @@ impl AppStore {
                             .text_xs()
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(muted)
-                            .child("BLOCK BACKLINKS"),
+        
+                            .child("Block backlinks"),
                     )
                     .child(
                         div()
@@ -2608,6 +2664,87 @@ impl AppStore {
                                                 },
                                             )),
                                     ),
+                            ),
+                    )
+            }));
+        }
+
+        if has_unlinked_refs {
+            body = body.child(
+                div()
+                    .px_3()
+                    .pt_4()
+                    .pb_1()
+                    .text_xs()
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child("Unlinked references"),
+            );
+            body = body.children(self.editor.unlinked_references.iter().map(|entry| {
+                let entry_clone = entry.clone();
+                let snippet = format_snippet(&entry.snippet, 90);
+                let count_label: SharedString = if entry.match_count == 1 {
+                    "1 match".into()
+                } else {
+                    format!("{} matches", entry.match_count).into()
+                };
+                div()
+                    .id(SharedString::from(format!(
+                        "unlinked-ref-{}",
+                        entry.block_uid
+                    )))
+                    .mx_3()
+                    .px_2()
+                    .py_2()
+                    .mb_1()
+                    .rounded_md()
+                    .hover(move |s| s.bg(list_hover))
+                    .child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div().text_sm().text_color(foreground).child(snippet),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(muted)
+                                                    .child(entry.page_title.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(muted)
+                                                    .child(count_label),
+                                            ),
+                                    ),
+                            )
+                            .child(
+                                Button::new(format!("unlinked-link-{}", entry.block_uid))
+                                    .xsmall()
+                                    .ghost()
+                                    .icon(SandpaperIcon::Open)
+                                    .tooltip("Create link")
+                                    .on_click(cx.listener(
+                                        move |this, _event, _window, cx| {
+                                            this.link_unlinked_reference(&entry_clone, cx);
+                                        },
+                                    )),
                             ),
                     )
             }));
@@ -3365,7 +3502,7 @@ impl AppStore {
         let list_hover = cx.theme().list_hover;
         let foreground_faint = cx.global::<SandpaperTheme>().colors(cx).foreground_faint;
         let count = self.editor.review_items.len();
-        let header = self.render_context_panel_header("Review Queue", cx);
+        let header = self.render_context_panel_header(cx);
         let selected_ix = if count == 0 {
             0
         } else {

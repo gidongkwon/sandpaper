@@ -27,6 +27,11 @@ impl AppStore {
         };
         let sidebar_hint = shortcut_hint(ShortcutSpec::new("cmd-b", "ctrl-b"));
         let command_hint = shortcut_hint(ShortcutSpec::new("cmd-k", "ctrl-k"));
+        let context_panel_icon = if self.settings.context_panel_open {
+            SandpaperIcon::PanelRightContract
+        } else {
+            SandpaperIcon::PanelRightExpand
+        };
         let unread_notifications = self.unread_notifications_count();
         let notifications_label: SharedString = if unread_notifications > 0 {
             format!("Notifications ({unread_notifications})").into()
@@ -149,16 +154,33 @@ impl AppStore {
                         this.open_command_palette(window, cx);
                     })),
             )
-            .child(
-                Button::new("notifications-button")
+            .child({
+                let notif_btn = Button::new("notifications-button")
                     .with_size(tokens::ICON_XL)
                     .ghost()
                     .icon(SandpaperIcon::Alert)
                     .tooltip(notifications_label)
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.open_notifications(window, cx);
-                    })),
-            )
+                    }));
+                if unread_notifications > 0 {
+                    div()
+                        .relative()
+                        .child(notif_btn)
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(-2.0))
+                                .right(px(-2.0))
+                                .w(px(8.0))
+                                .h(px(8.0))
+                                .rounded_full()
+                                .bg(theme.danger),
+                        )
+                } else {
+                    div().child(notif_btn)
+                }
+            })
             .child(
                 Button::new("settings-button")
                     .with_size(tokens::ICON_XL)
@@ -167,6 +189,19 @@ impl AppStore {
                     .tooltip("Settings")
                     .on_click(cx.listener(|this, _event, window, cx| {
                         this.open_settings(SettingsTab::General, window, cx);
+                    })),
+            )
+            .child(
+                Button::new("toggle-context-panel")
+                    .with_size(tokens::ICON_XL)
+                    .ghost()
+                    .icon(context_panel_icon)
+                    .tooltip("Toggle panel")
+                    .on_click(cx.listener(|this, _event, _window, cx| {
+                        this.settings.context_panel_open = !this.settings.context_panel_open;
+                        this.ui.context_panel_epoch += 1;
+                        this.persist_settings();
+                        cx.notify();
                     })),
             );
 
@@ -207,74 +242,6 @@ impl AppStore {
         )
     }
 
-    fn render_status_bar(&mut self, cx: &mut Context<Self>) -> gpui::Div {
-        let theme = cx.theme();
-        let semantic = cx.global::<SandpaperTheme>().colors(cx);
-        let foreground_muted = semantic.foreground_muted;
-        let border_subtle = semantic.border_subtle;
-        let is_saving = matches!(&self.app.save_state, SaveState::Saving);
-        let save_icon = match &self.app.save_state {
-            SaveState::Saved => "·",
-            SaveState::Dirty => "○",
-            SaveState::Saving => "",
-            SaveState::Error(_) => "!",
-        };
-        let save_label: SharedString = match &self.app.save_state {
-            SaveState::Saved => "Saved".into(),
-            SaveState::Dirty => "Unsaved".into(),
-            SaveState::Saving => "Saving".into(),
-            SaveState::Error(err) => format!("Error: {err}").into(),
-        };
-        let save_color = match &self.app.save_state {
-            SaveState::Error(_) => theme.danger_foreground,
-            _ => foreground_muted,
-        };
-
-        let mut left = div().flex().items_center().gap_2().child(
-            div()
-                .text_size(tokens::FONT_XS)
-                .text_color(foreground_muted)
-                .child(self.app.boot_status.clone()),
-        );
-
-        if let Some(note) = self.ui.capture_confirmation.clone() {
-            left = left.child(
-                div()
-                    .px_2()
-                    .py(px(1.0))
-                    .rounded_sm()
-                    .bg(theme.success)
-                    .text_size(tokens::FONT_XS)
-                    .text_color(theme.success_foreground)
-                    .child(note),
-            );
-        }
-
-        div()
-            .h(tokens::STATUS_BAR_HEIGHT)
-            .px_4()
-            .flex()
-            .items_center()
-            .justify_between()
-            .bg(theme.background)
-            .border_t_1()
-            .border_color(border_subtle)
-            .child(left)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .text_size(tokens::FONT_XS)
-                    .text_color(save_color)
-                    .when(is_saving, |this| {
-                        this.child(crate::ui::components::spinner::Spinner::new().small())
-                    })
-                    .when(!is_saving, |this| this.child(save_icon))
-                    .child(save_label),
-            )
-    }
-
     fn render_sidebar_resizer(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.theme();
         let hover_border = theme.border;
@@ -295,10 +262,8 @@ impl AppStore {
 
     pub(crate) fn render_context_panel_header(
         &mut self,
-        title: &str,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let theme = cx.theme();
         let active_tab = self.settings.context_panel_tab;
         let selected_index = match active_tab {
             WorkspacePanel::Review => 0,
@@ -327,37 +292,6 @@ impl AppStore {
         div()
             .px_4()
             .py_2()
-            .border_b_1()
-            .border_color(theme.border)
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_size(tokens::FONT_LG)
-                            .text_color(theme.foreground)
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .child(title.to_string()),
-                    )
-                    .child(
-                        Button::new("ctx-panel-close")
-                            .with_size(tokens::FONT_XL)
-                            .ghost()
-                            .icon(SandpaperIcon::Dismiss)
-                            .tooltip("Close panel")
-                            .on_click(cx.listener(|this, _event, _window, cx| {
-                                this.settings.context_panel_open = false;
-                                this.ui.context_panel_epoch += 1;
-                                this.persist_settings();
-                                cx.notify();
-                            })),
-                    ),
-            )
             .child(tabs)
             .into_any_element()
     }
@@ -372,7 +306,7 @@ impl AppStore {
         use crate::ui::components::empty_state::EmptyState;
         let border = cx.theme().border;
         let sidebar_bg = cx.theme().sidebar;
-        let header = self.render_context_panel_header(title, cx);
+        let header = self.render_context_panel_header(cx);
         div()
             .w(tokens::CONTEXT_PANEL_WIDTH)
             .h_full()
@@ -397,7 +331,7 @@ impl AppStore {
         let muted_fg = theme.muted_foreground;
         let accent = theme.accent;
         let hover_bg = theme.list_hover;
-        let header = self.render_context_panel_header("Connections", cx);
+        let header = self.render_context_panel_header(cx);
 
         let related = self.editor.related_pages.clone();
         let random = self.editor.random_pages.clone();
@@ -414,10 +348,11 @@ impl AppStore {
         // Related Notes section
         body = body.child(
             div()
-                .text_size(tokens::FONT_SM)
+                .text_size(tokens::FONT_XS)
                 .font_weight(gpui::FontWeight::MEDIUM)
+
                 .text_color(muted_fg)
-                .child("RELATED NOTES"),
+                .child("Related notes"),
         );
 
         if related.is_empty() {
@@ -457,9 +392,10 @@ impl AppStore {
                     div()
                         .id(SharedString::from(format!("related-{uid}")))
                         .rounded_md()
-                        .px_2()
-                        .py_1()
-                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .px_3()
+                        .py(tokens::SPACE_3)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover_bg))
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.open_page(&uid, cx);
                         }))
@@ -486,10 +422,11 @@ impl AppStore {
                 .justify_between()
                 .child(
                     div()
-                        .text_size(tokens::FONT_SM)
+                        .text_size(tokens::FONT_XS)
                         .font_weight(gpui::FontWeight::MEDIUM)
+        
                         .text_color(muted_fg)
-                        .child("RANDOM DISCOVERY"),
+                        .child("Random discovery"),
                 )
                 .child(
                     Button::new("refresh-random")
@@ -520,9 +457,10 @@ impl AppStore {
                     div()
                         .id(SharedString::from(format!("random-{uid}")))
                         .rounded_md()
-                        .px_2()
-                        .py_1()
-                        .hover(move |s| s.bg(hover_bg).cursor_pointer())
+                        .px_3()
+                        .py(tokens::SPACE_3)
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(hover_bg))
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.open_page(&uid, cx);
                         }))
@@ -745,10 +683,6 @@ impl AppStore {
         }
 
         root = root.child(body);
-
-        if !focus_mode && self.settings.status_bar_visible {
-            root = root.child(self.render_status_bar(cx));
-        }
 
         if let Some(preview) = self.render_link_preview(window, cx) {
             root = root.child(preview);
@@ -1075,6 +1009,7 @@ impl AppStore {
         let border = theme.border;
         let accent = theme.accent;
         let hover_bg = theme.list_hover;
+        let warning = theme.warning;
 
         let mut feed = div()
             .w_full()
@@ -1133,7 +1068,7 @@ impl AppStore {
                     feed = feed.child(
                         div()
                             .mt_2()
-                            .text_size(tokens::FONT_SM)
+                            .text_size(tokens::FONT_XS)
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(muted_fg)
                             .child(label.clone()),
@@ -1155,57 +1090,80 @@ impl AppStore {
                             .border_1()
                             .border_color(border)
                             .bg(sidebar_bg)
-                            .p_3()
+                            .overflow_hidden()
                             .flex()
-                            .flex_col()
-                            .gap_2()
+                            .flex_row()
                             .child(
                                 div()
-                                    .text_size(tokens::FONT_BASE)
-                                    .text_color(fg)
-                                    .child(snippet),
+                                    .w(px(3.0))
+                                    .flex_shrink_0()
+                                    .bg(warning),
                             )
                             .child(
                                 div()
+                                    .flex_1()
+                                    .p_3()
                                     .flex()
-                                    .items_center()
-                                    .justify_between()
+                                    .flex_col()
+                                    .gap_2()
                                     .child(
                                         div()
-                                            .text_size(tokens::FONT_SM)
-                                            .text_color(muted_fg)
-                                            .child(page_title),
+                                            .text_size(tokens::FONT_BASE)
+                                            .text_color(fg)
+                                            .child(snippet),
                                     )
                                     .child(
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap_1()
+                                            .justify_between()
                                             .child(
-                                                Button::new(format!("feed-done-{i}"))
-                                                    .xsmall()
-                                                    .ghost()
-                                                    .icon(SandpaperIcon::Checkmark)
-                                                    .tooltip("Mark done")
-                                                    .on_click(cx.listener(
-                                                        move |this, _event, _window, cx| {
-                                                            this.review_mark_done(item_id, cx);
-                                                            this.refresh_feed(cx);
-                                                        },
-                                                    )),
+                                                div()
+                                                    .text_size(tokens::FONT_SM)
+                                                    .text_color(muted_fg)
+                                                    .child(page_title),
                                             )
                                             .child(
-                                                Button::new(format!("feed-snooze-{i}"))
-                                                    .xsmall()
-                                                    .ghost()
-                                                    .icon(SandpaperIcon::Subtract)
-                                                    .tooltip("Snooze")
-                                                    .on_click(cx.listener(
-                                                        move |this, _event, _window, cx| {
-                                                            this.review_snooze_day(item_id, cx);
-                                                            this.refresh_feed(cx);
-                                                        },
-                                                    )),
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_1()
+                                                    .child(
+                                                        Button::new(format!("feed-done-{i}"))
+                                                            .xsmall()
+                                                            .ghost()
+                                                            .icon(SandpaperIcon::Checkmark)
+                                                            .tooltip("Mark done")
+                                                            .on_click(cx.listener(
+                                                                move |this,
+                                                                      _event,
+                                                                      _window,
+                                                                      cx| {
+                                                                    this.review_mark_done(
+                                                                        item_id, cx,
+                                                                    );
+                                                                    this.refresh_feed(cx);
+                                                                },
+                                                            )),
+                                                    )
+                                                    .child(
+                                                        Button::new(format!("feed-snooze-{i}"))
+                                                            .xsmall()
+                                                            .ghost()
+                                                            .icon(SandpaperIcon::Subtract)
+                                                            .tooltip("Snooze")
+                                                            .on_click(cx.listener(
+                                                                move |this,
+                                                                      _event,
+                                                                      _window,
+                                                                      cx| {
+                                                                    this.review_snooze_day(
+                                                                        item_id, cx,
+                                                                    );
+                                                                    this.refresh_feed(cx);
+                                                                },
+                                                            )),
+                                                    ),
                                             ),
                                     ),
                             )
@@ -1252,6 +1210,12 @@ impl AppStore {
                             .gap_2()
                             .child(
                                 div()
+                                    .text_size(tokens::FONT_XS)
+                                    .text_color(muted_fg)
+                                    .child("Related"),
+                            )
+                            .child(
+                                div()
                                     .text_size(tokens::FONT_BASE)
                                     .text_color(fg)
                                     .child(title),
@@ -1277,8 +1241,14 @@ impl AppStore {
                             .bg(sidebar_bg)
                             .p_3()
                             .flex()
-                            .items_center()
-                            .justify_between()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(tokens::FONT_XS)
+                                    .text_color(muted_fg)
+                                    .child("Recently edited"),
+                            )
                             .child(
                                 div()
                                     .text_size(tokens::FONT_BASE)
@@ -1305,24 +1275,38 @@ impl AppStore {
                             .bg(accent.opacity(0.04))
                             .p_3()
                             .flex()
-                            .items_center()
-                            .justify_between()
+                            .flex_col()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .child(
+                                        div()
+                                            .text_size(tokens::FONT_XS)
+                                            .text_color(accent)
+                                            .child("Discover"),
+                                    )
+                                    .child(
+                                        Button::new(format!("feed-explore-{i}"))
+                                            .xsmall()
+                                            .ghost()
+                                            .icon(SandpaperIcon::ArrowRight)
+                                            .tooltip("Explore")
+                                            .on_click(cx.listener(
+                                                move |this, _event, _window, cx| {
+                                                    this.open_page(&uid, cx);
+                                                    this.set_mode(Mode::Editor, cx);
+                                                },
+                                            )),
+                                    ),
+                            )
                             .child(
                                 div()
                                     .text_size(tokens::FONT_BASE)
                                     .text_color(fg)
                                     .child(title),
-                            )
-                            .child(
-                                Button::new(format!("feed-explore-{i}"))
-                                    .xsmall()
-                                    .ghost()
-                                    .icon(SandpaperIcon::ArrowRight)
-                                    .tooltip("Explore")
-                                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                                        this.open_page(&uid, cx);
-                                        this.set_mode(Mode::Editor, cx);
-                                    })),
                             )
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover_bg)),

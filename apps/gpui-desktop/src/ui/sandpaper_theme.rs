@@ -170,7 +170,7 @@ mod tests {
                 "Sandpaper Dark"
             );
             assert_eq!(app.theme().font_size, gpui::px(14.));
-            assert_eq!(app.theme().radius, gpui::px(6.));
+            assert_eq!(app.theme().radius, gpui::px(8.));
 
             Theme::change(ThemeMode::Dark, None, &mut app);
             assert_eq!(app.theme().theme_name().as_ref(), "Sandpaper Dark");

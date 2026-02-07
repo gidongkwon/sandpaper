@@ -4008,6 +4008,17 @@ impl AppStore {
         blocks: &[BlockSnapshot],
         cx: &mut Context<Self>,
     ) {
+        let blocks_for_editor = if blocks.is_empty() {
+            vec![BlockSnapshot {
+                uid: Uuid::new_v4().to_string(),
+                text: String::new(),
+                indent: 0,
+                block_type: BlockType::Text,
+            }]
+        } else {
+            blocks.to_vec()
+        };
+
         let mut update_primary = false;
         if self
             .editor
@@ -4016,12 +4027,8 @@ impl AppStore {
             .is_some_and(|active| active.uid == page_uid)
         {
             if let Some(editor) = self.editor.editor.as_mut() {
-                editor.blocks = blocks.to_vec();
-                if editor.blocks.is_empty() {
-                    editor.active_ix = 0;
-                } else {
-                    editor.active_ix = editor.active_ix.min(editor.blocks.len() - 1);
-                }
+                editor.blocks = blocks_for_editor.clone();
+                editor.active_ix = editor.active_ix.min(editor.blocks.len().saturating_sub(1));
                 update_primary = true;
             }
         }
@@ -4035,15 +4042,11 @@ impl AppStore {
         let mut update_secondary = false;
         if let Some(secondary) = self.editor.secondary_pane.as_mut() {
             if secondary.page.uid == page_uid {
-                secondary.editor.blocks = blocks.to_vec();
-                if secondary.editor.blocks.is_empty() {
-                    secondary.editor.active_ix = 0;
-                } else {
-                    secondary.editor.active_ix = secondary
-                        .editor
-                        .active_ix
-                        .min(secondary.editor.blocks.len() - 1);
-                }
+                secondary.editor.blocks = blocks_for_editor;
+                secondary.editor.active_ix = secondary
+                    .editor
+                    .active_ix
+                    .min(secondary.editor.blocks.len().saturating_sub(1));
                 update_secondary = true;
             }
         }
@@ -4084,6 +4087,7 @@ impl AppStore {
 
         self.capture_blocks_for_page(&inbox_page)
             .into_iter()
+            .filter(|block| !block.text.trim().is_empty())
             .map(|block| CaptureQueueItem {
                 uid: block.uid,
                 text: block.text,
@@ -4208,6 +4212,7 @@ impl AppStore {
         inbox_blocks.remove(source_ix);
 
         self.persist_capture_blocks_for_page(&inbox_page, &inbox_blocks, cx)?;
+        self.load_review_items(cx);
         if self.editor.capture_move_item_uid.as_deref() == Some(item_uid) {
             self.editor.capture_move_item_uid = None;
         }
@@ -7869,6 +7874,9 @@ mod tests {
                     ],
                 )
                 .expect("seed inbox");
+                let due_at = chrono::Utc::now().timestamp_millis() - 1_000;
+                db.upsert_review_queue_item("inbox", "cap-1", due_at, None)
+                    .expect("seed review");
 
                 app.app.db = Some(db);
                 app.editor.pages = app
@@ -7882,6 +7890,9 @@ mod tests {
                 app.editor.editor = None;
                 app.editor.secondary_pane = None;
                 app.editor.capture_move_item_uid = Some("cap-1".to_string());
+                app.load_review_items(cx);
+                assert_eq!(app.editor.review_items.len(), 1);
+                assert_eq!(app.editor.review_items[0].block_uid, "cap-1");
 
                 app.delete_capture_queue_item("cap-1", cx)
                     .expect("delete capture");
@@ -7892,7 +7903,77 @@ mod tests {
                     .expect("load inbox blocks");
                 assert_eq!(blocks.len(), 1);
                 assert_eq!(blocks[0].uid, "cap-2");
+                let due = db
+                    .list_review_queue_due(chrono::Utc::now().timestamp_millis(), 10)
+                    .expect("list review due");
+                assert!(due.is_empty());
+                assert!(app.editor.review_items.is_empty());
                 assert!(app.editor.capture_move_item_uid.is_none());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn delete_last_capture_queue_item_keeps_active_editor_non_empty(
+        cx: &mut TestAppContext,
+    ) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let app = app_handle.borrow().clone().expect("app");
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let mut db = Database::new_in_memory().expect("db init");
+                db.run_migrations().expect("migrations");
+                db.insert_page("inbox", "Inbox").expect("insert inbox");
+                let inbox = db
+                    .get_page_by_uid("inbox")
+                    .expect("inbox lookup")
+                    .expect("inbox");
+                db.replace_blocks_for_page(
+                    inbox.id,
+                    &[BlockSnapshot {
+                        uid: "cap-1".to_string(),
+                        text: "first".to_string(),
+                        indent: 0,
+                        block_type: BlockType::Text,
+                    }],
+                )
+                .expect("seed inbox");
+
+                app.app.db = Some(db);
+                app.editor.pages = app
+                    .app
+                    .db
+                    .as_ref()
+                    .expect("db")
+                    .list_pages()
+                    .expect("list pages");
+                app.open_page("inbox", cx);
+                assert_eq!(app.capture_queue_items().len(), 1);
+
+                app.delete_capture_queue_item("cap-1", cx)
+                    .expect("delete capture");
+                // This used to panic after deleting the last capture item.
+                app.refresh_references();
+
+                assert!(app.capture_queue_items().is_empty());
+                let editor = app.editor.editor.as_ref().expect("editor");
+                assert_eq!(editor.blocks.len(), 1);
+                assert!(editor.blocks[0].text.is_empty());
             });
         })
         .unwrap();

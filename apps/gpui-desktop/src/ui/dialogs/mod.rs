@@ -131,43 +131,6 @@ impl Render for SettingsSheetView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let active_tab = self.app.read(cx).settings.tab;
 
-        let selected_index = settings_tab_index(active_tab);
-        let tabs = TabBar::new("settings-sheet-tabs")
-            .underline()
-            .xsmall()
-            .selected_index(selected_index)
-            .on_click(cx.listener(|this, ix: &usize, window, cx| {
-                let tab = settings_tab_from_index(*ix);
-                this.app.update(cx, |app, cx| {
-                    app.set_settings_tab(tab, window, cx);
-                });
-            }))
-            .child(
-                Tab::new()
-                    .prefix(Icon::new(settings_tab_icon(SettingsTab::General)).size_3())
-                    .label(settings_tab_label(SettingsTab::General)),
-            )
-            .child(
-                Tab::new()
-                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Vault)).size_3())
-                    .label(settings_tab_label(SettingsTab::Vault)),
-            )
-            .child(
-                Tab::new()
-                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Plugins)).size_3())
-                    .label(settings_tab_label(SettingsTab::Plugins)),
-            )
-            .child(
-                Tab::new()
-                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Permissions)).size_3())
-                    .label(settings_tab_label(SettingsTab::Permissions)),
-            )
-            .child(
-                Tab::new()
-                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Import)).size_3())
-                    .label(settings_tab_label(SettingsTab::Import)),
-            );
-
         let content = match active_tab {
             SettingsTab::General => self
                 .app
@@ -185,12 +148,64 @@ impl Render for SettingsSheetView {
                 .app
                 .update(cx, |app, cx| app.render_settings_import_panel(cx)),
         };
+        let selected_index = settings_tab_index(active_tab);
+        let (surface_bg, border_subtle) = {
+            let theme = cx.theme();
+            let semantic = cx.global::<SandpaperTheme>().colors(cx);
+            (theme.background, semantic.border_subtle)
+        };
+        let tabs = div()
+            .id("settings-sheet-tabs-row")
+            .w_full()
+            .py(tokens::SPACE_2)
+            .bg(surface_bg)
+            .border_b_1()
+            .border_color(border_subtle)
+            .child(
+                TabBar::new("settings-sheet-tabs")
+                    .underline()
+                    .large()
+                    .selected_index(selected_index)
+                    .on_click(cx.listener(|this, ix: &usize, window, cx| {
+                        let tab = settings_tab_from_index(*ix);
+                        this.app.update(cx, |app, cx| {
+                            app.set_settings_tab(tab, window, cx);
+                        });
+                    }))
+                    .child(
+                        Tab::new()
+                            .prefix(Icon::new(settings_tab_icon(SettingsTab::General)).size_4())
+                            .label(settings_tab_label(SettingsTab::General)),
+                    )
+                    .child(
+                        Tab::new()
+                            .prefix(Icon::new(settings_tab_icon(SettingsTab::Vault)).size_4())
+                            .label(settings_tab_label(SettingsTab::Vault)),
+                    )
+                    .child(
+                        Tab::new()
+                            .prefix(Icon::new(settings_tab_icon(SettingsTab::Plugins)).size_4())
+                            .label(settings_tab_label(SettingsTab::Plugins)),
+                    )
+                    .child(
+                        Tab::new()
+                            .prefix(
+                                Icon::new(settings_tab_icon(SettingsTab::Permissions)).size_4(),
+                            )
+                            .label(settings_tab_label(SettingsTab::Permissions)),
+                    )
+                    .child(
+                        Tab::new()
+                            .prefix(Icon::new(settings_tab_icon(SettingsTab::Import)).size_4())
+                            .label(settings_tab_label(SettingsTab::Import)),
+                    ),
+            );
 
         div()
             .id("settings-sheet")
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_4()
             .min_h_0()
             .child(tabs)
             .child(
@@ -199,7 +214,15 @@ impl Render for SettingsSheetView {
                     .min_h_0()
                     .w_full()
                     .overflow_scrollbar()
-                    .child(div().w_full().max_w(px(720.0)).mx_auto().child(content)),
+                    .child(
+                        div()
+                            .w_full()
+                            .max_w(px(760.0))
+                            .mx_auto()
+                            .px(tokens::SPACE_8)
+                            .py(tokens::SPACE_6)
+                            .child(content),
+                    ),
             )
     }
 }

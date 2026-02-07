@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
 use crate::ui::tokens;
+use super::helpers::{segmented_button, segmented_button_group};
 use gpui_component::Disableable;
 
 struct PermissionAudit {
@@ -30,280 +31,208 @@ impl AppStore {
         &mut self,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let theme = cx.theme();
-        let vault_label: SharedString = self
-            .app
-            .active_vault_id
-            .as_ref()
-            .and_then(|id| self.app.vaults.iter().find(|vault| &vault.id == id))
-            .map(|vault| vault.name.clone().into())
-            .unwrap_or_else(|| "No vault selected".into());
-        let vault_path = self
-            .app
-            .active_vault_root
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "—".to_string());
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(tokens::SPACE_8);
 
-        let mut content =
-            div()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(self.render_settings_section_header(
-                    "General",
-                    "App-wide preferences and active vault info.",
-                    cx,
-                ));
-
-        content = content.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
-                        .child("Active vault"),
-                )
-                .child(
-                    div()
-                        .text_size(tokens::FONT_BASE)
-                        .text_color(theme.foreground)
-                        .child(vault_label.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
-                        .child(vault_path),
-                ),
-        );
-
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.render_settings_section_header(
+                .child(self.render_settings_section_card_header(
                     "Workspace",
                     "Appearance and layout options.",
                     cx,
                 ))
                 .child(
-                    self.render_settings_row(
-                        "Theme",
-                        "Choose between system, light, and dark appearance.",
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child({
-                                let mut button = Button::new("settings-theme-system")
-                                    .label("System")
-                                    .xsmall();
-                                button =
-                                    if self.settings.theme_preference == ThemePreference::System {
-                                        button.primary()
-                                    } else {
-                                        button.ghost()
-                                    };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.set_theme_preference(ThemePreference::System, cx);
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(self.render_settings_row(
+                            "Theme",
+                            "Choose between system, light, and dark appearance.",
+                            {
+                                let pref = self.settings.theme_preference;
+                                segmented_button_group(
+                                    "settings-theme-group",
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(1.0))
+                                        .child(
+                                            segmented_button("settings-theme-system", "System", pref == ThemePreference::System)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.set_theme_preference(ThemePreference::System, cx);
+                                                })),
+                                        )
+                                        .child(
+                                            segmented_button("settings-theme-light", "Light", pref == ThemePreference::Light)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.set_theme_preference(ThemePreference::Light, cx);
+                                                })),
+                                        )
+                                        .child(
+                                            segmented_button("settings-theme-dark", "Dark", pref == ThemePreference::Dark)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.set_theme_preference(ThemePreference::Dark, cx);
+                                                })),
+                                        )
+                                        .into_any_element(),
+                                    cx,
+                                )
+                            },
+                            true,
+                            cx,
+                        ))
+                        .child(self.render_settings_row(
+                            "Context panel",
+                            "Show review/backlinks/plugins panel on the right.",
+                            Switch::new("settings-context-panel")
+                                .checked(self.settings.context_panel_open)
+                                .on_click(cx.listener(|this, checked, _window, cx| {
+                                    this.settings.context_panel_open = *checked;
+                                    this.ui.context_panel_epoch += 1;
+                                    this.persist_settings();
+                                    cx.notify();
                                 }))
-                            })
-                            .child({
-                                let mut button =
-                                    Button::new("settings-theme-light").label("Light").xsmall();
-                                button = if self.settings.theme_preference == ThemePreference::Light
-                                {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.set_theme_preference(ThemePreference::Light, cx);
-                                }))
-                            })
-                            .child({
-                                let mut button =
-                                    Button::new("settings-theme-dark").label("Dark").xsmall();
-                                button = if self.settings.theme_preference == ThemePreference::Dark
-                                {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.set_theme_preference(ThemePreference::Dark, cx);
-                                }))
-                            })
-                            .into_any_element(),
-                        cx,
-                    ),
+                                .into_any_element(),
+                            false,
+                            cx,
+                        )),
                 )
-                .child(
-                    self.render_settings_row(
-                        "Context panel",
-                        "Show review/backlinks/plugins panel on the right.",
-                        Switch::new("settings-context-panel")
-                            .checked(self.settings.context_panel_open)
-                            .on_click(cx.listener(|this, checked, _window, cx| {
-                                this.settings.context_panel_open = *checked;
-                                this.ui.context_panel_epoch += 1;
-                                this.persist_settings();
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                        cx,
-                    ),
-                ),
-        );
+                .into_any_element(),
+            cx,
+        ));
 
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.render_settings_section_header(
+                .child(self.render_settings_section_card_header(
                     "Quick Add",
                     "Configure quick capture behavior.",
                     cx,
                 ))
                 .child(
-                    self.render_settings_row(
-                        "Default capture target",
-                        "Choose where quick add inserts new items.",
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child({
-                                let mut button = Button::new("settings-quick-add-inbox")
-                                    .label("Inbox")
-                                    .xsmall();
-                                button = if self.settings.quick_add_target == QuickAddTarget::Inbox
-                                {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.settings.quick_add_target = QuickAddTarget::Inbox;
-                                    this.persist_settings();
-                                    cx.notify();
-                                }))
-                            })
-                            .child({
-                                let mut button = Button::new("settings-quick-add-current")
-                                    .label("Current page")
-                                    .xsmall();
-                                button = if self.settings.quick_add_target
-                                    == QuickAddTarget::CurrentPage
-                                {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.settings.quick_add_target = QuickAddTarget::CurrentPage;
-                                    this.persist_settings();
-                                    cx.notify();
-                                }))
-                            })
-                            .child({
-                                let mut button = Button::new("settings-quick-add-task")
-                                    .label("Task in Inbox")
-                                    .xsmall();
-                                button = if self.settings.quick_add_target
-                                    == QuickAddTarget::TaskInbox
-                                {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.settings.quick_add_target = QuickAddTarget::TaskInbox;
-                                    this.persist_settings();
-                                    cx.notify();
-                                }))
-                            })
-                            .into_any_element(),
-                        cx,
-                    ),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(self.render_settings_row(
+                            "Default capture target",
+                            "Choose where quick add inserts new items.",
+                            {
+                                let target = self.settings.quick_add_target;
+                                segmented_button_group(
+                                    "settings-quick-add-group",
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(1.0))
+                                        .child(
+                                            segmented_button("settings-quick-add-inbox", "Inbox", target == QuickAddTarget::Inbox)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.settings.quick_add_target = QuickAddTarget::Inbox;
+                                                    this.persist_settings();
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .child(
+                                            segmented_button("settings-quick-add-current", "Current page", target == QuickAddTarget::CurrentPage)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.settings.quick_add_target = QuickAddTarget::CurrentPage;
+                                                    this.persist_settings();
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .child(
+                                            segmented_button("settings-quick-add-task", "Task in Inbox", target == QuickAddTarget::TaskInbox)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.settings.quick_add_target = QuickAddTarget::TaskInbox;
+                                                    this.persist_settings();
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .into_any_element(),
+                                    cx,
+                                )
+                            },
+                            true,
+                            cx,
+                        ))
+                        .child(self.render_settings_row(
+                            "Density",
+                            "Adjust row and panel density across the workspace.",
+                            {
+                                let density = self.settings.layout_density;
+                                segmented_button_group(
+                                    "settings-density-group",
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(1.0))
+                                        .child(
+                                            segmented_button("settings-density-comfortable", "Comfortable", density == LayoutDensity::Comfortable)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.settings.layout_density = LayoutDensity::Comfortable;
+                                                    this.persist_settings();
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .child(
+                                            segmented_button("settings-density-compact", "Compact", density == LayoutDensity::Compact)
+                                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                                    this.settings.layout_density = LayoutDensity::Compact;
+                                                    this.persist_settings();
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .into_any_element(),
+                                    cx,
+                                )
+                            },
+                            false,
+                            cx,
+                        )),
                 )
-                .child(
-                    self.render_settings_row(
-                        "Density",
-                        "Adjust row and panel density across the workspace.",
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child({
-                                let mut button = Button::new("settings-density-comfortable")
-                                    .label("Comfortable")
-                                    .xsmall();
-                                button =
-                                    if self.settings.layout_density == LayoutDensity::Comfortable {
-                                        button.primary()
-                                    } else {
-                                        button.ghost()
-                                    };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.settings.layout_density = LayoutDensity::Comfortable;
-                                    this.persist_settings();
-                                    cx.notify();
-                                }))
-                            })
-                            .child({
-                                let mut button = Button::new("settings-density-compact")
-                                    .label("Compact")
-                                    .xsmall();
-                                button = if self.settings.layout_density == LayoutDensity::Compact {
-                                    button.primary()
-                                } else {
-                                    button.ghost()
-                                };
-                                button.on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.settings.layout_density = LayoutDensity::Compact;
-                                    this.persist_settings();
-                                    cx.notify();
-                                }))
-                            })
-                            .into_any_element(),
-                        cx,
-                    ),
-                ),
-        );
+                .into_any_element(),
+            cx,
+        ));
 
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.render_settings_section_header(
+                .child(self.render_settings_section_card_header(
                     "Editor",
                     "Editing and pane behavior.",
                     cx,
                 ))
                 .child(
-                    self.render_settings_row(
-                        "Sync scroll across panes",
-                        "Keep primary and split panes aligned.",
-                        Switch::new("settings-sync-scroll")
-                            .checked(self.settings.sync_scroll)
-                            .on_click(cx.listener(|this, checked, _window, cx| {
-                                this.settings.sync_scroll = *checked;
-                                this.persist_settings();
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                        cx,
-                    ),
-                ),
-        );
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(self.render_settings_row(
+                            "Sync scroll across panes",
+                            "Keep primary and split panes aligned.",
+                            Switch::new("settings-sync-scroll")
+                                .checked(self.settings.sync_scroll)
+                                .on_click(cx.listener(|this, checked, _window, cx| {
+                                    this.settings.sync_scroll = *checked;
+                                    this.persist_settings();
+                                    cx.notify();
+                                }))
+                                .into_any_element(),
+                            false,
+                            cx,
+                        )),
+                )
+                .into_any_element(),
+            cx,
+        ));
 
         content.into_any_element()
     }
@@ -341,106 +270,114 @@ impl AppStore {
             format!("{pending} pending").into()
         };
 
-        let mut content =
-            div()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(self.render_settings_section_header(
-                    "Vault",
-                    "Storage location and sync settings for the active vault.",
-                    cx,
-                ));
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(tokens::SPACE_8);
 
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap_2()
                 .child(
                     div()
                         .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
+                        .text_color(theme.muted_foreground.opacity(0.9))
                         .child("Active vault"),
                 )
                 .child(
                     div()
-                        .text_size(tokens::FONT_BASE)
+                        .text_size(tokens::FONT_XL)
                         .text_color(theme.foreground)
+                        .font_weight(gpui::FontWeight::MEDIUM)
                         .child(vault_label),
                 )
                 .child(
                     div()
-                        .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
-                        .child(vault_path),
-                ),
-        );
+                        .text_size(tokens::FONT_BASE)
+                        .text_color(theme.muted_foreground.opacity(0.9))
+                        .child(vault_path)
+                        .overflow_hidden(),
+                )
+                .into_any_element(),
+            cx,
+        ));
 
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.render_settings_section_header(
+                .child(self.render_settings_section_card_header(
                     "Shadow Markdown",
                     "Writes read-only per-page Markdown under the vault pages folder.",
                     cx,
                 ))
                 .child(
-                    self.render_settings_row(
-                        "Pages folder",
-                        "Location for generated .md files.",
-                        div()
-                            .text_size(tokens::FONT_SM)
-                            .text_color(theme.muted_foreground)
-                            .child(pages_path)
-                            .into_any_element(),
-                        cx,
-                    ),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(self.render_settings_row(
+                            "Pages folder",
+                            "Location for generated .md files.",
+                            div()
+                                .text_size(tokens::FONT_SM)
+                                .text_color(theme.muted_foreground)
+                                .child(pages_path)
+                                .into_any_element(),
+                            true,
+                            cx,
+                        ))
+                        .child(self.render_settings_row(
+                            "Shadow write queue",
+                            "Pending writes will flush after autosave, or manually.",
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_end()
+                                .gap_2()
+                                .when(busy, |this| {
+                                    this.child(crate::ui::components::spinner::Spinner::new().small())
+                                })
+                                .child(
+                                    div()
+                                        .text_size(tokens::FONT_SM)
+                                        .text_color(theme.muted_foreground)
+                                        .child(queue_label),
+                                )
+                                .child(
+                                    Button::new("shadow-flush-queue")
+                                        .label("Flush queue")
+                                        .xsmall()
+                                        .ghost()
+                                        .disabled(pending == 0 || busy)
+                                        .on_click(cx.listener(|this, _event, _window, cx| {
+                                            this.flush_shadow_write_queue(cx);
+                                        })),
+                                )
+                                .into_any_element(),
+                            false,
+                            cx,
+                        )),
                 )
                 .child(
-                    self.render_settings_row(
-                        "Shadow write queue",
-                        "Pending writes will flush after autosave, or manually.",
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .when(busy, |this| {
-                                this.child(crate::ui::components::spinner::Spinner::new().small())
-                            })
-                            .child(
-                                div()
-                                    .text_size(tokens::FONT_SM)
-                                    .text_color(theme.muted_foreground)
-                                    .child(queue_label),
-                            )
-                            .child(
-                                Button::new("shadow-flush-queue")
-                                    .label("Flush queue")
-                                    .xsmall()
-                                    .ghost()
-                                    .disabled(pending == 0 || busy)
-                                    .on_click(cx.listener(|this, _event, _window, cx| {
-                                        this.flush_shadow_write_queue(cx);
-                                    })),
-                            )
-                            .into_any_element(),
-                        cx,
-                    ),
+                    div()
+                        .pt(tokens::SPACE_3)
+                        .child(
+                            Button::new("shadow-export-all")
+                                .label("Export all Markdown now")
+                                .xsmall()
+                                .ghost()
+                                .disabled(busy)
+                                .on_click(cx.listener(|this, _event, _window, cx| {
+                                    this.export_all_shadow_markdown(cx);
+                                })),
+                        ),
                 )
-                .child(
-                    Button::new("shadow-export-all")
-                        .label("Export all Markdown now")
-                        .xsmall()
-                        .ghost()
-                        .disabled(busy)
-                        .on_click(cx.listener(|this, _event, _window, cx| {
-                            this.export_all_shadow_markdown(cx);
-                        })),
-                ),
-        );
+                .into_any_element(),
+            cx,
+        ));
 
         if let Some(err) = self.ui.shadow_write_last_error.clone() {
             use crate::ui::components::error_display::InlineError;
@@ -496,13 +433,21 @@ impl AppStore {
         let mut content = div()
             .flex()
             .flex_col()
-            .gap_3()
-            .child(self.render_settings_section_header(
-                "Permission Audit",
-                "Review required permissions, missing grants, and unused grants.",
+            .gap(tokens::SPACE_8)
+            .child(self.render_settings_section_card(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(self.render_settings_section_card_header(
+                        "Legend",
+                        "Status chips used across plugin permission audits.",
+                        cx,
+                    ))
+                    .child(legend)
+                    .into_any_element(),
                 cx,
-            ))
-            .child(legend);
+            ));
 
         if self.plugins.plugins.is_empty() {
             content = content.child(
@@ -623,23 +568,17 @@ impl AppStore {
         let exporting = self.ui.offline_export_busy;
         let importing = self.ui.offline_import_busy;
 
-        let mut content =
-            div()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(self.render_settings_section_header(
-                    "Import / Export",
-                    "Move data in and out of Sandpaper.",
-                    cx,
-                ));
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(tokens::SPACE_8);
 
-        content = content.child(
+        content = content.child(self.render_settings_section_card(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(self.render_settings_section_header(
+                .child(self.render_settings_section_card_header(
                     "Offline archive",
                     "Export a zip with pages and a manifest, or import one back into the vault.",
                     cx,
@@ -680,8 +619,10 @@ impl AppStore {
                                     this.import_offline_archive(cx);
                                 })),
                         ),
-                ),
-        );
+                )
+                .into_any_element(),
+            cx,
+        ));
 
         if let Some(status) = self.ui.offline_export_status.clone() {
             content = content.child(

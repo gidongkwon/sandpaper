@@ -167,10 +167,6 @@ impl AppStore {
 
         elements.push(list);
 
-        if let Some(references) = self.render_sidebar_references(cx) {
-            elements.push(references);
-        }
-
         elements
     }
 
@@ -375,10 +371,11 @@ impl AppStore {
                         .px_4()
                         .pt_2()
                         .pb_1()
-                        .text_size(tokens::FONT_SM)
+                        .text_size(tokens::FONT_XS)
                         .font_weight(gpui::FontWeight::MEDIUM)
+
                         .text_color(muted)
-                        .child("RECENT"),
+                        .child("Recent"),
                 )
                 .children(recent_rows)
                 .child(div().h(tokens::SPACE_4));
@@ -389,10 +386,10 @@ impl AppStore {
                 .px_4()
                 .pt_2()
                 .pb_1()
-                .text_size(tokens::FONT_SM)
+                .text_size(tokens::FONT_XS)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(muted)
-                .child("ALL PAGES"),
+                .child("All pages"),
         );
 
         panel.child(list).into_any_element()
@@ -422,10 +419,10 @@ impl AppStore {
                     .px_4()
                     .pt_2()
                     .pb_1()
-                    .text_size(tokens::FONT_SM)
+                    .text_size(tokens::FONT_XS)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
-                    .child("PAGES"),
+                    .child("Pages"),
             );
             content = content.children(self.editor.search_pages.iter().map(|page| {
                 let page_uid = page.uid.clone();
@@ -433,8 +430,11 @@ impl AppStore {
                 let split_uid = page.uid.clone();
                 div()
                     .id(format!("search-page-{}", page_uid))
+                    .mx_2()
                     .px_3()
-                    .py(tokens::SPACE_5)
+                    .py(tokens::SPACE_3)
+                    .rounded_md()
+                    .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
@@ -452,7 +452,7 @@ impl AppStore {
                                     .flex()
                                     .items_center()
                                     .gap_2()
-                                    .opacity(0.0)
+                                    .opacity(0.4)
                                     .hover(move |s| s.opacity(1.0))
                                     .child(
                                         Button::new(format!("search-open-{}", page_uid))
@@ -495,10 +495,10 @@ impl AppStore {
                     .px_4()
                     .pt_2()
                     .pb_1()
-                    .text_size(tokens::FONT_SM)
+                    .text_size(tokens::FONT_XS)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
-                    .child("BLOCKS"),
+                    .child("Blocks"),
             );
             content = content.children(self.editor.search_blocks.iter().map(|block| {
                 let snippet = format_snippet(&block.text, 80);
@@ -506,8 +506,10 @@ impl AppStore {
                 let block_uid = block.block_uid.clone();
                 div()
                     .id(format!("search-block-{}", block.block_uid))
+                    .mx_2()
                     .px_3()
-                    .py(tokens::SPACE_5)
+                    .py(tokens::SPACE_3)
+                    .rounded_md()
                     .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
                     .child(
@@ -529,123 +531,5 @@ impl AppStore {
         }
 
         content
-    }
-
-    fn render_sidebar_references(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        self.editor.active_page.as_ref()?;
-
-        let theme = cx.theme();
-        let references = self.editor.unlinked_references.clone();
-        if references.is_empty() {
-            use crate::ui::components::empty_state::EmptyState;
-            use gpui_component::IconName;
-            let panel = div()
-                .flex()
-                .flex_col()
-                .mx_3()
-                .mt_auto()
-                .mb_3()
-                .p_3()
-                .rounded_md()
-                .border_1()
-                .border_color(theme.sidebar_border)
-                .child(
-                    div()
-                        .text_size(tokens::FONT_SM)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(theme.muted_foreground)
-                        .child("UNLINKED REFERENCES"),
-                )
-                .child(
-                    EmptyState::new(
-                        "No unlinked references",
-                        "Link pages with [[wikilinks]] to see references here.",
-                    )
-                    .icon(IconName::ExternalLink),
-                );
-            return Some(panel.into_any_element());
-        }
-
-        let list_hover = theme.list_hover;
-        let mut panel = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .mx_3()
-            .mt_auto()
-            .mb_3()
-            .p_3()
-            .rounded_md()
-            .border_1()
-            .border_color(theme.sidebar_border)
-            .child(
-                div()
-                    .text_size(tokens::FONT_SM)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.muted_foreground)
-                    .child("UNLINKED REFERENCES"),
-            );
-
-        panel = panel.children(references.iter().map(|entry| {
-            let entry = entry.clone();
-            let snippet = format_snippet(&entry.snippet, 100);
-            let count_label = if entry.match_count == 1 {
-                "1 match".to_string()
-            } else {
-                format!("{} matches", entry.match_count)
-            };
-            div()
-                .p_2()
-                .rounded_md()
-                .hover(move |s| s.bg(list_hover))
-                .flex()
-                .items_start()
-                .justify_between()
-                .gap_3()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .flex_1()
-                        .min_w_0()
-                        .child(
-                            div()
-                                .text_size(tokens::FONT_SM)
-                                .text_color(theme.foreground)
-                                .child(snippet),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .text_size(tokens::FONT_SM)
-                                        .text_color(theme.muted_foreground)
-                                        .child(entry.page_title.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(tokens::FONT_SM)
-                                        .text_color(theme.muted_foreground)
-                                        .child(count_label),
-                                ),
-                        ),
-                )
-                .child(
-                    Button::new(format!("unlinked-link-{}", entry.block_uid))
-                        .xsmall()
-                        .ghost()
-                        .icon(SandpaperIcon::Open)
-                        .tooltip("Create link")
-                        .on_click(cx.listener(move |this, _event, _window, cx| {
-                            this.link_unlinked_reference(&entry, cx);
-                        })),
-                )
-        }));
-
-        Some(panel.into_any_element())
     }
 }

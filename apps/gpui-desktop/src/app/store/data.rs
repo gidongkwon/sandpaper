@@ -189,6 +189,9 @@ impl AppStore {
         let Some(editor) = self.editor.editor.as_ref() else {
             return;
         };
+        if editor.blocks.is_empty() {
+            return;
+        }
         let Some(db) = self.app.db.as_ref() else {
             return;
         };

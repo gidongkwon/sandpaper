@@ -192,8 +192,6 @@ pub(crate) struct SettingsState {
     pub(crate) sidebar_width: f32,
     pub(crate) sidebar_collapsed: bool,
     pub(crate) focus_mode: bool,
-    pub(crate) status_bar_visible: bool,
-    pub(crate) status_bar_hints: bool,
     pub(crate) editor_max_width: f32,
     pub(crate) context_panel_open: bool,
     pub(crate) context_panel_tab: WorkspacePanel,
@@ -220,8 +218,6 @@ impl SettingsState {
             sidebar_width: 272.0,
             sidebar_collapsed: false,
             focus_mode: false,
-            status_bar_visible: false,
-            status_bar_hints: false,
             editor_max_width: 860.0,
             context_panel_open: true,
             context_panel_tab: WorkspacePanel::Review,
@@ -299,18 +295,6 @@ impl SettingsState {
             .map_err(|err| format!("{err:?}"))?
         {
             self.focus_mode = raw == "true";
-        }
-        if let Some(raw) = db
-            .get_kv("settings.status_bar_visible")
-            .map_err(|err| format!("{err:?}"))?
-        {
-            self.status_bar_visible = raw == "true";
-        }
-        if let Some(raw) = db
-            .get_kv("settings.status_bar_hints")
-            .map_err(|err| format!("{err:?}"))?
-        {
-            self.status_bar_hints = raw == "true";
         }
         if let Some(raw) = db
             .get_kv("settings.editor_max_width")
@@ -410,24 +394,6 @@ impl SettingsState {
         db.set_kv(
             "settings.focus_mode",
             if self.focus_mode { "true" } else { "false" },
-        )
-        .map_err(|err| format!("{err:?}"))?;
-        db.set_kv(
-            "settings.status_bar_visible",
-            if self.status_bar_visible {
-                "true"
-            } else {
-                "false"
-            },
-        )
-        .map_err(|err| format!("{err:?}"))?;
-        db.set_kv(
-            "settings.status_bar_hints",
-            if self.status_bar_hints {
-                "true"
-            } else {
-                "false"
-            },
         )
         .map_err(|err| format!("{err:?}"))?;
         db.set_kv(
@@ -667,8 +633,6 @@ mod tests {
         settings.sidebar_width = 312.0;
         settings.sidebar_collapsed = true;
         settings.focus_mode = true;
-        settings.status_bar_visible = false;
-        settings.status_bar_hints = false;
         settings.editor_max_width = 920.0;
         settings.context_panel_open = false;
         settings.context_panel_tab = WorkspacePanel::Plugins;
@@ -687,8 +651,6 @@ mod tests {
         assert_eq!(loaded.sidebar_width, 312.0);
         assert!(loaded.sidebar_collapsed);
         assert!(loaded.focus_mode);
-        assert!(!loaded.status_bar_visible);
-        assert!(!loaded.status_bar_hints);
         assert_eq!(loaded.editor_max_width, 920.0);
         assert!(!loaded.context_panel_open);
         assert_eq!(loaded.context_panel_tab, WorkspacePanel::Plugins);
@@ -699,9 +661,23 @@ mod tests {
     }
 
     #[test]
-    fn settings_defaults_disable_status_bar_shortcut_hints() {
+    fn settings_no_longer_persists_status_bar_preferences() {
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
         let settings = SettingsState::new();
-        assert!(!settings.status_bar_hints);
+
+        settings.save_to_db(&db).expect("save settings");
+
+        assert_eq!(
+            db.get_kv("settings.status_bar_visible")
+                .expect("get status bar visibility"),
+            None
+        );
+        assert_eq!(
+            db.get_kv("settings.status_bar_hints")
+                .expect("get status bar hints"),
+            None
+        );
     }
 
     #[test]

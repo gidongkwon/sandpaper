@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::tokens;
 use rfd::FileDialog;
 use sandpaper_core::plugins::{PluginError, PluginErrorContext};
 use serde_json::Value;
@@ -1204,7 +1205,13 @@ impl AppStore {
             let app = app.clone();
             let view = view.clone();
             sheet
-                .title("Settings")
+                .title(
+                    div()
+                        .id("settings-sheet-title")
+                        .text_size(tokens::FONT_XL)
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child("Settings"),
+                )
                 .size(px(760.0))
                 .child(view)
                 .on_close(move |_event, _window, cx| {
