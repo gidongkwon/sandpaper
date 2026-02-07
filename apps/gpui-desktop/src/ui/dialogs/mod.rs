@@ -251,7 +251,7 @@ impl Render for CommandPaletteDialogView {
                 .justify_center()
                 .gap_2()
                 .child(Icon::new(SandpaperIcon::Search).size_4().text_color(muted))
-                .child(div().text_sm().text_color(muted).child("No matches"))
+                .child(div().text_size(tokens::FONT_BASE).text_color(muted).child("No matches"))
                 .into_any_element()
         } else {
             let item_sizes = Rc::new(
@@ -278,7 +278,7 @@ impl Render for CommandPaletteDialogView {
                                     .when(is_first, |s| s.pt_3())
                                     .when(!is_first, |s| s.pt_3())
                                     .pb_1()
-                                    .text_xs()
+                                    .text_size(tokens::FONT_SM)
                                     .text_color(muted)
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .child(label.to_ascii_uppercase())
@@ -322,7 +322,7 @@ impl Render for CommandPaletteDialogView {
                                             .flex()
                                             .items_center()
                                             .gap(tokens::SPACE_5)
-                                            .text_sm()
+                                            .text_size(tokens::FONT_BASE)
                                             .text_color(foreground)
                                             .child(
                                                 div()
@@ -345,7 +345,7 @@ impl Render for CommandPaletteDialogView {
                                 if let Some(hint) = hint {
                                     row = row.child(
                                         div()
-                                            .text_xs()
+                                            .text_size(tokens::FONT_SM)
                                             .text_color(muted)
                                             .bg(secondary)
                                             .rounded_sm()
@@ -388,7 +388,7 @@ impl Render for CommandPaletteDialogView {
                     .gap_1()
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(muted)
                             .bg(secondary)
                             .rounded_sm()
@@ -397,7 +397,7 @@ impl Render for CommandPaletteDialogView {
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child("\u{21B5}"),
                     )
-                    .child(div().text_xs().text_color(muted).child("Open")),
+                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Open")),
             )
             .child(
                 div()
@@ -406,7 +406,7 @@ impl Render for CommandPaletteDialogView {
                     .gap_1()
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(muted)
                             .bg(secondary)
                             .rounded_sm()
@@ -415,7 +415,7 @@ impl Render for CommandPaletteDialogView {
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child("esc"),
                     )
-                    .child(div().text_xs().text_color(muted).child("Close")),
+                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Close")),
             );
 
         div()
@@ -495,7 +495,7 @@ impl Render for NotificationsDialogView {
             .justify_between()
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_LG)
                     .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child(title),
@@ -533,7 +533,7 @@ impl Render for NotificationsDialogView {
         if items.is_empty() {
             list = list.child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_BASE)
                     .text_color(theme.muted_foreground)
                     .child("No notifications."),
             );
@@ -572,7 +572,7 @@ impl Render for NotificationsDialogView {
                                     )
                                     .child(
                                         div()
-                                            .text_sm()
+                                            .text_size(tokens::FONT_BASE)
                                             .text_color(theme.foreground)
                                             .font_weight(gpui::FontWeight::MEDIUM)
                                             .child(crate::app::store::helpers::single_line_text(
@@ -587,13 +587,13 @@ impl Render for NotificationsDialogView {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_size(tokens::FONT_SM)
                                             .text_color(theme.muted_foreground)
                                             .child(stamp),
                                     )
                                     .child(
                                         div()
-                                            .text_xs()
+                                            .text_size(tokens::FONT_SM)
                                             .text_color(theme.muted_foreground)
                                             .child(if item.read { "Read" } else { "Unread" }),
                                     ),
@@ -605,7 +605,7 @@ impl Render for NotificationsDialogView {
                             .flex()
                             .flex_col()
                             .gap(tokens::SPACE_1)
-                            .text_sm()
+                            .text_size(tokens::FONT_BASE)
                             .text_color(theme.foreground);
                         for (line_ix, line) in split_text_lines_for_render(item.message.as_ref())
                             .iter()
@@ -627,7 +627,7 @@ impl Render for NotificationsDialogView {
                             .flex()
                             .flex_col()
                             .gap(tokens::SPACE_1)
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(theme.muted_foreground)
                             .children(
                                 split_text_lines_for_render(details.as_ref())
@@ -705,7 +705,7 @@ impl Render for VaultDialogView {
 
         let mut list = div().flex().flex_col().gap_1();
         if vaults.is_empty() {
-            list = list.child(div().text_xs().text_color(muted).child("No vaults yet."));
+            list = list.child(div().text_size(tokens::FONT_SM).text_color(muted).child("No vaults yet."));
         } else {
             for vault in vaults.into_iter() {
                 let id = vault.id.clone();
@@ -726,7 +726,7 @@ impl Render for VaultDialogView {
                         .justify_between()
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(tokens::FONT_BASE)
                                 .text_color(title_color)
                                 .child(vault.name.clone()),
                         )
@@ -743,7 +743,7 @@ impl Render for VaultDialogView {
         }
 
         if let Some(msg) = error {
-            list = list.child(div().mt_1().text_xs().text_color(danger).child(msg));
+            list = list.child(div().mt_1().text_size(tokens::FONT_SM).text_color(danger).child(msg));
         }
 
         let browse_button = Button::new("vault-path-browse")
@@ -806,7 +806,7 @@ impl Render for VaultDialogView {
             .gap_3()
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_LG)
                     .text_color(foreground)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child("Vaults"),
@@ -814,7 +814,7 @@ impl Render for VaultDialogView {
             .child(list)
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_LG)
                     .text_color(foreground)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child("Create new vault"),
@@ -824,7 +824,7 @@ impl Render for VaultDialogView {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(div().text_xs().text_color(muted).child("Name"))
+                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Name"))
                     .child(Input::new(&name_input).small()),
             )
             .child(
@@ -832,7 +832,7 @@ impl Render for VaultDialogView {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(div().text_xs().text_color(muted).child("Path"))
+                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Path"))
                     .child(
                         div()
                             .flex()
@@ -894,15 +894,15 @@ impl Render for PageDialogView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(div().text_xs().text_color(muted).child(label))
+            .child(div().text_size(tokens::FONT_SM).text_color(muted).child(label))
             .child(Input::new(&input).small());
 
         if let Some(error) = error {
-            content = content.child(div().text_xs().text_color(danger).child(error));
+            content = content.child(div().text_size(tokens::FONT_SM).text_color(danger).child(error));
         } else {
             content = content.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(muted)
                     .child("Press Enter to confirm."),
             );

@@ -171,7 +171,7 @@ impl AppStore {
             })
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_BASE)
                     .text_color(text_color)
                     .when(is_active, |this| this.font_weight(gpui::FontWeight::MEDIUM))
                     .child(label),
@@ -198,7 +198,7 @@ impl AppStore {
                     div()
                         .px_3()
                         .py_3()
-                        .text_sm()
+                        .text_size(tokens::FONT_BASE)
                         .text_color(cx.theme().muted_foreground)
                         .child("No pages yet."),
                 )
@@ -272,7 +272,7 @@ impl AppStore {
                         .px_4()
                         .pt_2()
                         .pb_1()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(muted)
                         .child("RECENT"),
@@ -286,7 +286,7 @@ impl AppStore {
                 .px_4()
                 .pt_2()
                 .pb_1()
-                .text_xs()
+                .text_size(tokens::FONT_SM)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(muted)
                 .child("ALL PAGES"),
@@ -309,7 +309,7 @@ impl AppStore {
                 div()
                     .px_3()
                     .py_3()
-                    .text_sm()
+                    .text_size(tokens::FONT_BASE)
                     .text_color(theme.muted_foreground)
                     .child("No results"),
             );
@@ -321,7 +321,7 @@ impl AppStore {
                     .px_4()
                     .pt_2()
                     .pb_1()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
                     .child("PAGES"),
@@ -342,7 +342,7 @@ impl AppStore {
                             .justify_between()
                             .child(
                                 div()
-                                    .text_sm()
+                                    .text_size(tokens::FONT_BASE)
                                     .text_color(theme.foreground)
                                     .child(page.title.clone()),
                             )
@@ -394,7 +394,7 @@ impl AppStore {
                     .px_4()
                     .pt_2()
                     .pb_1()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
                     .child("BLOCKS"),
@@ -407,10 +407,10 @@ impl AppStore {
                     .py(tokens::SPACE_5)
                     .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
-                    .child(div().text_sm().text_color(theme.foreground).child(snippet))
+                    .child(div().text_size(tokens::FONT_BASE).text_color(theme.foreground).child(snippet))
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(theme.muted_foreground)
                             .child(block.page_title.clone()),
                     )
@@ -449,14 +449,14 @@ impl AppStore {
                 .border_color(theme.sidebar_border)
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(theme.muted_foreground)
                         .child("UNLINKED REFERENCES"),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child("No unlinked references."),
                 );
@@ -477,7 +477,7 @@ impl AppStore {
             .border_color(theme.sidebar_border)
             .child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(theme.muted_foreground)
                     .child("UNLINKED REFERENCES"),
@@ -506,7 +506,7 @@ impl AppStore {
                         .gap_1()
                         .flex_1()
                         .min_w_0()
-                        .child(div().text_xs().text_color(theme.foreground).child(snippet))
+                        .child(div().text_size(tokens::FONT_SM).text_color(theme.foreground).child(snippet))
                         .child(
                             div()
                                 .flex()
@@ -514,13 +514,13 @@ impl AppStore {
                                 .gap_2()
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(tokens::FONT_SM)
                                         .text_color(theme.muted_foreground)
                                         .child(entry.page_title.clone()),
                                 )
                                 .child(
                                     div()
-                                        .text_xs()
+                                        .text_size(tokens::FONT_SM)
                                         .text_color(theme.muted_foreground)
                                         .child(count_label),
                                 ),

@@ -25,13 +25,13 @@ impl AppStore {
                     .min_w_0()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(tokens::FONT_BASE)
                             .text_color(theme.foreground)
                             .child(label.to_string()),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(theme.muted_foreground)
                             .child(description.to_string()),
                     ),
@@ -65,7 +65,7 @@ impl AppStore {
                     .justify_between()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(tokens::FONT_BASE)
                             .text_color(title_color)
                             .child(crate::app::store::helpers::single_line_text(&plugin.name)),
                     )
@@ -76,7 +76,7 @@ impl AppStore {
             if let Some(description) = plugin.description.clone() {
                 card = card.child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child(crate::app::store::helpers::single_line_text(&description)),
                 );

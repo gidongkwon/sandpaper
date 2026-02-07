@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 use gpui_component::Disableable;
 
 struct PermissionAudit {
@@ -46,7 +47,7 @@ impl AppStore {
 
         let mut content = div().flex().flex_col().gap_4().child(
             div()
-                .text_sm()
+                .text_size(tokens::FONT_LG)
                 .text_color(theme.foreground)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .child("General"),
@@ -59,19 +60,19 @@ impl AppStore {
                 .gap_1()
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child("Active vault"),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_BASE)
                         .text_color(theme.foreground)
                         .child(vault_label.clone()),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child(vault_path),
                 ),
@@ -84,7 +85,7 @@ impl AppStore {
                 .gap_3()
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_LG)
                         .text_color(theme.foreground)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child("Workspace"),
@@ -165,7 +166,7 @@ impl AppStore {
                 .gap_3()
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_LG)
                         .text_color(theme.foreground)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child("Quick Add"),
@@ -284,7 +285,7 @@ impl AppStore {
                 .gap_3()
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_LG)
                         .text_color(theme.foreground)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child("Editor"),
@@ -344,7 +345,7 @@ impl AppStore {
 
         let mut content = div().flex().flex_col().gap_4().child(
             div()
-                .text_sm()
+                .text_size(tokens::FONT_LG)
                 .text_color(theme.foreground)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .child("Vault"),
@@ -357,19 +358,19 @@ impl AppStore {
                 .gap_1()
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child("Active vault"),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_BASE)
                         .text_color(theme.foreground)
                         .child(vault_label),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child(vault_path),
                 ),
@@ -382,14 +383,14 @@ impl AppStore {
                 .gap_3()
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_LG)
                         .text_color(theme.foreground)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child("Shadow Markdown"),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child("Writes read-only per-page Markdown under the vault pages folder."),
                 )
@@ -398,7 +399,7 @@ impl AppStore {
                         "Pages folder",
                         "Location for generated .md files.",
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(theme.muted_foreground)
                             .child(pages_path)
                             .into_any_element(),
@@ -415,7 +416,7 @@ impl AppStore {
                             .gap_2()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(tokens::FONT_SM)
                                     .text_color(theme.muted_foreground)
                                     .child(queue_label),
                             )
@@ -448,7 +449,7 @@ impl AppStore {
         if let Some(err) = self.ui.shadow_write_last_error.clone() {
             content = content.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.danger_foreground)
                     .child(err),
             );
@@ -473,7 +474,7 @@ impl AppStore {
                     .py(px(1.0))
                     .rounded_sm()
                     .bg(theme.success)
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.success_foreground)
                     .child("Granted"),
             )
@@ -483,7 +484,7 @@ impl AppStore {
                     .py(px(1.0))
                     .rounded_sm()
                     .bg(theme.danger)
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.danger_foreground)
                     .child("Missing"),
             )
@@ -493,7 +494,7 @@ impl AppStore {
                     .py(px(1.0))
                     .rounded_sm()
                     .bg(theme.warning)
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.warning_foreground)
                     .child("Unused"),
             );
@@ -504,14 +505,14 @@ impl AppStore {
             .gap_3()
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_LG)
                     .text_color(theme.foreground)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child("Permission Audit"),
             )
             .child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.muted_foreground)
                     .child("Review required permissions, missing grants, and unused grants."),
             )
@@ -520,7 +521,7 @@ impl AppStore {
         if self.plugins.plugins.is_empty() {
             content = content.child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_BASE)
                     .text_color(theme.muted_foreground)
                     .child("No plugins installed."),
             );
@@ -548,14 +549,14 @@ impl AppStore {
                         .justify_between()
                         .child(
                             div()
-                                .text_sm()
+                                .text_size(tokens::FONT_BASE)
                                 .text_color(theme.foreground)
                                 .font_weight(gpui::FontWeight::MEDIUM)
                                 .child(plugin.name.clone()),
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .text_size(tokens::FONT_SM)
                                 .text_color(theme.muted_foreground)
                                 .child(plugin.version.clone()),
                         ),
@@ -564,7 +565,7 @@ impl AppStore {
             if let Some(description) = plugin.description.clone() {
                 card = card.child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child(description),
                 );
@@ -590,7 +591,7 @@ impl AppStore {
                             .py(px(1.0))
                             .rounded_sm()
                             .bg(bg)
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(fg)
                             .child(perm.clone()),
                     );
@@ -599,7 +600,7 @@ impl AppStore {
             } else {
                 card = card.child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.muted_foreground)
                         .child("No permissions requested."),
                 );
@@ -608,7 +609,7 @@ impl AppStore {
             if !audit.missing.is_empty() {
                 card = card.child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.danger_foreground)
                         .child(format!("Missing: {}", audit.missing.join(", "))),
                 );
@@ -616,7 +617,7 @@ impl AppStore {
             if !audit.unused.is_empty() {
                 card = card.child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(theme.warning_foreground)
                         .child(format!("Unused grants: {}", audit.unused.join(", "))),
                 );
@@ -638,7 +639,7 @@ impl AppStore {
 
         let mut content = div().flex().flex_col().gap_4().child(
             div()
-                .text_sm()
+                .text_size(tokens::FONT_LG)
                 .text_color(theme.foreground)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .child("Import / Export"),
@@ -651,12 +652,12 @@ impl AppStore {
                 .gap_3()
                 .child(
                     div()
-                        .text_sm()
+                        .text_size(tokens::FONT_LG)
                         .text_color(theme.foreground)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .child("Offline archive"),
                 )
-                .child(div().text_xs().text_color(theme.muted_foreground).child(
+                .child(div().text_size(tokens::FONT_SM).text_color(theme.muted_foreground).child(
                     "Export a zip with pages and a manifest, or import one back into the vault.",
                 ))
                 .child(
@@ -698,7 +699,7 @@ impl AppStore {
         if let Some(status) = self.ui.offline_export_status.clone() {
             content = content.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.muted_foreground)
                     .child(status),
             );
@@ -706,7 +707,7 @@ impl AppStore {
         if let Some(status) = self.ui.offline_import_status.clone() {
             content = content.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(theme.muted_foreground)
                     .child(status),
             );

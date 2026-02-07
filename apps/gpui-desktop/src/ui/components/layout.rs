@@ -79,7 +79,7 @@ impl AppStore {
                             .px_1()
                             .rounded_full()
                             .bg(theme.danger)
-                            .text_xs()
+                            .text_size(tokens::FONT_XS)
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(theme.danger_foreground)
                             .flex()
@@ -117,7 +117,7 @@ impl AppStore {
             .child(
                 div()
                     .id("vault-name")
-                    .text_xs()
+                    .text_size(tokens::FONT_XS)
                     .text_color(vault_fg)
                     .cursor_pointer()
                     .hover(move |s| s.text_color(vault_hover_fg))
@@ -221,7 +221,7 @@ impl AppStore {
 
         let mut left = div().flex().items_center().gap_2().child(
             div()
-                .text_xs()
+                .text_size(tokens::FONT_XS)
                 .text_color(theme.muted_foreground.opacity(0.7))
                 .child(self.app.boot_status.clone()),
         );
@@ -233,7 +233,7 @@ impl AppStore {
                     .py(px(1.0))
                     .rounded_sm()
                     .bg(theme.success)
-                    .text_xs()
+                    .text_size(tokens::FONT_XS)
                     .text_color(theme.success_foreground)
                     .child(note),
             );
@@ -254,7 +254,7 @@ impl AppStore {
                     .flex()
                     .items_center()
                     .gap_1()
-                    .text_xs()
+                    .text_size(tokens::FONT_XS)
                     .text_color(save_color)
                     .child(save_icon)
                     .child(save_label),
@@ -325,7 +325,7 @@ impl AppStore {
                     .justify_between()
                     .child(
                         div()
-                            .text_sm()
+                            .text_size(tokens::FONT_LG)
                             .text_color(theme.foreground)
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child(title.to_string()),
@@ -370,7 +370,7 @@ impl AppStore {
             .child(
                 div()
                     .p_4()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(muted_fg)
                     .child(message.to_string()),
             )
@@ -402,7 +402,7 @@ impl AppStore {
         // Related Notes section
         body = body.child(
             div()
-                .text_xs()
+                .text_size(tokens::FONT_SM)
                 .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(muted_fg)
                 .child("RELATED NOTES"),
@@ -411,7 +411,7 @@ impl AppStore {
         if related.is_empty() {
             body = body.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(muted_fg)
                     .child("No related pages found yet."),
             );
@@ -434,7 +434,7 @@ impl AppStore {
                             .rounded_sm()
                             .bg(accent.opacity(0.15))
                             .text_color(accent)
-                            .text_xs()
+                            .text_size(tokens::FONT_XS)
                             .child(label),
                     );
                 }
@@ -452,7 +452,7 @@ impl AppStore {
                         .flex()
                         .flex_col()
                         .gap(tokens::SPACE_1)
-                        .child(div().text_sm().text_color(fg).child(title))
+                        .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
                         .child(reason_pills),
                 );
             }
@@ -467,7 +467,7 @@ impl AppStore {
                 .justify_between()
                 .child(
                     div()
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(muted_fg)
                         .child("RANDOM DISCOVERY"),
@@ -487,7 +487,7 @@ impl AppStore {
         if random.is_empty() {
             body = body.child(
                 div()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(muted_fg)
                     .child("No pages to discover."),
             );
@@ -505,7 +505,7 @@ impl AppStore {
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.open_page(&uid, cx);
                         }))
-                        .child(div().text_sm().text_color(fg).child(title)),
+                        .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title)),
                 );
             }
         }
@@ -688,7 +688,7 @@ impl AppStore {
                 .flex()
                 .items_center()
                 .justify_between()
-                .child(div().text_xs().text_color(muted_fg).child("Focus Mode"))
+                .child(div().text_size(tokens::FONT_XS).text_color(muted_fg).child("Focus Mode"))
                 .child(
                     Button::new("exit-focus-mode")
                         .xsmall()
@@ -745,7 +745,7 @@ impl AppStore {
             .p_4()
             .child(
                 div()
-                    .text_sm()
+                    .text_size(tokens::FONT_LG)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .child("Quick Capture"),
             )
@@ -772,7 +772,7 @@ impl AppStore {
                     .justify_between()
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .text_color(muted_fg)
                             .child(format!("Queue in Inbox: {hint}")),
                     )
@@ -842,7 +842,7 @@ impl AppStore {
                     .bg(theme.background)
                     .px_4()
                     .py_3()
-                    .text_sm()
+                    .text_size(tokens::FONT_BASE)
                     .text_color(muted_fg)
                     .child("What's on your mind? Capture anything and it will appear in Review."),
             );
@@ -862,7 +862,7 @@ impl AppStore {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().text_sm().text_color(fg).child(item_text))
+                    .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(item_text))
                     .child(
                         div()
                             .flex()
@@ -937,7 +937,7 @@ impl AppStore {
                             .justify_between()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(tokens::FONT_SM)
                                     .text_color(muted_fg.opacity(0.8))
                                     .child(format!(
                                         "{submit_hint} queue  ·  shift+enter newline  ·  esc back to editor"
@@ -982,7 +982,7 @@ impl AppStore {
                 .justify_between()
                 .child(
                     div()
-                        .text_base()
+                        .text_size(tokens::FONT_LG)
                         .font_weight(gpui::FontWeight::MEDIUM)
                         .text_color(fg)
                         .child("Knowledge Feed"),
@@ -1000,7 +1000,7 @@ impl AppStore {
         );
 
         if self.editor.feed_items.is_empty() {
-            feed = feed.child(div().p_6().text_sm().text_color(muted_fg).child(
+            feed = feed.child(div().p_6().text_size(tokens::FONT_BASE).text_color(muted_fg).child(
                 "No items in your feed yet. Create some pages and add review items to get started.",
             ));
         }
@@ -1012,7 +1012,7 @@ impl AppStore {
                     feed = feed.child(
                         div()
                             .mt_2()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(muted_fg)
                             .child(label.clone()),
@@ -1038,13 +1038,13 @@ impl AppStore {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().text_sm().text_color(fg).child(snippet))
+                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(snippet))
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(div().text_xs().text_color(muted_fg).child(page_title))
+                                    .child(div().text_size(tokens::FONT_SM).text_color(muted_fg).child(page_title))
                                     .child(
                                         div()
                                             .flex()
@@ -1104,7 +1104,7 @@ impl AppStore {
                                 .rounded_sm()
                                 .bg(accent.opacity(0.15))
                                 .text_color(accent)
-                                .text_xs()
+                                .text_size(tokens::FONT_XS)
                                 .child(label),
                         );
                     }
@@ -1119,7 +1119,7 @@ impl AppStore {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().text_sm().text_color(fg).child(title))
+                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
                             .child(reason_pills)
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover_bg))
@@ -1143,7 +1143,7 @@ impl AppStore {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_sm().text_color(fg).child(title))
+                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover_bg))
                             .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -1166,7 +1166,7 @@ impl AppStore {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_sm().text_color(fg).child(title))
+                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
                             .child(
                                 Button::new(format!("feed-explore-{i}"))
                                     .xsmall()
