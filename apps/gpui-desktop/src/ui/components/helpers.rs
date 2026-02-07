@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 
 impl AppStore {
     pub(super) fn render_settings_row(
@@ -35,7 +36,7 @@ impl AppStore {
                             .child(description.to_string()),
                     ),
             )
-            .child(div().mt(px(2.0)).flex_shrink_0().child(control))
+            .child(div().mt(tokens::SPACE_1).flex_shrink_0().child(control))
             .into_any_element()
     }
 

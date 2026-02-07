@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 
 const PALETTE_ROW_HEIGHT: f32 = 40.0;
 const PALETTE_HEADER_HEIGHT: f32 = 28.0;
@@ -274,7 +275,7 @@ impl Render for CommandPaletteDialogView {
                                 div()
                                     .id(format!("command-palette-header-{}", id))
                                     .px_4()
-                                    .when(is_first, |s| s.pt_2())
+                                    .when(is_first, |s| s.pt_3())
                                     .when(!is_first, |s| s.pt_3())
                                     .pb_1()
                                     .text_xs()
@@ -299,7 +300,7 @@ impl Render for CommandPaletteDialogView {
                                     .mx_1()
                                     .my(px(1.0))
                                     .px_3()
-                                    .py(px(6.0))
+                                    .py(tokens::SPACE_3)
                                     .rounded_md()
                                     .bg(if is_active {
                                         list_active
@@ -320,7 +321,7 @@ impl Render for CommandPaletteDialogView {
                                         div()
                                             .flex()
                                             .items_center()
-                                            .gap(px(10.0))
+                                            .gap(tokens::SPACE_5)
                                             .text_sm()
                                             .text_color(foreground)
                                             .child(
@@ -348,8 +349,8 @@ impl Render for CommandPaletteDialogView {
                                             .text_color(muted)
                                             .bg(secondary)
                                             .rounded_sm()
-                                            .px(px(6.0))
-                                            .py(px(2.0))
+                                            .px(tokens::SPACE_3)
+                                            .py(tokens::SPACE_1)
                                             .child(hint),
                                     );
                                 }
@@ -373,10 +374,9 @@ impl Render for CommandPaletteDialogView {
         // Action bar footer
         let action_bar = div()
             .border_t_1()
-            .border_color(border)
-            .bg(secondary.opacity(0.5))
+            .border_color(border.opacity(0.5))
             .px_4()
-            .py(px(8.0))
+            .py(tokens::SPACE_4)
             .flex()
             .items_center()
             .justify_end()
@@ -427,7 +427,7 @@ impl Render for CommandPaletteDialogView {
             .min_h_0()
             // Search bar
             .child(
-                div().px_4().py_3().border_b_1().border_color(border).child(
+                div().px_4().py_3().border_b_1().border_color(border.opacity(0.6)).child(
                     Input::new(&palette_input)
                         .appearance(false)
                         .bordered(false)
@@ -604,7 +604,7 @@ impl Render for NotificationsDialogView {
                             .mt_2()
                             .flex()
                             .flex_col()
-                            .gap(px(2.0))
+                            .gap(tokens::SPACE_1)
                             .text_sm()
                             .text_color(theme.foreground);
                         for (line_ix, line) in split_text_lines_for_render(item.message.as_ref())
@@ -626,7 +626,7 @@ impl Render for NotificationsDialogView {
                             .mt_2()
                             .flex()
                             .flex_col()
-                            .gap(px(2.0))
+                            .gap(tokens::SPACE_1)
                             .text_xs()
                             .text_color(theme.muted_foreground)
                             .children(
@@ -717,7 +717,7 @@ impl Render for VaultDialogView {
                     div()
                         .id(format!("vault-item-{id}"))
                         .px_3()
-                        .py(px(10.0))
+                        .py(tokens::SPACE_5)
                         .rounded_md()
                         .bg(bg)
                         .hover(move |s| s.bg(list_hover).cursor_pointer())

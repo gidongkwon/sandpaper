@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 use gpui_component::Disableable;
 
 impl AppStore {
@@ -85,7 +86,7 @@ impl AppStore {
         Some(
             div()
                 .id("plugin-panel")
-                .w(px(360.0))
+                .w(tokens::CONTEXT_PANEL_WIDTH)
                 .h_full()
                 .border_l_1()
                 .border_color(border)
@@ -751,7 +752,7 @@ impl AppStore {
                     .min_h_0()
                     .child(
                         div()
-                            .w(px(240.0))
+                            .w(tokens::SIDEBAR_WIDTH)
                             .min_h_0()
                             .overflow_scrollbar()
                             .child(list),
