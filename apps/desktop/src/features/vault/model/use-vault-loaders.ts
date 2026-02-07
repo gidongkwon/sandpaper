@@ -13,6 +13,7 @@ import type {
 } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { readLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
+import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 
 export type VaultLoaderDependencies = {
   isTauri: () => boolean;
@@ -40,7 +41,12 @@ export type VaultLoaderDependencies = {
   serializePageToMarkdown: (page: {
     id: string;
     title: string;
-    blocks: Array<{ id: string; text: string; indent: number }>;
+    blocks: Array<{
+      id: string;
+      text: string;
+      indent: number;
+      block_type?: Block["block_type"];
+    }>;
   }) => string;
   shadowWriter: { scheduleWrite: (pageUid: PageId, content: string) => void };
   setReviewSummary: Setter<ReviewQueueSummary>;
@@ -176,7 +182,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
       const loaded = response.blocks.map((block) => ({
         id: block.uid,
         text: block.text,
-        indent: block.indent
+        indent: block.indent,
+        block_type: resolveBlockType({ text: block.text, block_type: block.block_type })
       }));
       const title =
         response.title ||
@@ -197,7 +204,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
           blocks: seeded.map((block) => ({
             id: block.id,
             text: block.text,
-            indent: block.indent
+            indent: block.indent,
+            block_type: resolveBlockType(block)
           }))
         });
         deps.shadowWriter.scheduleWrite(resolvedUid, seedMarkdown);
@@ -213,7 +221,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
         blocks: loaded.map((block) => ({
           id: block.id,
           text: block.text,
-          indent: block.indent
+          indent: block.indent,
+          block_type: resolveBlockType(block)
         }))
       });
       deps.shadowWriter.scheduleWrite(resolvedUid, loadedMarkdown);

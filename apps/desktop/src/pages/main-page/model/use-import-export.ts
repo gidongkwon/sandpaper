@@ -14,6 +14,7 @@ import type {
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import type { MarkdownExportStatus } from "../../../shared/model/markdown-export-types";
 import { makeBlock } from "../../../entities/block/model/make-block";
+import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 import { buildOfflineExportManifest } from "./offline-archive-utils";
 
 type InvokeFn = typeof import("@tauri-apps/api/core").invoke;
@@ -174,7 +175,8 @@ export const createImportExportState = (deps: ImportExportDeps) => {
           blocks: nextBlocks.map((block) => ({
             id: block.id,
             text: block.text,
-            indent: block.indent
+            indent: block.indent,
+            block_type: resolveBlockType(block)
           }))
         })
       );
@@ -203,7 +205,8 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         blocks: deps.blocks().map((block) => ({
           id: block.id,
           text: block.text,
-          indent: block.indent
+          indent: block.indent,
+          block_type: resolveBlockType(block)
         }))
       });
       setExportStatus({
@@ -278,7 +281,12 @@ export const createImportExportState = (deps: ImportExportDeps) => {
           uid,
           title: summary.title || uid,
           blocks: response.blocks.map((block) =>
-            makeBlock(block.uid, block.text, block.indent)
+            makeBlock(
+              block.uid,
+              block.text,
+              block.indent,
+              resolveBlockType({ text: block.text, block_type: block.block_type })
+            )
           )
         });
       } catch (error) {
@@ -317,7 +325,8 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         blocks: page.blocks.map((block) => ({
           id: block.id,
           text: block.text,
-          indent: block.indent
+          indent: block.indent,
+          block_type: resolveBlockType(block)
         }))
       });
       files[`pages/${uid}.md`] = strToU8(markdown);
@@ -432,7 +441,11 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         const snapshot = parsed.page.blocks.map((block) => ({
           id: block.id,
           text: block.text,
-          indent: block.indent
+          indent: block.indent,
+          block_type: resolveBlockType({
+            text: block.text,
+            block_type: block.block_type
+          })
         }));
         if (!firstPageUid) firstPageUid = uid;
 

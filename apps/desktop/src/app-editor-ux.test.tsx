@@ -31,9 +31,24 @@ describe("App editor UX", () => {
   it("focuses the textarea at the end when clicking display", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
-    fireEvent.input(firstInput, { target: { value: "Hello world" } });
+    const initialDisplayText = await screen.findByText("Sandpaper outline prototype");
+    const initialBlock = initialDisplayText.closest(".block");
+    expect(initialBlock).not.toBeNull();
+    const firstInput = initialBlock?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+    fireEvent.input(getInput() as HTMLTextAreaElement, {
+      target: { value: "Hello world" }
+    });
 
     const displayText = await screen.findByText("Hello world");
     const display = displayText.closest(".block__display") as HTMLElement;
@@ -41,23 +56,39 @@ describe("App editor UX", () => {
     await userEvent.click(display);
 
     await waitFor(() => {
-      expect(document.activeElement).toBe(firstInput);
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-block-id")).toBe(blockId);
     });
-    expect(firstInput.selectionStart).toBe("Hello world".length);
-    expect(firstInput.selectionEnd).toBe("Hello world".length);
+    expect(getInput()?.selectionStart).toBe("Hello world".length);
+    expect(getInput()?.selectionEnd).toBe("Hello world".length);
   });
 
   it("preserves caret position when exiting edit mode with Escape", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
-    fireEvent.input(firstInput, { target: { value: "Hello world" } });
-    fireEvent.focus(firstInput);
-    firstInput.setSelectionRange(2, 2);
+    const initialDisplayText = await screen.findByText("Sandpaper outline prototype");
+    const initialBlock = initialDisplayText.closest(".block");
+    expect(initialBlock).not.toBeNull();
+    const firstInput = initialBlock?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+    fireEvent.input(getInput() as HTMLTextAreaElement, {
+      target: { value: "Hello world" }
+    });
+    fireEvent.focus(getInput() as HTMLTextAreaElement);
+    getInput()?.setSelectionRange(2, 2);
 
-    fireEvent.keyDown(firstInput, { key: "Escape" });
-    expect(document.activeElement).not.toBe(firstInput);
+    fireEvent.keyDown(getInput() as HTMLTextAreaElement, { key: "Escape" });
+    expect(document.activeElement?.getAttribute("data-block-id")).not.toBe(blockId);
 
     const displayText = await screen.findByText("Hello world");
     const display = displayText.closest(".block__display") as HTMLElement;
@@ -65,10 +96,11 @@ describe("App editor UX", () => {
     await userEvent.click(display);
 
     await waitFor(() => {
-      expect(document.activeElement).toBe(firstInput);
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-block-id")).toBe(blockId);
     });
-    expect(firstInput.selectionStart).toBe(2);
-    expect(firstInput.selectionEnd).toBe(2);
+    expect(getInput()?.selectionStart).toBe(2);
+    expect(getInput()?.selectionEnd).toBe(2);
   });
 
   it("shows slash command menu and inserts command text", async () => {
@@ -76,56 +108,72 @@ describe("App editor UX", () => {
 
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
 
     const displayText = await screen.findByText("Sandpaper outline prototype");
-    const display = displayText.closest(".block__display") as HTMLElement;
+    const sourceBlock = displayText.closest(".block");
+    expect(sourceBlock).not.toBeNull();
+    const firstInput = sourceBlock?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+    const display = sourceBlock?.querySelector(".block__display") as HTMLElement;
     await user.click(display);
     await waitFor(() => {
-      expect(document.activeElement).toBe(firstInput);
+      const active = document.activeElement as HTMLElement | null;
+      expect(active?.getAttribute("data-block-id")).toBe(blockId);
     });
-    fireEvent.input(firstInput, { target: { value: "/" } });
-    expect(firstInput.value).toContain("/");
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    expect(getInput()?.value).toContain("/");
     const menu = await screen.findByText("Commands");
     const menuScope = within(menu.closest(".slash-menu") as HTMLElement);
     await user.click(menuScope.getByRole("button", { name: "Link to page" }));
     await waitFor(() => {
-      expect(firstInput.value).toContain("[[Page]]");
+      expect(getInput()?.value).toContain("[[Page]]");
     });
 
-    fireEvent.input(firstInput, { target: { value: `${firstInput.value}/` } });
+    fireEvent.input(getInput() as HTMLTextAreaElement, {
+      target: { value: `${getInput()?.value ?? ""}/` }
+    });
     const menuAgain = await screen.findByText("Commands");
     const menuAgainScope = within(menuAgain.closest(".slash-menu") as HTMLElement);
     await user.click(menuAgainScope.getByRole("button", { name: "Insert date" }));
     await waitFor(() => {
-      expect(firstInput.value).toMatch(/\d{4}-\d{2}-\d{2}/);
+      expect(getInput()?.value).toMatch(/\d{4}-\d{2}-\d{2}/);
     });
 
-    fireEvent.input(firstInput, { target: { value: "Follow up" } });
-    fireEvent.input(firstInput, { target: { value: "Follow up/" } });
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuHeading = await screen.findByText("Commands");
+    const menuHeadingScope = within(menuHeading.closest(".slash-menu") as HTMLElement);
+    await user.click(menuHeadingScope.getByRole("button", { name: "Heading 1" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").startsWith("# ")).toBe(true);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "Follow up" } });
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "Follow up/" } });
     const menuTask = await screen.findByText("Commands");
     const menuTaskScope = within(menuTask.closest(".slash-menu") as HTMLElement);
-    await user.click(menuTaskScope.getByRole("button", { name: "Convert to task" }));
+    await user.click(menuTaskScope.getByRole("button", { name: "To-do" }));
     await waitFor(() => {
-      expect(firstInput.value.startsWith("- [ ] ")).toBe(true);
+      expect((getInput()?.value ?? "").startsWith("- [ ] ")).toBe(true);
     });
   });
 
-  it("duplicates a block from the toolbar", async () => {
+  it("does not show the old block hover toolbar actions", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
-    fireEvent.input(firstInput, { target: { value: "Duplicate me" } });
-
-    const duplicateButtons = await screen.findAllByRole("button", { name: "Duplicate block" });
-    await userEvent.click(duplicateButtons[0]);
-
-    await waitFor(() => {
-      const matches = screen.getAllByDisplayValue("Duplicate me");
-      expect(matches.length).toBeGreaterThan(1);
-    });
+    expect(screen.queryByRole("button", { name: "Insert block below" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to review" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Link to page" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Duplicate block" })).toBeNull();
   });
 
   it("keeps quick capture open and refocuses composer after sending", async () => {

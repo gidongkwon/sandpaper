@@ -21,8 +21,8 @@ describe("parseMarkdownPage", () => {
     expect(result.page.id).toBe("page-1");
     expect(result.page.title).toBe("Project Plan");
     expect(result.page.blocks).toEqual([
-      { id: "block-1", text: "First line", indent: 0 },
-      { id: "block-2", text: "Child line", indent: 1 }
+      { id: "block-1", text: "First line", indent: 0, block_type: "text" },
+      { id: "block-2", text: "Child line", indent: 1, block_type: "text" }
     ]);
     expect(result.warnings).toEqual([]);
   });
@@ -51,6 +51,17 @@ describe("parseMarkdownPage", () => {
     );
 
     expect(result.page.blocks[0]?.text).toBe("Task item");
+    expect(result.page.blocks[0]?.block_type).toBe("text");
+  });
+
+  it("parses block type metadata markers", () => {
+    const makeId = buildIdFactory();
+    const result = parseMarkdownPage(
+      "# Notes\n- Heading line ^block-1 <!--sp:{\"type\":\"heading1\"}-->\n",
+      makeId
+    );
+
+    expect(result.page.blocks[0]?.block_type).toBe("heading1");
   });
 
   it("warns when ignoring non-list lines", () => {

@@ -1,5 +1,17 @@
 export const SLASH_COMMANDS = [
   { id: "link", label: "Link to page" },
   { id: "date", label: "Insert date" },
-  { id: "task", label: "Convert to task" }
+  { id: "todo", label: "To-do" },
+  { id: "h1", label: "Heading 1" },
+  { id: "h2", label: "Heading 2" },
+  { id: "h3", label: "Heading 3" },
+  { id: "quote", label: "Quote" },
+  { id: "callout", label: "Callout" },
+  { id: "toggle", label: "Toggle list" },
+  { id: "code", label: "Code block" },
+  { id: "divider", label: "Divider" },
+  { id: "database", label: "Database view" },
+  { id: "image", label: "Image" },
+  { id: "bold", label: "Bold" },
+  { id: "italic", label: "Italic" }
 ] as const;

@@ -1,6 +1,7 @@
 import { createSignal, untrack, type Accessor } from "solid-js";
 import type { Block, BlockPayload } from "../../../entities/block/model/block-types";
 import type { PageId } from "../../../shared/model/id-types";
+import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 
 export type AutosaveDependencies = {
   isTauri: () => boolean;
@@ -16,7 +17,12 @@ export type AutosaveDependencies = {
   serializePageToMarkdown: (page: {
     id: PageId;
     title: string;
-    blocks: Array<{ id: string; text: string; indent: number }>;
+    blocks: Array<{
+      id: string;
+      text: string;
+      indent: number;
+      block_type?: Block["block_type"];
+    }>;
   }) => string;
   stampNow?: () => string;
   onPersistError?: (error: unknown) => void;
@@ -85,7 +91,8 @@ export const createAutosave = (deps: AutosaveDependencies) => {
       deps.getBlocks().map((block) => ({
         id: block.id,
         text: block.text,
-        indent: block.indent
+        indent: block.indent,
+        block_type: resolveBlockType(block)
       }))
     );
     const title = untrack(() => deps.pageTitle());

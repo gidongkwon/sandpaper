@@ -6,7 +6,9 @@ const formatBlockLine = (block: Block) => {
   const indent = INDENT_UNIT.repeat(Math.max(0, block.indent));
   const text = block.text.trimEnd();
   const spacer = text.length > 0 ? " " : "";
-  return `${indent}- ${text}${spacer}^${block.id}`;
+  const type = block.block_type ?? "text";
+  const marker = type === "text" ? "" : ` <!--sp:{"type":"${type}"}-->`;
+  return `${indent}- ${text}${spacer}^${block.id}${marker}`;
 };
 
 export const serializeBlocksToMarkdown = (blocks: Block[]) => {

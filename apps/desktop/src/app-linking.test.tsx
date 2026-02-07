@@ -17,6 +17,24 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 import App from "./app/app";
 
 describe("App linking UX", () => {
+  const getActiveEditorInput = () =>
+    document.querySelector(
+      ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+    ) as HTMLTextAreaElement | null;
+
+  const focusFirstEditorBlock = async (user: ReturnType<typeof userEvent.setup>) => {
+    const display = document.querySelector(
+      ".editor-pane .block .block__display"
+    ) as HTMLElement | null;
+    expect(display).not.toBeNull();
+    if (!display) return null;
+    await user.click(display);
+    await waitFor(() => {
+      expect(getActiveEditorInput()).not.toBeNull();
+    });
+    return getActiveEditorInput();
+  };
+
   beforeEach(() => {
     localStorage.clear();
   });
@@ -31,22 +49,34 @@ describe("App linking UX", () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
     const displayText = await screen.findByText("Sandpaper outline prototype");
+    const block = displayText.closest(".block");
+    expect(block).not.toBeNull();
+    const firstInput = block?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
     await user.click(displayText.closest(".block__display") as HTMLElement);
     await waitFor(() => {
-      expect(document.activeElement).toBe(firstInput);
+      expect(document.activeElement?.getAttribute("data-block-id")).toBe(blockId);
     });
 
-    fireEvent.input(firstInput, { target: { value: "[[" } });
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "[[" } });
     const menu = await screen.findByRole("listbox", {
       name: /wikilink suggestions/i
     });
     const menuScope = within(menu);
     await user.click(menuScope.getByRole("button", { name: "Inbox" }));
     await waitFor(() => {
-      expect(firstInput.value).toContain("[[Inbox]]");
+      expect(getInput()?.value).toContain("[[Inbox]]");
     });
   });
 
@@ -54,15 +84,29 @@ describe("App linking UX", () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const inputs = await screen.findAllByPlaceholderText("Write something...");
-    const firstInput = inputs[0] as HTMLTextAreaElement;
     const displayText = await screen.findByText("Sandpaper outline prototype");
+    const block = displayText.closest(".block");
+    expect(block).not.toBeNull();
+    const firstInput = block?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
     await user.click(displayText.closest(".block__display") as HTMLElement);
     await waitFor(() => {
-      expect(document.activeElement).toBe(firstInput);
+      expect(document.activeElement?.getAttribute("data-block-id")).toBe(blockId);
     });
 
-    fireEvent.input(firstInput, { target: { value: "[[Project Orbit" } });
+    fireEvent.input(getInput() as HTMLTextAreaElement, {
+      target: { value: "[[Project Orbit" }
+    });
     const menu = await screen.findByRole("listbox", {
       name: /wikilink suggestions/i
     });
@@ -72,7 +116,7 @@ describe("App linking UX", () => {
     );
 
     await waitFor(() => {
-      expect(firstInput.value).toContain("[[Project Orbit]]");
+      expect(getInput()?.value).toContain("[[Project Orbit]]");
     });
     expect(
       screen.getByRole("button", { name: "Open Project Orbit" })
@@ -95,21 +139,20 @@ describe("App linking UX", () => {
       within(createDialog).getByRole("button", { name: "Create" })
     );
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
+    await focusFirstEditorBlock(user);
 
-    const atlasInputs = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(atlasInputs[0] as HTMLTextAreaElement, {
+    fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: { value: "Alpha" }
     });
-    fireEvent.keyDown(atlasInputs[0], { key: "Enter" });
-    const atlasInputsAfter = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(atlasInputsAfter[1] as HTMLTextAreaElement, {
+    fireEvent.keyDown(getActiveEditorInput() as HTMLTextAreaElement, { key: "Enter" });
+    fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: { value: "Beta" }
     });
 
     await user.click(screen.getByRole("button", { name: "Open Inbox" }));
     await screen.findByText("Inbox", { selector: ".editor-pane__title" });
-    const inboxInputs = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(inboxInputs[0] as HTMLTextAreaElement, {
+    await focusFirstEditorBlock(user);
+    fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: {
         value: "See [[Project Atlas]] and [[Project Atlas|Alias]] soon."
       }
@@ -131,13 +174,13 @@ describe("App linking UX", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Inbox" }));
     await screen.findByText("Inbox", { selector: ".editor-pane__title" });
-    const inboxInputsAfter = await screen.findAllByPlaceholderText("Write something...");
+    await focusFirstEditorBlock(user);
     await waitFor(() => {
-      expect((inboxInputsAfter[0] as HTMLTextAreaElement).value).toContain(
+      expect((getActiveEditorInput() as HTMLTextAreaElement).value).toContain(
         "[[Project Nova]]"
       );
     });
-    expect((inboxInputsAfter[0] as HTMLTextAreaElement).value).toContain(
+    expect((getActiveEditorInput() as HTMLTextAreaElement).value).toContain(
       "[[Project Nova|Alias]]"
     );
   });
@@ -154,22 +197,26 @@ describe("App linking UX", () => {
     await user.type(input, "Preview Page");
     await user.click(within(dialog).getByRole("button", { name: "Create" }));
     await screen.findByText("Preview Page", { selector: ".editor-pane__title" });
+    await focusFirstEditorBlock(user);
 
-    const previewInputs = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(previewInputs[0] as HTMLTextAreaElement, {
+    fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: { value: "First block" }
     });
-    fireEvent.keyDown(previewInputs[0], { key: "Enter" });
-    const previewInputsAfter = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(previewInputsAfter[1] as HTMLTextAreaElement, {
+    fireEvent.keyDown(getActiveEditorInput() as HTMLTextAreaElement, { key: "Enter" });
+    fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: { value: "Second block" }
     });
 
     await user.click(screen.getByRole("button", { name: "Open Inbox" }));
     await screen.findByText("Inbox", { selector: ".editor-pane__title" });
-    const inboxInputs = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(inboxInputs[0] as HTMLTextAreaElement, {
+    await focusFirstEditorBlock(user);
+    const activeInput = getActiveEditorInput() as HTMLTextAreaElement;
+    fireEvent.input(activeInput, {
       target: { value: "Jump to [[Preview Page]]" }
+    });
+    fireEvent.blur(activeInput);
+    await waitFor(() => {
+      expect(document.activeElement).not.toBe(activeInput);
     });
 
     const wikilink = await screen.findByRole("button", { name: "Preview Page" });

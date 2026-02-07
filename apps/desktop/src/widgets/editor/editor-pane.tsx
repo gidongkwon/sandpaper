@@ -12,7 +12,8 @@ import {
 } from "solid-js";
 import { createStore, produce, type SetStoreFunction } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
-import type { Block } from "../../entities/block/model/block-types";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { Block, BlockType } from "../../entities/block/model/block-types";
 import type {
   LocalPageRecord,
   PageBlocksResponse,
@@ -22,7 +23,6 @@ import type { PageId } from "../../shared/model/id-types";
 import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import type { CodeFence } from "../../shared/model/markdown-types";
 import type { CaretPosition } from "../../shared/model/position";
-import { BlockActions } from "../../features/editor/ui/block-actions";
 import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
@@ -42,6 +42,14 @@ import { normalizePageUid } from "../../shared/lib/page/normalize-page-uid";
 import { getSafeLocalStorage } from "../../shared/lib/storage/safe-local-storage";
 import { getCaretPosition } from "../../shared/lib/textarea/get-caret-position";
 import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
+import {
+  cleanTextForBlockType,
+  extractImageSource,
+  isTodoChecked,
+  resolveRenderBlockType,
+  resolveBlockType,
+  toggleTodoText
+} from "../../shared/lib/blocks/block-type-utils";
 
 type JumpTarget = {
   id: string;
@@ -93,6 +101,12 @@ type OutlineState = {
   actualToVisible: number[];
 };
 
+type BlockDropHint = {
+  blockId: string;
+  position: "before" | "after";
+  desiredRootIndent?: number;
+};
+
 type EditorPaneProps = {
   blocks: Block[];
   setBlocks: SetStoreFunction<Block[]>;
@@ -103,7 +117,11 @@ type EditorPaneProps = {
   highlightedBlockId: Accessor<string | null>;
   jumpTarget: Accessor<JumpTarget | null>;
   setJumpTarget: Setter<JumpTarget | null>;
-  createNewBlock: (text?: string, indent?: number) => Block;
+  createNewBlock: (
+    text?: string,
+    indent?: number,
+    blockType?: BlockType
+  ) => Block;
   scheduleSave: () => void;
   recordLatency: (label: string) => void;
   addReviewItem: (id: string) => void | Promise<void>;
@@ -147,7 +165,6 @@ export const EditorPane = (props: EditorPaneProps) => {
   const createNewBlock = props.createNewBlock;
   const scheduleSave = props.scheduleSave;
   const recordLatency = props.recordLatency;
-  const addReviewItem = props.addReviewItem;
   const pageBusy = props.pageBusy;
   const renameTitle = props.renameTitle;
   const setRenameTitle = props.setRenameTitle;
@@ -226,6 +243,14 @@ export const EditorPane = (props: EditorPaneProps) => {
     top: number;
     height: number;
   } | null>(null);
+  const [draggedBlockId, setDraggedBlockId] = createSignal<string | null>(null);
+  const [blockDropHint, setBlockDropHint] = createSignal<BlockDropHint | null>(
+    null
+  );
+  const [columnDropTargetId, setColumnDropTargetId] = createSignal<string | null>(
+    null
+  );
+  const [handleDragging, setHandleDragging] = createSignal(false);
   const supportsPointer =
     typeof window !== "undefined" && "PointerEvent" in window;
   const isMacPlatform =
@@ -242,12 +267,27 @@ export const EditorPane = (props: EditorPaneProps) => {
   let selectionAnchor = -1;
   let selectionPointerId: number | null = null;
   let dragStartClientY: number | null = null;
+  let handleDragPointerId: number | null = null;
   const inputRefs = new Map<string, HTMLTextAreaElement>();
   const caretPositions = new Map<string, { start: number; end: number }>();
   const previewCache = new Map<string, { title: string; blocks: string[] }>();
+  const IMAGE_EXTENSIONS = [
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "gif",
+    "svg",
+    "bmp",
+    "tif",
+    "tiff",
+    "ico"
+  ] as const;
   let editorRef: HTMLDivElement | undefined;
   let copyTimeout: number | undefined;
   let previewCloseTimeout: number | undefined;
+
+  const getBlockType = (block: Block) => resolveRenderBlockType(block);
 
   const effectiveViewport = createMemo(() =>
     viewportHeight() === 0 ? 560 : viewportHeight()
@@ -303,6 +343,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     const actualToVisible = new Array(blocks.length).fill(-1);
     const stack: number[] = [];
     const collapsedFlags: boolean[] = [];
+    const embeddedFlags: boolean[] = [];
 
     for (let index = 0; index < blocks.length; index += 1) {
       const block = blocks[index];
@@ -312,13 +353,18 @@ export const EditorPane = (props: EditorPaneProps) => {
       ) {
         stack.pop();
         collapsedFlags.pop();
+        embeddedFlags.pop();
       }
       const parentIndex = stack.length > 0 ? stack[stack.length - 1] : null;
       const ancestorCollapsed =
         collapsedFlags.length > 0 ? collapsedFlags[collapsedFlags.length - 1] : false;
+      const ancestorEmbedded =
+        embeddedFlags.length > 0 ? embeddedFlags[embeddedFlags.length - 1] : false;
       const next = blocks[index + 1];
       const hasChildren = !!next && next.indent > block.indent;
-      const isCollapsed = hasChildren && collapsed.has(block.id);
+      const type = getBlockType(block);
+      const isCollapsed =
+        (hasChildren || type === "toggle") && collapsed.has(block.id);
       const item: OutlineItem = {
         block,
         index,
@@ -326,10 +372,10 @@ export const EditorPane = (props: EditorPaneProps) => {
         parentIndex,
         hasChildren,
         collapsed: isCollapsed,
-        hidden: ancestorCollapsed
+        hidden: ancestorCollapsed || ancestorEmbedded
       };
       items.push(item);
-      if (!ancestorCollapsed) {
+      if (!item.hidden) {
         actualToVisible[index] = visible.length;
         visible.push(item);
         visibleToActual.push(index);
@@ -337,6 +383,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       if (hasChildren) {
         stack.push(index);
         collapsedFlags.push(ancestorCollapsed || isCollapsed);
+        embeddedFlags.push(ancestorEmbedded || type === "column_layout");
       }
     }
 
@@ -395,6 +442,12 @@ export const EditorPane = (props: EditorPaneProps) => {
     selectionPointerId = null;
     selectionAnchor = -1;
     dragStartClientY = null;
+  };
+
+  const setHandleDraggingState = (value: boolean) => {
+    setHandleDragging(value);
+    if (typeof document === "undefined") return;
+    document.body.classList.toggle("is-block-dragging", value);
   };
 
   const setSelectionRangeValue = (start: number, end: number, anchor = start) => {
@@ -655,6 +708,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (previewCloseTimeout) {
       window.clearTimeout(previewCloseTimeout);
     }
+    setHandleDraggingState(false);
     blockObserver?.disconnect();
   });
 
@@ -680,6 +734,43 @@ export const EditorPane = (props: EditorPaneProps) => {
     const rangeValue = selectionRange();
     return rangeValue ? rangeValue.end - rangeValue.start + 1 : 0;
   });
+
+  const handleDroppedFiles = async (files: FileList | File[]) => {
+    if (!isTauri()) return;
+    const items = Array.from(files);
+    if (items.length === 0) return;
+    const markdowns: string[] = [];
+    for (const file of items) {
+      try {
+        if (!file.type.startsWith("image/")) continue;
+        const imported = await importImageFile(file);
+        if (imported?.markdown) {
+          markdowns.push(imported.markdown);
+        }
+      } catch (error) {
+        console.error("Failed to import dropped image", error);
+      }
+    }
+    insertImageBlocksAfterActive(markdowns);
+  };
+
+  const handleDrop = (event: DragEvent) => {
+    if (!isTauri()) return;
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    event.preventDefault();
+    void handleDroppedFiles(files);
+  };
+
+  const handlePaste = (event: ClipboardEvent) => {
+    if (!isTauri()) return;
+    const files = event.clipboardData?.files;
+    if (!files || files.length === 0) return;
+    const hasImage = Array.from(files).some((file) => file.type.startsWith("image/"));
+    if (!hasImage) return;
+    event.preventDefault();
+    void handleDroppedFiles(files);
+  };
 
   const breadcrumbItems = createMemo(() => {
     const currentId = focusedId() ?? activeId();
@@ -713,7 +804,16 @@ export const EditorPane = (props: EditorPaneProps) => {
         scrollMeter.notifyScroll();
       }
     };
+    const handleDragOver = (event: DragEvent) => {
+      if (!isTauri()) return;
+      if (event.dataTransfer?.types?.includes("Files")) {
+        event.preventDefault();
+      }
+    };
     editorRef.addEventListener("scroll", handleScroll);
+    editorRef.addEventListener("dragover", handleDragOver);
+    editorRef.addEventListener("drop", handleDrop);
+    editorRef.addEventListener("paste", handlePaste);
 
     const resizeObserver = new ResizeObserver(() => {
       if (!editorRef) return;
@@ -723,14 +823,22 @@ export const EditorPane = (props: EditorPaneProps) => {
 
     onCleanup(() => {
       editorRef?.removeEventListener("scroll", handleScroll);
+      editorRef?.removeEventListener("dragover", handleDragOver);
+      editorRef?.removeEventListener("drop", handleDrop);
+      editorRef?.removeEventListener("paste", handlePaste);
       resizeObserver.disconnect();
     });
   });
 
   onMount(() => {
-    const handlePointerMoveWindow = (event: PointerEvent) =>
+    const handlePointerMoveWindow = (event: PointerEvent) => {
       handlePointerMove(event);
-    const handlePointerUpWindow = (event: PointerEvent) => handlePointerUp(event);
+      handleHandlePointerMove(event);
+    };
+    const handlePointerUpWindow = (event: PointerEvent) => {
+      handlePointerUp(event);
+      handleHandlePointerUp(event);
+    };
     const handleMouseMoveWindow = (event: MouseEvent) => handleMouseMove(event);
     const handleMouseUpWindow = () => handleMouseUp();
 
@@ -893,6 +1001,57 @@ export const EditorPane = (props: EditorPaneProps) => {
     setJumpTarget({ id: block.id, caret: "start" });
   };
 
+  const toggleTodoAt = (index: number) => {
+    const block = blocks[index];
+    if (!block) return;
+    const checked = isTodoChecked(block.text);
+    const next = toggleTodoText(block.text, !checked);
+    setBlocks(index, (prev) => ({
+      ...prev,
+      text: next,
+      block_type: "todo"
+    }));
+    scheduleSave();
+  };
+
+  const addColumnToLayout = (layoutIndex: number) => {
+    const layoutBlock = blocks[layoutIndex];
+    if (!layoutBlock) return;
+    const layoutIndent = layoutBlock.indent;
+    let insertIndex = layoutIndex + 1;
+    while (insertIndex < blocks.length && blocks[insertIndex].indent > layoutIndent) {
+      insertIndex += 1;
+    }
+    const column = createNewBlock("", layoutIndent + 1, "column");
+    const child = createNewBlock("", layoutIndent + 2, "text");
+    setBlocks(
+      produce((draft) => {
+        draft.splice(insertIndex, 0, column, child);
+      })
+    );
+    scheduleSave();
+  };
+
+  const insertImageBlocksAfterActive = (markdowns: string[]) => {
+    const nonEmpty = markdowns.map((value) => value.trim()).filter(Boolean);
+    if (nonEmpty.length === 0) return;
+    const activeIndex = activeId() ? findIndexById(activeId() as string) : -1;
+    const insertAt = activeIndex >= 0 ? activeIndex + 1 : blocks.length;
+    const created = nonEmpty.map((markdown) =>
+      createNewBlock(markdown, activeIndex >= 0 ? blocks[activeIndex].indent : 0, "image")
+    );
+    setBlocks(
+      produce((draft) => {
+        draft.splice(insertAt, 0, ...created);
+      })
+    );
+    scheduleSave();
+    const first = created[0];
+    if (first) {
+      focusBlock(first.id, "end");
+    }
+  };
+
   const removeBlockAt = (index: number) => {
     if (blocks.length === 1) return;
     const prev = blocks[index - 1];
@@ -907,28 +1066,17 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (target) focusBlock(target.id);
   };
 
-  const duplicateBlockAt = (index: number) => {
-    const source = blocks[index];
-    if (!source) return;
-    const clone = createNewBlock(source.text, source.indent);
-    setBlocks(
-      produce((draft) => {
-        draft.splice(index + 1, 0, clone);
-      })
-    );
-    scheduleSave();
-    setActiveId(clone.id);
-    setFocusedId(clone.id);
-    setJumpTarget({ id: clone.id, caret: "end" });
-  };
-
   const duplicateSelection = () => {
     const rangeValue = selectionRange();
     if (!rangeValue) return;
     const selected = getSelectedActualIndexes();
     if (selected.length === 0) return;
     const clones = selected.map((index) =>
-      createNewBlock(blocks[index].text, blocks[index].indent)
+      createNewBlock(
+        blocks[index].text,
+        blocks[index].indent,
+        getBlockType(blocks[index])
+      )
     );
     const insertIndex = selected[selected.length - 1] + 1;
     setBlocks(
@@ -1004,6 +1152,17 @@ export const EditorPane = (props: EditorPaneProps) => {
     let end = startIndex;
     for (let index = startIndex + 1; index < blocks.length; index += 1) {
       if (blocks[index].indent <= baseIndent) break;
+      end = index;
+    }
+    return end;
+  };
+
+  const getSubtreeEndFor = (source: Block[], startIndex: number) => {
+    if (!source[startIndex]) return startIndex;
+    const baseIndent = source[startIndex].indent;
+    let end = startIndex;
+    for (let index = startIndex + 1; index < source.length; index += 1) {
+      if (source[index].indent <= baseIndent) break;
       end = index;
     }
     return end;
@@ -1098,6 +1257,331 @@ export const EditorPane = (props: EditorPaneProps) => {
     return true;
   };
 
+  const clearBlockDragState = () => {
+    setDraggedBlockId(null);
+    setBlockDropHint(null);
+    setColumnDropTargetId(null);
+    setHandleDraggingState(false);
+    handleDragPointerId = null;
+  };
+
+  const dropPositionForEvent = (
+    event: DragEvent,
+    target: HTMLElement
+  ): "before" | "after" => {
+    const rect = target.getBoundingClientRect();
+    const middle = rect.top + rect.height / 2;
+    return event.clientY > middle ? "after" : "before";
+  };
+
+  const moveDraggedBlockTo = (
+    targetBlockId: string,
+    position: "before" | "after",
+    desiredRootIndent?: number
+  ) => {
+    const sourceBlockId = draggedBlockId();
+    if (!sourceBlockId) return false;
+    const sourceStart = findIndexById(sourceBlockId);
+    const targetIndex = findIndexById(targetBlockId);
+    if (sourceStart < 0 || targetIndex < 0) return false;
+    const sourceEnd = getSubtreeEnd(sourceStart);
+    if (targetIndex >= sourceStart && targetIndex <= sourceEnd) return false;
+
+    const length = sourceEnd - sourceStart + 1;
+    const targetEnd = getSubtreeEnd(targetIndex);
+    const insertAtRaw = position === "before" ? targetIndex : targetEnd + 1;
+    const insertAt =
+      insertAtRaw > sourceEnd ? insertAtRaw - length : insertAtRaw;
+    const rootIndent = blocks[sourceStart]?.indent ?? 0;
+    const indentDelta =
+      typeof desiredRootIndent === "number" ? desiredRootIndent - rootIndent : 0;
+    if (insertAt === sourceStart && indentDelta === 0) {
+      clearBlockDragState();
+      return false;
+    }
+
+    setBlocks(
+      produce((draft) => {
+        const currentSourceStart = draft.findIndex(
+          (block) => block.id === sourceBlockId
+        );
+        const currentTargetIndex = draft.findIndex(
+          (block) => block.id === targetBlockId
+        );
+        if (currentSourceStart < 0 || currentTargetIndex < 0) return;
+        const currentSourceEnd = getSubtreeEndFor(draft, currentSourceStart);
+        if (
+          currentTargetIndex >= currentSourceStart &&
+          currentTargetIndex <= currentSourceEnd
+        ) {
+          return;
+        }
+        const currentTargetEnd = getSubtreeEndFor(draft, currentTargetIndex);
+        const segmentLength = currentSourceEnd - currentSourceStart + 1;
+        const segment = draft.splice(currentSourceStart, segmentLength);
+        if (indentDelta !== 0) {
+          for (const block of segment) {
+            block.indent = Math.max(0, block.indent + indentDelta);
+          }
+        }
+        let currentInsertAt =
+          position === "before" ? currentTargetIndex : currentTargetEnd + 1;
+        if (currentInsertAt > currentSourceStart) {
+          currentInsertAt -= segmentLength;
+        }
+        currentInsertAt = Math.max(0, Math.min(currentInsertAt, draft.length));
+        draft.splice(currentInsertAt, 0, ...segment);
+      })
+    );
+    scheduleSave();
+    clearBlockDragState();
+    if (getVisibleIndexById(sourceBlockId) >= 0) {
+      focusBlock(sourceBlockId, "preserve");
+    } else {
+      setActiveId(sourceBlockId);
+      setFocusedId(null);
+    }
+    return true;
+  };
+
+  const handleBlockHandleDragStart = (event: DragEvent, blockId: string) => {
+    const index = findIndexById(blockId);
+    if (index < 0) return;
+    setDraggedBlockId(blockId);
+    setBlockDropHint(null);
+    setColumnDropTargetId(null);
+    event.stopPropagation();
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", blockId);
+    }
+  };
+
+  const handleBlockDragOver = (event: DragEvent, blockId: string) => {
+    if (!draggedBlockId()) return;
+    if (draggedBlockId() === blockId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    setColumnDropTargetId(null);
+    setBlockDropHint({
+      blockId,
+      position: dropPositionForEvent(event, target),
+      desiredRootIndent: undefined
+    });
+  };
+
+  const handleBlockDrop = (event: DragEvent, blockId: string) => {
+    if (!draggedBlockId()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const hinted = blockDropHint();
+    const position =
+      hinted && hinted.blockId === blockId
+        ? hinted.position
+        : dropPositionForEvent(event, target);
+    const desiredIndent =
+      hinted && hinted.blockId === blockId
+        ? hinted.desiredRootIndent
+        : undefined;
+    void moveDraggedBlockTo(blockId, position, desiredIndent);
+  };
+
+  const handleColumnDragOver = (event: DragEvent, columnBlockId: string) => {
+    if (!draggedBlockId()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setBlockDropHint(null);
+    setColumnDropTargetId(columnBlockId);
+  };
+
+  const handleColumnDrop = (event: DragEvent, columnBlockId: string) => {
+    if (!draggedBlockId()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const columnIndex = findIndexById(columnBlockId);
+    if (columnIndex < 0) {
+      clearBlockDragState();
+      return;
+    }
+    if (resolveBlockType(blocks[columnIndex]) !== "column") {
+      clearBlockDragState();
+      return;
+    }
+    const desiredIndent = (blocks[columnIndex]?.indent ?? 0) + 1;
+    void moveDraggedBlockTo(columnBlockId, "after", desiredIndent);
+  };
+
+  const handleColumnRowDragOver = (event: DragEvent, rowBlockId: string) => {
+    if (!draggedBlockId()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const rowIndex = findIndexById(rowBlockId);
+    const desiredRootIndent = rowIndex >= 0 ? blocks[rowIndex].indent : undefined;
+    setColumnDropTargetId(null);
+    setBlockDropHint({
+      blockId: rowBlockId,
+      position: dropPositionForEvent(event, target),
+      desiredRootIndent
+    });
+  };
+
+  const handleColumnRowDrop = (event: DragEvent, rowBlockId: string) => {
+    if (!draggedBlockId()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const rowIndex = findIndexById(rowBlockId);
+    if (rowIndex < 0) {
+      clearBlockDragState();
+      return;
+    }
+    const hinted = blockDropHint();
+    const position =
+      hinted && hinted.blockId === rowBlockId
+        ? hinted.position
+        : dropPositionForEvent(event, target);
+    const desiredIndent =
+      hinted && hinted.blockId === rowBlockId
+        ? hinted.desiredRootIndent ?? blocks[rowIndex]?.indent ?? 0
+        : blocks[rowIndex]?.indent ?? 0;
+    void moveDraggedBlockTo(rowBlockId, position, desiredIndent);
+  };
+
+  const dropPositionForPoint = (
+    clientY: number,
+    target: HTMLElement
+  ): "before" | "after" => {
+    const rect = target.getBoundingClientRect();
+    const middle = rect.top + rect.height / 2;
+    return clientY > middle ? "after" : "before";
+  };
+
+  const updatePointerDropHint = (clientX: number, clientY: number) => {
+    if (!draggedBlockId()) return;
+    const element = document.elementFromPoint(clientX, clientY);
+    const target = element instanceof HTMLElement ? element : null;
+    if (!target) {
+      setBlockDropHint(null);
+      setColumnDropTargetId(null);
+      return;
+    }
+
+    const rowTarget = target.closest<HTMLElement>(".column-layout-preview__row");
+    if (rowTarget) {
+      const rowBlockId = rowTarget.dataset.rowBlockId;
+      if (rowBlockId) {
+        const rowIndex = findIndexById(rowBlockId);
+        if (rowIndex >= 0) {
+          setColumnDropTargetId(null);
+          setBlockDropHint({
+            blockId: rowBlockId,
+            position: dropPositionForPoint(clientY, rowTarget),
+            desiredRootIndent: blocks[rowIndex].indent
+          });
+          return;
+        }
+      }
+    }
+
+    const columnTarget = target.closest<HTMLElement>(".column-layout-preview__column");
+    if (columnTarget) {
+      const columnBlockId = columnTarget.dataset.columnBlockId;
+      if (columnBlockId) {
+        setBlockDropHint(null);
+        setColumnDropTargetId(columnBlockId);
+        return;
+      }
+    }
+
+    const blockTarget = target.closest<HTMLElement>(".block");
+    const blockId = blockTarget?.dataset.blockId;
+    if (
+      blockTarget &&
+      blockId &&
+      blockId !== draggedBlockId()
+    ) {
+      setColumnDropTargetId(null);
+      setBlockDropHint({
+        blockId,
+        position: dropPositionForPoint(clientY, blockTarget),
+        desiredRootIndent: undefined
+      });
+      return;
+    }
+
+    setBlockDropHint(null);
+    setColumnDropTargetId(null);
+  };
+
+  const startHandlePointerDrag = (event: PointerEvent, blockId: string) => {
+    if (event.button !== 0) return;
+    if (findIndexById(blockId) < 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggedBlockId(blockId);
+    setBlockDropHint(null);
+    setColumnDropTargetId(null);
+    handleDragPointerId = event.pointerId;
+    setHandleDraggingState(true);
+  };
+
+  const handleHandlePointerMove = (event: PointerEvent) => {
+    if (!handleDragging()) return;
+    if (
+      handleDragPointerId !== null &&
+      event.pointerId !== handleDragPointerId
+    ) {
+      return;
+    }
+    event.preventDefault();
+    updatePointerDropHint(event.clientX, event.clientY);
+  };
+
+  const commitHandlePointerDrop = () => {
+    const sourceBlockId = draggedBlockId();
+    if (!sourceBlockId) {
+      clearBlockDragState();
+      return;
+    }
+    const columnId = columnDropTargetId();
+    if (columnId) {
+      const columnIndex = findIndexById(columnId);
+      if (columnIndex >= 0 && resolveBlockType(blocks[columnIndex]) === "column") {
+        void moveDraggedBlockTo(
+          columnId,
+          "after",
+          (blocks[columnIndex]?.indent ?? 0) + 1
+        );
+        return;
+      }
+    }
+    const hint = blockDropHint();
+    if (hint) {
+      void moveDraggedBlockTo(hint.blockId, hint.position, hint.desiredRootIndent);
+      return;
+    }
+    clearBlockDragState();
+  };
+
+  const handleHandlePointerUp = (event: PointerEvent) => {
+    if (!handleDragging()) return;
+    if (
+      handleDragPointerId !== null &&
+      event.pointerId !== handleDragPointerId
+    ) {
+      return;
+    }
+    event.preventDefault();
+    commitHandlePointerDrop();
+  };
+
   const moveFocus = (index: number, direction: -1 | 1) => {
     const visibleIndex = outline().actualToVisible[index] ?? -1;
     if (visibleIndex < 0) return;
@@ -1141,9 +1625,11 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const toggleCollapse = (item: OutlineItem) => {
-    if (!item.hasChildren) return;
+    const type = getBlockType(item.block);
+    const canToggle = item.hasChildren || type === "toggle";
+    if (!canToggle) return;
     const next = new Set<string>(collapsedBlocks());
-    const isCollapsing = !item.collapsed;
+    const isCollapsing = !next.has(item.block.id);
     if (isCollapsing) {
       next.add(item.block.id);
     } else {
@@ -1179,11 +1665,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     clearSelection();
   };
 
-  const addReviewFromBlock = (block: Block) => {
-    if (!block.id) return;
-    void addReviewItem(block.id);
-  };
-
   const closeSlashMenu = () => {
     setSlashMenu((prev) =>
       prev.open ? { ...prev, open: false, position: null } : prev
@@ -1216,6 +1697,92 @@ export const EditorPane = (props: EditorPaneProps) => {
     );
   };
 
+  const applyInlineTextCommand = (
+    commandId: string,
+    before: string,
+    after: string
+  ) => {
+    const cleaned = `${before}${after}`;
+    if (commandId === "link") {
+      const insertText = "[[Page]]";
+      return { nextText: `${before}${insertText}${after}`, nextCaret: before.length + insertText.length };
+    }
+    if (commandId === "date") {
+      const insertText = new Date().toISOString().slice(0, 10);
+      return { nextText: `${before}${insertText}${after}`, nextCaret: before.length + insertText.length };
+    }
+    if (commandId === "bold") {
+      const trimmed = cleaned.trim();
+      const nextText = `**${trimmed}**`;
+      return { nextText, nextCaret: nextText.length };
+    }
+    if (commandId === "italic") {
+      const trimmed = cleaned.trim();
+      const nextText = `_${trimmed}_`;
+      return { nextText, nextCaret: nextText.length };
+    }
+    const trimmed = cleaned.trim();
+    return { nextText: trimmed, nextCaret: trimmed.length };
+  };
+
+  const bytesToBase64 = (bytes: Uint8Array) => {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i] ?? 0);
+    }
+    return btoa(binary);
+  };
+
+  const importImageFile = async (file: File) => {
+    if (!isTauri()) return null;
+    const filename = file.name || "image";
+    const mimeType = file.type || "application/octet-stream";
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const result = (await invoke<{
+      asset_path: string;
+      markdown: string;
+      mime_type: string;
+      original_name: string;
+    }>("import_image_asset_bytes", {
+      filename,
+      mimeType,
+      mime_type: mimeType,
+      bytesB64: bytesToBase64(bytes),
+      bytes_b64: bytesToBase64(bytes)
+    })) as {
+      asset_path: string;
+      markdown: string;
+      mime_type: string;
+      original_name: string;
+    };
+    return result;
+  };
+
+  const importImageFromPicker = async () => {
+    if (!isTauri()) return null;
+    const selected = await openDialog({
+      multiple: false,
+      filters: [
+        {
+          name: "Images",
+          extensions: [...IMAGE_EXTENSIONS]
+        }
+      ]
+    });
+    const path = Array.isArray(selected) ? selected[0] : selected;
+    if (!path || typeof path !== "string") return null;
+    const result = await invoke<{
+      asset_path: string;
+      markdown: string;
+      mime_type: string;
+      original_name: string;
+    }>("import_image_asset", {
+      path
+    });
+    return result;
+  };
+
   const applySlashCommand = (commandId: string) => {
     const state = slashMenu();
     if (!state.blockId || state.blockIndex < 0 || state.slashIndex < 0) {
@@ -1232,29 +1799,83 @@ export const EditorPane = (props: EditorPaneProps) => {
     const after = text.slice(state.slashIndex + 1);
     let nextText = text;
     let nextCaret = before.length;
+    let nextType: BlockType | null = null;
 
-    if (commandId === "link") {
-      const insertText = "[[Page]]";
-      nextText = `${before}${insertText}${after}`;
-      nextCaret = before.length + insertText.length;
-    }
-
-    if (commandId === "date") {
-      const insertText = new Date().toISOString().slice(0, 10);
-      nextText = `${before}${insertText}${after}`;
-      nextCaret = before.length + insertText.length;
-    }
-
-    if (commandId === "task") {
-      const cleaned = `${before}${after}`.trimStart();
-      const prefix = cleaned.startsWith("- [ ] ") || cleaned.startsWith("- [x] ")
-        ? ""
-        : "- [ ] ";
-      nextText = `${prefix}${cleaned}`;
+    if (commandId === "todo" || commandId === "task") {
+      nextType = "todo";
+      const content = cleanTextForBlockType(`${before}${after}`, "todo");
+      nextText = toggleTodoText(content, false);
       nextCaret = nextText.length;
+    } else if (commandId === "h1") {
+      nextType = "text";
+      const content = cleanTextForBlockType(`${before}${after}`, "heading1");
+      nextText = `# ${content}`;
+      nextCaret = nextText.length;
+    } else if (commandId === "h2") {
+      nextType = "text";
+      const content = cleanTextForBlockType(`${before}${after}`, "heading1");
+      nextText = `## ${content}`;
+      nextCaret = nextText.length;
+    } else if (commandId === "h3") {
+      nextType = "text";
+      const content = cleanTextForBlockType(`${before}${after}`, "heading1");
+      nextText = `### ${content}`;
+      nextCaret = nextText.length;
+    } else if (commandId === "quote") {
+      nextType = "quote";
+      nextText = cleanTextForBlockType(`${before}${after}`, nextType);
+      nextCaret = nextText.length;
+    } else if (commandId === "callout") {
+      nextType = "callout";
+      nextText = `${before}${after}`.trim();
+      nextCaret = nextText.length;
+    } else if (commandId === "toggle") {
+      nextType = "toggle";
+      nextText = `${before}${after}`.trim();
+      nextCaret = nextText.length;
+    } else if (commandId === "code") {
+      nextType = "code";
+      nextText = `${before}${after}`.trim();
+      nextCaret = nextText.length;
+    } else if (commandId === "divider") {
+      nextType = "divider";
+      nextText = "";
+      nextCaret = 0;
+    } else if (commandId === "database") {
+      nextType = "database_view";
+      nextText = `${before}${after}`.trim();
+      nextCaret = nextText.length;
+    } else if (commandId === "image") {
+      closeSlashMenu();
+      void (async () => {
+        const imported = await importImageFromPicker();
+        if (!imported) return;
+        setBlocks(index, (prev) => ({
+          ...prev,
+          text: imported.markdown,
+          block_type: "image"
+        }));
+        scheduleSave();
+        requestAnimationFrame(() => {
+          const input = inputRefs.get(block.id);
+          if (!input) return;
+          const caret = imported.markdown.length;
+          input.focus();
+          input.setSelectionRange(caret, caret);
+          storeSelection(block.id, input, true);
+        });
+      })();
+      return;
+    } else {
+      const transformed = applyInlineTextCommand(commandId, before, after);
+      nextText = transformed.nextText;
+      nextCaret = transformed.nextCaret;
     }
 
     setBlocks(index, "text", nextText);
+    if (nextType) {
+      setBlocks(index, "block_type", nextType);
+    }
     scheduleSave();
     closeSlashMenu();
     requestAnimationFrame(() => {
@@ -1393,13 +2014,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     }
     setNewPageTitle(title);
     await createPage();
-  };
-
-  const openLinkDialog = (block: Block, index: number) => {
-    setDialogMode("link");
-    setDialogTarget({ id: block.id, index });
-    setDialogValue("");
-    setDialogOpen(true);
   };
 
   const openRenameDialog = () => {
@@ -1863,6 +2477,547 @@ export const EditorPane = (props: EditorPaneProps) => {
     return <span>{renderInlineMarkdown(text)}</span>;
   };
 
+  const renderImageDisplay = (text: string): JSX.Element => {
+    const source = extractImageSource(text);
+    if (!source) {
+      return (
+        <div class="block-renderer block-renderer--image">
+          <div class="block-renderer__title">Image</div>
+          <div class="block-renderer__empty">Enter an HTTP(S) URL or /assets path.</div>
+        </div>
+      );
+    }
+    if (source.startsWith("http://") || source.startsWith("https://")) {
+      return (
+        <div class="block-renderer block-renderer--image">
+          <div class="block-renderer__title">Image</div>
+          <img class="block-renderer__image" src={source} alt="" loading="lazy" />
+        </div>
+      );
+    }
+    return (
+      <div class="block-renderer block-renderer--image">
+        <div class="block-renderer__title">Image asset</div>
+        <div class="block-renderer__asset-path">{source}</div>
+      </div>
+    );
+  };
+
+  type ColumnPreviewRow = {
+    blockId: string;
+    actualIndex: number;
+    depth: number;
+  };
+
+  type ColumnPreviewData = {
+    columnBlockId: string;
+    columnIndent: number;
+    rows: ColumnPreviewRow[];
+  };
+
+  const buildColumnLayoutPreview = (layoutIndex: number): ColumnPreviewData[] => {
+    const layout = blocks[layoutIndex];
+    if (!layout || resolveBlockType(layout) !== "column_layout") return [];
+    const layoutIndent = layout.indent;
+    const collapsed = collapsedBlocks();
+    const columns: ColumnPreviewData[] = [];
+    let cursor = layoutIndex + 1;
+    while (cursor < blocks.length && blocks[cursor].indent > layoutIndent) {
+      const block = blocks[cursor];
+      if (
+        block.indent === layoutIndent + 1 &&
+        resolveBlockType(block) === "column"
+      ) {
+        const columnIndent = block.indent;
+        const column: ColumnPreviewData = {
+          columnBlockId: block.id,
+          columnIndent,
+          rows: []
+        };
+        const collapsedIndentStack: number[] = [];
+        cursor += 1;
+        while (cursor < blocks.length && blocks[cursor].indent > columnIndent) {
+          const child = blocks[cursor];
+          while (
+            collapsedIndentStack.length > 0 &&
+            child.indent <= collapsedIndentStack[collapsedIndentStack.length - 1]
+          ) {
+            collapsedIndentStack.pop();
+          }
+          const hiddenByCollapsed = collapsedIndentStack.length > 0;
+          const childType = resolveBlockType(child);
+          const next = blocks[cursor + 1];
+          const hasChildren = !!next && next.indent > child.indent;
+          if (childType !== "column" && !hiddenByCollapsed) {
+            column.rows.push({
+              blockId: child.id,
+              actualIndex: cursor,
+              depth: Math.max(0, child.indent - columnIndent - 1)
+            });
+          }
+          if (hasChildren && collapsed.has(child.id)) {
+            collapsedIndentStack.push(child.indent);
+          }
+          cursor += 1;
+        }
+        columns.push(column);
+        continue;
+      }
+      cursor += 1;
+    }
+    return columns;
+  };
+
+  const ColumnLayoutPreview = (props: { layoutIndex: number }) => {
+    const columns = () => buildColumnLayoutPreview(props.layoutIndex);
+    return (
+      <div class="block-renderer block-renderer--columns">
+        <div class="block-renderer__header">
+          <button
+            class="block-renderer__copy"
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              addColumnToLayout(props.layoutIndex);
+            }}
+          >
+            Add column
+          </button>
+        </div>
+        <div class="column-layout-preview">
+          <For each={columns()}>
+            {(column) => (
+              <div
+                class={`column-layout-preview__column ${
+                  columnDropTargetId() === column.columnBlockId ? "is-drop-target" : ""
+                }`}
+                data-column-block-id={column.columnBlockId}
+                onDragOver={(event) =>
+                  handleColumnDragOver(event, column.columnBlockId)
+                }
+                onDrop={(event) => handleColumnDrop(event, column.columnBlockId)}
+              >
+                <Show
+                  when={column.rows.length > 0}
+                  fallback={
+                    <div class="column-layout-preview__empty">Empty column</div>
+                  }
+                >
+                  <For each={column.rows}>
+                    {(row) => {
+                      const child = blocks[row.actualIndex];
+                      if (!child) return null;
+                      const item = outline().items[row.actualIndex];
+                      return renderBlockRow({
+                        block: child,
+                        actualIndex: row.actualIndex,
+                        visibleIndex: getVisibleIndexById(row.blockId),
+                        hasChildren: item?.hasChildren ?? false,
+                        collapsed: item?.collapsed ?? false,
+                        visualIndent: row.depth,
+                        isColumnRow: true
+                      });
+                    }}
+                  </For>
+                </Show>
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    );
+  };
+
+  const DatabaseViewPreview = () => (
+    <div class="block-renderer block-renderer--database">
+      <div class="block-renderer__title">Database view</div>
+      <table class="database-preview__table">
+        <thead>
+          <tr>
+            <th>Page</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={pages().slice(0, 12)}>
+            {(page) => (
+              <tr>
+                <td>
+                  <button
+                    class="database-preview__page"
+                    type="button"
+                    onClick={() => void switchPage(page.uid)}
+                  >
+                    {page.title || page.uid}
+                  </button>
+                </td>
+              </tr>
+            )}
+          </For>
+        </tbody>
+      </table>
+    </div>
+  );
+
+  type BlockRowRenderArgs = {
+    block: Block;
+    actualIndex: number;
+    visibleIndex: number;
+    hasChildren: boolean;
+    collapsed: boolean;
+    visualIndent: number;
+    isColumnRow?: boolean;
+  };
+
+  const renderBlockRow = (args: BlockRowRenderArgs) => {
+    const block = args.block;
+    const actualIndex = args.actualIndex;
+    const visibleIndex = () => args.visibleIndex;
+    const blockType = () => getBlockType(block);
+    const codePreview = () => getCodePreview(block.text);
+    const diagramPreview = () => getDiagramPreview(block.text);
+    const pluginRenderer = () => {
+      if (
+        blockType() !== "text" &&
+        blockType() !== "code"
+      ) {
+        return null;
+      }
+      return getPluginBlockRenderer(block.text);
+    };
+    const isEditing = () => focusedId() === block.id;
+    const isSelected = () => {
+      const idx = visibleIndex();
+      if (idx < 0) return false;
+      const rangeValue = selectionRange();
+      if (!rangeValue) return false;
+      return idx >= rangeValue.start && idx <= rangeValue.end;
+    };
+    const isDragSource = () => draggedBlockId() === block.id;
+    const blockDropPosition = () =>
+      blockDropHint()?.blockId === block.id
+        ? blockDropHint()?.position
+        : null;
+    const updateBlockText = (blockId: string, nextText: string) => {
+      const index = findIndexById(blockId);
+      if (index < 0) return;
+      if (blocks[index]?.text === nextText) return;
+      setBlocks(index, (prev) => ({
+        ...prev,
+        text: nextText,
+        block_type: resolveBlockType(prev)
+      }));
+      scheduleSave();
+    };
+    const displayContent = () => {
+      if (blockType() === "column_layout") {
+        return <ColumnLayoutPreview layoutIndex={actualIndex} />;
+      }
+      if (blockType() === "database_view") {
+        return <DatabaseViewPreview />;
+      }
+      if (blockType() === "divider") {
+        return <div class="block-renderer block-renderer--divider" />;
+      }
+      if (blockType() === "image") {
+        return renderImageDisplay(block.text);
+      }
+      if (blockType() === "todo") {
+        const todoText = cleanTextForBlockType(block.text, "todo");
+        if (!todoText.trim()) {
+          return (
+            <span class="block__placeholder">Write something...</span>
+          );
+        }
+        return renderMarkdownDisplay(todoText);
+      }
+      const plugin = pluginRenderer();
+      if (plugin) {
+        return (
+          <PluginBlockPreview
+            block={block}
+            renderer={plugin}
+            isTauri={isTauri}
+            onUpdateText={updateBlockText}
+          />
+        );
+      }
+      const code = codePreview();
+      if (code) {
+        return renderCodePreview(code, block.id);
+      }
+      const diagram = diagramPreview();
+      if (diagram) {
+        return <DiagramPreview diagram={diagram} />;
+      }
+      const trimmed = block.text.trim();
+      if (!trimmed) {
+        return (
+          <span class="block__placeholder">Write something...</span>
+        );
+      }
+      return renderMarkdownDisplay(block.text);
+    };
+
+    return (
+      <div
+        class={`block ${activeId() === block.id ? "is-active" : ""} ${
+          highlightedBlockId() === block.id ? "is-highlighted" : ""
+        } ${args.collapsed ? "is-collapsed" : ""} ${
+          isSelected() ? "is-selected" : ""
+        } block--type-${blockType()} ${
+          isDragSource() ? "is-drag-source" : ""
+        } ${
+          blockDropPosition() ? `is-drop-${blockDropPosition()}` : ""
+        } ${args.isColumnRow ? "column-layout-preview__row" : ""}`}
+        ref={observeBlock}
+        data-block-id={block.id}
+        data-row-block-id={args.isColumnRow ? block.id : undefined}
+        data-depth={args.isColumnRow ? args.visualIndent : undefined}
+        style={{
+          "margin-left": `${args.visualIndent * 24}px`,
+          "--block-indent": `${args.visualIndent * 24}px`,
+          "--i": `${visibleIndex() >= 0 ? visibleIndex() : actualIndex}`
+        }}
+        onDragOver={(event) =>
+          args.isColumnRow
+            ? handleColumnRowDragOver(event, block.id)
+            : handleBlockDragOver(event, block.id)
+        }
+        onDrop={(event) =>
+          args.isColumnRow
+            ? handleColumnRowDrop(event, block.id)
+            : handleBlockDrop(event, block.id)
+        }
+      >
+        <button
+          class="block__drag-handle"
+          type="button"
+          draggable={true}
+          aria-label="Drag block"
+          onPointerDown={(event) =>
+            startHandlePointerDrag(event, block.id)
+          }
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onDragStart={(event) =>
+            handleBlockHandleDragStart(event, block.id)
+          }
+          onDragEnd={clearBlockDragState}
+        >
+          <span class="block__drag-handle-dots" aria-hidden="true" />
+        </button>
+        <Show
+          when={args.hasChildren || blockType() === "toggle"}
+          fallback={
+            <span
+              class="block__toggle-spacer"
+              aria-hidden="true"
+            />
+          }
+        >
+          <button
+            class={`block__toggle ${
+              args.collapsed ? "is-collapsed" : "is-expanded"
+            }`}
+            type="button"
+            aria-label={args.collapsed ? "Expand block" : "Collapse block"}
+            aria-expanded={!args.collapsed}
+            onClick={(event) => {
+              event.stopPropagation();
+              event.preventDefault();
+              toggleCollapse({
+                block,
+                index: actualIndex,
+                indent: block.indent,
+                parentIndex: null,
+                hasChildren: args.hasChildren,
+                collapsed: args.collapsed,
+                hidden: false
+              });
+            }}
+          />
+        </Show>
+        <Show
+          when={blockType() === "todo"}
+          fallback={<span class="block__bullet" aria-hidden="true" />}
+        >
+          <button
+            class={`block__todo-check ${
+              isTodoChecked(block.text) ? "is-checked" : ""
+            }`}
+            type="button"
+            aria-label={
+              isTodoChecked(block.text)
+                ? "Mark to-do as incomplete"
+                : "Mark to-do as complete"
+            }
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              toggleTodoAt(actualIndex);
+            }}
+          />
+        </Show>
+        <div class="block__body">
+          <textarea
+            ref={(el) => inputRefs.set(block.id, el)}
+            class={`block__input block__input--${blockType()}`}
+            rows={1}
+            data-block-id={block.id}
+            value={block.text}
+            placeholder="Write something..."
+            spellcheck={true}
+            style={{ display: isEditing() ? "block" : "none" }}
+            aria-hidden={!isEditing()}
+            onFocus={() => {
+              if (selectionRange()) {
+                clearSelection();
+              }
+              setActiveId(block.id);
+              setFocusedId(block.id);
+            }}
+            onBlur={(event) => {
+              storeSelection(block.id, event.currentTarget, true);
+              setFocusedId(null);
+              if (slashMenu().open && slashMenu().blockId === block.id) {
+                window.setTimeout(() => {
+                  closeSlashMenu();
+                }, 0);
+              }
+              if (
+                wikilinkMenu().open &&
+                wikilinkMenu().blockId === block.id
+              ) {
+                window.setTimeout(() => {
+                  closeWikilinkMenu();
+                }, 0);
+              }
+            }}
+            onInput={(event) => {
+              recordLatency("input");
+              setBlocks(actualIndex, (prev) => ({
+                ...prev,
+                text: event.currentTarget.value
+              }));
+              scheduleSave();
+              storeSelection(block.id, event.currentTarget);
+              const value = event.currentTarget.value;
+              const slashIndex = value.lastIndexOf("/");
+              const isSlash = slashIndex === value.length - 1;
+              if (isSlash) {
+                openSlashMenu(
+                  block,
+                  actualIndex,
+                  event.currentTarget,
+                  slashIndex
+                );
+              } else if (
+                slashMenu().open &&
+                slashMenu().blockId === block.id
+              ) {
+                closeSlashMenu();
+              }
+              updateWikilinkMenu(
+                block,
+                actualIndex,
+                event.currentTarget
+              );
+            }}
+            onKeyDown={(event) => handleKeyDown(block, actualIndex, event)}
+            onKeyUp={(event) => {
+              storeSelection(block.id, event.currentTarget);
+              if (event.key === "/") {
+                const value = event.currentTarget.value;
+                const slashIndex = value.lastIndexOf("/");
+                const isSlash = slashIndex === value.length - 1;
+                if (isSlash) {
+                  openSlashMenu(
+                    block,
+                    actualIndex,
+                    event.currentTarget,
+                    slashIndex
+                  );
+                }
+              }
+            }}
+            onSelect={(event) => storeSelection(block.id, event.currentTarget)}
+          />
+          <div
+            class={`block__display block__display--${blockType()}`}
+            style={{ display: isEditing() ? "none" : "block" }}
+            onClick={(event) => {
+              if (args.isColumnRow) {
+                event.stopPropagation();
+              }
+              if (blockType() === "column_layout") {
+                const target = event.target;
+                if (target instanceof HTMLElement) {
+                  const directRow = target.closest<HTMLElement>("[data-row-block-id]");
+                  const directRowId = directRow?.dataset.rowBlockId;
+                  if (directRowId) {
+                    focusBlock(directRowId, "end");
+                    return;
+                  }
+                  const column = target.closest<HTMLElement>(".column-layout-preview__column");
+                  const firstInColumn = column?.querySelector<HTMLElement>("[data-row-block-id]");
+                  const firstInColumnId = firstInColumn?.dataset.rowBlockId;
+                  if (firstInColumnId) {
+                    focusBlock(firstInColumnId, "end");
+                    return;
+                  }
+                }
+                const current = event.currentTarget;
+                if (current instanceof HTMLElement) {
+                  const firstRow = current.querySelector<HTMLElement>("[data-row-block-id]");
+                  const firstRowId = firstRow?.dataset.rowBlockId;
+                  if (firstRowId) {
+                    focusBlock(firstRowId, "end");
+                  }
+                }
+                return;
+              }
+              if (event.shiftKey && visibleIndex() >= 0) {
+                applyShiftSelection(visibleIndex());
+                return;
+              }
+              if (selectionRange()) {
+                clearSelection();
+              }
+              const preserve =
+                activeId() === block.id &&
+                caretPositions.has(block.id);
+              focusBlock(block.id, preserve ? "preserve" : "end");
+            }}
+          >
+            {displayContent()}
+          </div>
+          <Show when={isEditing() && pluginRenderer()}>
+            {(renderer) => (
+              <PluginBlockPreview
+                block={block}
+                renderer={renderer()}
+                isTauri={isTauri}
+                onUpdateText={updateBlockText}
+              />
+            )}
+          </Show>
+          <Show when={isEditing() && codePreview()}>
+            {(preview) => renderCodePreview(preview(), block.id)}
+          </Show>
+          <Show when={isEditing() && diagramPreview()}>
+            {(preview) => (
+              <DiagramPreview diagram={preview()} />
+            )}
+          </Show>
+        </div>
+      </div>
+    );
+  };
+
   const requestRename = () => {
     openRenameDialog();
   };
@@ -2123,220 +3278,16 @@ export const EditorPane = (props: EditorPaneProps) => {
           >
             <For each={visibleBlocks()}>
               {(item, index) => {
-                const block = item.block;
-                const actualIndex = item.index;
-                const visibleIndex = () => range().start + index();
-                const codePreview = () => getCodePreview(block.text);
-                const diagramPreview = () => getDiagramPreview(block.text);
-                const pluginRenderer = () => getPluginBlockRenderer(block.text);
-                const isEditing = () => focusedId() === block.id;
-                const isSelected = () => {
-                  const rangeValue = selectionRange();
-                  if (!rangeValue) return false;
-                  const idx = visibleIndex();
-                  return idx >= rangeValue.start && idx <= rangeValue.end;
-                };
-                const updateBlockText = (blockId: string, nextText: string) => {
-                  const index = findIndexById(blockId);
-                  if (index < 0) return;
-                  if (blocks[index]?.text === nextText) return;
-                  setBlocks(index, "text", nextText);
-                  scheduleSave();
-                };
-                const displayContent = () => {
-                  const plugin = pluginRenderer();
-                  if (plugin) {
-                    return (
-                      <PluginBlockPreview
-                        block={block}
-                        renderer={plugin}
-                        isTauri={isTauri}
-                        onUpdateText={updateBlockText}
-                      />
-                    );
-                  }
-                  const code = codePreview();
-                  if (code) {
-                    return renderCodePreview(code, block.id);
-                  }
-                  const diagram = diagramPreview();
-                  if (diagram) {
-                    return <DiagramPreview diagram={diagram} />;
-                  }
-                  const trimmed = block.text.trim();
-                  if (!trimmed) {
-                    return (
-                      <span class="block__placeholder">Write something...</span>
-                    );
-                  }
-                  return renderMarkdownDisplay(block.text);
-                };
-                return (
-                  <div
-                    class={`block ${activeId() === block.id ? "is-active" : ""} ${
-                      highlightedBlockId() === block.id ? "is-highlighted" : ""
-                    } ${item.collapsed ? "is-collapsed" : ""} ${
-                      isSelected() ? "is-selected" : ""
-                    }`}
-                    ref={observeBlock}
-                    data-block-id={block.id}
-                    style={{
-                      "margin-left": `${block.indent * 24}px`,
-                      "--block-indent": `${block.indent * 24}px`,
-                      "--i": `${visibleIndex()}`
-                    }}
-                  >
-                    <BlockActions
-                      onInsertBelow={() => insertBlockAfter(actualIndex, block.indent)}
-                      onAddReview={() => addReviewFromBlock(block)}
-                      onLinkToPage={() => openLinkDialog(block, actualIndex)}
-                      onDuplicate={() => duplicateBlockAt(actualIndex)}
-                    />
-                    <Show
-                      when={item.hasChildren}
-                      fallback={
-                        <span
-                          class="block__toggle-spacer"
-                          aria-hidden="true"
-                        />
-                      }
-                    >
-                      <button
-                        class={`block__toggle ${
-                          item.collapsed ? "is-collapsed" : "is-expanded"
-                        }`}
-                        type="button"
-                        aria-label={item.collapsed ? "Expand block" : "Collapse block"}
-                        aria-expanded={!item.collapsed}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          toggleCollapse(item);
-                        }}
-                      />
-                    </Show>
-                    <span class="block__bullet" aria-hidden="true" />
-                    <div class="block__body">
-                      <textarea
-                        ref={(el) => inputRefs.set(block.id, el)}
-                        class="block__input"
-                        rows={1}
-                        data-block-id={block.id}
-                        value={block.text}
-                        placeholder="Write something..."
-                        spellcheck={true}
-                        style={{ display: isEditing() ? "block" : "none" }}
-                        aria-hidden={!isEditing()}
-                        onFocus={() => {
-                          if (selectionRange()) {
-                            clearSelection();
-                          }
-                          setActiveId(block.id);
-                          setFocusedId(block.id);
-                        }}
-                        onBlur={(event) => {
-                          storeSelection(block.id, event.currentTarget, true);
-                          setFocusedId(null);
-                          if (slashMenu().open && slashMenu().blockId === block.id) {
-                            window.setTimeout(() => {
-                              closeSlashMenu();
-                            }, 0);
-                          }
-                          if (
-                            wikilinkMenu().open &&
-                            wikilinkMenu().blockId === block.id
-                          ) {
-                            window.setTimeout(() => {
-                              closeWikilinkMenu();
-                            }, 0);
-                          }
-                        }}
-                        onInput={(event) => {
-                          recordLatency("input");
-                          setBlocks(actualIndex, "text", event.currentTarget.value);
-                          scheduleSave();
-                          storeSelection(block.id, event.currentTarget);
-                          const value = event.currentTarget.value;
-                          const slashIndex = value.lastIndexOf("/");
-                          const isSlash = slashIndex === value.length - 1;
-                          if (isSlash) {
-                            openSlashMenu(
-                              block,
-                              actualIndex,
-                              event.currentTarget,
-                              slashIndex
-                            );
-                          } else if (
-                            slashMenu().open &&
-                            slashMenu().blockId === block.id
-                          ) {
-                            closeSlashMenu();
-                          }
-                          updateWikilinkMenu(
-                            block,
-                            actualIndex,
-                            event.currentTarget
-                          );
-                        }}
-                        onKeyDown={(event) => handleKeyDown(block, actualIndex, event)}
-                        onKeyUp={(event) => {
-                          storeSelection(block.id, event.currentTarget);
-                          if (event.key === "/") {
-                            const value = event.currentTarget.value;
-                            const slashIndex = value.lastIndexOf("/");
-                            const isSlash = slashIndex === value.length - 1;
-                            if (isSlash) {
-                              openSlashMenu(
-                                block,
-                                actualIndex,
-                                event.currentTarget,
-                                slashIndex
-                              );
-                            }
-                          }
-                        }}
-                        onSelect={(event) => storeSelection(block.id, event.currentTarget)}
-                      />
-                      <div
-                        class="block__display"
-                        style={{ display: isEditing() ? "none" : "block" }}
-                        onClick={(event) => {
-                          if (event.shiftKey) {
-                            applyShiftSelection(visibleIndex());
-                            return;
-                          }
-                          if (selectionRange()) {
-                            clearSelection();
-                          }
-                          const preserve =
-                            activeId() === block.id &&
-                            caretPositions.has(block.id);
-                          focusBlock(block.id, preserve ? "preserve" : "end");
-                        }}
-                      >
-                        {displayContent()}
-                      </div>
-                      <Show when={isEditing() && pluginRenderer()}>
-                        {(renderer) => (
-                          <PluginBlockPreview
-                            block={block}
-                            renderer={renderer()}
-                            isTauri={isTauri}
-                            onUpdateText={updateBlockText}
-                          />
-                        )}
-                      </Show>
-                      <Show when={isEditing() && codePreview()}>
-                        {(preview) => renderCodePreview(preview(), block.id)}
-                      </Show>
-                      <Show when={isEditing() && diagramPreview()}>
-                        {(preview) => (
-                          <DiagramPreview diagram={preview()} />
-                        )}
-                      </Show>
-                    </div>
-                  </div>
-                );
+                // eslint-disable-next-line solid/reactivity
+                const visibleIndex = range().start + index();
+                return renderBlockRow({
+                  block: item.block,
+                  actualIndex: item.index,
+                  visibleIndex,
+                  hasChildren: item.hasChildren,
+                  collapsed: item.collapsed,
+                  visualIndent: item.block.indent
+                });
               }}
             </For>
           </div>

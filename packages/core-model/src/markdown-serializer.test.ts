@@ -31,4 +31,16 @@ describe("serializePageToMarkdown", () => {
 
     expect(serializePageToMarkdown(page)).toBe("# Empty ^page-2\n- ^b1\n");
   });
+
+  it("serializes non-text block types as sp metadata markers", () => {
+    const page: Page = {
+      id: "page-3",
+      title: "Typed",
+      blocks: [{ id: "b1", text: "Important", indent: 0, block_type: "callout" }]
+    };
+
+    expect(serializePageToMarkdown(page)).toBe(
+      "# Typed ^page-3\n- Important ^b1 <!--sp:{\"type\":\"callout\"}-->\n"
+    );
+  });
 });

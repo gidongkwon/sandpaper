@@ -18,6 +18,7 @@ import type {
 } from "../../../entities/sync/model/sync-types";
 import type { VaultKeyStatus } from "../../../entities/vault/model/vault-types";
 import type { PageId } from "../../../shared/model/id-types";
+import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 
 const SYNC_BATCH_LIMIT = 200;
 const SYNC_INTERVAL_MS = 8000;
@@ -78,7 +79,12 @@ export type SyncDependencies = {
   setBlocks: SetStoreFunction<Block[]>;
   pageTitle: Accessor<string>;
   toPayload: (block: Block) => BlockPayload;
-  makeBlock: (uid: string, text: string, indent: number) => Block;
+  makeBlock: (
+    uid: string,
+    text: string,
+    indent: number,
+    blockType?: Block["block_type"]
+  ) => Block;
   persistBlocks: (
     pageUid: PageId,
     payload: BlockPayload[],
@@ -227,7 +233,12 @@ export const createSync = (deps: SyncDependencies) => {
           response.title ||
           (resolvedUid === deps.defaultPageUid ? "Inbox" : "Untitled"),
         blocks: response.blocks.map((block) =>
-          deps.makeBlock(block.uid, block.text, block.indent)
+          deps.makeBlock(
+            block.uid,
+            block.text,
+            block.indent,
+            resolveBlockType({ text: block.text, block_type: block.block_type })
+          )
         )
       };
     } catch (error) {

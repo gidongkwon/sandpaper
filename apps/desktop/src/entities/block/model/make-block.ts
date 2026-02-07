@@ -1,7 +1,13 @@
-import type { Block } from "./block-types";
+import type { Block, BlockType } from "./block-types";
 
-export const makeBlock = (id: string, text = "", indent = 0): Block => ({
+export const makeBlock = (
+  id: string,
+  text = "",
+  indent = 0,
+  blockType: BlockType = "text"
+): Block => ({
   id,
   text,
-  indent
+  indent,
+  block_type: blockType
 });

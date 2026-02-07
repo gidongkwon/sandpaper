@@ -339,17 +339,46 @@ describe("App", () => {
   it("creates and opens a linked page from the editor", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const linkButtons = await screen.findAllByRole("button", {
-      name: /link to page/i
+    let firstInput = document.querySelector(
+      ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+    ) as HTMLTextAreaElement | null;
+    if (!firstInput) {
+      const firstDisplay = document.querySelector(
+        ".editor-pane .block .block__display"
+      ) as HTMLElement | null;
+      expect(firstDisplay).not.toBeNull();
+      if (firstDisplay) {
+        await userEvent.click(firstDisplay);
+      }
+      firstInput = document.querySelector(
+        ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+      ) as HTMLTextAreaElement | null;
+    }
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+    fireEvent.input(getInput() as HTMLTextAreaElement, {
+      target: { value: "[[Project Atlas" }
     });
-    await userEvent.click(linkButtons[0]);
-    const dialog = await screen.findByRole("dialog", { name: "Link to page" });
-    const input = within(dialog).getByRole("textbox");
-    await userEvent.type(input, "Project Atlas");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Link" }));
+    const menu = await screen.findByRole("listbox", {
+      name: /wikilink suggestions/i
+    });
+    const menuScope = within(menu);
+    await userEvent.click(
+      menuScope.getByRole("button", { name: /create page "Project Atlas"/i })
+    );
+    expect(getInput()?.value).toContain("[[Project Atlas]]");
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
+    const wikilink = await screen.findByRole("button", { name: "Project Atlas" });
+    await userEvent.click(wikilink);
     expect(
       await screen.findByText("Project Atlas", {
         selector: ".editor-pane__title"

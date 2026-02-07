@@ -41,6 +41,14 @@ struct PageSummary {
 }
 
 #[derive(Debug, Serialize)]
+struct ImageAssetImportResponse {
+    asset_path: String,
+    markdown: String,
+    mime_type: String,
+    original_name: String,
+}
+
+#[derive(Debug, Serialize)]
 struct PluginPermissionInfo {
     id: String,
     name: String,
@@ -100,6 +108,7 @@ struct SyncOpPayload {
     timestamp: i64,
     kind: String,
     text: Option<String>,
+    block_type: Option<BlockType>,
     sort_key: Option<String>,
     indent: Option<i64>,
     parent_id: Option<String>,
@@ -175,10 +184,19 @@ struct PageTitlePayload {
     title: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportImageAssetBytesPayload {
+    filename: String,
+    mime_type: Option<String>,
+    bytes_b64: String,
+}
+
 #[derive(Debug, Clone)]
 struct BlockState {
     id: String,
     text: String,
+    block_type: BlockType,
     sort_key: String,
     indent: i64,
     deleted: bool,
@@ -685,6 +703,134 @@ fn sanitize_kebab(input: &str) -> String {
     }
 }
 
+fn sanitize_asset_stem(input: &str) -> String {
+    let mut output = String::new();
+    let mut was_dash = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            output.push(ch.to_ascii_lowercase());
+            was_dash = false;
+        } else if !was_dash {
+            output.push('-');
+            was_dash = true;
+        }
+    }
+    let trimmed = output.trim_matches('-');
+    if trimmed.is_empty() {
+        "asset".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn image_extension_for_path(path: &std::path::Path) -> Option<String> {
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "svg" | "bmp" | "tif" | "tiff" | "ico" => {
+            Some(ext)
+        }
+        _ => None,
+    }
+}
+
+fn image_mime_for_extension(ext: &str) -> Option<&'static str> {
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        "gif" => Some("image/gif"),
+        "svg" => Some("image/svg+xml"),
+        "bmp" => Some("image/bmp"),
+        "tif" | "tiff" => Some("image/tiff"),
+        "ico" => Some("image/x-icon"),
+        _ => None,
+    }
+}
+
+fn hash_bytes_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn markdown_image_text(source: &str, original_name: &str) -> String {
+    let name = std::path::Path::new(original_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image");
+    let safe_alt = name.replace(['[', ']'], "");
+    format!("![{safe_alt}]({source})")
+}
+
+fn ensure_image_asset_from_bytes(
+    db: &Database,
+    vault_root: &std::path::Path,
+    bytes: &[u8],
+    original_name: &str,
+    explicit_mime: Option<&str>,
+) -> Result<ImageAssetImportResponse, String> {
+    let ext = std::path::Path::new(original_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| image_mime_for_extension(value).is_some())
+        .unwrap_or_else(|| "png".to_string());
+    let mime = explicit_mime
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.to_string())
+        .or_else(|| image_mime_for_extension(&ext).map(|value| value.to_string()))
+        .ok_or_else(|| "Unsupported image type".to_string())?;
+
+    let hash = hash_bytes_hex(bytes);
+    if let Some(existing) = db
+        .get_asset_by_hash(&hash)
+        .map_err(|err| format!("{:?}", err))?
+    {
+        let source = format!("/{}", existing.path.trim_start_matches('/'));
+        return Ok(ImageAssetImportResponse {
+            asset_path: source.clone(),
+            markdown: markdown_image_text(&source, original_name),
+            mime_type: existing.mime_type,
+            original_name: existing
+                .original_name
+                .unwrap_or_else(|| original_name.to_string()),
+        });
+    }
+
+    let original_stem = std::path::Path::new(original_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    let safe_stem = sanitize_asset_stem(original_stem);
+    let hash_short = &hash[..12];
+    let file_name = format!("{safe_stem}--{hash_short}.{ext}");
+    let relative_path = std::path::Path::new("assets").join(file_name);
+    let full_path = vault_root.join(&relative_path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
+    }
+    std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
+
+    let record = db
+        .upsert_asset(
+            &hash,
+            relative_path.to_string_lossy().as_ref(),
+            &mime,
+            bytes.len() as i64,
+            Some(original_name),
+        )
+        .map_err(|err| format!("{:?}", err))?;
+    let source = format!("/{}", record.path.trim_start_matches('/'));
+    Ok(ImageAssetImportResponse {
+        asset_path: source.clone(),
+        markdown: markdown_image_text(&source, original_name),
+        mime_type: record.mime_type,
+        original_name: record
+            .original_name
+            .unwrap_or_else(|| original_name.to_string()),
+    })
+}
+
 fn normalize_wiki_target(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -843,7 +989,7 @@ fn build_sync_ops(
         let timestamp = chrono::Utc::now().timestamp_millis();
 
         if let Some((prev, prev_index)) = previous_by_id.get(&block.uid) {
-            if block.text != prev.text {
+            if block.text != prev.text || block.block_type != prev.block_type {
                 clock += 1;
                 let op_id = uuid::Uuid::new_v4().to_string();
                 let payload = serde_json::json!({
@@ -854,7 +1000,8 @@ fn build_sync_ops(
                     "clock": clock,
                     "timestamp": timestamp,
                     "kind": "edit",
-                    "text": block.text
+                    "text": block.text,
+                    "blockType": block.block_type
                 });
                 ops.push(PendingSyncOp {
                     op_id,
@@ -876,7 +1023,8 @@ fn build_sync_ops(
                     "kind": "move",
                     "parentId": serde_json::Value::Null,
                     "sortKey": sort_key,
-                    "indent": block.indent
+                    "indent": block.indent,
+                    "blockType": block.block_type
                 });
                 ops.push(PendingSyncOp {
                     op_id,
@@ -898,7 +1046,8 @@ fn build_sync_ops(
                 "parentId": serde_json::Value::Null,
                 "sortKey": sort_key,
                 "indent": block.indent,
-                "text": block.text
+                "text": block.text,
+                "blockType": block.block_type
             });
             ops.push(PendingSyncOp {
                 op_id,
@@ -1072,6 +1221,7 @@ fn apply_sync_ops_to_blocks(
             BlockState {
                 id: block.uid.clone(),
                 text: block.text.clone(),
+                block_type: block.block_type,
                 sort_key: format!("{:06}", index),
                 indent: block.indent,
                 deleted: false,
@@ -1102,6 +1252,7 @@ fn apply_sync_ops_to_blocks(
                         BlockState {
                             id: op.block_id,
                             text,
+                            block_type: op.block_type.unwrap_or_default(),
                             sort_key,
                             indent,
                             deleted: false,
@@ -1116,8 +1267,11 @@ fn apply_sync_ops_to_blocks(
                     }
                     if let Some(text) = op.text {
                         existing.text = text;
-                        state.insert(op.block_id, existing);
                     }
+                    if let Some(block_type) = op.block_type {
+                        existing.block_type = block_type;
+                    }
+                    state.insert(op.block_id, existing);
                 }
             }
             "move" => {
@@ -1130,6 +1284,9 @@ fn apply_sync_ops_to_blocks(
                     }
                     if let Some(indent) = op.indent {
                         existing.indent = indent;
+                    }
+                    if let Some(block_type) = op.block_type {
+                        existing.block_type = block_type;
                     }
                     state.insert(op.block_id, existing);
                 }
@@ -1158,7 +1315,7 @@ fn apply_sync_ops_to_blocks(
             uid: block.id,
             text: block.text,
             indent: block.indent,
-            block_type: BlockType::Text,
+            block_type: block.block_type,
         })
         .collect()
 }
@@ -1738,7 +1895,7 @@ fn export_markdown() -> Result<MarkdownExportStatus, String> {
                     uid: block.uid.clone(),
                     text: block.text.clone(),
                     indent: block.indent,
-                    block_type: BlockType::Text,
+                    block_type: block.block_type,
                 })
                 .collect(),
         };
@@ -1757,6 +1914,46 @@ fn export_markdown() -> Result<MarkdownExportStatus, String> {
     })
 }
 
+#[tauri::command]
+fn import_image_asset(path: String) -> Result<ImageAssetImportResponse, String> {
+    let file_path = PathBuf::from(path.trim());
+    if !file_path.exists() {
+        return Err("Image file not found.".to_string());
+    }
+    let ext = image_extension_for_path(&file_path).ok_or_else(|| "Unsupported image type".to_string())?;
+    let mime = image_mime_for_extension(&ext).ok_or_else(|| "Unsupported image type".to_string())?;
+    let original_name = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Invalid image file name.".to_string())?
+        .to_string();
+    let bytes = std::fs::read(&file_path).map_err(|err| format!("{:?}", err))?;
+    let db = open_active_database()?;
+    let vault_root = resolve_active_vault_path()?;
+    ensure_image_asset_from_bytes(&db, &vault_root, &bytes, &original_name, Some(mime))
+}
+
+#[tauri::command]
+fn import_image_asset_bytes(
+    payload: ImportImageAssetBytesPayload,
+) -> Result<ImageAssetImportResponse, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload.bytes_b64.as_bytes())
+        .map_err(|_| "Invalid image payload".to_string())?;
+    if bytes.is_empty() {
+        return Err("Image payload is empty.".to_string());
+    }
+    let db = open_active_database()?;
+    let vault_root = resolve_active_vault_path()?;
+    ensure_image_asset_from_bytes(
+        &db,
+        &vault_root,
+        &bytes,
+        &payload.filename,
+        payload.mime_type.as_deref(),
+    )
+}
+
 fn build_markdown_export(page: &PageBlocksResponse) -> String {
     let mut lines = Vec::new();
     lines.push(format!("# {} ^{}", page.title, page.page_uid));
@@ -1764,7 +1961,13 @@ fn build_markdown_export(page: &PageBlocksResponse) -> String {
         let indent = "  ".repeat(std::cmp::max(0, block.indent) as usize);
         let text = block.text.trim_end();
         let spacer = if text.is_empty() { "" } else { " " };
-        lines.push(format!("{indent}- {text}{spacer}^{}", block.uid));
+        let marker = if block.block_type == BlockType::Text {
+            String::new()
+        } else {
+            let encoded = serde_json::to_string(&block.block_type).unwrap_or_else(|_| "\"text\"".to_string());
+            format!(" <!--sp:{{\"type\":{encoded}}}-->")
+        };
+        lines.push(format!("{indent}- {text}{spacer}^{}{}", block.uid, marker));
     }
     format!("{}\n", lines.join("\n"))
 }
@@ -2067,6 +2270,8 @@ pub fn run() {
             create_review_template,
             write_shadow_markdown,
             export_markdown,
+            import_image_asset,
+            import_image_asset_bytes,
             list_plugins_command,
             install_plugin_command,
             update_plugin_command,
@@ -2105,9 +2310,10 @@ mod tests {
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
-        load_sync_config, next_review_due, resolve_review_interval, run_blocking, sanitize_kebab,
-        set_plugin_settings, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
-        Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
+        ensure_image_asset_from_bytes, load_sync_config, next_review_due, resolve_review_interval,
+        run_blocking, sanitize_asset_stem, sanitize_kebab, set_plugin_settings,
+        shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot, BlockType, Database,
+        PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
     };
     use aes_gcm::aead::Aead;
     use aes_gcm::aead::KeyInit;
@@ -2124,6 +2330,32 @@ mod tests {
         assert_eq!(sanitize_kebab("Daily Notes"), "daily-notes");
         assert_eq!(sanitize_kebab("  ### "), "page");
         assert_eq!(sanitize_kebab("multi__part--name"), "multi-part-name");
+    }
+
+    #[test]
+    fn sanitize_asset_stem_normalizes_names() {
+        assert_eq!(sanitize_asset_stem("Cat Photo (1)"), "cat-photo-1");
+        assert_eq!(sanitize_asset_stem("###"), "asset");
+    }
+
+    #[test]
+    fn ensure_image_asset_uses_name_hash_extension_path() {
+        let dir = tempdir().expect("tempdir");
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+        let response = ensure_image_asset_from_bytes(
+            &db,
+            dir.path(),
+            b"png-bytes",
+            "Cat Photo.png",
+            Some("image/png"),
+        )
+        .expect("import asset");
+        assert!(response.asset_path.starts_with("/assets/cat-photo--"));
+        assert!(response.asset_path.ends_with(".png"));
+        assert!(response.markdown.contains("](/assets/cat-photo--"));
+        let relative = response.asset_path.trim_start_matches('/');
+        assert!(dir.path().join(relative).exists());
     }
 
     #[test]
@@ -2446,6 +2678,7 @@ mod tests {
                 sort_key: None,
                 indent: None,
                 parent_id: None,
+                block_type: None,
             },
             SyncOpPayload {
                 op_id: "op-2".to_string(),
@@ -2459,6 +2692,7 @@ mod tests {
                 sort_key: Some("000010".to_string()),
                 indent: Some(1),
                 parent_id: None,
+                block_type: None,
             },
             SyncOpPayload {
                 op_id: "op-3".to_string(),
@@ -2472,6 +2706,7 @@ mod tests {
                 sort_key: Some("000020".to_string()),
                 indent: Some(0),
                 parent_id: None,
+                block_type: None,
             },
             SyncOpPayload {
                 op_id: "op-4".to_string(),
@@ -2485,6 +2720,7 @@ mod tests {
                 sort_key: None,
                 indent: None,
                 parent_id: None,
+                block_type: None,
             },
         ];
 
@@ -2517,6 +2753,7 @@ mod tests {
             sort_key: None,
             indent: None,
             parent_id: None,
+            block_type: None,
         }];
 
         let conflicts = detect_sync_conflicts(&current, &ops);

@@ -575,6 +575,266 @@ describe("EditorPane", () => {
     ]);
   });
 
+  it("reorders blocks with the drag handle", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "b1", text: "One", indent: 0 },
+      { id: "b2", text: "Two", indent: 0 },
+      { id: "b3", text: "Three", indent: 0 }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const dragHandle = container.querySelector<HTMLElement>(
+      '[data-block-id="b3"] .block__drag-handle'
+    );
+    const targetBlock = container.querySelector<HTMLElement>('[data-block-id="b1"]');
+    expect(dragHandle).not.toBeNull();
+    expect(targetBlock).not.toBeNull();
+    if (!dragHandle || !targetBlock) return;
+
+    fireEvent.dragStart(dragHandle);
+    fireEvent.dragOver(targetBlock, { clientY: 0 });
+    fireEvent.drop(targetBlock, { clientY: 0 });
+    fireEvent.dragEnd(dragHandle);
+
+    expect(untrack(() => blocks.map((block) => block.id))).toEqual([
+      "b3",
+      "b1",
+      "b2",
+    ]);
+  });
+
+  it("reorders blocks with pointer-drag handle fallback", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "b1", text: "One", indent: 0 },
+      { id: "b2", text: "Two", indent: 0 },
+      { id: "b3", text: "Three", indent: 0 }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const dragHandle = container.querySelector<HTMLElement>(
+      '[data-block-id="b1"] .block__drag-handle'
+    );
+    const targetBlock = container.querySelector<HTMLElement>('[data-block-id="b3"]');
+    expect(dragHandle).not.toBeNull();
+    expect(targetBlock).not.toBeNull();
+    if (!dragHandle || !targetBlock) return;
+
+    const elementFromPointMock = vi.fn(() => targetBlock);
+    const originalElementFromPoint = (document as Document & {
+      elementFromPoint?: (x: number, y: number) => Element | null;
+    }).elementFromPoint;
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: elementFromPointMock
+    });
+
+    fireEvent.pointerDown(dragHandle, {
+      button: 0,
+      pointerId: 7,
+      clientX: 8,
+      clientY: 8
+    });
+    fireEvent.pointerMove(window, {
+      pointerId: 7,
+      clientX: 8,
+      clientY: 8
+    });
+    fireEvent.pointerUp(window, {
+      pointerId: 7,
+      clientX: 8,
+      clientY: 8
+    });
+
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: originalElementFromPoint
+    });
+
+    expect(untrack(() => blocks.map((block) => block.id))).toEqual([
+      "b2",
+      "b3",
+      "b1"
+    ]);
+  });
+
+  it("drops a block into a multi-column row target", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "out", text: "Outside", indent: 0, block_type: "text" },
+      { id: "layout", text: "", indent: 0, block_type: "column_layout" },
+      { id: "col-1", text: "", indent: 1, block_type: "column" },
+      { id: "row-1", text: "Row inside", indent: 2, block_type: "text" },
+      { id: "tail", text: "Tail", indent: 0, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const dragHandle = container.querySelector<HTMLElement>(
+      '[data-block-id="out"] .block__drag-handle'
+    );
+    const rowTarget = container.querySelector<HTMLElement>(
+      '[data-block-id="layout"] .column-layout-preview__row'
+    );
+    expect(dragHandle).not.toBeNull();
+    expect(rowTarget).not.toBeNull();
+    if (!dragHandle || !rowTarget) return;
+
+    fireEvent.dragStart(dragHandle);
+    fireEvent.dragOver(rowTarget, { clientY: 0 });
+    fireEvent.drop(rowTarget, { clientY: 0 });
+    fireEvent.dragEnd(dragHandle);
+
+    const next = untrack(() => blocks);
+    const movedIndex = next.findIndex((block) => block.id === "out");
+    const rowIndex = next.findIndex((block) => block.id === "row-1");
+    expect(movedIndex).toBeGreaterThanOrEqual(0);
+    expect(rowIndex).toBeGreaterThanOrEqual(0);
+    expect(movedIndex).toBeLessThan(rowIndex);
+    expect(next[movedIndex]?.indent).toBe(2);
+  });
+
   it("allows Shift+Enter to avoid creating a new block", () => {
     const baseBlocks = makeBlocks(2);
     const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
@@ -640,7 +900,7 @@ describe("EditorPane", () => {
     expect(untrack(() => blocks.length)).toBe(2);
   });
 
-  it("inserts a block below from the block actions", () => {
+  it("does not render the block hover actions menu", () => {
     const baseBlocks = makeBlocks(2);
     const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
     const [activeId, setActiveId] = createSignal<string | null>(null);
@@ -694,20 +954,14 @@ describe("EditorPane", () => {
       />
     ));
 
-    const firstBlock = container.querySelector<HTMLElement>(".block");
-    expect(firstBlock).not.toBeNull();
-    if (!firstBlock) return;
-
-    const actions = firstBlock.querySelector<HTMLElement>(".block__actions");
-    expect(actions).not.toBeNull();
-    if (!actions) return;
-
-    const insertButton = within(actions).getByRole("button", {
-      name: "Insert block below"
-    });
-    fireEvent.click(insertButton);
-
-    expect(untrack(() => blocks[1].id)).toBe("new-1");
+    const actions = container.querySelector(".block__actions");
+    expect(actions).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Insert block below"]')
+    ).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Duplicate block"]')
+    ).toBeNull();
   });
 
   it("opens a context menu for selected blocks", () => {
@@ -1016,5 +1270,307 @@ describe("EditorPane", () => {
       expect(breadcrumb?.textContent).toContain("Child");
       expect(breadcrumb?.textContent).toContain("Grandchild");
     });
+  });
+
+  it("renders todo text without markdown checkbox marker in display mode", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "b1", text: "- [ ] Buy milk", indent: 0, block_type: "todo" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const display = container.querySelector<HTMLElement>(
+      '[data-block-id="b1"] .block__display'
+    );
+    expect(display).not.toBeNull();
+    expect(display?.textContent).toContain("Buy milk");
+    expect(display?.textContent).not.toContain("- [ ]");
+
+    const todoCheckbox = container.querySelector(
+      '[data-block-id="b1"] .block__todo-check'
+    );
+    expect(todoCheckbox).not.toBeNull();
+  });
+
+  it("renders column layout preview without title, count, or column names", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "layout", text: "", indent: 0, block_type: "column_layout" },
+      { id: "col-1", text: "Column 1", indent: 1, block_type: "column" },
+      { id: "row-1", text: "Task row", indent: 2, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const preview = container.querySelector<HTMLElement>(
+      '[data-block-id="layout"] .column-layout-preview'
+    );
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toContain("Task row");
+    expect(preview?.textContent).not.toContain("Column 1");
+
+    const display = container.querySelector<HTMLElement>(
+      '[data-block-id="layout"] .block__display'
+    );
+    expect(display?.textContent).not.toContain("Column layout");
+    expect(display?.textContent).not.toContain("1 column");
+  });
+
+  it("renders column child blocks as real editable blocks with drag handles", async () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "layout", text: "", indent: 0, block_type: "column_layout" },
+      { id: "col-1", text: "", indent: 1, block_type: "column" },
+      { id: "row-1", text: "Task row", indent: 2, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const rowBlock = container.querySelector<HTMLElement>(
+      '[data-block-id="layout"] .column-layout-preview [data-block-id="row-1"]'
+    );
+    expect(rowBlock).not.toBeNull();
+    expect(rowBlock).toHaveClass("block");
+    expect(
+      rowBlock?.querySelector('[aria-label="Drag block"].block__drag-handle')
+    ).not.toBeNull();
+
+    const layoutInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="layout"]'
+    );
+    expect(layoutInput).not.toBeNull();
+    if (!layoutInput) return;
+    fireEvent.keyDown(layoutInput, { key: "Escape" });
+    await waitFor(() => {
+      expect(layoutInput.style.display).toBe("none");
+    });
+
+    const rowDisplay = rowBlock?.querySelector<HTMLElement>(".block__display");
+    expect(rowDisplay).not.toBeNull();
+    if (!rowDisplay) return;
+    fireEvent.click(rowDisplay);
+
+    const rowInput = rowBlock?.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="row-1"]'
+    );
+    expect(rowInput).not.toBeNull();
+    if (!rowInput) return;
+    await waitFor(() => {
+      expect(rowInput.style.display).toBe("block");
+      expect(rowInput.getAttribute("aria-hidden")).toBe("false");
+      expect(layoutInput.style.display).toBe("none");
+    });
+
+    fireEvent.input(rowInput, { target: { value: "Task row updated" } });
+    expect(untrack(() => blocks.find((block) => block.id === "row-1")?.text)).toBe(
+      "Task row updated"
+    );
+  });
+
+  it("stores new columns without a generated name", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "layout", text: "", indent: 0, block_type: "column_layout" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0, block_type) => ({
+          id: `${block_type ?? "text"}-${Math.random().toString(16).slice(2, 10)}`,
+          text,
+          indent,
+          block_type
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const addColumnButton = within(container).getByRole("button", {
+      name: "Add column"
+    });
+    fireEvent.click(addColumnButton);
+
+    const nextBlocks = untrack(() => blocks);
+    const createdColumn = nextBlocks.find(
+      (block, index) => index > 0 && block.block_type === "column"
+    );
+    expect(createdColumn).toBeDefined();
+    expect(createdColumn?.text).toBe("");
   });
 });

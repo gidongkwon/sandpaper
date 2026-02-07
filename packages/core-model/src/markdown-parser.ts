@@ -1,4 +1,4 @@
-import type { Block, Page } from "./block-model";
+import type { Block, BlockType, Page } from "./block-model";
 
 export type MarkdownParseResult = {
   page: Page;
@@ -9,8 +9,48 @@ export type MarkdownParseResult = {
 const INDENT_UNIT = 2;
 const DEFAULT_TITLE = "Imported";
 
-const stripPluginMetadata = (value: string) =>
-  value.replace(/\s*<!--sp:.*?-->\s*$/u, "");
+const SP_METADATA_PATTERN = /\s*<!--sp:(.*?)-->\s*$/u;
+
+const parseSpBlockType = (raw: string): BlockType | null => {
+  try {
+    const parsed = JSON.parse(raw) as { type?: unknown } | null;
+    if (!parsed || typeof parsed.type !== "string") return null;
+    const value = parsed.type;
+    const known: BlockType[] = [
+      "text",
+      "heading1",
+      "heading2",
+      "heading3",
+      "quote",
+      "callout",
+      "code",
+      "divider",
+      "toggle",
+      "todo",
+      "image",
+      "column_layout",
+      "column",
+      "database_view"
+    ];
+    return known.includes(value as BlockType) ? (value as BlockType) : null;
+  } catch {
+    return null;
+  }
+};
+
+const extractSpMetadata = (value: string) => {
+  const match = value.match(SP_METADATA_PATTERN);
+  if (!match) {
+    return {
+      text: value,
+      blockType: null as BlockType | null
+    };
+  }
+  return {
+    text: value.replace(SP_METADATA_PATTERN, ""),
+    blockType: parseSpBlockType(match[1] ?? "")
+  };
+};
 
 const extractTrailingId = (value: string) => {
   const match = value.match(/^(.*?)(?:\s+\^([A-Za-z0-9-]+))\s*$/u);
@@ -42,7 +82,7 @@ export const parseMarkdownPage = (
   const headerLine = lines[cursor] ?? "";
   if (headerLine.trim().startsWith("#")) {
     const headerText = headerLine.replace(/^#+\s*/u, "").trim();
-    const cleaned = stripPluginMetadata(headerText);
+    const cleaned = extractSpMetadata(headerText).text;
     const parsed = extractTrailingId(cleaned);
     pageTitle = parsed.text.trim() || "Untitled";
     if (parsed.id) {
@@ -67,8 +107,8 @@ export const parseMarkdownPage = (
 
     const indentText = normalizeIndent(match[1] ?? "");
     const indent = Math.floor(indentText.length / INDENT_UNIT);
-    const rawText = stripPluginMetadata(match[2] ?? "");
-    const { text, id } = extractTrailingId(rawText.trimEnd());
+    const withMetadata = extractSpMetadata(match[2] ?? "");
+    const { text, id } = extractTrailingId(withMetadata.text.trimEnd());
 
     let resolvedId = id;
     if (!resolvedId) {
@@ -87,7 +127,8 @@ export const parseMarkdownPage = (
     blocks.push({
       id: resolvedId,
       text: text.trimEnd(),
-      indent
+      indent,
+      block_type: withMetadata.blockType ?? "text"
     });
   }
 

@@ -38,6 +38,7 @@ import {
   buildDefaultBlocks,
   buildEmptyBlocks
 } from "../../../shared/lib/blocks/block-seeds";
+import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 import { copyToClipboard } from "../../../shared/lib/clipboard/copy-to-clipboard";
 import { makeLocalId, makeRandomId } from "../../../shared/lib/id/id-factory";
 import { normalizePageUid } from "../../../shared/lib/page/normalize-page-uid";
@@ -340,7 +341,8 @@ export const createMainPageState = () => {
   const toPayload = (block: Block): BlockPayload => ({
     uid: block.id,
     text: block.text,
-    indent: block.indent
+    indent: block.indent,
+    block_type: resolveBlockType(block)
   });
 
   let highlightTimeout: number | undefined;
