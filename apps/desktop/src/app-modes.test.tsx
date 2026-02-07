@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -49,7 +49,7 @@ describe("App modes", () => {
     await screen.findByText(/saved/i);
 
     await user.click(screen.getByRole("button", { name: "Capture" }));
-    expect(await screen.findByText("Quick capture")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Capture a thought, link, or task...")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByText("Review mode")).toBeInTheDocument();
@@ -76,5 +76,27 @@ describe("App modes", () => {
         editorInputs.some((input) => document.activeElement === input)
       ).toBe(true);
     });
+  });
+
+  it("supports Shift+Enter newlines in quick capture composer", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Line 1");
+    await user.type(captureInput, "{shift>}{enter}{/shift}Line 2");
+    fireEvent.keyDown(captureInput, { key: "Enter" });
+
+    const capturedItem = (await screen.findByRole("textbox", {
+      name: "Captured item 1"
+    })) as HTMLTextAreaElement;
+    expect(capturedItem.value).toContain("Line 1");
+    expect(capturedItem.value).toContain("Line 2");
+    expect(capturedItem.value).toContain("\n");
   });
 });

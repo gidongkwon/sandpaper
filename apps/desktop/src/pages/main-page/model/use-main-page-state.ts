@@ -98,6 +98,7 @@ export const createMainPageState = () => {
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal("");
   const [captureText, setCaptureText] = createSignal("");
+  const [captureItemIds, setCaptureItemIds] = createSignal<string[]>([]);
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -832,6 +833,37 @@ export const createMainPageState = () => {
     perfTracker.mark(label);
   };
 
+  createEffect(() => {
+    const availableIds = new Set(blocks.map((block) => block.id));
+    setCaptureItemIds((current) => {
+      const filtered = current.filter((id) => availableIds.has(id));
+      return filtered.length === current.length ? current : filtered;
+    });
+  });
+
+  const captureItems = createMemo(() =>
+    captureItemIds()
+      .map((captureId) => blocks.find((block) => block.id === captureId))
+      .filter((block): block is Block => Boolean(block))
+  );
+
+  const editCaptureItem = (id: string, text: string) => {
+    let updated = false;
+    setBlocks(
+      produce((draft) => {
+        const target = draft.find((block) => block.id === id);
+        if (!target || target.text === text) return;
+        target.text = text;
+        updated = true;
+      })
+    );
+    if (!updated) return;
+    scheduleSave();
+    setActiveId(id);
+    setFocusedId(id);
+    setJumpTarget({ id, caret: "end" });
+  };
+
   const addCapture = () => {
     const text = captureText().trim();
     if (!text) return;
@@ -842,9 +874,11 @@ export const createMainPageState = () => {
       })
     );
     scheduleSave();
+    setCaptureItemIds((current) => [...current, block.id]);
     setCaptureText("");
-    setMode("editor");
+    setCaptureFocusEpoch((current) => current + 1);
     setActiveId(block.id);
+    setFocusedId(block.id);
     setJumpTarget({ id: block.id, caret: "end" });
     setHighlightedBlockId(block.id);
     if (highlightTimeout) {
@@ -962,7 +996,9 @@ export const createMainPageState = () => {
       capture: {
         text: captureText,
         setText: setCaptureText,
+        items: captureItems,
         onCapture: addCapture,
+        onEditItem: editCaptureItem,
         focusEpoch: captureFocusEpoch
       },
       review: {

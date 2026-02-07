@@ -128,7 +128,27 @@ describe("App editor UX", () => {
     });
   });
 
-  it("focuses and highlights the captured block", async () => {
+  it("keeps quick capture open and refocuses composer after sending", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = screen.getByPlaceholderText(
+      "Capture a thought, link, or task..."
+    ) as HTMLTextAreaElement;
+    await user.type(captureInput, "Quick note");
+    fireEvent.keyDown(captureInput, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(captureInput.value).toBe("");
+      expect(document.activeElement).toBe(captureInput);
+    });
+    expect(screen.getByRole("button", { name: "Capture" })).toHaveClass(
+      "is-active"
+    );
+    expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
+  });
+
+  it("allows editing captured items before returning to editor", async () => {
     render(() => <App />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Capture" }));
@@ -136,15 +156,30 @@ describe("App editor UX", () => {
       "Capture a thought, link, or task..."
     );
     await user.type(captureInput, "Quick note");
-    await user.click(screen.getByRole("button", { name: "Add to Inbox" }));
-
-    const newInput = (await screen.findByDisplayValue(
-      "Quick note"
-    )) as HTMLTextAreaElement;
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
     await waitFor(() => {
+      expect(document.activeElement).toBe(captureInput);
+    });
+
+    const capturedItemInput = (await screen.findByRole("textbox", {
+      name: "Captured item 1"
+    })) as HTMLTextAreaElement;
+    await user.click(capturedItemInput);
+    await user.clear(capturedItemInput);
+    await user.type(capturedItemInput, "Quick note updated");
+
+    await user.click(screen.getByRole("button", { name: "Editor" }));
+
+    let newInput: HTMLTextAreaElement | undefined;
+    await waitFor(() => {
+      const inputs = screen.getAllByPlaceholderText(
+        "Write something..."
+      ) as HTMLTextAreaElement[];
+      newInput = inputs.find((input) => input.value === "Quick note updated");
+      expect(newInput).toBeDefined();
       expect(document.activeElement).toBe(newInput);
     });
-    const block = newInput.closest(".block");
+    const block = newInput?.closest(".block");
     expect(block).not.toBeNull();
     expect(block).toHaveClass("is-highlighted");
   });

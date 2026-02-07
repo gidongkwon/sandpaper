@@ -15,6 +15,8 @@ import panelLeft16Regular from "@fluentui/svg-icons/icons/panel_left_16_regular.
 import puzzlePiece16Regular from "@fluentui/svg-icons/icons/puzzle_piece_16_regular.svg?raw";
 import search16Regular from "@fluentui/svg-icons/icons/search_16_regular.svg?raw";
 import settings16Regular from "@fluentui/svg-icons/icons/settings_16_regular.svg?raw";
+import lightbulb16Regular from "@fluentui/svg-icons/icons/lightbulb_16_regular.svg?raw";
+import send20Regular from "@fluentui/svg-icons/icons/send_20_regular.svg?raw";
 import shieldCheckmark16Regular from "@fluentui/svg-icons/icons/shield_checkmark_16_regular.svg?raw";
 
 type FluentIconProps = JSX.SvgSVGAttributes<SVGSVGElement>;
@@ -62,11 +64,13 @@ export const ArrowUpload16Icon = createFluentIcon(arrowUpload16Regular);
 export const Copy16Icon = createFluentIcon(copy16Regular);
 export const Dismiss12Icon = createFluentIcon(dismiss12Regular);
 export const Document16Icon = createFluentIcon(document16Regular);
+export const Lightbulb16Icon = createFluentIcon(lightbulb16Regular);
 export const Link16Icon = createFluentIcon(link16Regular);
 export const Link20Icon = createFluentIcon(link20Regular);
 export const LockClosed16Icon = createFluentIcon(lockClosed16Regular);
 export const PanelLeft16Icon = createFluentIcon(panelLeft16Regular);
 export const PuzzlePiece16Icon = createFluentIcon(puzzlePiece16Regular);
 export const Search16Icon = createFluentIcon(search16Regular);
+export const Send20Icon = createFluentIcon(send20Regular);
 export const Settings16Icon = createFluentIcon(settings16Regular);
 export const ShieldCheckmark16Icon = createFluentIcon(shieldCheckmark16Regular);

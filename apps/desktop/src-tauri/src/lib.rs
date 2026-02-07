@@ -433,7 +433,7 @@ impl RuntimeState {
             plugins::PluginError::Serde(inner) => {
                 plugins::PluginRuntimeError::new(format!("serde: {inner}"))
             }
-            plugins::PluginError::Runtime(inner) => inner.clone(),
+            plugins::PluginError::Runtime(inner) => inner.as_ref().clone(),
         }
     }
 
@@ -474,7 +474,9 @@ impl RuntimeState {
         }
         match runtime.as_mut() {
             Some(runtime) => f(runtime),
-            None => Err(plugins::PluginError::Runtime("runtime-unavailable".into())),
+            None => Err(plugins::PluginError::Runtime(Box::new(
+                plugins::PluginRuntimeError::new("runtime-unavailable"),
+            ))),
         }
     }
 
