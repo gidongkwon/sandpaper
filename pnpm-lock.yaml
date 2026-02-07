@@ -10,6 +10,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@fluentui/svg-icons':
+        specifier: ^1.1.318
+        version: 1.1.318
       '@sandpaper/core-model':
         specifier: workspace:*
         version: link:../../packages/core-model
@@ -165,6 +168,8 @@ importers:
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@24.10.9)(@vitest/ui@4.0.18)(jsdom@27.4.0)(tsx@4.21.0)
+
+  packages/plugin-runtime: {}
 
   packages/sync-protocol:
     devDependencies:
@@ -678,6 +683,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@fluentui/svg-icons@1.1.318':
+    resolution: {integrity: sha512-OMq4eYiN0zNv5jHns676UeD5BaA5Zzu0rA0bczTepPqT0+oHL5uU5Lu1Cuo4JtXG6BML7RCGUWHvsRtXj1uDSg==}
 
   '@hono/node-server@1.19.9':
     resolution: {integrity: sha512-vHL6w3ecZsky+8P5MD+eFfaGTyCeOHUIFYMGpQGbrBTSmNNoxv0if69rEZ5giu36weC5saFuznL411gRX7bJDw==}
@@ -2777,6 +2785,8 @@ snapshots:
       levn: 0.4.1
 
   '@exodus/bytes@1.10.0': {}
+
+  '@fluentui/svg-icons@1.1.318': {}
 
   '@hono/node-server@1.19.9(hono@4.11.7)':
     dependencies:

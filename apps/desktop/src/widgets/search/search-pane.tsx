@@ -2,6 +2,7 @@ import { For, Show, type Accessor, type JSX, type Setter } from "solid-js";
 import type { SearchResult } from "../../entities/search/model/search-types";
 import { Chip } from "../../shared/ui/chip";
 import { EmptyState } from "../../shared/ui/empty-state";
+import { Search16Icon } from "../../shared/ui/icons";
 
 type SearchPaneProps = {
   searchInputRef?: (el: HTMLInputElement) => void;
@@ -23,10 +24,7 @@ export const SearchPane = (props: SearchPaneProps) => {
     <>
       <div class="sidebar__header">
         <div class="sidebar__search">
-          <svg class="sidebar__search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="21" y1="21" x2="16" y2="16" />
-          </svg>
+          <Search16Icon class="sidebar__search-icon" width="14" height="14" />
           <input
             ref={(el) => props.searchInputRef?.(el)}
             class="sidebar__input"

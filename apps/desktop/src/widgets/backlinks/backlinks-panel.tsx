@@ -3,6 +3,7 @@ import type { Block } from "../../entities/block/model/block-types";
 import type { BacklinkEntry } from "../../entities/page/model/backlink-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { IconButton } from "../../shared/ui/icon-button";
+import { Dismiss12Icon, Link16Icon, Link20Icon } from "../../shared/ui/icons";
 
 type BacklinksPanelProps = {
   open: Accessor<boolean>;
@@ -28,10 +29,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
       </Show>
       <div class="backlinks-panel__header">
         <div class="backlinks-panel__title">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-          </svg>
+          <Link16Icon width="13" height="13" />
           Backlinks
         </div>
         <IconButton
@@ -39,10 +37,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
           label="Close backlinks"
           onClick={() => props.onClose()}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+          <Dismiss12Icon width="12" height="12" />
         </IconButton>
       </div>
       <div class="backlinks-panel__body">
@@ -54,10 +49,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
           fallback={
             <EmptyState class="backlinks-panel__empty">
               <div class="backlinks-panel__empty-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
+                <Link20Icon width="20" height="20" />
               </div>
               <p>No backlinks yet</p>
               <span>

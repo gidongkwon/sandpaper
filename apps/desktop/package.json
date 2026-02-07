@@ -17,6 +17,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@fluentui/svg-icons": "^1.1.318",
     "@sandpaper/core-model": "workspace:*",
     "@sandpaper/crypto": "workspace:*",
     "@tauri-apps/api": "^2",

@@ -1,4 +1,5 @@
 import { Show, type Accessor } from "solid-js";
+import { Link16Icon } from "../../shared/ui/icons";
 
 type BacklinksToggleProps = {
   open: Accessor<boolean>;
@@ -16,10 +17,7 @@ export const BacklinksToggle = (props: BacklinksToggleProps) => {
       aria-label={props.open() ? "Hide backlinks" : "Show backlinks"}
       title={`${props.total()} backlinks`}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-      </svg>
+      <Link16Icon width="14" height="14" />
       <Show when={props.total() > 0}>
         <span class="backlinks-toggle__badge">{props.total()}</span>
       </Show>
