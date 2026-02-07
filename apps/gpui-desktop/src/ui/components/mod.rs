@@ -1,6 +1,7 @@
 mod block_renderers;
 mod editor;
 pub(crate) mod empty_state;
+pub(crate) mod error_display;
 mod helpers;
 mod layout;
 mod modals;
