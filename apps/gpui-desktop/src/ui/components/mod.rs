@@ -5,4 +5,5 @@ mod layout;
 mod modals;
 mod plugins;
 mod sidebar;
+pub(crate) mod skeleton;
 pub(crate) mod spinner;
