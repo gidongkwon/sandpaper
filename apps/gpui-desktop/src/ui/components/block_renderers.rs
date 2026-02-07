@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 
 impl AppStore {
     /// Render the inner row content based on block type.
@@ -179,9 +180,9 @@ impl AppStore {
         };
 
         let top_pad = match block.block_type {
-            BlockType::Heading1 => px(18.0),
-            BlockType::Heading2 => px(14.0),
-            _ => px(8.0),
+            BlockType::Heading1 => tokens::FONT_XL,
+            BlockType::Heading2 => tokens::ICON_SM,
+            _ => tokens::SPACE_4,
         };
 
         div()
@@ -225,7 +226,7 @@ impl AppStore {
                     .border_l_2()
                     .border_color(theme.accent.opacity(0.6))
                     .pl_3()
-                    .py(px(2.0))
+                    .py(tokens::SPACE_1)
                     .child(content_container.text_color(theme.muted_foreground)),
             )
             .child(actions)
@@ -355,8 +356,8 @@ impl AppStore {
             .child(
                 div()
                     .id(format!("todo-check-{}", block.uid))
-                    .w(px(16.0))
-                    .h(px(16.0))
+                    .w(tokens::ICON_MD)
+                    .h(tokens::ICON_MD)
                     .rounded(px(3.0))
                     .border_1()
                     .border_color(check_border)
@@ -372,7 +373,7 @@ impl AppStore {
                     .when(checked, |this| {
                         this.child(
                             Icon::new(SandpaperIcon::Checkmark)
-                                .size(px(12.0))
+                                .size(tokens::FONT_SM)
                                 .text_color(check_fg),
                         )
                     }),
@@ -472,8 +473,8 @@ impl AppStore {
             let uid = block.uid.clone();
             div()
                 .id(format!("collapse-toggle-{}", uid))
-                .w(px(18.0))
-                .h(px(18.0))
+                .w(tokens::FONT_XL)
+                .h(tokens::FONT_XL)
                 .rounded_sm()
                 .flex()
                 .items_center()
@@ -498,7 +499,7 @@ impl AppStore {
                 .child(label.to_string())
                 .into_any_element()
         } else {
-            div().w(px(18.0)).h(px(18.0)).into_any_element()
+            div().w(tokens::FONT_XL).h(tokens::FONT_XL).into_any_element()
         }
     }
 
@@ -791,7 +792,7 @@ impl AppStore {
         let mut columns = div().flex().gap_2().w_full();
 
         for column in columns_data {
-            let mut rows = div().flex().flex_col().gap(px(4.0));
+            let mut rows = div().flex().flex_col().gap(tokens::SPACE_2);
             if column.rows.is_empty() {
                 rows = rows.child(div().text_sm().text_color(muted).child("Empty column"));
             } else {
@@ -839,7 +840,7 @@ impl AppStore {
                         div()
                             .id(row_id)
                             .px_1()
-                            .py(px(2.0))
+                            .py(tokens::SPACE_1)
                             .rounded_sm()
                             .bg(if is_row_active {
                                 active_bg.opacity(0.7)
