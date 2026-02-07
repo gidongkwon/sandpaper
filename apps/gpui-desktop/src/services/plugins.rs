@@ -30,10 +30,10 @@ pub(crate) fn load_plan(
     let registry = plugin_registry_for_vault(vault_root);
     let plugin_infos =
         list_plugins(vault_root, &registry).map_err(|err| Box::new(describe_plugin_error(&err)))?;
-    let permissions =
-        list_permissions_for_plugins(db, plugin_infos).map_err(|e| Box::new(PluginRuntimeError::new(e)))?;
-    let descriptors =
-        discover_plugins(vault_root, &registry).map_err(|err| Box::new(describe_plugin_error(&err)))?;
+    let permissions = list_permissions_for_plugins(db, plugin_infos)
+        .map_err(|e| Box::new(PluginRuntimeError::new(e)))?;
+    let descriptors = discover_plugins(vault_root, &registry)
+        .map_err(|err| Box::new(describe_plugin_error(&err)))?;
 
     let mut allowed = Vec::new();
     let mut blocked = Vec::new();

@@ -137,9 +137,7 @@ impl AppStore {
         if self.editor.is_replaying_history || self.editor.text_history_suppression_depth > 0 {
             return;
         }
-        if change.before_text == change.after_text
-            && change.before_cursor == change.after_cursor
-        {
+        if change.before_text == change.after_text && change.before_cursor == change.after_cursor {
             return;
         }
 

@@ -51,9 +51,7 @@ impl AppStore {
             ),
             BlockType::Divider => self.render_divider_inner(ctx.indent_px, ctx.base_bg, cx),
             BlockType::Todo => self.render_todo_inner(block, ctx, cx),
-            BlockType::Image => {
-                self.render_image_inner(ctx.actions, ctx.indent_px, ctx.base_bg)
-            }
+            BlockType::Image => self.render_image_inner(ctx.actions, ctx.indent_px, ctx.base_bg),
             BlockType::Code => self.render_code_block_inner(
                 ctx.content_container,
                 ctx.actions,
@@ -65,9 +63,7 @@ impl AppStore {
                 self.render_database_view_inner(ctx.indent_px, ctx.base_bg, cx)
             }
             BlockType::ColumnLayout => self.render_column_layout_inner(block, ctx, cx),
-            BlockType::Toggle => {
-                self.render_toggle_inner(block, ctx, cx)
-            }
+            BlockType::Toggle => self.render_toggle_inner(block, ctx, cx),
             _ => self.render_text_inner(block, ctx, cx),
         }
     }

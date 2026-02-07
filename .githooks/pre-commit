@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Pre-commit hook: format and clippy checks
+# Setup: git config core.hooksPath .githooks
+
+set -e
+
+echo "pre-commit: checking formatting..."
+(cd apps/gpui-desktop && cargo fmt --all -- --check)
+(cd crates/sandpaper-core && cargo fmt --all -- --check)
+
+echo "pre-commit: running clippy..."
+(cd apps/gpui-desktop && cargo clippy --all-targets -- -D warnings)
+(cd crates/sandpaper-core && cargo clippy --all-targets -- -D warnings)
+
+echo "pre-commit: all checks passed"
