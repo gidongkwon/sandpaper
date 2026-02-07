@@ -6,6 +6,7 @@ use gpui::{
 };
 
 /// A placeholder loading element that pulses to indicate content is loading.
+#[derive(IntoElement)]
 pub(crate) struct Skeleton {
     width: Pixels,
     height: Pixels,

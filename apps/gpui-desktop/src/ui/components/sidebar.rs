@@ -188,6 +188,24 @@ impl AppStore {
         cx: &mut Context<Self>,
         active_uid: Option<String>,
     ) -> gpui::AnyElement {
+        if self.editor.pages_loading {
+            use crate::ui::components::skeleton::Skeleton;
+            return div()
+                .id("pages-list")
+                .flex_1()
+                .min_h_0()
+                .p_2()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(Skeleton::new(px(180.0), px(COMPACT_ROW_HEIGHT)))
+                .child(Skeleton::new(px(140.0), px(COMPACT_ROW_HEIGHT)))
+                .child(Skeleton::new(px(200.0), px(COMPACT_ROW_HEIGHT)))
+                .child(Skeleton::new(px(160.0), px(COMPACT_ROW_HEIGHT)))
+                .child(Skeleton::new(px(120.0), px(COMPACT_ROW_HEIGHT)))
+                .into_any_element();
+        }
+
         if self.editor.pages.is_empty() {
             use crate::ui::components::empty_state::EmptyState;
             use gpui_component::IconName;

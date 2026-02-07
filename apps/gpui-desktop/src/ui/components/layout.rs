@@ -206,10 +206,11 @@ impl AppStore {
         let semantic = cx.global::<SandpaperTheme>().colors(cx);
         let foreground_muted = semantic.foreground_muted;
         let border_subtle = semantic.border_subtle;
+        let is_saving = matches!(&self.app.save_state, SaveState::Saving);
         let save_icon = match &self.app.save_state {
             SaveState::Saved => "·",
             SaveState::Dirty => "○",
-            SaveState::Saving => "…",
+            SaveState::Saving => "",
             SaveState::Error(_) => "!",
         };
         let save_label: SharedString = match &self.app.save_state {
@@ -260,7 +261,12 @@ impl AppStore {
                     .gap_1()
                     .text_size(tokens::FONT_XS)
                     .text_color(save_color)
-                    .child(save_icon)
+                    .when(is_saving, |this| {
+                        this.child(
+                            crate::ui::components::spinner::Spinner::new().small(),
+                        )
+                    })
+                    .when(!is_saving, |this| this.child(save_icon))
                     .child(save_label),
             )
     }

@@ -34,6 +34,11 @@ impl AppStore {
                         .flex()
                         .items_center()
                         .gap_2()
+                        .when(self.plugins.plugin_busy, |this| {
+                            this.child(
+                                crate::ui::components::spinner::Spinner::new().small(),
+                            )
+                        })
                         .child(
                             Button::new("plugin-error-reload")
                                 .label(if self.plugins.plugin_busy {

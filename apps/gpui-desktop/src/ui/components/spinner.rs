@@ -18,6 +18,7 @@ pub(crate) enum SpinnerSize {
 }
 
 /// A cycling loading spinner that rotates a loader icon.
+#[derive(IntoElement)]
 pub(crate) struct Spinner {
     size: SpinnerSize,
 }

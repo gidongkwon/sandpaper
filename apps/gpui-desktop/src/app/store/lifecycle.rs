@@ -141,6 +141,7 @@ impl AppStore {
                 let active_uid = db.get_kv("active.page").ok().flatten();
 
                 self.editor.pages = pages;
+                self.editor.pages_loading = false;
                 self.app.db = Some(db);
                 self.app.active_vault_root = Some(vault.root.clone());
                 self.on_vault_changed(cx);
@@ -167,6 +168,7 @@ impl AppStore {
                 self.app.db = None;
                 self.editor.active_page = None;
                 self.editor.editor = None;
+                self.editor.pages_loading = false;
                 self.editor.blocks_list_state.reset(0, px(BLOCK_ROW_HEIGHT));
                 self.ui.vault_dialog_open = true;
 
@@ -213,6 +215,7 @@ impl AppStore {
                 self.app.db = None;
                 self.editor.active_page = None;
                 self.editor.editor = None;
+                self.editor.pages_loading = false;
                 self.editor.blocks_list_state.reset(0, px(BLOCK_ROW_HEIGHT));
                 self.ui.vault_dialog_error = Some(format!("{err:?}").into());
                 self.ui.vault_dialog_open = true;

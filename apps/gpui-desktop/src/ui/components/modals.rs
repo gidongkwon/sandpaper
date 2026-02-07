@@ -414,6 +414,11 @@ impl AppStore {
                             .flex()
                             .items_center()
                             .gap_2()
+                            .when(busy, |this| {
+                                this.child(
+                                    crate::ui::components::spinner::Spinner::new().small(),
+                                )
+                            })
                             .child(
                                 div()
                                     .text_size(tokens::FONT_SM)
@@ -665,6 +670,11 @@ impl AppStore {
                         .flex()
                         .items_center()
                         .gap_2()
+                        .when(exporting || importing, |this| {
+                            this.child(
+                                crate::ui::components::spinner::Spinner::new().small(),
+                            )
+                        })
                         .child(
                             Button::new("offline-export")
                                 .label(if exporting {

@@ -37,6 +37,7 @@ impl AppState {
 }
 
 pub(crate) struct EditorState {
+    pub(crate) pages_loading: bool,
     pub(crate) pages: Vec<PageRecord>,
     pub(crate) active_page: Option<PageRecord>,
     pub(crate) editor: Option<EditorModel>,
@@ -119,6 +120,7 @@ impl EditorState {
             cx.new(|cx| InputState::new(window, cx).placeholder("Move to page..."));
 
         Self {
+            pages_loading: true,
             pages: Vec::new(),
             active_page: None,
             editor: None,
