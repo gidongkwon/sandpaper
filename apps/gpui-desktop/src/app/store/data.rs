@@ -320,3 +320,261 @@ impl AppStore {
         self.load_review_items(cx);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::TestAppContext;
+    use gpui_component::Root;
+    use sandpaper_core::db::Database;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn setup_app(cx: &mut TestAppContext) -> (Entity<AppStore>, gpui::WindowHandle<Root>) {
+        cx.skip_drawing();
+        let app_handle: Rc<RefCell<Option<Entity<AppStore>>>> = Rc::new(RefCell::new(None));
+
+        {
+            let mut app = cx.app.borrow_mut();
+            gpui_component::init(&mut app);
+        }
+
+        let app_handle_for_window = app_handle.clone();
+        let window = cx.add_window(|window, cx| {
+            let app = cx.new(|cx| AppStore::new(window, cx));
+            *app_handle_for_window.borrow_mut() = Some(app.clone());
+            Root::new(app, window, cx)
+        });
+
+        let entity = app_handle.borrow().clone().expect("app");
+        (entity, window)
+    }
+
+    fn setup_db_with_pages(db: &Database) {
+        db.run_migrations().expect("migrations");
+        db.insert_page("alpha", "Alpha Notes")
+            .expect("insert alpha");
+        db.insert_page("beta", "Beta Docs").expect("insert beta");
+        db.insert_page("gamma", "Gamma Research")
+            .expect("insert gamma");
+    }
+
+    #[gpui::test]
+    fn refresh_search_empty_query_clears_results(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                // Seed some fake results first
+                app.editor.search_pages.push(PageRecord {
+                    id: 1,
+                    uid: "alpha".to_string(),
+                    title: "Alpha Notes".to_string(),
+                });
+
+                // Empty query should clear
+                app.editor.sidebar_search_query = String::new();
+                app.refresh_search_results();
+                assert!(app.editor.search_pages.is_empty());
+                assert!(app.editor.search_blocks.is_empty());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_search_whitespace_query_clears_results(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                app.editor.sidebar_search_query = "   ".to_string();
+                app.refresh_search_results();
+                assert!(app.editor.search_pages.is_empty());
+                assert!(app.editor.search_blocks.is_empty());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_search_no_db_clears_results(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                // No DB set
+                app.editor.sidebar_search_query = "alpha".to_string();
+                app.refresh_search_results();
+                assert!(app.editor.search_pages.is_empty());
+                assert!(app.editor.search_blocks.is_empty());
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_search_finds_matching_pages(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                app.editor.sidebar_search_query = "Alpha".to_string();
+                app.refresh_search_results();
+                assert_eq!(app.editor.search_pages.len(), 1);
+                assert_eq!(app.editor.search_pages[0].uid, "alpha");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_search_finds_blocks_with_matching_text(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, _cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+                let page = db.get_page_by_uid("alpha").unwrap().expect("alpha exists");
+                db.insert_block(page.id, "b1", None, "a", "Hello world", "{}")
+                    .expect("insert block");
+
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                app.editor.sidebar_search_query = "Hello".to_string();
+                app.refresh_search_results();
+                assert!(!app.editor.search_blocks.is_empty());
+                assert_eq!(app.editor.search_blocks[0].page_title, "Alpha Notes");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_references_finds_backlinks(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+
+                // Add a block in beta that links to alpha
+                let beta = db.get_page_by_uid("beta").unwrap().unwrap();
+                db.insert_block(
+                    beta.id,
+                    "link-block",
+                    None,
+                    "a",
+                    "See [[alpha]] for details",
+                    "{}",
+                )
+                .expect("insert link block");
+
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                // Open alpha page so references point to it
+                app.open_page("alpha", cx);
+
+                // Check backlinks
+                assert!(
+                    !app.editor.backlinks.is_empty(),
+                    "should find backlink from beta"
+                );
+                assert_eq!(app.editor.backlinks[0].page_uid, "beta");
+                assert!(app.editor.backlinks[0].text.contains("[[alpha]]"));
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn refresh_references_no_self_backlinks(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+
+                // Add a block in alpha that links to itself
+                let alpha = db.get_page_by_uid("alpha").unwrap().unwrap();
+                db.insert_block(
+                    alpha.id,
+                    "self-link",
+                    None,
+                    "a",
+                    "See [[alpha]] for more",
+                    "{}",
+                )
+                .expect("insert self link block");
+
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                app.open_page("alpha", cx);
+
+                // Self-references should be excluded
+                assert!(
+                    app.editor.backlinks.is_empty(),
+                    "self-referencing blocks should not appear as backlinks"
+                );
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn load_review_items_populates_display_list(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                let db = Database::new_in_memory().expect("db init");
+                setup_db_with_pages(&db);
+
+                let alpha = db.get_page_by_uid("alpha").unwrap().unwrap();
+                db.insert_block(alpha.id, "review-b1", None, "a", "Review this", "{}")
+                    .expect("insert block");
+
+                // Add a review item due now
+                let now = chrono::Utc::now().timestamp_millis();
+                db.upsert_review_queue_item("alpha", "review-b1", now, None)
+                    .expect("upsert review");
+
+                app.app.db = Some(db);
+                app.editor.pages = app.app.db.as_ref().unwrap().list_pages().unwrap();
+
+                app.load_review_items(cx);
+                assert_eq!(app.editor.review_items.len(), 1);
+                assert_eq!(app.editor.review_items[0].page_title, "Alpha Notes");
+                assert_eq!(app.editor.review_items[0].text, "Review this");
+            });
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn load_review_items_empty_when_no_db(cx: &mut TestAppContext) {
+        let (app, window) = setup_app(cx);
+        cx.update_window(*window, |_root, _window, cx| {
+            app.update(cx, |app, cx| {
+                // Remove any DB that boot() may have loaded
+                app.app.db = None;
+                app.load_review_items(cx);
+                assert!(app.editor.review_items.is_empty());
+            });
+        })
+        .unwrap();
+    }
+}
