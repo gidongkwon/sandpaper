@@ -745,4 +745,175 @@ mod tests {
             "https://example.com/cat.png"
         );
     }
+
+    #[test]
+    fn fuzzy_score_matches_substring() {
+        let score = fuzzy_score("li", "link");
+        assert!(score.is_some());
+        assert!(score.unwrap() > 0);
+    }
+
+    #[test]
+    fn fuzzy_score_returns_none_for_no_match() {
+        assert!(fuzzy_score("xyz", "link").is_none());
+    }
+
+    #[test]
+    fn fuzzy_score_empty_query_returns_zero() {
+        assert_eq!(fuzzy_score("", "link"), Some(0));
+    }
+
+    #[test]
+    fn fuzzy_score_consecutive_chars_score_higher() {
+        let consecutive = fuzzy_score("li", "link").unwrap();
+        let scattered = fuzzy_score("lk", "link").unwrap();
+        assert!(consecutive > scattered);
+    }
+
+    #[test]
+    fn find_slash_query_at_start_of_text() {
+        let result = find_slash_query("/he", 3);
+        assert!(result.is_some());
+        let q = result.unwrap();
+        assert_eq!(q.slash_index, 0);
+        assert_eq!(q.query, "he");
+    }
+
+    #[test]
+    fn find_slash_query_after_space() {
+        let result = find_slash_query("text /cmd", 9);
+        assert!(result.is_some());
+        let q = result.unwrap();
+        assert_eq!(q.slash_index, 5);
+        assert_eq!(q.query, "cmd");
+    }
+
+    #[test]
+    fn find_slash_query_rejects_mid_word() {
+        assert!(find_slash_query("http://example", 14).is_none());
+    }
+
+    #[test]
+    fn find_wikilink_query_open_bracket() {
+        let result = find_wikilink_query("see [[page", 10);
+        assert!(result.is_some());
+        let q = result.unwrap();
+        assert_eq!(q.query, "page");
+        assert!(!q.has_closing);
+    }
+
+    #[test]
+    fn find_wikilink_query_closed_bracket() {
+        let result = find_wikilink_query("see [[page]]", 10);
+        assert!(result.is_some());
+        let q = result.unwrap();
+        assert_eq!(q.query, "page");
+        assert!(q.has_closing);
+    }
+
+    #[test]
+    fn cycle_index_forward_wraps() {
+        assert_eq!(cycle_index(2, 3, true), 0);
+        assert_eq!(cycle_index(0, 3, true), 1);
+    }
+
+    #[test]
+    fn cycle_index_backward_wraps() {
+        assert_eq!(cycle_index(0, 3, false), 2);
+        assert_eq!(cycle_index(1, 3, false), 0);
+    }
+
+    #[test]
+    fn cycle_index_empty_list() {
+        assert_eq!(cycle_index(0, 0, true), 0);
+        assert_eq!(cycle_index(0, 0, false), 0);
+    }
+
+    #[test]
+    fn apply_slash_command_heading() {
+        let (text, cursor) = apply_slash_command_text("h1", "hello", "", "");
+        assert!(text.starts_with("# "));
+        assert_eq!(cursor, text.len());
+    }
+
+    #[test]
+    fn apply_slash_command_task_adds_checkbox() {
+        let (text, _) = apply_slash_command_text("task", "buy milk", "", "");
+        assert!(text.starts_with("- [ ] "));
+        assert!(text.contains("buy milk"));
+    }
+
+    #[test]
+    fn apply_slash_command_bold_wraps_text() {
+        let (text, _) = apply_slash_command_text("bold", "word", "", "");
+        assert_eq!(text, "**word**");
+    }
+
+    #[test]
+    fn apply_slash_command_link_inserts_wikilink() {
+        let (text, cursor) = apply_slash_command_text("link", "before ", " after", "");
+        assert!(text.contains("[[Page]]"));
+        assert!(cursor > 0);
+    }
+
+    #[test]
+    fn count_occurrences_case_insensitive() {
+        assert_eq!(
+            count_case_insensitive_occurrences("Hello hello HELLO", "hello"),
+            3
+        );
+        assert_eq!(
+            count_case_insensitive_occurrences("no match here", "xyz"),
+            0
+        );
+        assert_eq!(count_case_insensitive_occurrences("test", ""), 0);
+    }
+
+    #[test]
+    fn count_occurrences_outside_wikilinks_skips_links() {
+        assert_eq!(
+            count_case_insensitive_occurrences_outside_wikilinks(
+                "alpha and [[alpha]] and alpha",
+                "alpha"
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn filter_slash_commands_empty_query_returns_all() {
+        let cmds = vec![
+            super::super::SlashCommandDef {
+                id: "bold",
+                label: "Bold",
+                action: super::super::SlashAction::TextTransform,
+            },
+            super::super::SlashCommandDef {
+                id: "link",
+                label: "Link to page",
+                action: super::super::SlashAction::TextTransform,
+            },
+        ];
+        let result = filter_slash_commands("", &cmds);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn filter_slash_commands_filters_by_query() {
+        let cmds = vec![
+            super::super::SlashCommandDef {
+                id: "bold",
+                label: "Bold",
+                action: super::super::SlashAction::TextTransform,
+            },
+            super::super::SlashCommandDef {
+                id: "link",
+                label: "Link to page",
+                action: super::super::SlashAction::TextTransform,
+            },
+        ];
+        let result = filter_slash_commands("li", &cmds);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "link");
+    }
 }
