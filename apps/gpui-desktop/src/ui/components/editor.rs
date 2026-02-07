@@ -168,16 +168,16 @@ impl AppStore {
                     style
                 }
             })
-            .on_drop(cx.listener(
-                |this, paths: &gpui::ExternalPaths, window, cx| {
+            .on_drop(
+                cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                     this.insert_image_blocks_from_paths_in_pane(
                         EditorPane::Primary,
                         paths.paths(),
                         Some(window),
                         cx,
                     );
-                },
-            ))
+                }),
+            )
             .child(list)
     }
 
@@ -2721,21 +2721,23 @@ impl AppStore {
         body = body
             .drag_over::<gpui::ExternalPaths>(move |style, paths, _window, _cx| {
                 if Self::external_paths_include_supported_images(paths) {
-                    style.bg(secondary_drop_bg).border_color(secondary_drop_border)
+                    style
+                        .bg(secondary_drop_bg)
+                        .border_color(secondary_drop_border)
                 } else {
                     style
                 }
             })
-            .on_drop(cx.listener(
-                |this, paths: &gpui::ExternalPaths, window, cx| {
+            .on_drop(
+                cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                     this.insert_image_blocks_from_paths_in_pane(
                         EditorPane::Secondary,
                         paths.paths(),
                         Some(window),
                         cx,
                     );
-                },
-            ))
+                }),
+            )
             .child(list);
 
         Some(

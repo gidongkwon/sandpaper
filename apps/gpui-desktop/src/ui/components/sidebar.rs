@@ -71,8 +71,7 @@ impl AppStore {
             container
                 .child(rail_layer.with_animation(
                     format!("rail-opacity-{epoch}"),
-                    Animation::new(tokens::DURATION_NORMAL)
-                        .with_easing(ease_in_out),
+                    Animation::new(tokens::DURATION_NORMAL).with_easing(ease_in_out),
                     move |el, delta| {
                         let opacity = if collapsed { delta } else { 1.0 - delta };
                         el.opacity(opacity)
@@ -80,8 +79,7 @@ impl AppStore {
                 ))
                 .child(content_layer.with_animation(
                     format!("sidebar-content-opacity-{epoch}"),
-                    Animation::new(tokens::DURATION_NORMAL)
-                        .with_easing(ease_in_out),
+                    Animation::new(tokens::DURATION_NORMAL).with_easing(ease_in_out),
                     move |el, delta| {
                         let opacity = if collapsed { 1.0 - delta } else { delta };
                         el.opacity(opacity)
@@ -89,8 +87,7 @@ impl AppStore {
                 ))
                 .with_animation(
                     format!("sidebar-width-{epoch}"),
-                    Animation::new(tokens::DURATION_NORMAL)
-                        .with_easing(ease_in_out),
+                    Animation::new(tokens::DURATION_NORMAL).with_easing(ease_in_out),
                     move |el, delta| {
                         let (from_w, to_w) = if collapsed {
                             (full_w, rail_w)
@@ -113,10 +110,7 @@ impl AppStore {
 
     /// Renders the full sidebar content elements (search bar, page list, references).
     /// Returns a Vec of AnyElement to be used as children.
-    fn render_sidebar_full_content(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) -> Vec<gpui::AnyElement> {
+    fn render_sidebar_full_content(&mut self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let active_uid = self
             .editor
             .active_page
@@ -182,10 +176,7 @@ impl AppStore {
 
     /// Renders the rail button elements (expand, search, new page).
     /// Returns a Vec of AnyElement to be used as children.
-    fn render_sidebar_rail_content(
-        &mut self,
-        cx: &mut Context<Self>,
-    ) -> Vec<gpui::AnyElement> {
+    fn render_sidebar_rail_content(&mut self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
         let sidebar_hint = shortcut_hint(ShortcutSpec::new("cmd-b", "ctrl-b"));
         let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
 
@@ -230,7 +221,6 @@ impl AppStore {
                 .into_any_element(),
         ]
     }
-
 
     fn render_page_row(
         &mut self,
@@ -421,7 +411,8 @@ impl AppStore {
             use crate::ui::components::empty_state::EmptyState;
             use gpui_component::IconName;
             return content.child(
-                EmptyState::new("No results", "Try a different search term.").icon(IconName::Search),
+                EmptyState::new("No results", "Try a different search term.")
+                    .icon(IconName::Search),
             );
         }
 
@@ -517,7 +508,12 @@ impl AppStore {
                     .py(tokens::SPACE_5)
                     .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
-                    .child(div().text_size(tokens::FONT_BASE).text_color(theme.foreground).child(snippet))
+                    .child(
+                        div()
+                            .text_size(tokens::FONT_BASE)
+                            .text_color(theme.foreground)
+                            .child(snippet),
+                    )
                     .child(
                         div()
                             .text_size(tokens::FONT_SM)
@@ -618,7 +614,12 @@ impl AppStore {
                         .gap_1()
                         .flex_1()
                         .min_w_0()
-                        .child(div().text_size(tokens::FONT_SM).text_color(theme.foreground).child(snippet))
+                        .child(
+                            div()
+                                .text_size(tokens::FONT_SM)
+                                .text_color(theme.foreground)
+                                .child(snippet),
+                        )
                         .child(
                             div()
                                 .flex()

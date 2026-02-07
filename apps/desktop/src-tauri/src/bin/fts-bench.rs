@@ -34,8 +34,7 @@ fn main() {
             .expect("update block");
     }
     let update_time = start_update.elapsed();
-    let update_avg_ms =
-        update_time.as_micros() as f64 / update_count.max(1) as f64 / 1000.0;
+    let update_avg_ms = update_time.as_micros() as f64 / update_count.max(1) as f64 / 1000.0;
 
     let start_search = Instant::now();
     let results = db.search_blocks("alpha").expect("search");

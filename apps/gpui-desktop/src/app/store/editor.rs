@@ -4063,8 +4063,10 @@ impl AppStore {
                 if secondary.editor.blocks.is_empty() {
                     secondary.editor.active_ix = 0;
                 } else {
-                    secondary.editor.active_ix =
-                        secondary.editor.active_ix.min(secondary.editor.blocks.len() - 1);
+                    secondary.editor.active_ix = secondary
+                        .editor
+                        .active_ix
+                        .min(secondary.editor.blocks.len() - 1);
                 }
                 update_secondary = true;
             }
@@ -4972,7 +4974,9 @@ impl AppStore {
         let path = FileDialog::new()
             .add_filter(
                 "Images",
-                &["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tif", "tiff", "ico"],
+                &[
+                    "png", "jpg", "jpeg", "webp", "gif", "svg", "bmp", "tif", "tiff", "ico",
+                ],
             )
             .pick_file()?;
         self.import_image_file_for_active_vault(&path)
@@ -7008,8 +7012,8 @@ mod tests {
                 assert_eq!(editor.active_ix, 1);
                 assert_eq!(editor.blocks[1].block_type, BlockType::Image);
                 assert!(editor.blocks[1].text.starts_with("![cat.png](/assets/"));
-                let source = helpers::extract_image_source(&editor.blocks[1].text)
-                    .expect("image source");
+                let source =
+                    helpers::extract_image_source(&editor.blocks[1].text).expect("image source");
                 let stored = vault_root.join(source.trim_start_matches('/'));
                 assert!(stored.exists());
                 assert!(app.app.primary_dirty);

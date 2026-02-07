@@ -248,9 +248,8 @@ impl ActionExecutor for AppStore {
                 self.settings.open(SettingsTab::General);
                 self.persist_settings();
                 let app_entity = cx.entity().clone();
-                let view = cx.new(|cx| {
-                    crate::ui::dialogs::SettingsSheetView::new(app_entity.clone(), cx)
-                });
+                let view =
+                    cx.new(|cx| crate::ui::dialogs::SettingsSheetView::new(app_entity.clone(), cx));
                 self.with_window(cx, move |window, cx| {
                     let app_for_close = app_entity.clone();
                     window.open_sheet(cx, move |sheet, _window, _cx| {

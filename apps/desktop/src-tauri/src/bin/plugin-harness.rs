@@ -27,7 +27,9 @@ fn parse_args(args: &[String]) -> Result<HarnessArgs, String> {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--plugin" => {
-                let value = iter.next().ok_or_else(|| "Missing --plugin value".to_string())?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "Missing --plugin value".to_string())?;
                 plugin_path = Some(PathBuf::from(value));
             }
             "--renderer" => {
@@ -37,11 +39,15 @@ fn parse_args(args: &[String]) -> Result<HarnessArgs, String> {
                 renderer_id = Some(value.to_string());
             }
             "--block" => {
-                let value = iter.next().ok_or_else(|| "Missing --block value".to_string())?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "Missing --block value".to_string())?;
                 block_uid = Some(value.to_string());
             }
             "--text" => {
-                let value = iter.next().ok_or_else(|| "Missing --text value".to_string())?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "Missing --text value".to_string())?;
                 text = Some(value.to_string());
             }
             "--action" => {
@@ -51,17 +57,17 @@ fn parse_args(args: &[String]) -> Result<HarnessArgs, String> {
                 action_id = Some(value.to_string());
             }
             "--value" => {
-                let value = iter.next().ok_or_else(|| "Missing --value payload".to_string())?;
-                let parsed: Value =
-                    serde_json::from_str(value).map_err(|err| format!("{err}"))?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| "Missing --value payload".to_string())?;
+                let parsed: Value = serde_json::from_str(value).map_err(|err| format!("{err}"))?;
                 action_value = Some(parsed);
             }
             "--settings" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| "Missing --settings payload".to_string())?;
-                let parsed: Value =
-                    serde_json::from_str(value).map_err(|err| format!("{err}"))?;
+                let parsed: Value = serde_json::from_str(value).map_err(|err| format!("{err}"))?;
                 settings = Some(parsed);
             }
             "--help" | "-h" => {

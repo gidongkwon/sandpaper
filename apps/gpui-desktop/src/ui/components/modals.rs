@@ -45,13 +45,16 @@ impl AppStore {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "—".to_string());
 
-        let mut content = div().flex().flex_col().gap_4().child(
-            self.render_settings_section_header(
-                "General",
-                "App-wide preferences and active vault info.",
-                cx,
-            ),
-        );
+        let mut content =
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(self.render_settings_section_header(
+                    "General",
+                    "App-wide preferences and active vault info.",
+                    cx,
+                ));
 
         content = content.child(
             div()
@@ -83,13 +86,11 @@ impl AppStore {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(
-                    self.render_settings_section_header(
-                        "Workspace",
-                        "Appearance and layout options.",
-                        cx,
-                    ),
-                )
+                .child(self.render_settings_section_header(
+                    "Workspace",
+                    "Appearance and layout options.",
+                    cx,
+                ))
                 .child(
                     self.render_settings_row(
                         "Theme",
@@ -165,13 +166,11 @@ impl AppStore {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(
-                    self.render_settings_section_header(
-                        "Quick Add",
-                        "Configure quick capture behavior.",
-                        cx,
-                    ),
-                )
+                .child(self.render_settings_section_header(
+                    "Quick Add",
+                    "Configure quick capture behavior.",
+                    cx,
+                ))
                 .child(
                     self.render_settings_row(
                         "Default capture target",
@@ -284,13 +283,11 @@ impl AppStore {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(
-                    self.render_settings_section_header(
-                        "Editor",
-                        "Editing and pane behavior.",
-                        cx,
-                    ),
-                )
+                .child(self.render_settings_section_header(
+                    "Editor",
+                    "Editing and pane behavior.",
+                    cx,
+                ))
                 .child(
                     self.render_settings_row(
                         "Sync scroll across panes",
@@ -344,13 +341,16 @@ impl AppStore {
             format!("{pending} pending").into()
         };
 
-        let mut content = div().flex().flex_col().gap_4().child(
-            self.render_settings_section_header(
-                "Vault",
-                "Storage location and sync settings for the active vault.",
-                cx,
-            ),
-        );
+        let mut content =
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(self.render_settings_section_header(
+                    "Vault",
+                    "Storage location and sync settings for the active vault.",
+                    cx,
+                ));
 
         content = content.child(
             div()
@@ -382,13 +382,11 @@ impl AppStore {
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(
-                    self.render_settings_section_header(
-                        "Shadow Markdown",
-                        "Writes read-only per-page Markdown under the vault pages folder.",
-                        cx,
-                    ),
-                )
+                .child(self.render_settings_section_header(
+                    "Shadow Markdown",
+                    "Writes read-only per-page Markdown under the vault pages folder.",
+                    cx,
+                ))
                 .child(
                     self.render_settings_row(
                         "Pages folder",
@@ -410,9 +408,7 @@ impl AppStore {
                             .items_center()
                             .gap_2()
                             .when(busy, |this| {
-                                this.child(
-                                    crate::ui::components::spinner::Spinner::new().small(),
-                                )
+                                this.child(crate::ui::components::spinner::Spinner::new().small())
                             })
                             .child(
                                 div()
@@ -448,9 +444,9 @@ impl AppStore {
 
         if let Some(err) = self.ui.shadow_write_last_error.clone() {
             use crate::ui::components::error_display::InlineError;
-            content = content.child(
-                InlineError::new(format!("{err} Try flushing the queue again or check file permissions.")),
-            );
+            content = content.child(InlineError::new(format!(
+                "{err} Try flushing the queue again or check file permissions."
+            )));
         }
 
         content.into_any_element()
@@ -501,13 +497,11 @@ impl AppStore {
             .flex()
             .flex_col()
             .gap_3()
-            .child(
-                self.render_settings_section_header(
-                    "Permission Audit",
-                    "Review required permissions, missing grants, and unused grants.",
-                    cx,
-                ),
-            )
+            .child(self.render_settings_section_header(
+                "Permission Audit",
+                "Review required permissions, missing grants, and unused grants.",
+                cx,
+            ))
             .child(legend);
 
         if self.plugins.plugins.is_empty() {
@@ -629,35 +623,34 @@ impl AppStore {
         let exporting = self.ui.offline_export_busy;
         let importing = self.ui.offline_import_busy;
 
-        let mut content = div().flex().flex_col().gap_4().child(
-            self.render_settings_section_header(
-                "Import / Export",
-                "Move data in and out of Sandpaper.",
-                cx,
-            ),
-        );
+        let mut content =
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(self.render_settings_section_header(
+                    "Import / Export",
+                    "Move data in and out of Sandpaper.",
+                    cx,
+                ));
 
         content = content.child(
             div()
                 .flex()
                 .flex_col()
                 .gap_3()
-                .child(
-                    self.render_settings_section_header(
-                        "Offline archive",
-                        "Export a zip with pages and a manifest, or import one back into the vault.",
-                        cx,
-                    ),
-                )
+                .child(self.render_settings_section_header(
+                    "Offline archive",
+                    "Export a zip with pages and a manifest, or import one back into the vault.",
+                    cx,
+                ))
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .gap_2()
                         .when(exporting || importing, |this| {
-                            this.child(
-                                crate::ui::components::spinner::Spinner::new().small(),
-                            )
+                            this.child(crate::ui::components::spinner::Spinner::new().small())
                         })
                         .child(
                             Button::new("offline-export")

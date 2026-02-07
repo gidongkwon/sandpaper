@@ -39,7 +39,11 @@ impl AppStore {
         let pending_review_count = self.editor.review_items.len();
         // Mode pills
         let current_mode = self.app.mode;
-        let mut mode_pills = div().id("topbar-mode-switcher").flex().items_center().gap_1();
+        let mut mode_pills = div()
+            .id("topbar-mode-switcher")
+            .flex()
+            .items_center()
+            .gap_1();
         for (mode, label) in [
             (Mode::Capture, "Capture"),
             (Mode::Editor, "Edit"),
@@ -264,9 +268,7 @@ impl AppStore {
                     .text_size(tokens::FONT_XS)
                     .text_color(save_color)
                     .when(is_saving, |this| {
-                        this.child(
-                            crate::ui::components::spinner::Spinner::new().small(),
-                        )
+                        this.child(crate::ui::components::spinner::Spinner::new().small())
                     })
                     .when(!is_saving, |this| this.child(save_icon))
                     .child(save_label),
@@ -464,7 +466,12 @@ impl AppStore {
                         .flex()
                         .flex_col()
                         .gap(tokens::SPACE_1)
-                        .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
+                        .child(
+                            div()
+                                .text_size(tokens::FONT_BASE)
+                                .text_color(fg)
+                                .child(title),
+                        )
                         .child(reason_pills),
                 );
             }
@@ -519,7 +526,12 @@ impl AppStore {
                         .on_click(cx.listener(move |this, _event, _window, cx| {
                             this.open_page(&uid, cx);
                         }))
-                        .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title)),
+                        .child(
+                            div()
+                                .text_size(tokens::FONT_BASE)
+                                .text_color(fg)
+                                .child(title),
+                        ),
                 );
             }
         }
@@ -541,16 +553,14 @@ impl AppStore {
     fn render_context_panel_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.settings.context_panel_tab {
             WorkspacePanel::Review => self.render_review_pane(cx).into_any_element(),
-            WorkspacePanel::Backlinks => {
-                self.render_backlinks_panel(cx).unwrap_or_else(|| {
-                    self.render_empty_context_panel(
-                        "Backlinks",
-                        "Open a page to view backlinks and unlinked references.",
-                        IconName::ExternalLink,
-                        cx,
-                    )
-                })
-            }
+            WorkspacePanel::Backlinks => self.render_backlinks_panel(cx).unwrap_or_else(|| {
+                self.render_empty_context_panel(
+                    "Backlinks",
+                    "Open a page to view backlinks and unlinked references.",
+                    IconName::ExternalLink,
+                    cx,
+                )
+            }),
             WorkspacePanel::Plugins => self.render_plugin_panel(cx).unwrap_or_else(|| {
                 self.render_empty_context_panel(
                     "Plugin Panel",
@@ -615,11 +625,7 @@ impl AppStore {
                     format!("ctx-panel-width-{epoch}"),
                     Animation::new(duration).with_easing(ease_in_out),
                     move |el, delta| {
-                        let (from_w, to_w) = if open {
-                            (0.0, panel_w)
-                        } else {
-                            (panel_w, 0.0)
-                        };
+                        let (from_w, to_w) = if open { (0.0, panel_w) } else { (panel_w, 0.0) };
                         let w = from_w + (to_w - from_w) * delta;
                         el.w(px(w))
                     },
@@ -770,7 +776,12 @@ impl AppStore {
                 .flex()
                 .items_center()
                 .justify_between()
-                .child(div().text_size(tokens::FONT_XS).text_color(muted_fg).child("Focus Mode"))
+                .child(
+                    div()
+                        .text_size(tokens::FONT_XS)
+                        .text_color(muted_fg)
+                        .child("Focus Mode"),
+                )
                 .child(
                     Button::new("exit-focus-mode")
                         .xsmall()
@@ -809,67 +820,63 @@ impl AppStore {
                 this.dismiss_quick_capture(window, cx);
             }));
 
-        let card = div()
-            .absolute()
-            .top(px(120.0))
-            .left_auto()
-            .right_auto()
-            .mx_auto()
-            .w(px(520.0))
-            .rounded_lg()
-            .bg(bg)
-            .border_1()
-            .border_color(border)
-            .overflow_hidden()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .p_4()
-            .child(
-                div()
-                    .text_size(tokens::FONT_LG)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .child("Quick Capture"),
-            )
-            .child(
-                div()
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key == "escape" {
-                            this.dismiss_quick_capture(window, cx);
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .capture_action(cx.listener(
-                        |this, _: &gpui_component::input::Enter, window, cx| {
-                            this.submit_quick_capture(window, cx);
-                            cx.stop_propagation();
-                        },
-                    ))
-                    .child(input),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_size(tokens::FONT_SM)
-                            .text_color(muted_fg)
-                            .child(format!(
-                                "{hint} queue  ·  shift+enter newline  ·  esc dismiss"
-                            )),
-                    )
-                    .child(
-                        Button::new("capture-submit")
-                            .xsmall()
-                            .primary()
-                            .label("Queue")
-                            .on_click(cx.listener(|this, _event, window, cx| {
+        let card =
+            div()
+                .absolute()
+                .top(px(120.0))
+                .left_auto()
+                .right_auto()
+                .mx_auto()
+                .w(px(520.0))
+                .rounded_lg()
+                .bg(bg)
+                .border_1()
+                .border_color(border)
+                .overflow_hidden()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p_4()
+                .child(
+                    div()
+                        .text_size(tokens::FONT_LG)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child("Quick Capture"),
+                )
+                .child(
+                    div()
+                        .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                            if event.keystroke.key == "escape" {
+                                this.dismiss_quick_capture(window, cx);
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .capture_action(cx.listener(
+                            |this, _: &gpui_component::input::Enter, window, cx| {
                                 this.submit_quick_capture(window, cx);
-                            })),
-                    ),
-            );
+                                cx.stop_propagation();
+                            },
+                        ))
+                        .child(input),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(div().text_size(tokens::FONT_SM).text_color(muted_fg).child(
+                            format!("{hint} queue  ·  shift+enter newline  ·  esc dismiss"),
+                        ))
+                        .child(
+                            Button::new("capture-submit")
+                                .xsmall()
+                                .primary()
+                                .label("Queue")
+                                .on_click(cx.listener(|this, _event, window, cx| {
+                                    this.submit_quick_capture(window, cx);
+                                })),
+                        ),
+                );
 
         // Center the card horizontally
         let card_container = div()
@@ -960,27 +967,28 @@ impl AppStore {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(item_text))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .child(
-                                Button::new(format!("capture-delete-{i}"))
-                                    .xsmall()
-                                    .ghost()
-                                    .icon(SandpaperIcon::Dismiss)
-                                    .tooltip("Delete capture")
-                                    .on_click(cx.listener(move |this, _event, _window, cx| {
-                                        if this
-                                            .delete_capture_queue_item(&delete_uid_for_button, cx)
-                                            .is_ok()
-                                        {
-                                            cx.notify();
-                                        }
-                                    })),
-                            ),
+                            .text_size(tokens::FONT_BASE)
+                            .text_color(fg)
+                            .child(item_text),
+                    )
+                    .child(
+                        div().flex().items_center().justify_end().child(
+                            Button::new(format!("capture-delete-{i}"))
+                                .xsmall()
+                                .ghost()
+                                .icon(SandpaperIcon::Dismiss)
+                                .tooltip("Delete capture")
+                                .on_click(cx.listener(move |this, _event, _window, cx| {
+                                    if this
+                                        .delete_capture_queue_item(&delete_uid_for_button, cx)
+                                        .is_ok()
+                                    {
+                                        cx.notify();
+                                    }
+                                })),
+                        ),
                     );
 
                 timeline = timeline.child(bubble);
@@ -1149,13 +1157,23 @@ impl AppStore {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(snippet))
+                            .child(
+                                div()
+                                    .text_size(tokens::FONT_BASE)
+                                    .text_color(fg)
+                                    .child(snippet),
+                            )
                             .child(
                                 div()
                                     .flex()
                                     .items_center()
                                     .justify_between()
-                                    .child(div().text_size(tokens::FONT_SM).text_color(muted_fg).child(page_title))
+                                    .child(
+                                        div()
+                                            .text_size(tokens::FONT_SM)
+                                            .text_color(muted_fg)
+                                            .child(page_title),
+                                    )
                                     .child(
                                         div()
                                             .flex()
@@ -1230,7 +1248,12 @@ impl AppStore {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
+                            .child(
+                                div()
+                                    .text_size(tokens::FONT_BASE)
+                                    .text_color(fg)
+                                    .child(title),
+                            )
                             .child(reason_pills)
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover_bg))
@@ -1254,7 +1277,12 @@ impl AppStore {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
+                            .child(
+                                div()
+                                    .text_size(tokens::FONT_BASE)
+                                    .text_color(fg)
+                                    .child(title),
+                            )
                             .cursor_pointer()
                             .hover(move |s| s.bg(hover_bg))
                             .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -1277,7 +1305,12 @@ impl AppStore {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .child(div().text_size(tokens::FONT_BASE).text_color(fg).child(title))
+                            .child(
+                                div()
+                                    .text_size(tokens::FONT_BASE)
+                                    .text_color(fg)
+                                    .child(title),
+                            )
                             .child(
                                 Button::new(format!("feed-explore-{i}"))
                                     .xsmall()

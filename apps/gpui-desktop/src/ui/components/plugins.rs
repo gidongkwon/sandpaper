@@ -16,18 +16,20 @@ impl AppStore {
             div()
                 .id("plugin-error-banner")
                 .child(
-                    ErrorBanner::new(format!("{message} — Try reloading plugins or check Details for more info."))
-                        .warning()
-                        .action(
-                            if self.plugins.plugin_busy {
-                                "Reloading..."
-                            } else {
-                                "Reload plugins"
-                            },
-                            cx.listener(|this, _event, window, cx| {
-                                this.load_plugins(Some(window), cx);
-                            }),
-                        ),
+                    ErrorBanner::new(format!(
+                        "{message} — Try reloading plugins or check Details for more info."
+                    ))
+                    .warning()
+                    .action(
+                        if self.plugins.plugin_busy {
+                            "Reloading..."
+                        } else {
+                            "Reload plugins"
+                        },
+                        cx.listener(|this, _event, window, cx| {
+                            this.load_plugins(Some(window), cx);
+                        }),
+                    ),
                 )
                 .into_any_element(),
         )

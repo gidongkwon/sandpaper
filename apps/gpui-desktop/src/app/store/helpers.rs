@@ -745,10 +745,7 @@ mod tests {
     #[test]
     fn clean_image_text_normalizes_markdown_image_source() {
         assert_eq!(
-            clean_text_for_block_type(
-                "![A cat](https://example.com/cat.png)",
-                BlockType::Image
-            ),
+            clean_text_for_block_type("![A cat](https://example.com/cat.png)", BlockType::Image),
             "https://example.com/cat.png"
         );
     }

@@ -286,7 +286,12 @@ impl Render for CommandPaletteDialogView {
                 .justify_center()
                 .gap_2()
                 .child(Icon::new(SandpaperIcon::Search).size_4().text_color(muted))
-                .child(div().text_size(tokens::FONT_BASE).text_color(muted).child("No matches"))
+                .child(
+                    div()
+                        .text_size(tokens::FONT_BASE)
+                        .text_color(muted)
+                        .child("No matches"),
+                )
                 .into_any_element()
         } else {
             let item_sizes = Rc::new(
@@ -323,11 +328,7 @@ impl Render for CommandPaletteDialogView {
                                 let is_active = idx == active_ix;
                                 let hint = item.hint.clone();
                                 let icon_kind = command_palette_icon_for_action(&item.action);
-                                let icon_bg = if is_active {
-                                    accent_subtle
-                                } else {
-                                    secondary
-                                };
+                                let icon_bg = if is_active { accent_subtle } else { secondary };
                                 let icon_fg = if is_active { accent } else { muted };
 
                                 let mut row = div()
@@ -432,7 +433,12 @@ impl Render for CommandPaletteDialogView {
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child("\u{21B5}"),
                     )
-                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Open")),
+                    .child(
+                        div()
+                            .text_size(tokens::FONT_SM)
+                            .text_color(muted)
+                            .child("Open"),
+                    ),
             )
             .child(
                 div()
@@ -450,7 +456,12 @@ impl Render for CommandPaletteDialogView {
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .child("esc"),
                     )
-                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Close")),
+                    .child(
+                        div()
+                            .text_size(tokens::FONT_SM)
+                            .text_color(muted)
+                            .child("Close"),
+                    ),
             );
 
         div()
@@ -462,18 +473,23 @@ impl Render for CommandPaletteDialogView {
             .min_h_0()
             // Search bar
             .child(
-                div().px_4().py_3().border_b_1().border_color(border_subtle).child(
-                    Input::new(&palette_input)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(false)
-                        .cleanable(true)
-                        .prefix(
-                            Icon::new(SandpaperIcon::Search)
-                                .size_4()
-                                .text_color(foreground),
-                        ),
-                ),
+                div()
+                    .px_4()
+                    .py_3()
+                    .border_b_1()
+                    .border_color(border_subtle)
+                    .child(
+                        Input::new(&palette_input)
+                            .appearance(false)
+                            .bordered(false)
+                            .focus_bordered(false)
+                            .cleanable(true)
+                            .prefix(
+                                Icon::new(SandpaperIcon::Search)
+                                    .size_4()
+                                    .text_color(foreground),
+                            ),
+                    ),
             )
             // Results list
             .child(
@@ -739,7 +755,12 @@ impl Render for VaultDialogView {
 
         let mut list = div().flex().flex_col().gap_1();
         if vaults.is_empty() {
-            list = list.child(div().text_size(tokens::FONT_SM).text_color(muted).child("No vaults yet."));
+            list = list.child(
+                div()
+                    .text_size(tokens::FONT_SM)
+                    .text_color(muted)
+                    .child("No vaults yet."),
+            );
         } else {
             for vault in vaults.into_iter() {
                 let id = vault.id.clone();
@@ -778,11 +799,9 @@ impl Render for VaultDialogView {
 
         if let Some(msg) = error {
             use crate::ui::components::error_display::InlineError;
-            list = list.child(
-                div().mt_1().child(
-                    InlineError::new(format!("{msg} Check the vault name and path, then try again.")),
-                ),
-            );
+            list = list.child(div().mt_1().child(InlineError::new(format!(
+                "{msg} Check the vault name and path, then try again."
+            ))));
         }
 
         let browse_button = Button::new("vault-path-browse")
@@ -863,7 +882,12 @@ impl Render for VaultDialogView {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Name"))
+                    .child(
+                        div()
+                            .text_size(tokens::FONT_SM)
+                            .text_color(muted)
+                            .child("Name"),
+                    )
                     .child(Input::new(&name_input).small()),
             )
             .child(
@@ -871,7 +895,12 @@ impl Render for VaultDialogView {
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .child(div().text_size(tokens::FONT_SM).text_color(muted).child("Path"))
+                    .child(
+                        div()
+                            .text_size(tokens::FONT_SM)
+                            .text_color(muted)
+                            .child("Path"),
+                    )
                     .child(
                         div()
                             .flex()
@@ -929,14 +958,19 @@ impl Render for PageDialogView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(div().text_size(tokens::FONT_SM).text_color(muted).child(label))
+            .child(
+                div()
+                    .text_size(tokens::FONT_SM)
+                    .text_color(muted)
+                    .child(label),
+            )
             .child(Input::new(&input).small());
 
         if let Some(error) = error {
             use crate::ui::components::error_display::InlineError;
-            content = content.child(
-                InlineError::new(format!("{error} Please choose a different title.")),
-            );
+            content = content.child(InlineError::new(format!(
+                "{error} Please choose a different title."
+            )));
         } else {
             content = content.child(
                 div()

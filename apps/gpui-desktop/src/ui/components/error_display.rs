@@ -1,10 +1,12 @@
 use crate::ui::icons::SandpaperIcon;
 use crate::ui::tokens;
 use gpui::{
-    div, App, ClickEvent, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce,
-    SharedString, Styled as _, Window,
+    div, App, ClickEvent, FontWeight, Hsla, IntoElement, ParentElement, RenderOnce, SharedString,
+    Styled as _, Window,
 };
-use gpui_component::{button::Button, button::ButtonVariants as _, ActiveTheme as _, Icon, Sizable, Size};
+use gpui_component::{
+    button::Button, button::ButtonVariants as _, ActiveTheme as _, Icon, Sizable, Size,
+};
 use std::rc::Rc;
 
 /// A full-width error/warning banner bar with icon, message, and optional action button.

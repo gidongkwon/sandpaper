@@ -1,23 +1,23 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use aes_gcm::aead::{Aead, KeyInit};
 use base64::Engine;
 use rand_core::RngCore;
-use sha2::{Digest, Sha256};
-use sandpaper_core::plugins;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Mutex};
-use tauri::Manager;
-use sandpaper_core::vaults::{VaultConfig, VaultRecord, VaultStore};
 use sandpaper_core::blocks::BlockType;
 use sandpaper_core::db::{BlockPageRecord, BlockSearchResult, BlockSnapshot, Database};
+use sandpaper_core::plugins;
 use sandpaper_core::plugins::{
     check_manifest_compatibility, discover_plugins, install_plugin, list_plugins, remove_plugin,
     update_plugin, PluginBlockView, PluginCommand, PluginDescriptor, PluginInfo, PluginPanel,
     PluginRegistry, PluginRenderer, PluginRuntime, PluginRuntimeError, PluginRuntimeLoadResult,
     PluginSettingsSchema, PluginToolbarAction,
 };
+use sandpaper_core::vaults::{VaultConfig, VaultRecord, VaultStore};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{mpsc, Arc, Mutex};
+use tauri::Manager;
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
@@ -233,10 +233,7 @@ enum PluginRuntimeRequest {
     Shutdown,
 }
 
-fn set_shared_error(
-    target: &Arc<Mutex<Option<plugins::PluginRuntimeError>>>,
-    message: String,
-) {
+fn set_shared_error(target: &Arc<Mutex<Option<plugins::PluginRuntimeError>>>, message: String) {
     let mut guard = target.lock().unwrap_or_else(|err| err.into_inner());
     *guard = Some(plugins::PluginRuntimeError::new(message));
 }
@@ -274,8 +271,8 @@ impl RuntimeState {
                     Ok(request) => request,
                     Err(_) => break,
                 };
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    match request {
+                let result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match request {
                         PluginRuntimeRequest::LoadPlugins {
                             plugins,
                             settings,
@@ -335,8 +332,7 @@ impl RuntimeState {
                             ThreadControl::Continue
                         }
                         PluginRuntimeRequest::Shutdown => ThreadControl::Shutdown,
-                    }
-                }));
+                    }));
 
                 match result {
                     Ok(ThreadControl::Continue) => {}
@@ -370,17 +366,26 @@ impl RuntimeState {
     }
 
     fn record_error(&self, error: plugins::PluginRuntimeError) {
-        let mut guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        let mut guard = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         *guard = Some(error);
     }
 
     fn clear_error(&self) {
-        let mut guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        let mut guard = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         *guard = None;
     }
 
     fn last_error(&self) -> Option<plugins::PluginRuntimeError> {
-        let guard = self.last_error.lock().unwrap_or_else(|err| err.into_inner());
+        let guard = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         guard.clone()
     }
 
@@ -757,8 +762,7 @@ fn write_shadow_markdown_to_vault(
         use std::os::unix::fs::PermissionsExt;
         if path.exists() {
             let permissions = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(&path, permissions)
-                .map_err(|err| format!("{:?}", err))?;
+            std::fs::set_permissions(&path, permissions).map_err(|err| format!("{:?}", err))?;
         }
     }
 
@@ -793,10 +797,7 @@ struct PendingSyncOp {
 }
 
 fn get_or_create_device_id(db: &Database) -> Result<String, String> {
-    if let Some(existing) = db
-        .get_kv("device.id")
-        .map_err(|err| format!("{:?}", err))?
-    {
+    if let Some(existing) = db.get_kv("device.id").map_err(|err| format!("{:?}", err))? {
         return Ok(existing);
     }
     let id = uuid::Uuid::new_v4().to_string();
@@ -856,8 +857,7 @@ fn build_sync_ops(
                 ops.push(PendingSyncOp {
                     op_id,
                     op_type: "edit".to_string(),
-                    payload: serde_json::to_vec(&payload)
-                        .map_err(|err| format!("{:?}", err))?,
+                    payload: serde_json::to_vec(&payload).map_err(|err| format!("{:?}", err))?,
                 });
             }
 
@@ -879,8 +879,7 @@ fn build_sync_ops(
                 ops.push(PendingSyncOp {
                     op_id,
                     op_type: "move".to_string(),
-                    payload: serde_json::to_vec(&payload)
-                        .map_err(|err| format!("{:?}", err))?,
+                    payload: serde_json::to_vec(&payload).map_err(|err| format!("{:?}", err))?,
                 });
             }
         } else {
@@ -902,8 +901,7 @@ fn build_sync_ops(
             ops.push(PendingSyncOp {
                 op_id,
                 op_type: "add".to_string(),
-                payload: serde_json::to_vec(&payload)
-                    .map_err(|err| format!("{:?}", err))?,
+                payload: serde_json::to_vec(&payload).map_err(|err| format!("{:?}", err))?,
             });
         }
     }
@@ -926,8 +924,7 @@ fn build_sync_ops(
         ops.push(PendingSyncOp {
             op_id,
             op_type: "delete".to_string(),
-            payload: serde_json::to_vec(&payload)
-                .map_err(|err| format!("{:?}", err))?,
+            payload: serde_json::to_vec(&payload).map_err(|err| format!("{:?}", err))?,
         });
     }
 
@@ -993,8 +990,7 @@ fn decrypt_sync_payload(key_b64: &str, payload: &[u8]) -> Result<Vec<u8>, String
 }
 
 fn encrypt_plugin_settings(key_b64: &str, settings: &Value) -> Result<String, String> {
-    let payload =
-        serde_json::to_vec(settings).map_err(|err| format!("{:?}", err))?;
+    let payload = serde_json::to_vec(settings).map_err(|err| format!("{:?}", err))?;
     let encrypted = encrypt_sync_payload(key_b64, &payload)?;
     String::from_utf8(encrypted).map_err(|err| format!("{:?}", err))
 }
@@ -1008,30 +1004,21 @@ fn plugin_settings_key(plugin_id: &str) -> String {
     format!("plugin.settings.{plugin_id}")
 }
 
-fn set_plugin_settings(
-    db: &Database,
-    plugin_id: &str,
-    settings: &Value,
-) -> Result<(), String> {
-    let key = get_vault_key_b64(db)?
-        .ok_or_else(|| "vault-key-missing".to_string())?;
+fn set_plugin_settings(db: &Database, plugin_id: &str, settings: &Value) -> Result<(), String> {
+    let key = get_vault_key_b64(db)?.ok_or_else(|| "vault-key-missing".to_string())?;
     let encrypted = encrypt_plugin_settings(&key, settings)?;
     db.set_kv(&plugin_settings_key(plugin_id), &encrypted)
         .map_err(|err| format!("{:?}", err))
 }
 
-fn get_plugin_settings(
-    db: &Database,
-    plugin_id: &str,
-) -> Result<Option<Value>, String> {
+fn get_plugin_settings(db: &Database, plugin_id: &str) -> Result<Option<Value>, String> {
     let stored = db
         .get_kv(&plugin_settings_key(plugin_id))
         .map_err(|err| format!("{:?}", err))?;
     let Some(stored) = stored else {
         return Ok(None);
     };
-    let key = get_vault_key_b64(db)?
-        .ok_or_else(|| "vault-key-missing".to_string())?;
+    let key = get_vault_key_b64(db)?.ok_or_else(|| "vault-key-missing".to_string())?;
     let decrypted = decrypt_plugin_settings(&key, &stored)?;
     Ok(Some(decrypted))
 }
@@ -1059,8 +1046,7 @@ fn decode_sync_payload(db: &Database, payload: &[u8]) -> Result<Vec<u8>, String>
     if value.get("ciphertextB64").is_none() {
         return Ok(payload.to_vec());
     }
-    let key = get_vault_key_b64(db)?
-        .ok_or_else(|| "vault-key-missing".to_string())?;
+    let key = get_vault_key_b64(db)?.ok_or_else(|| "vault-key-missing".to_string())?;
     decrypt_sync_payload(&key, payload)
 }
 
@@ -1156,10 +1142,7 @@ fn apply_sync_ops_to_blocks(
         }
     }
 
-    let mut blocks: Vec<BlockState> = state
-        .into_values()
-        .filter(|block| !block.deleted)
-        .collect();
+    let mut blocks: Vec<BlockState> = state.into_values().filter(|block| !block.deleted).collect();
     blocks.sort_by(|a, b| {
         let order = a.sort_key.cmp(&b.sort_key);
         if order == std::cmp::Ordering::Equal {
@@ -1178,10 +1161,7 @@ fn apply_sync_ops_to_blocks(
         .collect()
 }
 
-fn detect_sync_conflicts(
-    blocks: &[BlockSnapshot],
-    ops: &[SyncOpPayload],
-) -> Vec<SyncConflict> {
+fn detect_sync_conflicts(blocks: &[BlockSnapshot], ops: &[SyncOpPayload]) -> Vec<SyncConflict> {
     let mut by_id = std::collections::HashMap::new();
     for block in blocks.iter() {
         by_id.insert(block.uid.clone(), block.text.clone());
@@ -1192,8 +1172,12 @@ fn detect_sync_conflicts(
         if op.kind != "edit" {
             continue;
         }
-        let Some(remote_text) = op.text.as_ref() else { continue };
-        let Some(local_text) = by_id.get(&op.block_id) else { continue };
+        let Some(remote_text) = op.text.as_ref() else {
+            continue;
+        };
+        let Some(local_text) = by_id.get(&op.block_id) else {
+            continue;
+        };
         if local_text == remote_text {
             continue;
         }
@@ -1226,11 +1210,18 @@ fn resolve_review_interval(action: &str, last_interval: i64) -> i64 {
 }
 
 fn load_sync_config(db: &Database) -> Result<SyncConfig, String> {
-    let server_url = db.get_kv("sync.server_url").map_err(|err| format!("{:?}", err))?;
-    let vault_id = db.get_kv("sync.vault_id").map_err(|err| format!("{:?}", err))?;
-    let device_id = db.get_kv("sync.device_id").map_err(|err| format!("{:?}", err))?;
-    let key_fingerprint =
-        db.get_kv("sync.key_fingerprint").map_err(|err| format!("{:?}", err))?;
+    let server_url = db
+        .get_kv("sync.server_url")
+        .map_err(|err| format!("{:?}", err))?;
+    let vault_id = db
+        .get_kv("sync.vault_id")
+        .map_err(|err| format!("{:?}", err))?;
+    let device_id = db
+        .get_kv("sync.device_id")
+        .map_err(|err| format!("{:?}", err))?;
+    let key_fingerprint = db
+        .get_kv("sync.key_fingerprint")
+        .map_err(|err| format!("{:?}", err))?;
     let last_push_cursor = db
         .get_kv("sync.last_push_cursor")
         .map_err(|err| format!("{:?}", err))?
@@ -1269,7 +1260,9 @@ fn set_vault_key(key_b64: String, salt_b64: String, iterations: i64) -> Result<(
 #[tauri::command]
 fn vault_key_status() -> Result<VaultKeyStatus, String> {
     let db = open_active_database()?;
-    let key = db.get_kv("vault.key.b64").map_err(|err| format!("{:?}", err))?;
+    let key = db
+        .get_kv("vault.key.b64")
+        .map_err(|err| format!("{:?}", err))?;
     if key.is_none() {
         return Ok(VaultKeyStatus {
             configured: false,
@@ -1278,12 +1271,16 @@ fn vault_key_status() -> Result<VaultKeyStatus, String> {
             salt_b64: None,
         });
     }
-    let kdf = db.get_kv("vault.key.kdf").map_err(|err| format!("{:?}", err))?;
+    let kdf = db
+        .get_kv("vault.key.kdf")
+        .map_err(|err| format!("{:?}", err))?;
     let iterations = db
         .get_kv("vault.key.iterations")
         .map_err(|err| format!("{:?}", err))?
         .and_then(|raw| raw.parse::<i64>().ok());
-    let salt_b64 = db.get_kv("vault.key.salt").map_err(|err| format!("{:?}", err))?;
+    let salt_b64 = db
+        .get_kv("vault.key.salt")
+        .map_err(|err| format!("{:?}", err))?;
     Ok(VaultKeyStatus {
         configured: true,
         kdf,
@@ -1358,8 +1355,8 @@ fn list_sync_ops_since(cursor: i64, limit: i64) -> Result<Vec<SyncOpEnvelope>, S
         .map_err(|err| format!("{:?}", err))?;
     ops.into_iter()
         .map(|op| {
-            let payload = String::from_utf8(op.payload)
-                .map_err(|_| "sync-op-payload-invalid".to_string())?;
+            let payload =
+                String::from_utf8(op.payload).map_err(|_| "sync-op-payload-invalid".to_string())?;
             Ok(SyncOpEnvelope {
                 cursor: op.id,
                 op_id: op.op_id,
@@ -1443,7 +1440,11 @@ fn review_queue_summary() -> Result<ReviewQueueSummary, String> {
 }
 
 #[tauri::command]
-fn add_review_queue_item(page_uid: String, block_uid: String, due_at: Option<i64>) -> Result<(), String> {
+fn add_review_queue_item(
+    page_uid: String,
+    block_uid: String,
+    due_at: Option<i64>,
+) -> Result<(), String> {
     let db = open_active_database()?;
     let due = due_at.unwrap_or_else(|| next_review_due(1));
     db.upsert_review_queue_item(&page_uid, &block_uid, due, None)
@@ -1494,7 +1495,11 @@ fn update_review_queue_item(payload: ReviewActionPayload) -> Result<(), String> 
     } else {
         Some(next_review_due(interval))
     };
-    let status = if payload.action == "done" { "done" } else { "pending" };
+    let status = if payload.action == "done" {
+        "done"
+    } else {
+        "pending"
+    };
     db.mark_review_queue_item(payload.id, status, now, next_due)
         .map_err(|err| format!("{:?}", err))?;
     Ok(())
@@ -1542,8 +1547,7 @@ fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> 
 #[tauri::command]
 fn get_active_page() -> Result<Option<String>, String> {
     let db = open_active_database()?;
-    db.get_kv("active.page")
-        .map_err(|err| format!("{:?}", err))
+    db.get_kv("active.page").map_err(|err| format!("{:?}", err))
 }
 
 #[tauri::command]
@@ -1595,9 +1599,7 @@ fn rename_page(payload: RenamePagePayload) -> Result<PageSummary, String> {
 #[tauri::command]
 fn list_pages() -> Result<Vec<PageSummary>, String> {
     let db = open_active_database()?;
-    let pages = db
-        .list_pages()
-        .map_err(|err| format!("{:?}", err))?;
+    let pages = db.list_pages().map_err(|err| format!("{:?}", err))?;
     Ok(pages
         .into_iter()
         .map(|page| PageSummary {
@@ -1717,9 +1719,7 @@ fn write_shadow_markdown(page_uid: String, content: String) -> Result<String, St
 fn export_markdown() -> Result<MarkdownExportStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let db = open_active_database()?;
-    let pages = db
-        .list_pages()
-        .map_err(|err| format!("{:?}", err))?;
+    let pages = db.list_pages().map_err(|err| format!("{:?}", err))?;
     let mut exported = 0;
 
     for page in pages {
@@ -1786,8 +1786,8 @@ async fn install_plugin_command(path: String) -> Result<PluginPermissionInfo, St
         let registry = plugin_registry_for_vault(&vault_path);
         let db = open_active_database()?;
         let source = PathBuf::from(path);
-        let plugin = install_plugin(&vault_path, &registry, &source)
-            .map_err(|err| format!("{:?}", err))?;
+        let plugin =
+            install_plugin(&vault_path, &registry, &source).map_err(|err| format!("{:?}", err))?;
         let mut entries =
             list_permissions_for_plugins(&db, vec![plugin]).map_err(|err| format!("{:?}", err))?;
         entries
@@ -1820,8 +1820,7 @@ async fn remove_plugin_command(plugin_id: String) -> Result<(), String> {
         let vault_path = resolve_active_vault_path()?;
         let registry = plugin_registry_for_vault(&vault_path);
         let db = open_active_database()?;
-        remove_plugin(&vault_path, &registry, &plugin_id)
-            .map_err(|err| format!("{:?}", err))?;
+        remove_plugin(&vault_path, &registry, &plugin_id).map_err(|err| format!("{:?}", err))?;
         db.clear_plugin_permissions(&plugin_id)
             .map_err(|err| format!("{:?}", err))?;
         clear_plugin_settings(&db, &plugin_id)?;
@@ -2099,25 +2098,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use super::plugins::{PluginDescriptor, PluginManifest};
     use super::{
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
-        load_sync_config, next_review_due, resolve_review_interval, run_blocking,
-        set_plugin_settings, sanitize_kebab, shadow_markdown_path,
-        write_shadow_markdown_to_vault, BlockSnapshot, Database, PageBlocksResponse, PluginInfo,
-        RuntimeState, SyncOpPayload,
+        load_sync_config, next_review_due, resolve_review_interval, run_blocking, sanitize_kebab,
+        set_plugin_settings, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
+        Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
     };
-    use sandpaper_core::app::backup_before_migration_at;
-    use super::plugins::{PluginDescriptor, PluginManifest};
-    use aes_gcm::aead::KeyInit;
     use aes_gcm::aead::Aead;
+    use aes_gcm::aead::KeyInit;
     use base64::Engine;
+    use chrono::TimeZone;
+    use sandpaper_core::app::backup_before_migration_at;
     use serde_json::Value;
     use std::collections::HashMap;
-    use tempfile::tempdir;
-    use chrono::TimeZone;
     use tauri::async_runtime::block_on;
+    use tempfile::tempdir;
 
     #[test]
     fn sanitize_kebab_strips_unsafe_chars() {
@@ -2137,8 +2135,7 @@ mod tests {
     fn write_shadow_markdown_creates_file() {
         let dir = tempdir().expect("tempdir");
         let content = "# Inbox\n- hello ^block";
-        let path =
-            write_shadow_markdown_to_vault(dir.path(), "Inbox", content).expect("write");
+        let path = write_shadow_markdown_to_vault(dir.path(), "Inbox", content).expect("write");
         let saved = std::fs::read_to_string(&path).expect("read");
         assert_eq!(saved, content);
 
@@ -2160,9 +2157,7 @@ mod tests {
         let mut db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        let page_id = db
-            .insert_page("page-uid", "Inbox")
-            .expect("insert page");
+        let page_id = db.insert_page("page-uid", "Inbox").expect("insert page");
         let blocks = vec![
             BlockSnapshot {
                 uid: "block-1".to_string(),
@@ -2180,18 +2175,15 @@ mod tests {
         db.replace_blocks_for_page(page_id, &blocks)
             .expect("replace blocks");
 
-        let loaded = db
-            .load_blocks_for_page(page_id)
-            .expect("load blocks");
+        let loaded = db.load_blocks_for_page(page_id).expect("load blocks");
         let payload = PageBlocksResponse {
             page_uid: "page-uid".to_string(),
             title: "Inbox".to_string(),
             blocks: loaded,
         };
         let markdown = build_markdown_export(&payload);
-        let path =
-            write_shadow_markdown_to_vault(dir.path(), &payload.page_uid, &markdown)
-                .expect("write shadow");
+        let path = write_shadow_markdown_to_vault(dir.path(), &payload.page_uid, &markdown)
+            .expect("write shadow");
         let saved = std::fs::read_to_string(&path).expect("read shadow");
         assert_eq!(saved, markdown);
 
@@ -2211,21 +2203,15 @@ mod tests {
         ];
         db.replace_blocks_for_page(page_id, &updated_blocks)
             .expect("replace updated");
-        let updated = db
-            .load_blocks_for_page(page_id)
-            .expect("load updated");
+        let updated = db.load_blocks_for_page(page_id).expect("load updated");
         let updated_payload = PageBlocksResponse {
             page_uid: "page-uid".to_string(),
             title: "Inbox".to_string(),
             blocks: updated,
         };
         let updated_markdown = build_markdown_export(&updated_payload);
-        write_shadow_markdown_to_vault(
-            dir.path(),
-            &updated_payload.page_uid,
-            &updated_markdown,
-        )
-        .expect("write updated");
+        write_shadow_markdown_to_vault(dir.path(), &updated_payload.page_uid, &updated_markdown)
+            .expect("write updated");
         let saved_updated = std::fs::read_to_string(&path).expect("read updated");
         assert_eq!(saved_updated, updated_markdown);
         assert_ne!(saved_updated, markdown);
@@ -2242,8 +2228,7 @@ mod tests {
             .with_ymd_and_hms(2026, 1, 31, 12, 0, 0)
             .single()
             .expect("time");
-        let backup =
-            backup_before_migration_at(vault_path, &db_path, &db, now).expect("backup");
+        let backup = backup_before_migration_at(vault_path, &db_path, &db, now).expect("backup");
 
         let backup_path = backup.expect("backup path");
         assert!(backup_path.exists());
@@ -2331,10 +2316,8 @@ mod tests {
     #[test]
     fn run_blocking_executes_off_thread() {
         let main_thread = std::thread::current().id();
-        let result = block_on(async {
-            run_blocking(|| Ok(std::thread::current().id())).await
-        })
-        .expect("run blocking");
+        let result = block_on(async { run_blocking(|| Ok(std::thread::current().id())).await })
+            .expect("run blocking");
         assert_ne!(result, main_thread);
     }
 
@@ -2343,7 +2326,7 @@ mod tests {
         let err = block_on(async {
             run_blocking(|| -> Result<(), String> { Err("boom".to_string()) }).await
         })
-            .expect_err("run blocking error");
+        .expect_err("run blocking error");
         assert!(err.contains("boom"));
     }
 
@@ -2360,8 +2343,7 @@ mod tests {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
 
-        db.grant_plugin_permission("alpha", "fs")
-            .expect("grant fs");
+        db.grant_plugin_permission("alpha", "fs").expect("grant fs");
 
         let plugins = vec![PluginInfo {
             id: "alpha".to_string(),
@@ -2589,8 +2571,7 @@ mod tests {
         ];
 
         let (ops, next_clock) =
-            build_sync_ops("page-1", "device-1", &previous, &next, 10)
-                .expect("build ops");
+            build_sync_ops("page-1", "device-1", &previous, &next, 10).expect("build ops");
         assert_eq!(ops.len(), 4);
         assert_eq!(next_clock, 14);
 
@@ -2598,8 +2579,7 @@ mod tests {
         let mut blocks_by_kind = std::collections::HashMap::new();
         for op in ops {
             kinds.insert(op.op_type.clone());
-            let payload: Value =
-                serde_json::from_slice(&op.payload).expect("payload json");
+            let payload: Value = serde_json::from_slice(&op.payload).expect("payload json");
             assert_eq!(payload["pageId"], "page-1");
             assert_eq!(payload["deviceId"], "device-1");
             let kind = payload["kind"].as_str().expect("kind");
@@ -2637,9 +2617,7 @@ mod tests {
         let key = aes_gcm::Key::<aes_gcm::Aes256Gcm>::from_slice(&key_bytes);
         let cipher = aes_gcm::Aes256Gcm::new(key);
         let nonce = aes_gcm::Nonce::from_slice(&iv);
-        let decrypted = cipher
-            .decrypt(nonce, ciphertext.as_ref())
-            .expect("decrypt");
+        let decrypted = cipher.decrypt(nonce, ciphertext.as_ref()).expect("decrypt");
         assert_eq!(decrypted, payload);
     }
 

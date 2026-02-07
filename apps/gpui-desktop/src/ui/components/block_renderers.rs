@@ -501,7 +501,10 @@ impl AppStore {
                 .child(label.to_string())
                 .into_any_element()
         } else {
-            div().w(tokens::FONT_XL).h(tokens::FONT_XL).into_any_element()
+            div()
+                .w(tokens::FONT_XL)
+                .h(tokens::FONT_XL)
+                .into_any_element()
         }
     }
 
@@ -797,7 +800,12 @@ impl AppStore {
         for column in columns_data {
             let mut rows = div().flex().flex_col().gap(tokens::SPACE_2);
             if column.rows.is_empty() {
-                rows = rows.child(div().text_size(tokens::FONT_BASE).text_color(muted).child("Empty column"));
+                rows = rows.child(
+                    div()
+                        .text_size(tokens::FONT_BASE)
+                        .text_color(muted)
+                        .child("Empty column"),
+                );
             } else {
                 for row in column.rows {
                     let row_uid = row.uid.clone();

@@ -40,10 +40,7 @@ impl SandpaperTheme {
 }
 
 /// Parse a hex color string from a JSON colors map.
-fn resolve_hex(
-    colors: &serde_json::Map<String, serde_json::Value>,
-    key: &str,
-) -> Option<Hsla> {
+fn resolve_hex(colors: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<Hsla> {
     colors
         .get(key)
         .and_then(|v| v.as_str())
@@ -52,9 +49,7 @@ fn resolve_hex(
 
 /// Parse semantic colors from a theme JSON value, with fallbacks derived from
 /// existing colors in the same JSON map.
-fn parse_semantic_colors(
-    colors: &serde_json::Map<String, serde_json::Value>,
-) -> SemanticColors {
+fn parse_semantic_colors(colors: &serde_json::Map<String, serde_json::Value>) -> SemanticColors {
     // Resolve base colors for fallback computation
     let border = resolve_hex(colors, "border").unwrap_or(Hsla::transparent_black());
     let muted_fg = resolve_hex(colors, "muted.foreground").unwrap_or(Hsla::transparent_black());
@@ -66,15 +61,13 @@ fn parse_semantic_colors(
     let scrollbar = resolve_hex(colors, "background").unwrap_or(Hsla::transparent_black());
 
     SemanticColors {
-        border_subtle: resolve_hex(colors, "border_subtle")
-            .unwrap_or_else(|| border.opacity(0.5)),
+        border_subtle: resolve_hex(colors, "border_subtle").unwrap_or_else(|| border.opacity(0.5)),
         foreground_muted: resolve_hex(colors, "foreground_muted").unwrap_or(muted_fg),
         foreground_faint: resolve_hex(colors, "foreground_faint")
             .unwrap_or_else(|| muted_fg.opacity(0.5)),
         background_hover: resolve_hex(colors, "background_hover").unwrap_or(list_hover),
         background_active: resolve_hex(colors, "background_active").unwrap_or(list_active),
-        accent_subtle: resolve_hex(colors, "accent_subtle")
-            .unwrap_or_else(|| accent.opacity(0.15)),
+        accent_subtle: resolve_hex(colors, "accent_subtle").unwrap_or_else(|| accent.opacity(0.15)),
         scrollbar_thumb: resolve_hex(colors, "scrollbar_thumb")
             .unwrap_or_else(|| muted_fg.opacity(0.3)),
         scrollbar_track: resolve_hex(colors, "scrollbar_track").unwrap_or(scrollbar),
@@ -147,7 +140,6 @@ fn load_theme_json() -> Option<String> {
     let path = PathBuf::from("./themes/sandpaper.json");
     std::fs::read_to_string(path).ok()
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -231,7 +223,10 @@ mod tests {
         ];
 
         for theme in themes {
-            let name = theme.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let name = theme
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown");
             let colors = theme
                 .get("colors")
                 .and_then(|colors| colors.as_object())

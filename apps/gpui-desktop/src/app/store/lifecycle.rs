@@ -888,11 +888,7 @@ impl AppStore {
                 0,
                 "Database view block: table should render from page properties.",
             ),
-            block(
-                BlockType::Image,
-                0,
-                "https://images.example/cat.png",
-            ),
+            block(BlockType::Image, 0, "https://images.example/cat.png"),
             block(BlockType::ColumnLayout, 0, "Two-column layout"),
             block(BlockType::Column, 1, "Left column"),
             block(
@@ -1175,11 +1171,7 @@ impl AppStore {
         self.open_keyboard_shortcuts(window, cx);
     }
 
-    pub(crate) fn open_keyboard_shortcuts(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn open_keyboard_shortcuts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if window.root::<Root>().flatten().is_none() {
             return;
         }
