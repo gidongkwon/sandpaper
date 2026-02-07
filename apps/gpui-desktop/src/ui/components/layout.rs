@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::tokens;
 use gpui_component::TitleBar;
 
 impl AppStore {
@@ -73,8 +74,8 @@ impl AppStore {
                             .absolute()
                             .top(px(-4.0))
                             .right(px(-6.0))
-                            .min_w(px(16.0))
-                            .h(px(16.0))
+                            .min_w(tokens::ICON_MD)
+                            .h(tokens::ICON_MD)
                             .px_1()
                             .rounded_full()
                             .bg(theme.danger)
@@ -102,7 +103,7 @@ impl AppStore {
             .gap_3()
             .child(
                 Button::new("toggle-sidebar")
-                    .with_size(px(24.0))
+                    .with_size(tokens::ICON_XL)
                     .ghost()
                     .icon(sidebar_icon)
                     .tooltip(format!("Toggle sidebar ({sidebar_hint})"))
@@ -112,7 +113,7 @@ impl AppStore {
                         cx.notify();
                     })),
             )
-            .child(div().w(px(1.0)).h(px(14.0)).bg(divider_color))
+            .child(div().w(px(1.0)).h(tokens::ICON_SM).bg(divider_color))
             .child(
                 div()
                     .id("vault-name")
@@ -133,7 +134,7 @@ impl AppStore {
             .gap_3()
             .child(
                 Button::new("open-command-palette")
-                    .with_size(px(24.0))
+                    .with_size(tokens::ICON_XL)
                     .ghost()
                     .icon(SandpaperIcon::Search)
                     .tooltip(format!("Command palette ({command_hint})"))
@@ -143,7 +144,7 @@ impl AppStore {
             )
             .child(
                 Button::new("notifications-button")
-                    .with_size(px(24.0))
+                    .with_size(tokens::ICON_XL)
                     .ghost()
                     .icon(SandpaperIcon::Alert)
                     .tooltip(notifications_label)
@@ -153,7 +154,7 @@ impl AppStore {
             )
             .child(
                 Button::new("settings-button")
-                    .with_size(px(24.0))
+                    .with_size(tokens::ICON_XL)
                     .ghost()
                     .icon(SandpaperIcon::Settings)
                     .tooltip("Settings")
@@ -239,7 +240,7 @@ impl AppStore {
         }
 
         div()
-            .h(px(22.0))
+            .h(tokens::STATUS_BAR_HEIGHT)
             .px_4()
             .flex()
             .items_center()
@@ -265,7 +266,7 @@ impl AppStore {
         let hover_border = theme.border;
         div()
             .id("sidebar-resizer")
-            .w(px(4.0))
+            .w(tokens::SPACE_2)
             .h_full()
             .hover(move |s| s.bg(hover_border).cursor_pointer())
             .on_mouse_down(
@@ -331,7 +332,7 @@ impl AppStore {
                     )
                     .child(
                         Button::new("ctx-panel-close")
-                            .with_size(px(18.0))
+                            .with_size(tokens::FONT_XL)
                             .ghost()
                             .icon(SandpaperIcon::Dismiss)
                             .tooltip("Close panel")
@@ -357,7 +358,7 @@ impl AppStore {
         let muted_fg = cx.theme().muted_foreground;
         let header = self.render_context_panel_header(title, cx);
         div()
-            .w(px(360.0))
+            .w(tokens::CONTEXT_PANEL_WIDTH)
             .h_full()
             .border_l_1()
             .border_color(border)
@@ -450,7 +451,7 @@ impl AppStore {
                         }))
                         .flex()
                         .flex_col()
-                        .gap(px(2.0))
+                        .gap(tokens::SPACE_1)
                         .child(div().text_sm().text_color(fg).child(title))
                         .child(reason_pills),
                 );
@@ -473,7 +474,7 @@ impl AppStore {
                 )
                 .child(
                     Button::new("refresh-random")
-                        .with_size(px(18.0))
+                        .with_size(tokens::FONT_XL)
                         .ghost()
                         .icon(SandpaperIcon::ArrowSwap)
                         .tooltip("Refresh random pages")
@@ -510,7 +511,7 @@ impl AppStore {
         }
 
         div()
-            .w(px(360.0))
+            .w(tokens::CONTEXT_PANEL_WIDTH)
             .h_full()
             .border_l_1()
             .border_color(border)
@@ -988,7 +989,7 @@ impl AppStore {
                 )
                 .child(
                     Button::new("refresh-feed")
-                        .with_size(px(24.0))
+                        .with_size(tokens::ICON_XL)
                         .ghost()
                         .icon(SandpaperIcon::ArrowSwap)
                         .tooltip("Refresh feed")
