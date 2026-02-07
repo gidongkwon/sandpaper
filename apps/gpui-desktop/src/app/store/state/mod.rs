@@ -510,6 +510,7 @@ pub(crate) struct UiState {
     pub(crate) notifications_open: bool,
     pub(crate) notifications: Vec<NotificationItem>,
     pub(crate) sidebar_resize: Option<SidebarResizeState>,
+    pub(crate) sidebar_collapse_epoch: u64,
     pub(crate) capture_overlay_open: bool,
     pub(crate) capture_overlay_target: QuickAddTarget,
 }
@@ -556,6 +557,7 @@ impl UiState {
             notifications_open: false,
             notifications: Vec::new(),
             sidebar_resize: None,
+            sidebar_collapse_epoch: 0,
             capture_overlay_open: false,
             capture_overlay_target: QuickAddTarget::Inbox,
         }

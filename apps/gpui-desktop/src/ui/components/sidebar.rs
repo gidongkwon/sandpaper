@@ -2,13 +2,121 @@ use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
 use crate::ui::tokens;
+use gpui::{ease_in_out, Animation, AnimationExt as _};
 
 impl AppStore {
     pub(super) fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.settings.sidebar_collapsed {
-            return self.render_sidebar_rail(cx);
-        }
+        let collapsed = self.settings.sidebar_collapsed;
+        let sidebar_width = self.settings.sidebar_width;
+        let epoch = self.ui.sidebar_collapse_epoch;
+        let animating = epoch > 0;
 
+        // Target and source widths for animation
+        let rail_w = f32::from(tokens::SIDEBAR_RAIL_WIDTH);
+        let full_w = sidebar_width;
+
+        // Build the rail content (always rendered, visibility controlled by opacity)
+        let rail_content = self.render_sidebar_rail_content(cx);
+
+        // Build the full sidebar content (always rendered, visibility controlled by opacity)
+        let full_content = self.render_sidebar_full_content(cx);
+
+        let theme = cx.theme();
+        let sidebar_bg = theme.sidebar;
+        let sidebar_border = theme.sidebar_border;
+
+        // Rail buttons layer (absolute, always rendered)
+        let rail_layer = div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .w(tokens::SIDEBAR_RAIL_WIDTH)
+            .h_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .pt_3()
+            .gap_2()
+            .when(!animating && !collapsed, |el| el.opacity(0.0))
+            .when(!animating && collapsed, |el| el.opacity(1.0))
+            .children(rail_content);
+
+        // Full sidebar content layer
+        let content_layer = div()
+            .w(px(full_w))
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .when(!animating && collapsed, |el| el.opacity(0.0))
+            .when(!animating && !collapsed, |el| el.opacity(1.0))
+            .children(full_content);
+
+        // Outer container
+        let container = div()
+            .id("sidebar-animated")
+            .h_full()
+            .bg(sidebar_bg)
+            .border_r_1()
+            .border_color(sidebar_border)
+            .overflow_hidden()
+            .flex()
+            .flex_col()
+            .relative()
+            .when(collapsed, |el| el.w(tokens::SIDEBAR_RAIL_WIDTH))
+            .when(!collapsed, |el| el.w(px(sidebar_width)));
+
+        if animating {
+            // Animated: apply width + opacity transitions triggered by epoch change
+            container
+                .child(rail_layer.with_animation(
+                    format!("rail-opacity-{epoch}"),
+                    Animation::new(tokens::DURATION_NORMAL)
+                        .with_easing(ease_in_out),
+                    move |el, delta| {
+                        let opacity = if collapsed { delta } else { 1.0 - delta };
+                        el.opacity(opacity)
+                    },
+                ))
+                .child(content_layer.with_animation(
+                    format!("sidebar-content-opacity-{epoch}"),
+                    Animation::new(tokens::DURATION_NORMAL)
+                        .with_easing(ease_in_out),
+                    move |el, delta| {
+                        let opacity = if collapsed { 1.0 - delta } else { delta };
+                        el.opacity(opacity)
+                    },
+                ))
+                .with_animation(
+                    format!("sidebar-width-{epoch}"),
+                    Animation::new(tokens::DURATION_NORMAL)
+                        .with_easing(ease_in_out),
+                    move |el, delta| {
+                        let (from_w, to_w) = if collapsed {
+                            (full_w, rail_w)
+                        } else {
+                            (rail_w, full_w)
+                        };
+                        let w = from_w + (to_w - from_w) * delta;
+                        el.w(px(w))
+                    },
+                )
+                .into_any_element()
+        } else {
+            // Static: no animation on initial render
+            container
+                .child(rail_layer)
+                .child(content_layer)
+                .into_any_element()
+        }
+    }
+
+    /// Renders the full sidebar content elements (search bar, page list, references).
+    /// Returns a Vec of AnyElement to be used as children.
+    fn render_sidebar_full_content(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui::AnyElement> {
         let active_uid = self
             .editor
             .active_page
@@ -22,16 +130,14 @@ impl AppStore {
         };
         let theme = cx.theme();
 
-        let mut sidebar = div()
-            .w(px(self.settings.sidebar_width))
-            .h_full()
-            .bg(theme.sidebar)
-            .border_r_1()
-            .border_color(theme.sidebar_border)
-            .flex()
-            .flex_col()
-            .child(
-                div().px_3().pt_3().pb_2().child(
+        let mut elements = Vec::new();
+
+        elements.push(
+            div()
+                .px_3()
+                .pt_3()
+                .pb_2()
+                .child(
                     div()
                         .flex()
                         .items_center()
@@ -61,74 +167,70 @@ impl AppStore {
                                     this.open_page_dialog(PageDialogMode::Create, cx);
                                 })),
                         ),
-                ),
-            )
-            .child(list);
+                )
+                .into_any_element(),
+        );
+
+        elements.push(list);
 
         if let Some(references) = self.render_sidebar_references(cx) {
-            sidebar = sidebar.child(references);
+            elements.push(references);
         }
 
-        sidebar.into_any_element()
+        elements
     }
 
-    fn render_sidebar_rail(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = cx.theme();
+    /// Renders the rail button elements (expand, search, new page).
+    /// Returns a Vec of AnyElement to be used as children.
+    fn render_sidebar_rail_content(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Vec<gpui::AnyElement> {
         let sidebar_hint = shortcut_hint(ShortcutSpec::new("cmd-b", "ctrl-b"));
         let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
 
-        div()
-            .id("sidebar-rail")
-            .w(tokens::SIDEBAR_RAIL_WIDTH)
-            .h_full()
-            .bg(theme.sidebar)
-            .border_r_1()
-            .border_color(theme.sidebar_border)
-            .flex()
-            .flex_col()
-            .items_center()
-            .pt_3()
-            .gap_2()
-            .child(
-                Button::new("rail-expand")
-                    .xsmall()
-                    .ghost()
-                    .icon(SandpaperIcon::PanelLeftExpand)
-                    .tooltip(format!("Show sidebar ({sidebar_hint})"))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.settings.sidebar_collapsed = false;
-                        this.persist_settings();
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Button::new("rail-search")
-                    .xsmall()
-                    .ghost()
-                    .icon(SandpaperIcon::Search)
-                    .tooltip("Search")
-                    .on_click(cx.listener(|this, _event, window, cx| {
-                        this.settings.sidebar_collapsed = false;
-                        this.persist_settings();
-                        window.focus(&this.editor.sidebar_search_input.focus_handle(cx), cx);
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Button::new("rail-new-page")
-                    .xsmall()
-                    .ghost()
-                    .icon(SandpaperIcon::Add)
-                    .tooltip(format!("New page ({new_page_hint})"))
-                    .on_click(cx.listener(|this, _event, _window, cx| {
-                        this.settings.sidebar_collapsed = false;
-                        this.persist_settings();
-                        this.open_page_dialog(PageDialogMode::Create, cx);
-                        cx.notify();
-                    })),
-            )
-            .into_any_element()
+        vec![
+            Button::new("rail-expand")
+                .xsmall()
+                .ghost()
+                .icon(SandpaperIcon::PanelLeftExpand)
+                .tooltip(format!("Show sidebar ({sidebar_hint})"))
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.settings.sidebar_collapsed = false;
+                    this.ui.sidebar_collapse_epoch += 1;
+                    this.persist_settings();
+                    cx.notify();
+                }))
+                .into_any_element(),
+            Button::new("rail-search")
+                .xsmall()
+                .ghost()
+                .icon(SandpaperIcon::Search)
+                .tooltip("Search")
+                .on_click(cx.listener(|this, _event, window, cx| {
+                    this.settings.sidebar_collapsed = false;
+                    this.ui.sidebar_collapse_epoch += 1;
+                    this.persist_settings();
+                    window.focus(&this.editor.sidebar_search_input.focus_handle(cx), cx);
+                    cx.notify();
+                }))
+                .into_any_element(),
+            Button::new("rail-new-page")
+                .xsmall()
+                .ghost()
+                .icon(SandpaperIcon::Add)
+                .tooltip(format!("New page ({new_page_hint})"))
+                .on_click(cx.listener(|this, _event, _window, cx| {
+                    this.settings.sidebar_collapsed = false;
+                    this.ui.sidebar_collapse_epoch += 1;
+                    this.persist_settings();
+                    this.open_page_dialog(PageDialogMode::Create, cx);
+                    cx.notify();
+                }))
+                .into_any_element(),
+        ]
     }
+
 
     fn render_page_row(
         &mut self,

@@ -1033,6 +1033,7 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) {
         self.settings.sidebar_collapsed = !self.settings.sidebar_collapsed;
+        self.ui.sidebar_collapse_epoch += 1;
         self.persist_settings();
         cx.notify();
     }

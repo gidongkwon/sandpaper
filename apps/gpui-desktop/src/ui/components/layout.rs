@@ -110,6 +110,7 @@ impl AppStore {
                     .tooltip(format!("Toggle sidebar ({sidebar_hint})"))
                     .on_click(cx.listener(|this, _event, _window, cx| {
                         this.settings.sidebar_collapsed = !this.settings.sidebar_collapsed;
+                        this.ui.sidebar_collapse_epoch += 1;
                         this.persist_settings();
                         cx.notify();
                     })),
