@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 /// A centered empty state placeholder with optional icon, heading, description,
 /// and action button.
+#[derive(IntoElement)]
 pub(crate) struct EmptyState {
     icon: Option<IconName>,
     heading: SharedString,

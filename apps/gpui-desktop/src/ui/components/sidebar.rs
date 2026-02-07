@@ -189,29 +189,22 @@ impl AppStore {
         active_uid: Option<String>,
     ) -> gpui::AnyElement {
         if self.editor.pages.is_empty() {
+            use crate::ui::components::empty_state::EmptyState;
+            use gpui_component::IconName;
             let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
             return div()
                 .id("pages-list")
                 .flex_1()
                 .min_h_0()
                 .child(
-                    div()
-                        .px_3()
-                        .py_3()
-                        .text_size(tokens::FONT_BASE)
-                        .text_color(cx.theme().muted_foreground)
-                        .child("No pages yet."),
-                )
-                .child(
-                    div().px_3().pb_3().child(
-                        Button::new("empty-new-page")
-                            .label(format!("New page ({new_page_hint})"))
-                            .xsmall()
-                            .primary()
-                            .on_click(cx.listener(|this, _event, _window, cx| {
+                    EmptyState::new("No pages yet", "Create your first page to get started.")
+                        .icon(IconName::File)
+                        .action(
+                            format!("New page ({new_page_hint})"),
+                            cx.listener(|this, _event, _window, cx| {
                                 this.open_page_dialog(PageDialogMode::Create, cx);
-                            })),
-                    ),
+                            }),
+                        ),
                 )
                 .into_any_element();
         }
@@ -305,13 +298,10 @@ impl AppStore {
             .overflow_scroll();
 
         if self.editor.search_pages.is_empty() && self.editor.search_blocks.is_empty() {
+            use crate::ui::components::empty_state::EmptyState;
+            use gpui_component::IconName;
             return content.child(
-                div()
-                    .px_3()
-                    .py_3()
-                    .text_size(tokens::FONT_BASE)
-                    .text_color(theme.muted_foreground)
-                    .child("No results"),
+                EmptyState::new("No results", "Try a different search term.").icon(IconName::Search),
             );
         }
 
@@ -436,10 +426,11 @@ impl AppStore {
         let theme = cx.theme();
         let references = self.editor.unlinked_references.clone();
         if references.is_empty() {
+            use crate::ui::components::empty_state::EmptyState;
+            use gpui_component::IconName;
             let panel = div()
                 .flex()
                 .flex_col()
-                .gap_2()
                 .mx_3()
                 .mt_auto()
                 .mb_3()
@@ -455,10 +446,11 @@ impl AppStore {
                         .child("UNLINKED REFERENCES"),
                 )
                 .child(
-                    div()
-                        .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
-                        .child("No unlinked references."),
+                    EmptyState::new(
+                        "No unlinked references",
+                        "Link pages with [[wikilinks]] to see references here.",
+                    )
+                    .icon(IconName::ExternalLink),
                 );
             return Some(panel.into_any_element());
         }

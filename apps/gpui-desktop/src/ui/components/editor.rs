@@ -3,7 +3,7 @@ use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
 use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
-use gpui_component::{popover::Popover, Anchor};
+use gpui_component::{popover::Popover, Anchor, IconName};
 impl AppStore {
     fn external_paths_include_supported_images(paths: &gpui::ExternalPaths) -> bool {
         paths
@@ -55,16 +55,13 @@ impl AppStore {
     }
 
     fn render_editor_empty_state(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        use crate::ui::components::empty_state::EmptyState;
+
         let semantic = cx.global::<SandpaperTheme>().colors(cx);
         let foreground_faint = semantic.foreground_faint;
         let new_page_hint = shortcut_hint(ShortcutSpec::new("cmd-n", "ctrl-n"));
-        let open_vaults_hint = shortcut_hint(ShortcutSpec::new("cmd-shift-v", "ctrl-alt-v"));
         let command_hint = shortcut_hint(ShortcutSpec::new("cmd-k", "ctrl-k"));
         let quick_add_hint = shortcut_hint(ShortcutSpec::new("cmd-l", "ctrl-l"));
-        let fg = theme.foreground;
-        let muted_fg = theme.muted_foreground;
-        let card_border = theme.border;
 
         div()
             .size_full()
@@ -73,54 +70,25 @@ impl AppStore {
             .justify_center()
             .child(
                 div()
-                    .w_full()
-                    .max_w(px(400.0))
-                    .mx_auto()
-                    .p_6()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(card_border)
                     .flex()
                     .flex_col()
-                    .gap_3()
+                    .items_center()
                     .child(
-                        div()
-                            .text_base()
-                            .text_color(fg)
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .child("Start writing"),
-                    )
-                    .child(div().text_sm().text_color(muted_fg).child(
-                        "Create a page to get started, or use the command palette to explore.",
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .mt_1()
-                            .child(
-                                Button::new("empty-new-page")
-                                    .label(format!("New page ({new_page_hint})"))
-                                    .small()
-                                    .primary()
-                                    .on_click(cx.listener(|this, _event, _window, cx| {
-                                        this.open_page_dialog(PageDialogMode::Create, cx);
-                                    })),
-                            )
-                            .child(
-                                Button::new("empty-open-vaults")
-                                    .label(format!("Open vaults ({open_vaults_hint})"))
-                                    .small()
-                                    .ghost()
-                                    .on_click(cx.listener(|this, _event, window, cx| {
-                                        this.open_vaults(&OpenVaults, window, cx);
-                                    })),
-                            ),
+                        EmptyState::new(
+                            "Start writing",
+                            "Create a page to get started, or use the command palette to explore.",
+                        )
+                        .icon(IconName::File)
+                        .action(
+                            format!("New page ({new_page_hint})"),
+                            cx.listener(|this, _event, _window, cx| {
+                                this.open_page_dialog(PageDialogMode::Create, cx);
+                            }),
+                        ),
                     )
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_XS)
                             .text_color(foreground_faint)
                             .child(format!(
                                 "{command_hint} commands  ·  {quick_add_hint} quick add"
@@ -2427,26 +2395,13 @@ impl AppStore {
             .overflow_scroll();
 
         if !has_page_backlinks && !has_block_backlinks {
+            use crate::ui::components::empty_state::EmptyState;
             body = body.child(
-                div()
-                    .px_3()
-                    .py_4()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(foreground)
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .child("No backlinks yet"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child("Link pages with [[wikilinks]] to see backlinks here."),
-                    ),
+                EmptyState::new(
+                    "No backlinks yet",
+                    "Link pages with [[wikilinks]] to see backlinks here.",
+                )
+                .icon(IconName::ExternalLink),
             );
         }
 

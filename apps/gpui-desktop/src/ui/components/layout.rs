@@ -2,7 +2,7 @@ use crate::app::prelude::*;
 use crate::app::store::*;
 use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
-use gpui_component::TitleBar;
+use gpui_component::{IconName, TitleBar};
 
 impl AppStore {
     fn topbar_mode_switch_uses_small_buttons() -> bool {
@@ -355,11 +355,12 @@ impl AppStore {
         &mut self,
         title: &str,
         message: &str,
+        icon: IconName,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        use crate::ui::components::empty_state::EmptyState;
         let border = cx.theme().border;
         let sidebar_bg = cx.theme().sidebar;
-        let muted_fg = cx.theme().muted_foreground;
         let header = self.render_context_panel_header(title, cx);
         div()
             .w(tokens::CONTEXT_PANEL_WIDTH)
@@ -371,13 +372,7 @@ impl AppStore {
             .flex_col()
             .min_h_0()
             .child(header)
-            .child(
-                div()
-                    .p_4()
-                    .text_size(tokens::FONT_SM)
-                    .text_color(muted_fg)
-                    .child(message.to_string()),
-            )
+            .child(EmptyState::new(title.to_string(), message.to_string()).icon(icon))
             .into_any_element()
     }
 
@@ -415,11 +410,13 @@ impl AppStore {
         );
 
         if related.is_empty() {
+            use crate::ui::components::empty_state::EmptyState;
             body = body.child(
-                div()
-                    .text_size(tokens::FONT_SM)
-                    .text_color(muted_fg)
-                    .child("No related pages found yet."),
+                EmptyState::new(
+                    "No related pages",
+                    "Create links between pages to discover connections.",
+                )
+                .icon(IconName::Globe),
             );
         } else {
             for item in &related {
@@ -491,11 +488,13 @@ impl AppStore {
         );
 
         if random.is_empty() {
+            use crate::ui::components::empty_state::EmptyState;
             body = body.child(
-                div()
-                    .text_size(tokens::FONT_SM)
-                    .text_color(muted_fg)
-                    .child("No pages to discover."),
+                EmptyState::new(
+                    "No pages to discover",
+                    "Create more pages to see random suggestions here.",
+                )
+                .icon(IconName::BookOpen),
             );
         } else {
             for page in &random {
@@ -542,6 +541,7 @@ impl AppStore {
                     self.render_empty_context_panel(
                         "Backlinks",
                         "Open a page to view backlinks and unlinked references.",
+                        IconName::ExternalLink,
                         cx,
                     )
                 }))
@@ -550,6 +550,7 @@ impl AppStore {
                 self.render_empty_context_panel(
                     "Plugin Panel",
                     "Open a plugin panel from the command palette or plugin settings.",
+                    IconName::Settings,
                     cx,
                 )
             })),
@@ -1010,9 +1011,20 @@ impl AppStore {
         );
 
         if self.editor.feed_items.is_empty() {
-            feed = feed.child(div().p_6().text_size(tokens::FONT_BASE).text_color(muted_fg).child(
-                "No items in your feed yet. Create some pages and add review items to get started.",
-            ));
+            use crate::ui::components::empty_state::EmptyState;
+            feed = feed.child(
+                EmptyState::new(
+                    "No items in your feed",
+                    "Create pages and add review items to get started.",
+                )
+                .icon(IconName::Inbox)
+                .action(
+                    "Create a page",
+                    cx.listener(|this, _event, _window, cx| {
+                        this.open_page_dialog(PageDialogMode::Create, cx);
+                    }),
+                ),
+            );
         }
 
         let items = self.editor.feed_items.clone();
