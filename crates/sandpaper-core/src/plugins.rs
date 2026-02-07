@@ -16,7 +16,7 @@ const HOST_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub enum PluginError {
     Io(std::io::Error),
     Serde(serde_json::Error),
-    Runtime(PluginRuntimeError),
+    Runtime(Box<PluginRuntimeError>),
 }
 
 impl From<std::io::Error> for PluginError {
@@ -33,7 +33,7 @@ impl From<serde_json::Error> for PluginError {
 
 impl From<rquickjs::Error> for PluginError {
     fn from(err: rquickjs::Error) -> Self {
-        Self::Runtime(PluginRuntimeError::new(err.to_string()))
+        Self::Runtime(Box::new(PluginRuntimeError::new(err.to_string())))
     }
 }
 
@@ -385,20 +385,26 @@ pub fn install_plugin(
     source_dir: &Path,
 ) -> Result<PluginInfo, PluginError> {
     if !source_dir.exists() {
-        return Err(PluginError::Runtime("plugin-source-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-source-missing".into(),
+        )));
     }
     if !source_dir.is_dir() {
-        return Err(PluginError::Runtime("plugin-source-not-directory".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-source-not-directory".into(),
+        )));
     }
     let manifest_path = source_dir.join("plugin.json");
     if !manifest_path.exists() {
-        return Err(PluginError::Runtime("plugin-manifest-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-manifest-missing".into(),
+        )));
     }
     let raw = fs::read_to_string(&manifest_path)?;
     let manifest = parse_plugin_manifest(&raw)?;
     check_manifest_compatibility(&manifest)?;
     if manifest.id.contains('/') || manifest.id.contains('\\') {
-        return Err(PluginError::Runtime("plugin-id-invalid".into()));
+        return Err(PluginError::Runtime(Box::new("plugin-id-invalid".into())));
     }
 
     let source_path = source_dir
@@ -419,7 +425,9 @@ pub fn install_plugin(
         if same_dir {
             registry.set_enabled(&manifest.id, true)?;
         } else {
-            return Err(PluginError::Runtime("plugin-already-installed".into()));
+            return Err(PluginError::Runtime(Box::new(
+                "plugin-already-installed".into(),
+            )));
         }
     } else {
         copy_dir_recursive(source_dir, &dest_dir)?;
@@ -447,25 +455,31 @@ pub fn update_plugin(
 ) -> Result<PluginInfo, PluginError> {
     let source = registry
         .get_install_source(plugin_id)?
-        .ok_or_else(|| PluginError::Runtime("plugin-update-source-missing".into()))?;
+        .ok_or_else(|| PluginError::Runtime(Box::new("plugin-update-source-missing".into())))?;
     let source_dir = PathBuf::from(source);
     if !source_dir.exists() {
-        return Err(PluginError::Runtime("plugin-update-source-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-update-source-missing".into(),
+        )));
     }
     if !source_dir.is_dir() {
-        return Err(PluginError::Runtime(
+        return Err(PluginError::Runtime(Box::new(
             "plugin-update-source-not-directory".into(),
-        ));
+        )));
     }
 
     let manifest_path = source_dir.join("plugin.json");
     if !manifest_path.exists() {
-        return Err(PluginError::Runtime("plugin-manifest-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-manifest-missing".into(),
+        )));
     }
     let raw = fs::read_to_string(&manifest_path)?;
     let manifest = parse_plugin_manifest(&raw)?;
     if manifest.id != plugin_id {
-        return Err(PluginError::Runtime("plugin-update-id-mismatch".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "plugin-update-id-mismatch".into(),
+        )));
     }
     check_manifest_compatibility(&manifest)?;
 
@@ -534,42 +548,52 @@ pub fn parse_plugin_manifest(raw: &str) -> Result<PluginManifest, PluginError> {
 fn validate_manifest_schema(value: &Value) -> Result<(), PluginError> {
     let obj = value
         .as_object()
-        .ok_or_else(|| PluginError::Runtime("manifest-root-invalid".into()))?;
+        .ok_or_else(|| PluginError::Runtime(Box::new("manifest-root-invalid".into())))?;
     let id = obj.get("id").and_then(Value::as_str).unwrap_or_default();
     if id.trim().is_empty() {
-        return Err(PluginError::Runtime("manifest-id-missing".into()));
+        return Err(PluginError::Runtime(Box::new("manifest-id-missing".into())));
     }
     let name = obj.get("name").and_then(Value::as_str).unwrap_or_default();
     if name.trim().is_empty() {
-        return Err(PluginError::Runtime("manifest-name-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "manifest-name-missing".into(),
+        )));
     }
     let version = obj
         .get("version")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if version.trim().is_empty() {
-        return Err(PluginError::Runtime("manifest-version-missing".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "manifest-version-missing".into(),
+        )));
     }
     if let Some(permissions) = obj.get("permissions") {
         if !permissions.is_array() {
-            return Err(PluginError::Runtime("manifest-permissions-invalid".into()));
+            return Err(PluginError::Runtime(Box::new(
+                "manifest-permissions-invalid".into(),
+            )));
         }
     }
     if let Some(schema) = obj.get("settingsSchema") {
         if !schema.is_object() {
-            return Err(PluginError::Runtime(
+            return Err(PluginError::Runtime(Box::new(
                 "manifest-settings-schema-invalid".into(),
-            ));
+            )));
         }
     }
     if let Some(range) = obj.get("apiVersion") {
         if !range.is_object() {
-            return Err(PluginError::Runtime("manifest-api-version-invalid".into()));
+            return Err(PluginError::Runtime(Box::new(
+                "manifest-api-version-invalid".into(),
+            )));
         }
     }
     if let Some(range) = obj.get("appVersion") {
         if !range.is_object() {
-            return Err(PluginError::Runtime("manifest-host-version-invalid".into()));
+            return Err(PluginError::Runtime(Box::new(
+                "manifest-host-version-invalid".into(),
+            )));
         }
     }
     Ok(())
@@ -581,29 +605,33 @@ fn validate_manifest_semantics(manifest: &PluginManifest) -> Result<(), PluginEr
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '_')
     {
-        return Err(PluginError::Runtime("plugin-id-invalid".into()));
+        return Err(PluginError::Runtime(Box::new("plugin-id-invalid".into())));
     }
     if parse_semver(&manifest.version).is_none() {
-        return Err(PluginError::Runtime("manifest-version-invalid".into()));
+        return Err(PluginError::Runtime(Box::new(
+            "manifest-version-invalid".into(),
+        )));
     }
     if let Some(main) = manifest.main.as_ref() {
         if main.contains("..") || Path::new(main).is_absolute() {
-            return Err(PluginError::Runtime("manifest-main-invalid".into()));
+            return Err(PluginError::Runtime(Box::new(
+                "manifest-main-invalid".into(),
+            )));
         }
     }
     for permission in &manifest.permissions {
         if !is_known_permission(permission) {
-            return Err(PluginError::Runtime(
+            return Err(PluginError::Runtime(Box::new(
                 format!("manifest-permission-unknown:{permission}").into(),
-            ));
+            )));
         }
     }
     if let Some(schema) = manifest.settings_schema.as_ref() {
         if let Some(kind) = schema.r#type.as_ref() {
             if kind != "object" {
-                return Err(PluginError::Runtime(
+                return Err(PluginError::Runtime(Box::new(
                     "manifest-settings-schema-invalid".into(),
-                ));
+                )));
             }
         }
     }
@@ -613,16 +641,16 @@ fn validate_manifest_semantics(manifest: &PluginManifest) -> Result<(), PluginEr
 pub fn check_manifest_compatibility(manifest: &PluginManifest) -> Result<(), PluginError> {
     if let Some(range) = manifest.api_version.as_ref() {
         if !version_in_range(PLUGIN_API_VERSION, range)? {
-            return Err(PluginError::Runtime(
+            return Err(PluginError::Runtime(Box::new(
                 "manifest-api-version-incompatible".into(),
-            ));
+            )));
         }
     }
     if let Some(range) = manifest.app_version.as_ref() {
         if !version_in_range(HOST_APP_VERSION, range)? {
-            return Err(PluginError::Runtime(
+            return Err(PluginError::Runtime(Box::new(
                 "manifest-host-version-incompatible".into(),
-            ));
+            )));
         }
     }
     Ok(())
@@ -652,17 +680,17 @@ fn parse_semver(value: &str) -> Option<SemVer> {
 
 fn version_in_range(version: &str, range: &VersionRange) -> Result<bool, PluginError> {
     let current = parse_semver(version)
-        .ok_or_else(|| PluginError::Runtime("manifest-version-invalid".into()))?;
+        .ok_or_else(|| PluginError::Runtime(Box::new("manifest-version-invalid".into())))?;
     if let Some(min) = range.min.as_deref() {
         let min_version = parse_semver(min)
-            .ok_or_else(|| PluginError::Runtime("manifest-version-min-invalid".into()))?;
+            .ok_or_else(|| PluginError::Runtime(Box::new("manifest-version-min-invalid".into())))?;
         if current < min_version {
             return Ok(false);
         }
     }
     if let Some(max) = range.max.as_deref() {
         let max_version = parse_semver(max)
-            .ok_or_else(|| PluginError::Runtime("manifest-version-max-invalid".into()))?;
+            .ok_or_else(|| PluginError::Runtime(Box::new("manifest-version-max-invalid".into())))?;
         if current > max_version {
             return Ok(false);
         }
@@ -938,10 +966,10 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                         .call((source, api.clone()))
                         .catch(&ctx)
                         .map_err(|err| {
-                            PluginError::Runtime(runtime_error_from_caught(
+                            PluginError::Runtime(Box::new(runtime_error_from_caught(
                                 err,
                                 load_context.clone(),
-                            ))
+                            )))
                         })?;
                 if let Ok(register_fn) = Function::from_value(exports.clone()) {
                     let register_context =
@@ -950,10 +978,10 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                         .call::<_, JsValue>((api.clone(),))
                         .catch(&ctx)
                         .map_err(|err| {
-                            PluginError::Runtime(runtime_error_from_caught(
+                            PluginError::Runtime(Box::new(runtime_error_from_caught(
                                 err,
                                 register_context.clone(),
-                            ))
+                            )))
                         })?;
                 } else if let Ok(exports_obj) = Object::from_value(exports.clone()) {
                     if let Ok(default_fn) = exports_obj.get::<_, Function>("default") {
@@ -963,10 +991,10 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                             .call::<_, JsValue>((api.clone(),))
                             .catch(&ctx)
                             .map_err(|err| {
-                                PluginError::Runtime(runtime_error_from_caught(
+                                PluginError::Runtime(Box::new(runtime_error_from_caught(
                                     err,
                                     register_context.clone(),
-                                ))
+                                )))
                             })?;
                     }
                 }
@@ -1154,14 +1182,14 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
             let handlers = registry
                 .renderer_handlers
                 .get(&(plugin_id.to_string(), renderer_id.to_string()))
-                .ok_or_else(|| PluginError::Runtime("renderer-not-found".into()))?;
+                .ok_or_else(|| PluginError::Runtime(Box::new("renderer-not-found".into())))?;
             if action_id.is_some() {
                 handlers.on_action.clone()
             } else {
                 handlers.render.clone()
             }
         }
-        .ok_or_else(|| PluginError::Runtime("render-handler-missing".into()))?;
+        .ok_or_else(|| PluginError::Runtime(Box::new("render-handler-missing".into())))?;
 
         let renderer_permissions = {
             let registry = self.registry.borrow();
@@ -1289,7 +1317,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                 error_context = error_context.with_action(action_id);
             }
             let value: JsValue = handler_fn.call((ctx_obj,)).catch(&ctx).map_err(|err| {
-                PluginError::Runtime(runtime_error_from_caught(err, error_context))
+                PluginError::Runtime(Box::new(runtime_error_from_caught(err, error_context)))
             })?;
             let mut view = self.parse_block_view(ctx, value, plugin_id, renderer_id, block_uid)?;
             let has_clipboard_control = view.controls.iter().any(|control| {
@@ -2062,8 +2090,8 @@ mod tests {
         let raw = r#"{"id":"alpha","name":"Alpha","version":"0.1.0","permissions":["network","telepathy"]}"#;
         let err = parse_plugin_manifest(raw).expect_err("invalid manifest");
         match err {
-            super::PluginError::Runtime(message) => {
-                assert!(message.message.contains("permission-unknown"));
+            super::PluginError::Runtime(err) => {
+                assert!(err.message.contains("permission-unknown"));
             }
             _ => panic!("unexpected error"),
         }
@@ -2074,8 +2102,8 @@ mod tests {
         let raw = r#"{"id":"alpha","name":"Alpha","version":"not-a-version"}"#;
         let err = parse_plugin_manifest(raw).expect_err("invalid manifest");
         match err {
-            super::PluginError::Runtime(message) => {
-                assert!(message.message.contains("version-invalid"));
+            super::PluginError::Runtime(err) => {
+                assert!(err.message.contains("version-invalid"));
             }
             _ => panic!("unexpected error"),
         }
@@ -2092,8 +2120,8 @@ mod tests {
         let manifest = parse_plugin_manifest(raw).expect("manifest");
         let err = check_manifest_compatibility(&manifest).expect_err("compat");
         match err {
-            super::PluginError::Runtime(message) => {
-                assert!(message.message.contains("api-version"));
+            super::PluginError::Runtime(err) => {
+                assert!(err.message.contains("api-version"));
             }
             _ => panic!("unexpected error"),
         }
@@ -2110,8 +2138,8 @@ mod tests {
         let manifest = parse_plugin_manifest(raw).expect("manifest");
         let err = check_manifest_compatibility(&manifest).expect_err("compat");
         match err {
-            super::PluginError::Runtime(message) => {
-                assert!(message.message.contains("host-version"));
+            super::PluginError::Runtime(err) => {
+                assert!(err.message.contains("host-version"));
             }
             _ => panic!("unexpected error"),
         }

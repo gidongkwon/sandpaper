@@ -26,14 +26,14 @@ fn empty_load_result() -> PluginRuntimeLoadResult {
 pub(crate) fn load_plan(
     db: &Database,
     vault_root: &std::path::Path,
-) -> Result<PluginLoadPlan, PluginRuntimeError> {
+) -> Result<PluginLoadPlan, Box<PluginRuntimeError>> {
     let registry = plugin_registry_for_vault(vault_root);
     let plugin_infos =
-        list_plugins(vault_root, &registry).map_err(|err| describe_plugin_error(&err))?;
+        list_plugins(vault_root, &registry).map_err(|err| Box::new(describe_plugin_error(&err)))?;
     let permissions =
-        list_permissions_for_plugins(db, plugin_infos).map_err(PluginRuntimeError::new)?;
+        list_permissions_for_plugins(db, plugin_infos).map_err(|e| Box::new(PluginRuntimeError::new(e)))?;
     let descriptors =
-        discover_plugins(vault_root, &registry).map_err(|err| describe_plugin_error(&err))?;
+        discover_plugins(vault_root, &registry).map_err(|err| Box::new(describe_plugin_error(&err)))?;
 
     let mut allowed = Vec::new();
     let mut blocked = Vec::new();
@@ -58,7 +58,7 @@ pub(crate) fn load_plan(
 
         let granted = db
             .list_plugin_permissions(&plugin.manifest.id)
-            .map_err(|err| PluginRuntimeError::new(format!("{err:?}")))?;
+            .map_err(|err| Box::new(PluginRuntimeError::new(format!("{err:?}"))))?;
         let missing = compute_missing_permissions(&plugin.manifest.permissions, &granted);
         if missing.is_empty() {
             allowed.push(plugin);
@@ -82,7 +82,7 @@ pub(crate) fn load_runtime(
     runtime: &mut Option<PluginRuntime>,
     allowed: &[PluginDescriptor],
     settings_by_plugin: HashMap<String, Value>,
-) -> Result<PluginRuntimeLoadResult, PluginRuntimeError> {
+) -> Result<PluginRuntimeLoadResult, Box<PluginRuntimeError>> {
     if allowed.is_empty() {
         return Ok(empty_load_result());
     }
@@ -90,39 +90,43 @@ pub(crate) fn load_runtime(
     let runtime_ref = if let Some(existing) = runtime.as_mut() {
         existing
     } else {
-        let new_runtime = PluginRuntime::new().map_err(|err| describe_plugin_error(&err))?;
+        let new_runtime =
+            PluginRuntime::new().map_err(|err| Box::new(describe_plugin_error(&err)))?;
         *runtime = Some(new_runtime);
         runtime.as_mut().expect("runtime")
     };
 
     runtime_ref
         .load_plugins(allowed, settings_by_plugin)
-        .map_err(|err| describe_plugin_error(&err))
+        .map_err(|err| Box::new(describe_plugin_error(&err)))
 }
 
 #[allow(dead_code)]
 pub(crate) fn install(
     vault_root: &std::path::Path,
     source_dir: &std::path::Path,
-) -> Result<PluginInfo, PluginRuntimeError> {
+) -> Result<PluginInfo, Box<PluginRuntimeError>> {
     let registry = plugin_registry_for_vault(vault_root);
-    install_plugin(vault_root, &registry, source_dir).map_err(|err| describe_plugin_error(&err))
+    install_plugin(vault_root, &registry, source_dir)
+        .map_err(|err| Box::new(describe_plugin_error(&err)))
 }
 
 #[allow(dead_code)]
 pub(crate) fn update(
     vault_root: &std::path::Path,
     plugin_id: &str,
-) -> Result<PluginInfo, PluginRuntimeError> {
+) -> Result<PluginInfo, Box<PluginRuntimeError>> {
     let registry = plugin_registry_for_vault(vault_root);
-    update_plugin(vault_root, &registry, plugin_id).map_err(|err| describe_plugin_error(&err))
+    update_plugin(vault_root, &registry, plugin_id)
+        .map_err(|err| Box::new(describe_plugin_error(&err)))
 }
 
 #[allow(dead_code)]
 pub(crate) fn remove(
     vault_root: &std::path::Path,
     plugin_id: &str,
-) -> Result<(), PluginRuntimeError> {
+) -> Result<(), Box<PluginRuntimeError>> {
     let registry = plugin_registry_for_vault(vault_root);
-    remove_plugin(vault_root, &registry, plugin_id).map_err(|err| describe_plugin_error(&err))
+    remove_plugin(vault_root, &registry, plugin_id)
+        .map_err(|err| Box::new(describe_plugin_error(&err)))
 }

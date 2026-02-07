@@ -1,3 +1,4 @@
+use super::block_renderers::BlockRenderCtx;
 use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
@@ -3160,14 +3161,16 @@ impl AppStore {
                             .min_w_0()
                             .child(self.render_typed_block_inner(
                                 &block,
-                                content_container,
-                                actions,
-                                indent_px,
-                                has_children,
-                                is_collapsed,
-                                pane,
-                                actual_ix,
-                                base_bg,
+                                BlockRenderCtx {
+                                    content_container,
+                                    actions,
+                                    indent_px,
+                                    has_children,
+                                    is_collapsed,
+                                    pane,
+                                    actual_ix,
+                                    base_bg,
+                                },
                                 cx,
                             )),
                     ),

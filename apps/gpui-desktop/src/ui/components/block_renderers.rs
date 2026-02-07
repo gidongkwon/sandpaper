@@ -3,96 +3,72 @@ use crate::app::store::*;
 use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
 
+pub(super) struct BlockRenderCtx {
+    pub(super) content_container: gpui::Div,
+    pub(super) actions: gpui::AnyElement,
+    pub(super) indent_px: gpui::Pixels,
+    pub(super) has_children: bool,
+    pub(super) is_collapsed: bool,
+    pub(super) pane: EditorPane,
+    pub(super) actual_ix: usize,
+    pub(super) base_bg: gpui::Hsla,
+}
+
 impl AppStore {
     /// Render the inner row content based on block type.
     /// Returns the styled inner div that goes inside the outer container.
     pub(super) fn render_typed_block_inner(
         &mut self,
         block: &BlockSnapshot,
-        content_container: gpui::Div,
-        actions: gpui::AnyElement,
-        indent_px: gpui::Pixels,
-        has_children: bool,
-        is_collapsed: bool,
-        pane: EditorPane,
-        actual_ix: usize,
-        base_bg: gpui::Hsla,
+        ctx: BlockRenderCtx,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
-        let theme = cx.theme();
-        let toggle_hover_bg = theme.list_hover;
-        let collapse_bg = theme.secondary;
-
         match block.block_type {
-            BlockType::Heading1 | BlockType::Heading2 | BlockType::Heading3 => {
-                self.render_heading_inner(block, content_container, actions, indent_px, base_bg, cx)
-            }
-            BlockType::Quote => {
-                self.render_quote_inner(block, content_container, actions, indent_px, base_bg, cx)
-            }
-            BlockType::Callout => {
-                self.render_callout_inner(block, content_container, actions, indent_px, base_bg, cx)
-            }
-            BlockType::Divider => self.render_divider_inner(indent_px, base_bg, cx),
-            BlockType::Todo => self.render_todo_inner(
+            BlockType::Heading1 | BlockType::Heading2 | BlockType::Heading3 => self
+                .render_heading_inner(
+                    block,
+                    ctx.content_container,
+                    ctx.actions,
+                    ctx.indent_px,
+                    ctx.base_bg,
+                    cx,
+                ),
+            BlockType::Quote => self.render_quote_inner(
                 block,
-                content_container,
-                actions,
-                indent_px,
-                has_children,
-                is_collapsed,
-                pane,
-                actual_ix,
-                base_bg,
-                toggle_hover_bg,
-                collapse_bg,
+                ctx.content_container,
+                ctx.actions,
+                ctx.indent_px,
+                ctx.base_bg,
                 cx,
             ),
-            BlockType::Image => self.render_image_inner(actions, indent_px, base_bg),
-            BlockType::Code => {
-                self.render_code_block_inner(content_container, actions, indent_px, base_bg, cx)
+            BlockType::Callout => self.render_callout_inner(
+                block,
+                ctx.content_container,
+                ctx.actions,
+                ctx.indent_px,
+                ctx.base_bg,
+                cx,
+            ),
+            BlockType::Divider => self.render_divider_inner(ctx.indent_px, ctx.base_bg, cx),
+            BlockType::Todo => self.render_todo_inner(block, ctx, cx),
+            BlockType::Image => {
+                self.render_image_inner(ctx.actions, ctx.indent_px, ctx.base_bg)
             }
-            BlockType::DatabaseView => self.render_database_view_inner(indent_px, base_bg, cx),
-            BlockType::ColumnLayout => self.render_column_layout_inner(
-                block,
-                content_container,
-                actions,
-                indent_px,
-                has_children,
-                is_collapsed,
-                pane,
-                actual_ix,
-                base_bg,
+            BlockType::Code => self.render_code_block_inner(
+                ctx.content_container,
+                ctx.actions,
+                ctx.indent_px,
+                ctx.base_bg,
                 cx,
             ),
-            BlockType::Toggle => self.render_toggle_inner(
-                block,
-                content_container,
-                actions,
-                indent_px,
-                has_children,
-                is_collapsed,
-                pane,
-                actual_ix,
-                base_bg,
-                toggle_hover_bg,
-                collapse_bg,
-                cx,
-            ),
-            _ => self.render_text_inner(
-                block,
-                content_container,
-                actions,
-                indent_px,
-                has_children,
-                is_collapsed,
-                pane,
-                actual_ix,
-                base_bg,
-                toggle_hover_bg,
-                collapse_bg,
-                cx,
-            ),
+            BlockType::DatabaseView => {
+                self.render_database_view_inner(ctx.indent_px, ctx.base_bg, cx)
+            }
+            BlockType::ColumnLayout => self.render_column_layout_inner(block, ctx, cx),
+            BlockType::Toggle => {
+                self.render_toggle_inner(block, ctx, cx)
+            }
+            _ => self.render_text_inner(block, ctx, cx),
         }
     }
 
@@ -100,27 +76,16 @@ impl AppStore {
     fn render_text_inner(
         &mut self,
         block: &BlockSnapshot,
-        content_container: gpui::Div,
-        actions: gpui::AnyElement,
-        indent_px: gpui::Pixels,
-        has_children: bool,
-        is_collapsed: bool,
-        pane: EditorPane,
-        actual_ix: usize,
-        base_bg: gpui::Hsla,
-        toggle_hover_bg: gpui::Hsla,
-        collapse_bg: gpui::Hsla,
+        ctx: BlockRenderCtx,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         let foreground_faint = cx.global::<SandpaperTheme>().colors(cx).foreground_faint;
         let collapse = self.render_collapse_toggle(
             block,
-            has_children,
-            is_collapsed,
-            pane,
-            actual_ix,
-            toggle_hover_bg,
-            collapse_bg,
+            ctx.has_children,
+            ctx.is_collapsed,
+            ctx.pane,
+            ctx.actual_ix,
             cx,
         );
         div()
@@ -130,7 +95,7 @@ impl AppStore {
             .gap_2()
             .py_1()
             .px_2()
-            .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
+            .child(div().w(ctx.indent_px).h(px(1.0)).bg(ctx.base_bg))
             .child(collapse)
             .child(
                 div()
@@ -139,8 +104,8 @@ impl AppStore {
                     .rounded_full()
                     .bg(foreground_faint),
             )
-            .child(content_container)
-            .child(actions)
+            .child(ctx.content_container)
+            .child(ctx.actions)
     }
 
     fn render_image_inner(
@@ -299,16 +264,7 @@ impl AppStore {
     fn render_todo_inner(
         &mut self,
         block: &BlockSnapshot,
-        content_container: gpui::Div,
-        actions: gpui::AnyElement,
-        indent_px: gpui::Pixels,
-        has_children: bool,
-        is_collapsed: bool,
-        pane: EditorPane,
-        actual_ix: usize,
-        base_bg: gpui::Hsla,
-        toggle_hover_bg: gpui::Hsla,
-        collapse_bg: gpui::Hsla,
+        ctx: BlockRenderCtx,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         let checked = block.text.starts_with("- [x] ") || block.text.starts_with("[x] ");
@@ -331,20 +287,20 @@ impl AppStore {
                 theme.muted_foreground,
             )
         };
+        let pane = ctx.pane;
+        let actual_ix = ctx.actual_ix;
         let collapse = self.render_collapse_toggle(
             block,
-            has_children,
-            is_collapsed,
+            ctx.has_children,
+            ctx.is_collapsed,
             pane,
             actual_ix,
-            toggle_hover_bg,
-            collapse_bg,
             cx,
         );
         let styled_content = if checked {
-            content_container.text_color(todo_muted)
+            ctx.content_container.text_color(todo_muted)
         } else {
-            content_container
+            ctx.content_container
         };
         div()
             .flex()
@@ -353,7 +309,7 @@ impl AppStore {
             .gap_2()
             .py_1()
             .px_2()
-            .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
+            .child(div().w(ctx.indent_px).h(px(1.0)).bg(ctx.base_bg))
             .child(collapse)
             .child(
                 div()
@@ -381,7 +337,7 @@ impl AppStore {
                     }),
             )
             .child(styled_content)
-            .child(actions)
+            .child(ctx.actions)
     }
 
     /// Code block: monospace background
@@ -422,16 +378,7 @@ impl AppStore {
     fn render_toggle_inner(
         &mut self,
         block: &BlockSnapshot,
-        content_container: gpui::Div,
-        actions: gpui::AnyElement,
-        indent_px: gpui::Pixels,
-        _has_children: bool,
-        is_collapsed: bool,
-        pane: EditorPane,
-        actual_ix: usize,
-        base_bg: gpui::Hsla,
-        toggle_hover_bg: gpui::Hsla,
-        collapse_bg: gpui::Hsla,
+        ctx: BlockRenderCtx,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
         // Toggles always show the collapse arrow, even without children
@@ -442,20 +389,18 @@ impl AppStore {
             .gap_2()
             .py_1()
             .px_2()
-            .child(div().w(indent_px).h(px(1.0)).bg(base_bg))
+            .child(div().w(ctx.indent_px).h(px(1.0)).bg(ctx.base_bg))
             .child(self.render_collapse_toggle(
                 block,
                 true, // always show
-                is_collapsed,
-                pane,
-                actual_ix,
-                toggle_hover_bg,
-                collapse_bg,
+                ctx.is_collapsed,
+                ctx.pane,
+                ctx.actual_ix,
                 cx,
             ))
             .child(div().w(px(5.0)).h(px(1.0)))
-            .child(content_container.font_weight(gpui::FontWeight::MEDIUM))
-            .child(actions)
+            .child(ctx.content_container.font_weight(gpui::FontWeight::MEDIUM))
+            .child(ctx.actions)
     }
 
     /// Shared collapse toggle widget
@@ -466,11 +411,10 @@ impl AppStore {
         is_collapsed: bool,
         pane: EditorPane,
         actual_ix: usize,
-        toggle_hover_bg: gpui::Hsla,
-        _collapse_bg: gpui::Hsla,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         if has_children {
+            let toggle_hover_bg = cx.theme().list_hover;
             let label = if is_collapsed { "▸" } else { "▾" };
             let uid = block.uid.clone();
             div()
@@ -675,16 +619,13 @@ impl AppStore {
     fn render_column_layout_inner(
         &mut self,
         block: &BlockSnapshot,
-        _content_container: gpui::Div,
-        _actions: gpui::AnyElement,
-        indent_px: gpui::Pixels,
-        _has_children: bool,
-        _is_collapsed: bool,
-        pane: EditorPane,
-        actual_ix: usize,
-        base_bg: gpui::Hsla,
+        ctx: BlockRenderCtx,
         cx: &mut Context<Self>,
     ) -> gpui::Div {
+        let indent_px = ctx.indent_px;
+        let pane = ctx.pane;
+        let actual_ix = ctx.actual_ix;
+        let base_bg = ctx.base_bg;
         #[derive(Clone)]
         struct ColumnRowPreview {
             uid: String,

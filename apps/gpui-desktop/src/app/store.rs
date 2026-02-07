@@ -421,6 +421,15 @@ pub(crate) struct TextHistoryEntry {
     pub(crate) edited_at_ms: i64,
 }
 
+pub(crate) struct TextHistoryChange {
+    pub(crate) page_uid: String,
+    pub(crate) block_uid: String,
+    pub(crate) before_text: String,
+    pub(crate) after_text: String,
+    pub(crate) before_cursor: usize,
+    pub(crate) after_cursor: usize,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BlockInputBinding {
     pub(crate) pane: EditorPane,

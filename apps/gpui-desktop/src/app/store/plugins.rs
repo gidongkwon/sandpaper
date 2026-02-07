@@ -274,7 +274,7 @@ pub(crate) fn describe_plugin_error(err: &PluginError) -> PluginRuntimeError {
     match err {
         PluginError::Io(inner) => PluginRuntimeError::new(format!("io: {inner}")),
         PluginError::Serde(inner) => PluginRuntimeError::new(format!("serde: {inner}")),
-        PluginError::Runtime(inner) => inner.clone(),
+        PluginError::Runtime(inner) => (**inner).clone(),
     }
 }
 
@@ -573,8 +573,8 @@ impl AppStore {
             Err(err) => {
                 let message: SharedString = format_runtime_error(&err).into();
                 self.plugins.plugin_error = Some(message.clone());
-                self.plugins.plugin_error_details = Some(err.clone());
-                self.push_plugin_error_notification(message, Some(err));
+                self.plugins.plugin_error_details = Some((*err).clone());
+                self.push_plugin_error_notification(message, Some(*err));
                 self.plugins.plugins.clear();
                 self.plugins.plugin_status = None;
                 self.plugins.plugin_busy = false;
@@ -618,9 +618,9 @@ impl AppStore {
             }
             Err(err) => {
                 let message: SharedString = format_runtime_error(&err).into();
-                self.plugins.plugin_error_details = Some(err.clone());
+                self.plugins.plugin_error_details = Some((*err).clone());
                 self.plugins.plugin_error = Some(message.clone());
-                self.push_plugin_error_notification(message, Some(err));
+                self.push_plugin_error_notification(message, Some(*err));
                 self.plugins.plugin_status = None;
             }
         }

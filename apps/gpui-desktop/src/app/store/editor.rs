@@ -132,29 +132,26 @@ impl AppStore {
     pub(crate) fn record_text_history_change(
         &mut self,
         pane: EditorPane,
-        page_uid: &str,
-        block_uid: &str,
-        before_text: String,
-        after_text: String,
-        before_cursor: usize,
-        after_cursor: usize,
+        change: TextHistoryChange,
     ) {
         if self.editor.is_replaying_history || self.editor.text_history_suppression_depth > 0 {
             return;
         }
-        if before_text == after_text && before_cursor == after_cursor {
+        if change.before_text == change.after_text
+            && change.before_cursor == change.after_cursor
+        {
             return;
         }
 
         let now = now_millis();
         if let Some(HistoryEntry::Text(entry)) = self.editor.undo_stack.last_mut() {
             if entry.pane == pane
-                && entry.page_uid == page_uid
-                && entry.block_uid == block_uid
+                && entry.page_uid == change.page_uid
+                && entry.block_uid == change.block_uid
                 && now.saturating_sub(entry.edited_at_ms) <= TEXT_HISTORY_COALESCE_WINDOW_MS
             {
-                entry.after_text = after_text;
-                entry.after_cursor = after_cursor;
+                entry.after_text = change.after_text;
+                entry.after_cursor = change.after_cursor;
                 entry.edited_at_ms = now;
                 self.editor.redo_stack.clear();
                 return;
@@ -163,12 +160,12 @@ impl AppStore {
 
         self.push_history_entry(HistoryEntry::Text(TextHistoryEntry {
             pane,
-            page_uid: page_uid.to_string(),
-            block_uid: block_uid.to_string(),
-            before_text,
-            after_text,
-            before_cursor,
-            after_cursor,
+            page_uid: change.page_uid,
+            block_uid: change.block_uid,
+            before_text: change.before_text,
+            after_text: change.after_text,
+            before_cursor: change.before_cursor,
+            after_cursor: change.after_cursor,
             edited_at_ms: now,
         }));
     }
@@ -673,12 +670,14 @@ impl AppStore {
         if text_changed {
             self.record_text_history_change(
                 pane,
-                &page_uid,
-                &block_uid,
-                previous_text,
-                text.clone(),
-                previous_cursor,
-                cursor,
+                TextHistoryChange {
+                    page_uid: page_uid.clone(),
+                    block_uid: block_uid.clone(),
+                    before_text: previous_text,
+                    after_text: text.clone(),
+                    before_cursor: previous_cursor,
+                    after_cursor: cursor,
+                },
             );
             let is_visible = self
                 .list_state_for_pane(pane)
@@ -5575,24 +5574,28 @@ mod tests {
                 }
                 app.record_text_history_change(
                     EditorPane::Primary,
-                    "page-a",
-                    "a1",
-                    "".to_string(),
-                    "h".to_string(),
-                    0,
-                    1,
+                    TextHistoryChange {
+                        page_uid: "page-a".to_string(),
+                        block_uid: "a1".to_string(),
+                        before_text: "".to_string(),
+                        after_text: "h".to_string(),
+                        before_cursor: 0,
+                        after_cursor: 1,
+                    },
                 );
                 if let Some(editor) = app.editor.editor.as_mut() {
                     editor.blocks[0].text = "he".to_string();
                 }
                 app.record_text_history_change(
                     EditorPane::Primary,
-                    "page-a",
-                    "a1",
-                    "h".to_string(),
-                    "he".to_string(),
-                    1,
-                    2,
+                    TextHistoryChange {
+                        page_uid: "page-a".to_string(),
+                        block_uid: "a1".to_string(),
+                        before_text: "h".to_string(),
+                        after_text: "he".to_string(),
+                        before_cursor: 1,
+                        after_cursor: 2,
+                    },
                 );
 
                 assert_eq!(
@@ -7429,12 +7432,14 @@ mod tests {
                 }
                 app.record_text_history_change(
                     EditorPane::Primary,
-                    "page-a",
-                    "a1",
-                    "Alpha".to_string(),
-                    "Alpha changed".to_string(),
-                    5,
-                    13,
+                    TextHistoryChange {
+                        page_uid: "page-a".to_string(),
+                        block_uid: "a1".to_string(),
+                        before_text: "Alpha".to_string(),
+                        after_text: "Alpha changed".to_string(),
+                        before_cursor: 5,
+                        after_cursor: 13,
+                    },
                 );
                 app.sync_block_input_from_active_with_cursor_for_pane(
                     EditorPane::Primary,
