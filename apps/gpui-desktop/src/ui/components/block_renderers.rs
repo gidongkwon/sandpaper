@@ -124,7 +124,7 @@ impl AppStore {
         );
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_center()
             .gap_2()
             .py_1()
@@ -169,14 +169,14 @@ impl AppStore {
     ) -> gpui::Div {
         let styled_content = match block.block_type {
             BlockType::Heading1 => content_container
-                .text_2xl()
-                .font_weight(gpui::FontWeight::BOLD),
+                .text_size(tokens::FONT_2XL)
+                .font_weight(gpui::FontWeight::MEDIUM),
             BlockType::Heading2 => content_container
-                .text_xl()
-                .font_weight(gpui::FontWeight::BOLD),
+                .text_size(tokens::FONT_XL)
+                .font_weight(gpui::FontWeight::MEDIUM),
             _ => content_container
-                .text_lg()
-                .font_weight(gpui::FontWeight::BOLD),
+                .text_size(tokens::FONT_LG)
+                .font_weight(gpui::FontWeight::MEDIUM),
         };
 
         let top_pad = match block.block_type {
@@ -212,7 +212,7 @@ impl AppStore {
         let theme = cx.theme();
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_start()
             .gap_2()
             .py_1()
@@ -245,7 +245,7 @@ impl AppStore {
         let theme = cx.theme();
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_start()
             .gap_2()
             .py_1()
@@ -346,7 +346,7 @@ impl AppStore {
         };
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_center()
             .gap_2()
             .py_1()
@@ -394,7 +394,7 @@ impl AppStore {
         let theme = cx.theme();
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_start()
             .gap_2()
             .py_1()
@@ -435,7 +435,7 @@ impl AppStore {
         // Toggles always show the collapse arrow, even without children
         div()
             .flex()
-            .text_sm()
+            .text_size(tokens::FONT_BASE)
             .items_center()
             .gap_2()
             .py_1()
@@ -554,7 +554,7 @@ impl AppStore {
                 div()
                     .flex_1()
                     .min_w(px(80.0))
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(muted)
                     .child(label.clone()),
@@ -594,7 +594,7 @@ impl AppStore {
                     div()
                         .flex_1()
                         .min_w(px(80.0))
-                        .text_xs()
+                        .text_size(tokens::FONT_SM)
                         .text_color(fg)
                         .overflow_hidden()
                         .child(cell_text),
@@ -608,7 +608,7 @@ impl AppStore {
             Some(
                 div()
                     .p_4()
-                    .text_xs()
+                    .text_size(tokens::FONT_SM)
                     .text_color(muted)
                     .child("No pages found. Add pages to see them here."),
             )
@@ -639,7 +639,7 @@ impl AppStore {
                     .child(Icon::new(SandpaperIcon::Grid).size_3p5().text_color(muted))
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(tokens::FONT_SM)
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(muted)
                             .child("Database View"),
@@ -794,7 +794,7 @@ impl AppStore {
         for column in columns_data {
             let mut rows = div().flex().flex_col().gap(tokens::SPACE_2);
             if column.rows.is_empty() {
-                rows = rows.child(div().text_sm().text_color(muted).child("Empty column"));
+                rows = rows.child(div().text_size(tokens::FONT_BASE).text_color(muted).child("Empty column"));
             } else {
                 for row in column.rows {
                     let row_uid = row.uid.clone();
@@ -830,7 +830,7 @@ impl AppStore {
                             .into_any_element()
                     } else {
                         div()
-                            .text_sm()
+                            .text_size(tokens::FONT_BASE)
                             .text_color(fg)
                             .child(row.text)
                             .into_any_element()
@@ -906,7 +906,7 @@ impl AppStore {
                             .mb_1()
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(tokens::FONT_SM)
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(muted)
                                     .child(column.label),
@@ -957,7 +957,7 @@ impl AppStore {
                             .child(Icon::new(SandpaperIcon::Grid).size_3p5().text_color(muted))
                             .child(
                                 div()
-                                    .text_xs()
+                                    .text_size(tokens::FONT_SM)
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(muted)
                                     .child(format!("{num_cols}-column layout")),
