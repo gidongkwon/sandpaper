@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
+use crate::ui::tokens;
 use gpui_component::{popover::Popover, Anchor};
 impl AppStore {
     fn external_paths_include_supported_images(paths: &gpui::ExternalPaths) -> bool {
@@ -296,7 +297,7 @@ impl AppStore {
             breadcrumbs.extend(tail);
         }
 
-        let mut title_group = div().flex().flex_col().gap(px(2.0)).child(
+        let mut title_group = div().flex().flex_col().gap(tokens::SPACE_1).child(
             div()
                 .id("editor-page-title")
                 .text_lg()
@@ -350,7 +351,7 @@ impl AppStore {
             .child({
                 let mut container = div().relative().child(
                     Button::new("editor-outline")
-                        .with_size(px(22.0))
+                        .with_size(tokens::FONT_2XL)
                         .ghost()
                         .icon(SandpaperIcon::Menu)
                         .tooltip("Outline")
@@ -368,7 +369,7 @@ impl AppStore {
             })
             .child(
                 Button::new("editor-split")
-                    .with_size(px(22.0))
+                    .with_size(tokens::FONT_2XL)
                     .ghost()
                     .icon(SandpaperIcon::SplitVertical)
                     .tooltip(if self.editor.secondary_pane.is_some() {
@@ -509,7 +510,7 @@ impl AppStore {
                 .child(
                     div().opacity(0.0).hover(|s| s.opacity(1.0)).child(
                         Button::new(SharedString::from(format!("del-prop-{}", delete_key)))
-                            .with_size(px(16.0))
+                            .with_size(tokens::ICON_MD)
                             .ghost()
                             .icon(SandpaperIcon::Dismiss)
                             .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -567,7 +568,7 @@ impl AppStore {
         let theme = cx.theme();
         let mut button = div().flex().items_center().gap_1().child(
             Button::new("backlinks-toggle")
-                .with_size(px(22.0))
+                .with_size(tokens::FONT_2XL)
                 .ghost()
                 .icon(SandpaperIcon::LinkMultiple)
                 .tooltip(tooltip)
@@ -755,7 +756,7 @@ impl AppStore {
         let selected_index = self.editor.slash_menu.selected_index;
 
         let mut menu = div()
-            .w(px(240.0))
+            .w(tokens::SIDEBAR_WIDTH)
             .rounded_md()
             .bg(theme.popover)
             .border_1()
@@ -1168,7 +1169,7 @@ impl AppStore {
                 div()
                     .id(format!("{id_prefix}-item-{ix}"))
                     .px_2()
-                    .py(px(6.0))
+                    .py(tokens::SPACE_3)
                     .rounded_sm()
                     .bg(item_bg)
                     .hover(move |s| s.bg(hover_bg).cursor_pointer())
@@ -1368,7 +1369,7 @@ impl AppStore {
                 let theme = cx.theme();
                 theme.foreground
             };
-            let mut body = div().flex().flex_col().gap(px(2.0));
+            let mut body = div().flex().flex_col().gap(tokens::SPACE_1);
             for (line_ix, line) in normalized.split('\n').enumerate() {
                 let line_id = format!("{block_uid}-line-{line_ix}");
                 let line_text = if line.is_empty() { " " } else { line };
@@ -1886,7 +1887,7 @@ impl AppStore {
                                     .gap_2()
                                     .child(
                                         div()
-                                            .w(px(12.0))
+                                            .w(tokens::SPACE_5)
                                             .text_sm()
                                             .text_color(theme.muted_foreground)
                                             .child("•"),
@@ -2403,7 +2404,7 @@ impl AppStore {
 
         let mut panel = div()
             .id("backlinks-panel")
-            .w(px(360.0))
+            .w(tokens::CONTEXT_PANEL_WIDTH)
             .h_full()
             .border_l_1()
             .border_color(border)
@@ -2553,7 +2554,7 @@ impl AppStore {
                     .pb_1()
                     .flex()
                     .flex_col()
-                    .gap(px(2.0))
+                    .gap(tokens::SPACE_1)
                     .child(
                         div()
                             .text_xs()
@@ -2693,7 +2694,7 @@ impl AppStore {
         let secondary_drop_bg = theme.list_hover.opacity(0.35);
         let secondary_drop_border = theme.ring;
 
-        let mut title_group = div().flex().flex_col().gap(px(2.0)).child(
+        let mut title_group = div().flex().flex_col().gap(tokens::SPACE_1).child(
             div()
                 .text_sm()
                 .text_color(theme.foreground)
@@ -2778,7 +2779,7 @@ impl AppStore {
         Some(
             div()
                 .id("secondary-pane")
-                .w(px(360.0))
+                .w(tokens::CONTEXT_PANEL_WIDTH)
                 .h_full()
                 .border_l_1()
                 .border_color(if is_active { theme.ring } else { theme.border })
@@ -2805,7 +2806,7 @@ impl AppStore {
                                     let mut container = div().relative().child(
                                         Button::new("secondary-outline")
                                             .icon(SandpaperIcon::Menu)
-                                            .with_size(px(20.0))
+                                            .with_size(tokens::ICON_LG)
                                             .ghost()
                                             .tooltip("Outline")
                                             .on_click(cx.listener(|this, _event, _window, cx| {
@@ -3046,7 +3047,7 @@ impl AppStore {
             .flex()
             .items_start()
             .justify_center()
-            .pt(px(4.0))
+            .pt(tokens::SPACE_2)
             .child(
                 div()
                     .id(drag_handle_id)
@@ -3089,7 +3090,7 @@ impl AppStore {
                     )
                     .child(
                         Icon::new(SandpaperIcon::DragHandle)
-                            .size(px(12.0))
+                            .size(tokens::FONT_SM)
                             .text_color(muted_fg),
                     ),
             );
@@ -3345,13 +3346,13 @@ impl AppStore {
         div()
             .flex()
             .items_center()
-            .gap(px(2.0))
+            .gap(tokens::SPACE_1)
             .opacity(0.0)
             .hover(|s| s.opacity(1.0))
             .child(
                 Button::new(format!("{id_prefix}-insert-{ix}"))
                     .icon(SandpaperIcon::Add)
-                    .with_size(px(18.0))
+                    .with_size(tokens::FONT_XL)
                     .ghost()
                     .tooltip("Insert below")
                     .on_click(cx.listener(move |this, _event, window, cx| {
@@ -3362,7 +3363,7 @@ impl AppStore {
             .child(
                 Button::new(format!("{id_prefix}-review-{ix}"))
                     .icon(SandpaperIcon::Eye)
-                    .with_size(px(18.0))
+                    .with_size(tokens::FONT_XL)
                     .ghost()
                     .tooltip("Add to review")
                     .on_click(cx.listener(move |this, _event, _window, cx| {
@@ -3373,7 +3374,7 @@ impl AppStore {
             .child(
                 Button::new(format!("{id_prefix}-link-{ix}"))
                     .icon(SandpaperIcon::Open)
-                    .with_size(px(18.0))
+                    .with_size(tokens::FONT_XL)
                     .ghost()
                     .tooltip("Link to page")
                     .on_click(cx.listener(move |this, _event, window, cx| {
@@ -3384,7 +3385,7 @@ impl AppStore {
             .child(
                 Button::new(format!("{id_prefix}-duplicate-{ix}"))
                     .icon(SandpaperIcon::Copy)
-                    .with_size(px(18.0))
+                    .with_size(tokens::FONT_XL)
                     .ghost()
                     .tooltip("Duplicate block")
                     .on_click(cx.listener(move |this, _event, window, cx| {
@@ -3462,11 +3463,11 @@ impl AppStore {
                                     div()
                                         .flex()
                                         .items_center()
-                                        .gap(px(2.0))
+                                        .gap(tokens::SPACE_1)
                                         .child(
                                             Button::new(format!("review-done-{item_id}"))
                                                 .icon(SandpaperIcon::Checkmark)
-                                                .with_size(px(18.0))
+                                                .with_size(tokens::FONT_XL)
                                                 .ghost()
                                                 .tooltip("Done (D)")
                                                 .on_click(cx.listener(
@@ -3478,7 +3479,7 @@ impl AppStore {
                                         .child(
                                             Button::new(format!("review-snooze-day-{item_id}"))
                                                 .icon(SandpaperIcon::Subtract)
-                                                .with_size(px(18.0))
+                                                .with_size(tokens::FONT_XL)
                                                 .ghost()
                                                 .tooltip("Snooze 1 day (S)")
                                                 .on_click(cx.listener(
@@ -3512,7 +3513,7 @@ impl AppStore {
 
         div()
             .id("review-panel")
-            .w(px(360.0))
+            .w(tokens::CONTEXT_PANEL_WIDTH)
             .h_full()
             .border_l_1()
             .border_color(border)
@@ -3576,7 +3577,7 @@ impl AppStore {
             .child(
                 div()
                     .px_3()
-                    .py(px(6.0))
+                    .py(tokens::SPACE_3)
                     .text_xs()
                     .text_color(muted.opacity(0.7))
                     .child(format!(
