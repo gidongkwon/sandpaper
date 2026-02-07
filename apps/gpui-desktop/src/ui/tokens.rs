@@ -55,3 +55,9 @@ pub const SIDEBAR_RAIL_WIDTH: Pixels = px(48.0);
 pub const CONTEXT_PANEL_WIDTH: Pixels = px(360.0);
 pub const TOPBAR_HEIGHT: Pixels = px(38.0);
 pub const STATUS_BAR_HEIGHT: Pixels = px(22.0);
+
+// ── Responsive breakpoints ────────────────────────────────────────
+
+pub const BREAKPOINT_COMPACT: Pixels = px(800.0);
+pub const MIN_WINDOW_WIDTH: Pixels = px(640.0);
+pub const MIN_WINDOW_HEIGHT: Pixels = px(480.0);

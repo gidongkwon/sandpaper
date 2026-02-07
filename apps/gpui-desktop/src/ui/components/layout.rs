@@ -646,6 +646,7 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let focus_mode = self.settings.focus_mode;
+        let compact = window.viewport_size().width < tokens::BREAKPOINT_COMPACT;
 
         let mut root = div()
             .id("sandpaper-app")
@@ -714,24 +715,26 @@ impl AppStore {
         }
 
         let mut body = div().flex().flex_1().min_h_0();
+        let show_sidebar = !focus_mode && !compact;
+        let show_context = !focus_mode && !compact;
         match self.app.mode {
             Mode::Capture => {
                 body = body.child(self.render_capture_mode(cx));
             }
             Mode::Editor => {
-                if !focus_mode {
+                if show_sidebar {
                     body = body.child(self.render_sidebar(cx));
                     if !self.settings.sidebar_collapsed {
                         body = body.child(self.render_sidebar_resizer(cx));
                     }
                 }
                 body = body.child(self.render_editor(cx));
-                if !focus_mode {
+                if show_context {
                     body = body.child(self.render_context_panel(cx));
                 }
             }
             Mode::Review => {
-                if !focus_mode {
+                if show_sidebar {
                     body = body.child(self.render_sidebar(cx));
                     if !self.settings.sidebar_collapsed {
                         body = body.child(self.render_sidebar_resizer(cx));
@@ -1346,5 +1349,13 @@ mod tests {
     #[test]
     fn topbar_mode_switch_prefers_small_buttons() {
         assert!(AppStore::topbar_mode_switch_uses_small_buttons());
+    }
+
+    #[test]
+    fn breakpoint_compact_is_wider_than_min_window() {
+        assert!(
+            tokens::BREAKPOINT_COMPACT > tokens::MIN_WINDOW_WIDTH,
+            "compact breakpoint must be wider than minimum window width"
+        );
     }
 }

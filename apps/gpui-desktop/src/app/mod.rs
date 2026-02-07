@@ -10,6 +10,10 @@ fn window_options(bounds: Bounds<gpui::Pixels>) -> WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitleBar::title_bar_options()),
         window_decorations: Some(gpui::WindowDecorations::Client),
+        window_min_size: Some(size(
+            crate::ui::tokens::MIN_WINDOW_WIDTH,
+            crate::ui::tokens::MIN_WINDOW_HEIGHT,
+        )),
         ..Default::default()
     }
 }
@@ -61,6 +65,26 @@ mod tests {
             options.window_decorations,
             Some(gpui::WindowDecorations::Client),
             "expected WindowOptions.window_decorations=Client for Linux/Windows support"
+        );
+    }
+
+    #[test]
+    fn window_enforces_minimum_size() {
+        let bounds = Bounds::new(gpui::point(px(0.0), px(0.0)), size(px(800.0), px(600.0)));
+        let options = window_options(bounds);
+
+        let min_size = options
+            .window_min_size
+            .expect("expected WindowOptions.window_min_size to be set");
+        assert_eq!(
+            min_size.width,
+            crate::ui::tokens::MIN_WINDOW_WIDTH,
+            "expected minimum width of 640px"
+        );
+        assert_eq!(
+            min_size.height,
+            crate::ui::tokens::MIN_WINDOW_HEIGHT,
+            "expected minimum height of 480px"
         );
     }
 }
