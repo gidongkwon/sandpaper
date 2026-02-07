@@ -10,7 +10,6 @@ import { SidebarContent } from "./sidebar-content";
 describe("SidebarContent", () => {
   it("renders pages and unlinked references actions", async () => {
     const [query, setQuery] = createSignal("");
-    const [filter, setFilter] = createSignal<"all" | "links" | "tasks" | "pinned">("all");
     const [history] = createSignal<string[]>([]);
     const [results] = createSignal<SearchResult[]>([]);
     const [references] = createSignal<UnlinkedReference[]>([
@@ -37,8 +36,6 @@ describe("SidebarContent", () => {
         search={{
           query,
           setQuery,
-          filter,
-          setFilter,
           commitTerm: () => {},
           history,
           applyTerm: () => {},

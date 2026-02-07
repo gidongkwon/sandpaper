@@ -45,6 +45,7 @@ import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
 import {
   cleanTextForBlockType,
   extractImageSource,
+  inferBlockTypeFromText,
   isTodoChecked,
   resolveRenderBlockType,
   resolveBlockType,
@@ -149,6 +150,36 @@ type EditorPaneProps = {
 
 const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
+const BLOCK_INPUT_MIN_HEIGHT = 26;
+const TODO_PREFIX_PATTERN = /^-?\s*\[(?: |x|X)\]\s+/u;
+
+const isStructuralBlockType = (blockType: BlockType) =>
+  blockType === "column_layout" ||
+  blockType === "column" ||
+  blockType === "database_view";
+
+const resolveTypingBlockType = (currentType: BlockType, nextText: string): BlockType => {
+  if (isStructuralBlockType(currentType)) return currentType;
+  const inferredType = inferBlockTypeFromText(nextText);
+  if ((currentType === "callout" || currentType === "toggle") && inferredType === "text") {
+    return currentType;
+  }
+  return inferredType;
+};
+
+const stripCodeTypeMarker = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("```")) return value;
+
+  const inlineFence = parseInlineFence(trimmed);
+  if (inlineFence) return inlineFence.content;
+
+  const newlineIndex = trimmed.indexOf("\n");
+  if (newlineIndex < 0) return "";
+
+  const withoutOpeningFence = trimmed.slice(newlineIndex + 1);
+  return withoutOpeningFence.replace(/\n?```[\t ]*$/u, "");
+};
 
 export const EditorPane = (props: EditorPaneProps) => {
   // Props here are accessors/handlers; destructuring keeps the render readable without breaking reactivity.
@@ -287,6 +318,11 @@ export const EditorPane = (props: EditorPaneProps) => {
   let copyTimeout: number | undefined;
   let previewCloseTimeout: number | undefined;
 
+  const autoResizeBlockInput = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight, BLOCK_INPUT_MIN_HEIGHT)}px`;
+  };
+
   const getBlockType = (block: Block) => resolveRenderBlockType(block);
 
   const effectiveViewport = createMemo(() =>
@@ -404,8 +440,15 @@ export const EditorPane = (props: EditorPaneProps) => {
     return { heights, offsets, totalHeight: offset };
   });
 
-  const findIndexById = (id: string) =>
-    blocks.findIndex((block) => block.id === id);
+  const actualIndexById = createMemo(() => {
+    const map = new Map<string, number>();
+    for (let index = 0; index < blocks.length; index += 1) {
+      map.set(blocks[index].id, index);
+    }
+    return map;
+  });
+
+  const findIndexById = (id: string) => actualIndexById().get(id) ?? -1;
 
   const getVisibleIndexById = (id: string) => {
     const actualIndex = findIndexById(id);
@@ -726,9 +769,25 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
   });
 
-  const visibleBlocks = createMemo(() =>
-    outline().visible.slice(range().start, range().end)
+  const visibleBlockIds = createMemo(() =>
+    outline()
+      .visible.slice(range().start, range().end)
+      .map((item) => item.block.id)
   );
+
+  createEffect(() => {
+    const id = focusedId();
+    if (!id) return;
+    const index = findIndexById(id);
+    if (index < 0) return;
+    const text = blocks[index]?.text;
+    if (text === undefined) return;
+    requestAnimationFrame(() => {
+      const input = inputRefs.get(id);
+      if (!input) return;
+      autoResizeBlockInput(input);
+    });
+  });
 
   const selectionCount = createMemo(() => {
     const rangeValue = selectionRange();
@@ -1006,11 +1065,8 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!block) return;
     const checked = isTodoChecked(block.text);
     const next = toggleTodoText(block.text, !checked);
-    setBlocks(index, (prev) => ({
-      ...prev,
-      text: next,
-      block_type: "todo"
-    }));
+    setBlocks(index, "text", next);
+    setBlocks(index, "block_type", "todo");
     scheduleSave();
   };
 
@@ -1823,7 +1879,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       nextCaret = nextText.length;
     } else if (commandId === "quote") {
       nextType = "quote";
-      nextText = cleanTextForBlockType(`${before}${after}`, nextType);
+      const content = cleanTextForBlockType(`${before}${after}`, nextType);
+      nextText = content ? `> ${content}` : "> ";
       nextCaret = nextText.length;
     } else if (commandId === "callout") {
       nextType = "callout";
@@ -1835,7 +1892,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       nextCaret = nextText.length;
     } else if (commandId === "code") {
       nextType = "code";
-      nextText = `${before}${after}`.trim();
+      const content = `${before}${after}`.trim();
+      nextText = content ? `\`\`\`text ${content}` : "```text ";
       nextCaret = nextText.length;
     } else if (commandId === "divider") {
       nextType = "divider";
@@ -1850,11 +1908,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       void (async () => {
         const imported = await importImageFromPicker();
         if (!imported) return;
-        setBlocks(index, (prev) => ({
-          ...prev,
-          text: imported.markdown,
-          block_type: "image"
-        }));
+        setBlocks(index, "text", imported.markdown);
+        setBlocks(index, "block_type", "image");
         scheduleSave();
         requestAnimationFrame(() => {
           const input = inputRefs.get(block.id);
@@ -2608,13 +2663,8 @@ export const EditorPane = (props: EditorPaneProps) => {
                     {(row) => {
                       const child = blocks[row.actualIndex];
                       if (!child) return null;
-                      const item = outline().items[row.actualIndex];
                       return renderBlockRow({
                         block: child,
-                        actualIndex: row.actualIndex,
-                        visibleIndex: getVisibleIndexById(row.blockId),
-                        hasChildren: item?.hasChildren ?? false,
-                        collapsed: item?.collapsed ?? false,
                         visualIndent: row.depth,
                         isColumnRow: true
                       });
@@ -2661,21 +2711,29 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   type BlockRowRenderArgs = {
     block: Block;
-    actualIndex: number;
-    visibleIndex: number;
-    hasChildren: boolean;
-    collapsed: boolean;
-    visualIndent: number;
+    visualIndent?: number;
     isColumnRow?: boolean;
   };
 
   const renderBlockRow = (args: BlockRowRenderArgs) => {
     const block = args.block;
-    const actualIndex = args.actualIndex;
-    const visibleIndex = () => args.visibleIndex;
-    const blockType = () => getBlockType(block);
-    const codePreview = () => getCodePreview(block.text);
-    const diagramPreview = () => getDiagramPreview(block.text);
+    const actualIndex = () => findIndexById(block.id);
+    const currentBlock = () => {
+      const index = actualIndex();
+      return index >= 0 ? (blocks[index] as Block) : block;
+    };
+    const outlineItem = () => {
+      const index = actualIndex();
+      return index >= 0 ? outline().items[index] : null;
+    };
+    const visibleIndex = () => getVisibleIndexById(block.id);
+    const hasChildren = () => outlineItem()?.hasChildren ?? false;
+    const collapsed = () => outlineItem()?.collapsed ?? false;
+    const visualIndent = () =>
+      args.isColumnRow ? (args.visualIndent ?? 0) : currentBlock().indent;
+    const blockType = () => getBlockType(currentBlock());
+    const codePreview = () => getCodePreview(currentBlock().text);
+    const diagramPreview = () => getDiagramPreview(currentBlock().text);
     const pluginRenderer = () => {
       if (
         blockType() !== "text" &&
@@ -2683,7 +2741,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       ) {
         return null;
       }
-      return getPluginBlockRenderer(block.text);
+      return getPluginBlockRenderer(currentBlock().text);
     };
     const isEditing = () => focusedId() === block.id;
     const isSelected = () => {
@@ -2702,28 +2760,86 @@ export const EditorPane = (props: EditorPaneProps) => {
       const index = findIndexById(blockId);
       if (index < 0) return;
       if (blocks[index]?.text === nextText) return;
-      setBlocks(index, (prev) => ({
-        ...prev,
-        text: nextText,
-        block_type: resolveBlockType(prev)
-      }));
+      const nextType = resolveBlockType(blocks[index] as Block);
+      setBlocks(index, "text", nextText);
+      setBlocks(index, "block_type", nextType);
       scheduleSave();
     };
-    const displayContent = () => {
-      if (blockType() === "column_layout") {
-        return <ColumnLayoutPreview layoutIndex={actualIndex} />;
+    const editingText = createMemo(() => {
+      const rowBlock = currentBlock();
+      const rowType = blockType();
+      const text = rowBlock.text;
+      const trimmedStart = text.trimStart();
+
+      if (rowType === "heading1") {
+        if (trimmedStart.startsWith("# ")) return text;
+        const content = cleanTextForBlockType(text, "heading1");
+        return content ? `# ${content}` : "# ";
       }
-      if (blockType() === "database_view") {
+      if (rowType === "heading2") {
+        if (trimmedStart.startsWith("## ")) return text;
+        const content = cleanTextForBlockType(text, "heading2");
+        return content ? `## ${content}` : "## ";
+      }
+      if (rowType === "heading3") {
+        if (trimmedStart.startsWith("### ")) return text;
+        const content = cleanTextForBlockType(text, "heading3");
+        return content ? `### ${content}` : "### ";
+      }
+      if (rowType === "quote") {
+        if (trimmedStart.startsWith("> ")) return text;
+        const content = cleanTextForBlockType(text, "quote");
+        return content ? `> ${content}` : "> ";
+      }
+      if (rowType === "todo") {
+        if (TODO_PREFIX_PATTERN.test(trimmedStart)) return text;
+        return toggleTodoText(text, false);
+      }
+      if (rowType === "code") {
+        if (trimmedStart.startsWith("```")) return text;
+        const content = text.trim();
+        return content ? `\`\`\`text ${content}` : "```text ";
+      }
+      if (rowType === "divider") {
+        return text.trim().length > 0 ? text : "---";
+      }
+      return text;
+    });
+    const displayText = createMemo(() => {
+      const rowBlock = currentBlock();
+      const rowType = blockType();
+      if (rowType === "heading1" || rowType === "heading2" || rowType === "heading3") {
+        return cleanTextForBlockType(rowBlock.text, rowType);
+      }
+      if (rowType === "quote") {
+        return cleanTextForBlockType(rowBlock.text, "quote");
+      }
+      if (rowType === "todo") {
+        return cleanTextForBlockType(rowBlock.text, "todo");
+      }
+      if (rowType === "code") {
+        return stripCodeTypeMarker(rowBlock.text);
+      }
+      return rowBlock.text;
+    });
+    const displayContent = createMemo<JSX.Element>(() => {
+      const rowBlock = currentBlock();
+      const rowType = blockType();
+      const index = actualIndex();
+      if (rowType === "column_layout" && index >= 0) {
+        return <ColumnLayoutPreview layoutIndex={index} />;
+      }
+      if (rowType === "database_view") {
         return <DatabaseViewPreview />;
       }
-      if (blockType() === "divider") {
+      if (rowType === "divider") {
         return <div class="block-renderer block-renderer--divider" />;
       }
-      if (blockType() === "image") {
-        return renderImageDisplay(block.text);
+      if (rowType === "image") {
+        return renderImageDisplay(rowBlock.text);
       }
-      if (blockType() === "todo") {
-        const todoText = cleanTextForBlockType(block.text, "todo");
+      if (rowType === "todo") {
+        const todoText = displayText();
         if (!todoText.trim()) {
           return (
             <span class="block__placeholder">Write something...</span>
@@ -2735,7 +2851,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       if (plugin) {
         return (
           <PluginBlockPreview
-            block={block}
+            block={rowBlock}
             renderer={plugin}
             isTauri={isTauri}
             onUpdateText={updateBlockText}
@@ -2744,26 +2860,27 @@ export const EditorPane = (props: EditorPaneProps) => {
       }
       const code = codePreview();
       if (code) {
-        return renderCodePreview(code, block.id);
+        return renderCodePreview(code, rowBlock.id);
       }
       const diagram = diagramPreview();
       if (diagram) {
         return <DiagramPreview diagram={diagram} />;
       }
-      const trimmed = block.text.trim();
+      const displayValue = displayText();
+      const trimmed = displayValue.trim();
       if (!trimmed) {
         return (
           <span class="block__placeholder">Write something...</span>
         );
       }
-      return renderMarkdownDisplay(block.text);
-    };
+      return renderMarkdownDisplay(displayValue);
+    });
 
     return (
       <div
         class={`block ${activeId() === block.id ? "is-active" : ""} ${
           highlightedBlockId() === block.id ? "is-highlighted" : ""
-        } ${args.collapsed ? "is-collapsed" : ""} ${
+        } ${collapsed() ? "is-collapsed" : ""} ${
           isSelected() ? "is-selected" : ""
         } block--type-${blockType()} ${
           isDragSource() ? "is-drag-source" : ""
@@ -2773,11 +2890,11 @@ export const EditorPane = (props: EditorPaneProps) => {
         ref={observeBlock}
         data-block-id={block.id}
         data-row-block-id={args.isColumnRow ? block.id : undefined}
-        data-depth={args.isColumnRow ? args.visualIndent : undefined}
+        data-depth={args.isColumnRow ? visualIndent() : undefined}
         style={{
-          "margin-left": `${args.visualIndent * 24}px`,
-          "--block-indent": `${args.visualIndent * 24}px`,
-          "--i": `${visibleIndex() >= 0 ? visibleIndex() : actualIndex}`
+          "margin-left": `${visualIndent() * 24}px`,
+          "--block-indent": `${visualIndent() * 24}px`,
+          "--i": `${visibleIndex() >= 0 ? visibleIndex() : actualIndex()}`
         }}
         onDragOver={(event) =>
           args.isColumnRow
@@ -2811,7 +2928,7 @@ export const EditorPane = (props: EditorPaneProps) => {
           <span class="block__drag-handle-dots" aria-hidden="true" />
         </button>
         <Show
-          when={args.hasChildren || blockType() === "toggle"}
+          when={hasChildren() || blockType() === "toggle"}
           fallback={
             <span
               class="block__toggle-spacer"
@@ -2821,21 +2938,23 @@ export const EditorPane = (props: EditorPaneProps) => {
         >
           <button
             class={`block__toggle ${
-              args.collapsed ? "is-collapsed" : "is-expanded"
+              collapsed() ? "is-collapsed" : "is-expanded"
             }`}
             type="button"
-            aria-label={args.collapsed ? "Expand block" : "Collapse block"}
-            aria-expanded={!args.collapsed}
+            aria-label={collapsed() ? "Expand block" : "Collapse block"}
+            aria-expanded={!collapsed()}
             onClick={(event) => {
               event.stopPropagation();
               event.preventDefault();
+              const index = actualIndex();
+              if (index < 0) return;
               toggleCollapse({
-                block,
-                index: actualIndex,
-                indent: block.indent,
+                block: currentBlock(),
+                index,
+                indent: currentBlock().indent,
                 parentIndex: null,
-                hasChildren: args.hasChildren,
-                collapsed: args.collapsed,
+                hasChildren: hasChildren(),
+                collapsed: collapsed(),
                 hidden: false
               });
             }}
@@ -2847,28 +2966,33 @@ export const EditorPane = (props: EditorPaneProps) => {
         >
           <button
             class={`block__todo-check ${
-              isTodoChecked(block.text) ? "is-checked" : ""
+              isTodoChecked(currentBlock().text) ? "is-checked" : ""
             }`}
             type="button"
             aria-label={
-              isTodoChecked(block.text)
+              isTodoChecked(currentBlock().text)
                 ? "Mark to-do as incomplete"
                 : "Mark to-do as complete"
             }
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              toggleTodoAt(actualIndex);
+              const index = actualIndex();
+              if (index < 0) return;
+              toggleTodoAt(index);
             }}
           />
         </Show>
         <div class="block__body">
           <textarea
-            ref={(el) => inputRefs.set(block.id, el)}
+            ref={(el) => {
+              inputRefs.set(block.id, el);
+              requestAnimationFrame(() => autoResizeBlockInput(el));
+            }}
             class={`block__input block__input--${blockType()}`}
             rows={1}
             data-block-id={block.id}
-            value={block.text}
+            value={editingText()}
             placeholder="Write something..."
             spellcheck={true}
             style={{ display: isEditing() ? "block" : "none" }}
@@ -2879,10 +3003,14 @@ export const EditorPane = (props: EditorPaneProps) => {
               }
               setActiveId(block.id);
               setFocusedId(block.id);
+              const input = inputRefs.get(block.id);
+              if (input) {
+                autoResizeBlockInput(input);
+              }
             }}
             onBlur={(event) => {
               storeSelection(block.id, event.currentTarget, true);
-              setFocusedId(null);
+              setFocusedId((current) => (current === block.id ? null : current));
               if (slashMenu().open && slashMenu().blockId === block.id) {
                 window.setTimeout(() => {
                   closeSlashMenu();
@@ -2899,19 +3027,25 @@ export const EditorPane = (props: EditorPaneProps) => {
             }}
             onInput={(event) => {
               recordLatency("input");
-              setBlocks(actualIndex, (prev) => ({
-                ...prev,
-                text: event.currentTarget.value
-              }));
+              const index = actualIndex();
+              if (index < 0) return;
+              const nextText = event.currentTarget.value;
+              const nextType = resolveTypingBlockType(
+                resolveBlockType(blocks[index] as Block),
+                nextText
+              );
+              setBlocks(index, "text", nextText);
+              setBlocks(index, "block_type", nextType);
+              autoResizeBlockInput(event.currentTarget);
               scheduleSave();
               storeSelection(block.id, event.currentTarget);
-              const value = event.currentTarget.value;
+              const value = nextText;
               const slashIndex = value.lastIndexOf("/");
               const isSlash = slashIndex === value.length - 1;
               if (isSlash) {
                 openSlashMenu(
-                  block,
-                  actualIndex,
+                  currentBlock(),
+                  index,
                   event.currentTarget,
                   slashIndex
                 );
@@ -2922,22 +3056,28 @@ export const EditorPane = (props: EditorPaneProps) => {
                 closeSlashMenu();
               }
               updateWikilinkMenu(
-                block,
-                actualIndex,
+                currentBlock(),
+                index,
                 event.currentTarget
               );
             }}
-            onKeyDown={(event) => handleKeyDown(block, actualIndex, event)}
+            onKeyDown={(event) => {
+              const index = actualIndex();
+              if (index < 0) return;
+              handleKeyDown(currentBlock(), index, event);
+            }}
             onKeyUp={(event) => {
               storeSelection(block.id, event.currentTarget);
               if (event.key === "/") {
+                const index = actualIndex();
+                if (index < 0) return;
                 const value = event.currentTarget.value;
                 const slashIndex = value.lastIndexOf("/");
                 const isSlash = slashIndex === value.length - 1;
                 if (isSlash) {
                   openSlashMenu(
-                    block,
-                    actualIndex,
+                    currentBlock(),
+                    index,
                     event.currentTarget,
                     slashIndex
                   );
@@ -2998,7 +3138,7 @@ export const EditorPane = (props: EditorPaneProps) => {
           <Show when={isEditing() && pluginRenderer()}>
             {(renderer) => (
               <PluginBlockPreview
-                block={block}
+                block={currentBlock()}
                 renderer={renderer()}
                 isTauri={isTauri}
                 onUpdateText={updateBlockText}
@@ -3006,7 +3146,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             )}
           </Show>
           <Show when={isEditing() && codePreview()}>
-            {(preview) => renderCodePreview(preview(), block.id)}
+            {(preview) => renderCodePreview(preview(), currentBlock().id)}
           </Show>
           <Show when={isEditing() && diagramPreview()}>
             {(preview) => (
@@ -3276,18 +3416,12 @@ export const EditorPane = (props: EditorPaneProps) => {
             class="virtual-list"
             style={{ transform: `translateY(${range().offset}px)` }}
           >
-            <For each={visibleBlocks()}>
-              {(item, index) => {
-                // eslint-disable-next-line solid/reactivity
-                const visibleIndex = range().start + index();
-                return renderBlockRow({
-                  block: item.block,
-                  actualIndex: item.index,
-                  visibleIndex,
-                  hasChildren: item.hasChildren,
-                  collapsed: item.collapsed,
-                  visualIndent: item.block.indent
-                });
+            <For each={visibleBlockIds()}>
+              {(blockId) => {
+                const index = findIndexById(blockId);
+                const block = index >= 0 ? blocks[index] : null;
+                if (!block) return null;
+                return renderBlockRow({ block });
               }}
             </For>
           </div>

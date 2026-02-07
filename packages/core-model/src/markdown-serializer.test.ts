@@ -43,4 +43,39 @@ describe("serializePageToMarkdown", () => {
       "# Typed ^page-3\n- Important ^b1 <!--sp:{\"type\":\"callout\"}-->\n"
     );
   });
+
+  it("serializes heading block types as markdown heading prefixes", () => {
+    const page: Page = {
+      id: "page-4",
+      title: "Headings",
+      blocks: [{ id: "h1", text: "Important", indent: 0, block_type: "heading2" }]
+    };
+
+    expect(serializePageToMarkdown(page)).toBe(
+      "# Headings ^page-4\n- ## Important ^h1\n"
+    );
+  });
+
+  it("serializes markdown-native block types without sp metadata", () => {
+    const page: Page = {
+      id: "page-5",
+      title: "Native",
+      blocks: [
+        { id: "q1", text: "Quote", indent: 0, block_type: "quote" },
+        { id: "t1", text: "Task", indent: 0, block_type: "todo" },
+        { id: "d1", text: "", indent: 0, block_type: "divider" },
+        { id: "c1", text: "const x = 1", indent: 0, block_type: "code" },
+        { id: "i1", text: "https://example.com/cat.png", indent: 0, block_type: "image" }
+      ]
+    };
+
+    expect(serializePageToMarkdown(page)).toBe(
+      "# Native ^page-5\n" +
+        "- > Quote ^q1\n" +
+        "- - [ ] Task ^t1\n" +
+        "- --- ^d1\n" +
+        "- ```text const x = 1 ^c1\n" +
+        "- ![](https://example.com/cat.png) ^i1\n"
+    );
+  });
 });

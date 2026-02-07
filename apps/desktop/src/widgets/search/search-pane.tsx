@@ -1,6 +1,5 @@
 import { For, Show, type Accessor, type JSX, type Setter } from "solid-js";
 import type { SearchResult } from "../../entities/search/model/search-types";
-import { Chip } from "../../shared/ui/chip";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { Search16Icon } from "../../shared/ui/icons";
 
@@ -8,8 +7,6 @@ type SearchPaneProps = {
   searchInputRef?: (el: HTMLInputElement) => void;
   query: Accessor<string>;
   setQuery: Setter<string>;
-  filter: Accessor<"all" | "links" | "tasks" | "pinned">;
-  setFilter: Setter<"all" | "links" | "tasks" | "pinned">;
   commitTerm: (value: string) => void;
   history: Accessor<string[]>;
   applyTerm: (term: string) => void;
@@ -38,26 +35,6 @@ export const SearchPane = (props: SearchPaneProps) => {
               }
             }}
           />
-        </div>
-        <div class="sidebar__filters">
-          <Chip
-            active={props.filter() === "all"}
-            onClick={() => props.setFilter("all")}
-          >
-            All
-          </Chip>
-          <Chip
-            active={props.filter() === "links"}
-            onClick={() => props.setFilter("links")}
-          >
-            Links
-          </Chip>
-          <Chip
-            active={props.filter() === "tasks"}
-            onClick={() => props.setFilter("tasks")}
-          >
-            Tasks
-          </Chip>
         </div>
       </div>
 

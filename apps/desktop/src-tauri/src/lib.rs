@@ -1954,19 +1954,161 @@ fn import_image_asset_bytes(
     )
 }
 
+fn strip_heading_prefix(value: &str) -> &str {
+    let trimmed = value.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("### ") {
+        return rest;
+    }
+    if let Some(rest) = trimmed.strip_prefix("## ") {
+        return rest;
+    }
+    if let Some(rest) = trimmed.strip_prefix("# ") {
+        return rest;
+    }
+    trimmed
+}
+
+fn format_heading_text(value: &str, level: usize) -> String {
+    let prefix = "#".repeat(level);
+    let content = strip_heading_prefix(value).trim_end();
+    if content.is_empty() {
+        prefix
+    } else {
+        format!("{prefix} {content}")
+    }
+}
+
+fn format_quote_text(value: &str) -> String {
+    let trimmed = value.trim_start();
+    if trimmed.starts_with("> ") {
+        return trimmed.trim_end().to_string();
+    }
+    let content = trimmed.trim_end();
+    if content.is_empty() {
+        ">".to_string()
+    } else {
+        format!("> {content}")
+    }
+}
+
+fn parse_todo_marker(value: &str) -> (bool, &str) {
+    let trimmed = value.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("- [x] ") {
+        return (true, rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("- [X] ") {
+        return (true, rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("[x] ") {
+        return (true, rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("[X] ") {
+        return (true, rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
+        return (false, rest);
+    }
+    if let Some(rest) = trimmed.strip_prefix("[ ] ") {
+        return (false, rest);
+    }
+    (false, trimmed)
+}
+
+fn format_todo_text(value: &str) -> String {
+    let (checked, content) = parse_todo_marker(value);
+    let content = content.trim_end();
+    if checked {
+        format!("- [x] {content}")
+    } else {
+        format!("- [ ] {content}")
+    }
+}
+
+fn format_code_text(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with("```") {
+        return value.trim_end().to_string();
+    }
+    if trimmed.is_empty() {
+        "```text ".to_string()
+    } else {
+        format!("```text {trimmed}")
+    }
+}
+
+fn normalize_image_source(source: &str) -> Option<String> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let unwrapped = if trimmed.starts_with('<') && trimmed.ends_with('>') && trimmed.len() > 2 {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+    if unwrapped.starts_with("http://")
+        || unwrapped.starts_with("https://")
+        || unwrapped.starts_with("/assets/")
+    {
+        Some(unwrapped.to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_image_source(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.starts_with("![") && trimmed.ends_with(')') {
+        if let Some(index) = trimmed.find("](") {
+            let source = &trimmed[index + 2..trimmed.len() - 1];
+            if let Some(normalized) = normalize_image_source(source) {
+                return Some(normalized);
+            }
+        }
+    }
+    normalize_image_source(trimmed)
+}
+
+fn format_image_text(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.starts_with("![") && trimmed.contains("](") && trimmed.ends_with(')') {
+        return trimmed.to_string();
+    }
+    if let Some(source) = extract_image_source(trimmed) {
+        format!("![]({source})")
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn build_markdown_export(page: &PageBlocksResponse) -> String {
     let mut lines = Vec::new();
     lines.push(format!("# {} ^{}", page.title, page.page_uid));
     for block in &page.blocks {
         let indent = "  ".repeat(std::cmp::max(0, block.indent) as usize);
-        let text = block.text.trim_end();
-        let spacer = if text.is_empty() { "" } else { " " };
-        let marker = if block.block_type == BlockType::Text {
-            String::new()
-        } else {
-            let encoded = serde_json::to_string(&block.block_type).unwrap_or_else(|_| "\"text\"".to_string());
-            format!(" <!--sp:{{\"type\":{encoded}}}-->")
+        let (text, marker) = match block.block_type {
+            BlockType::Heading1 => (format_heading_text(&block.text, 1), String::new()),
+            BlockType::Heading2 => (format_heading_text(&block.text, 2), String::new()),
+            BlockType::Heading3 => (format_heading_text(&block.text, 3), String::new()),
+            BlockType::Quote => (format_quote_text(&block.text), String::new()),
+            BlockType::Todo => (format_todo_text(&block.text), String::new()),
+            BlockType::Divider => ("---".to_string(), String::new()),
+            BlockType::Code => (format_code_text(&block.text), String::new()),
+            BlockType::Image => (format_image_text(&block.text), String::new()),
+            BlockType::Text => (block.text.trim_end().to_string(), String::new()),
+            _ => {
+                let encoded =
+                    serde_json::to_string(&block.block_type).unwrap_or_else(|_| "\"text\"".to_string());
+                (
+                    block.text.trim_end().to_string(),
+                    format!(" <!--sp:{{\"type\":{encoded}}}-->"),
+                )
+            }
         };
+        let spacer = if text.is_empty() { "" } else { " " };
         lines.push(format!("{indent}- {text}{spacer}^{}{}", block.uid, marker));
     }
     format!("{}\n", lines.join("\n"))
@@ -2635,6 +2777,85 @@ mod tests {
         assert!(markdown.contains("# Inbox ^page-1"));
         assert!(markdown.contains("- First ^b1"));
         assert!(markdown.contains("  - Child ^b2"));
+    }
+
+    #[test]
+    fn build_markdown_export_serializes_heading_blocks_as_markdown() {
+        let page = PageBlocksResponse {
+            page_uid: "page-2".to_string(),
+            title: "Typed".to_string(),
+            blocks: vec![
+                BlockSnapshot {
+                    uid: "h1".to_string(),
+                    text: "Important".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Heading2,
+                },
+                BlockSnapshot {
+                    uid: "c1".to_string(),
+                    text: "Callout".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Callout,
+                },
+            ],
+        };
+
+        let markdown = build_markdown_export(&page);
+        assert!(markdown.contains("- ## Important ^h1"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"heading2\"}-->"));
+        assert!(markdown.contains("<!--sp:{\"type\":\"callout\"}-->"));
+    }
+
+    #[test]
+    fn build_markdown_export_serializes_markdown_native_types_without_sp() {
+        let page = PageBlocksResponse {
+            page_uid: "page-3".to_string(),
+            title: "Native".to_string(),
+            blocks: vec![
+                BlockSnapshot {
+                    uid: "q1".to_string(),
+                    text: "Quote".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Quote,
+                },
+                BlockSnapshot {
+                    uid: "t1".to_string(),
+                    text: "Task".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Todo,
+                },
+                BlockSnapshot {
+                    uid: "d1".to_string(),
+                    text: "".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Divider,
+                },
+                BlockSnapshot {
+                    uid: "c1".to_string(),
+                    text: "const x = 1".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Code,
+                },
+                BlockSnapshot {
+                    uid: "i1".to_string(),
+                    text: "https://example.com/cat.png".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Image,
+                },
+            ],
+        };
+
+        let markdown = build_markdown_export(&page);
+        assert!(markdown.contains("- > Quote ^q1"));
+        assert!(markdown.contains("- - [ ] Task ^t1"));
+        assert!(markdown.contains("- --- ^d1"));
+        assert!(markdown.contains("- ```text const x = 1 ^c1"));
+        assert!(markdown.contains("- ![](https://example.com/cat.png) ^i1"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"quote\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"todo\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"divider\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"code\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"image\"}-->"));
     }
 
     #[test]

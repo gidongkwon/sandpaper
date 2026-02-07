@@ -6,7 +6,6 @@ describe("SettingsGeneralTab", () => {
   it("lists editor keyboard shortcuts", () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
-    const [showShortcutHints, setShowShortcutHints] = createSignal(true);
 
     render(() => (
       <SettingsGeneralTab
@@ -20,9 +19,7 @@ describe("SettingsGeneralTab", () => {
         }}
         statusSurfaces={{
           showStatusSurfaces,
-          setShowStatusSurfaces,
-          showShortcutHints,
-          setShowShortcutHints
+          setShowStatusSurfaces
         }}
         activeVault={() => null}
       />
@@ -42,10 +39,9 @@ describe("SettingsGeneralTab", () => {
     expect(sectionApi.getByText("Shift+Enter")).toBeInTheDocument();
   });
 
-  it("renders status surface toggles and disables hints when status chips are hidden", async () => {
+  it("renders status surface toggle", async () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
-    const [showShortcutHints, setShowShortcutHints] = createSignal(true);
 
     render(() => (
       <SettingsGeneralTab
@@ -59,9 +55,7 @@ describe("SettingsGeneralTab", () => {
         }}
         statusSurfaces={{
           showStatusSurfaces,
-          setShowStatusSurfaces,
-          showShortcutHints,
-          setShowShortcutHints
+          setShowStatusSurfaces
         }}
         activeVault={() => null}
       />
@@ -70,17 +64,14 @@ describe("SettingsGeneralTab", () => {
     const statusToggle = screen.getByRole("checkbox", {
       name: /show status chips/i
     }) as HTMLInputElement;
-    const hintsToggle = screen.getByRole("checkbox", {
-      name: /show shortcut hints/i
-    }) as HTMLInputElement;
 
     expect(statusToggle.checked).toBe(true);
-    expect(hintsToggle.checked).toBe(true);
-    expect(hintsToggle.disabled).toBe(false);
+    expect(
+      screen.queryByRole("checkbox", { name: /show shortcut hints/i })
+    ).not.toBeInTheDocument();
 
     statusToggle.click();
 
     expect(untrack(showStatusSurfaces)).toBe(false);
-    expect(hintsToggle.disabled).toBe(true);
   });
 });

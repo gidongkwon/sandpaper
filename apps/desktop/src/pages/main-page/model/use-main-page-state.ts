@@ -135,12 +135,10 @@ export const createMainPageState = () => {
   const [scrollFps, setScrollFps] = createSignal(0);
   const [captureFocusEpoch, setCaptureFocusEpoch] = createSignal(0);
   const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
-  const [showShortcutHints, setShowShortcutHints] = createSignal(true);
 
   let isPaletteOpen = () => false;
 
   const STATUS_SURFACES_KEY = "sandpaper:ui:status-surfaces";
-  const SHORTCUT_HINTS_KEY = "sandpaper:ui:status-shortcut-hints";
 
   const canUseStorage = () =>
     typeof window !== "undefined" &&
@@ -261,27 +259,6 @@ export const createMainPageState = () => {
     }
   });
 
-  const modifierKey = (() => {
-    if (typeof navigator === "undefined") return "Ctrl";
-    return /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Cmd" : "Ctrl";
-  })();
-
-  const shortcutHints = createMemo(() => {
-    switch (mode()) {
-      case "quick-capture":
-        return ["Enter queue", "Shift+Enter newline", "Esc back"];
-      case "review":
-        return [`${modifierKey}+K commands`, `${modifierKey}+B sidebar`];
-      case "editor":
-      default:
-        return [
-          `${modifierKey}+K commands`,
-          `${modifierKey}+N new page`,
-          `${modifierKey}+B sidebar`
-        ];
-    }
-  });
-
   let searchInputRef: HTMLInputElement | undefined;
 
   const searchHistoryKey = createMemo(() => {
@@ -299,8 +276,6 @@ export const createMainPageState = () => {
   const {
     searchQuery,
     setSearchQuery,
-    searchFilter,
-    setSearchFilter,
     searchHistory,
     filteredSearchResults,
     commitSearchTerm,
@@ -798,8 +773,6 @@ export const createMainPageState = () => {
     }
 
     setShowStatusSurfaces(readStoredToggle(STATUS_SURFACES_KEY, true));
-    setShowShortcutHints(readStoredToggle(SHORTCUT_HINTS_KEY, true));
-
     void loadVaults();
 
     onCleanup(() => {
@@ -819,14 +792,6 @@ export const createMainPageState = () => {
     window.localStorage.setItem(
       STATUS_SURFACES_KEY,
       showStatusSurfaces() ? "1" : "0"
-    );
-  });
-
-  createEffect(() => {
-    if (!canUseStorage()) return;
-    window.localStorage.setItem(
-      SHORTCUT_HINTS_KEY,
-      showShortcutHints() ? "1" : "0"
     );
   });
 
@@ -899,14 +864,15 @@ export const createMainPageState = () => {
       sectionJump: { SectionJump, SectionJumpLink },
       sidebar: {
         footerLabel: () => activeVault()?.name ?? "Default",
+        connectionState: () => syncStatus().state,
+        connectionLabel: syncStateLabel,
+        connectionDetail: syncStateDetail,
         search: {
           inputRef: (el) => {
             searchInputRef = el;
           },
           query: searchQuery,
           setQuery: setSearchQuery,
-          filter: searchFilter,
-          setFilter: setSearchFilter,
           commitTerm: commitSearchTerm,
           history: searchHistory,
           applyTerm: applySearchTerm,
@@ -1048,9 +1014,7 @@ export const createMainPageState = () => {
         },
         statusSurfaces: {
           showStatusSurfaces,
-          setShowStatusSurfaces,
-          showShortcutHints,
-          setShowShortcutHints
+          setShowStatusSurfaces
         },
         vault: {
           active: activeVault,
@@ -1193,11 +1157,6 @@ export const createMainPageState = () => {
       mode,
       setMode,
       showStatusSurfaces,
-      showShortcutHints,
-      shortcutHints,
-      syncStatus,
-      syncStateLabel,
-      syncStateDetail,
       autosaveError,
       autosaved,
       autosaveStamp,

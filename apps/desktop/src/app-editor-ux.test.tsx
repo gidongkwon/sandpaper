@@ -103,6 +103,84 @@ describe("App editor UX", () => {
     expect(getInput()?.selectionEnd).toBe(2);
   });
 
+  it("keeps editor focus after Backspace removes an empty block", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const initialDisplayText = await screen.findByText("Sandpaper outline prototype");
+    const initialBlock = initialDisplayText.closest(".block");
+    expect(initialBlock).not.toBeNull();
+    const firstInput = initialBlock?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const removedBlockId = firstInput.dataset.blockId;
+    expect(removedBlockId).toBeTruthy();
+    if (!removedBlockId) return;
+
+    const display = initialDisplayText.closest(".block__display") as HTMLElement;
+    await userEvent.click(display);
+
+    const getActiveInput = () =>
+      document.querySelector(
+        ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+      ) as HTMLTextAreaElement | null;
+
+    await waitFor(() => {
+      const active = getActiveInput();
+      expect(active?.dataset.blockId).toBe(removedBlockId);
+    });
+
+    fireEvent.input(getActiveInput() as HTMLTextAreaElement, {
+      target: { value: "" }
+    });
+    fireEvent.keyDown(getActiveInput() as HTMLTextAreaElement, { key: "Backspace" });
+
+    await waitFor(() => {
+      const nextActive = getActiveInput();
+      expect(nextActive).not.toBeNull();
+      expect(nextActive?.dataset.blockId).not.toBe(removedBlockId);
+      expect(document.activeElement).toBe(nextActive);
+    });
+  });
+
+  it("keeps focus on the same block while typing", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await screen.findByText(/saved/i);
+    const initialDisplayText = await screen.findByText("Sandpaper outline prototype");
+    const initialBlock = initialDisplayText.closest(".block");
+    expect(initialBlock).not.toBeNull();
+    const firstInput = initialBlock?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+
+    const display = initialDisplayText.closest(".block__display") as HTMLElement;
+    await user.click(display);
+
+    const getActiveInput = () =>
+      document.querySelector(
+        ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+      ) as HTMLTextAreaElement | null;
+
+    await waitFor(() => {
+      expect(getActiveInput()?.dataset.blockId).toBe(blockId);
+    });
+
+    await user.type(getActiveInput() as HTMLTextAreaElement, "a");
+
+    await waitFor(() => {
+      const active = getActiveInput();
+      expect(active?.dataset.blockId).toBe(blockId);
+      expect(document.activeElement).toBe(active);
+    });
+  });
+
   it("shows slash command menu and inserts command text", async () => {
     const user = userEvent.setup();
 
@@ -164,6 +242,14 @@ describe("App editor UX", () => {
     await user.click(menuTaskScope.getByRole("button", { name: "To-do" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("- [ ] ")).toBe(true);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuCode = await screen.findByText("Commands");
+    const menuCodeScope = within(menuCode.closest(".slash-menu") as HTMLElement);
+    await user.click(menuCodeScope.getByRole("button", { name: "Code block" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").startsWith("```")).toBe(true);
     });
   });
 

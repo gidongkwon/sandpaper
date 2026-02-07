@@ -79,6 +79,9 @@ describe("MainPageWorkspace", () => {
       backlinksOpen,
       sidebar: {
         footerLabel: () => "Vault",
+        connectionState: () => "idle",
+        connectionLabel: () => "Desktop only",
+        connectionDetail: () => "Desktop app required for background sync.",
         search: {} as MainPageContextValue["workspace"]["sidebar"]["search"],
         unlinked: {} as MainPageContextValue["workspace"]["sidebar"]["unlinked"],
         pages: {} as MainPageContextValue["workspace"]["sidebar"]["pages"]

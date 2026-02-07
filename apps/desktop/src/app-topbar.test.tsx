@@ -43,23 +43,26 @@ describe("App topbar", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows sync status and autosave with settings button", async () => {
+  it("shows autosave in topbar and connection indicator in sidebar footer", async () => {
     const user = userEvent.setup();
     render(() => <App />);
 
-    expect(await screen.findByText("Desktop only")).toBeInTheDocument();
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+    expect(screen.queryByText("Desktop only")).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("status", { name: "Desktop only" })
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open settings/i }));
     expect(await screen.findByRole("dialog", { name: /settings/i })).toBeInTheDocument();
   });
 
-  it("shows shortcut hints by default and can hide status surfaces from settings", async () => {
+  it("hides shortcut hints and can hide status surfaces from settings", async () => {
     const user = userEvent.setup();
     render(() => <App />);
 
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
-    expect(screen.getByText(/ctrl\+k|cmd\+k/i)).toBeInTheDocument();
+    expect(screen.queryByText(/ctrl\+k|cmd\+k/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open settings/i }));
     const statusToggle = await screen.findByRole("checkbox", {
@@ -67,8 +70,7 @@ describe("App topbar", () => {
     });
     await user.click(statusToggle);
 
-    expect(screen.queryByText("Desktop only")).not.toBeInTheDocument();
     expect(screen.queryByText(/saved/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/ctrl\+k|cmd\+k/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Desktop only" })).toBeInTheDocument();
   });
 });

@@ -76,7 +76,7 @@ describe("App", () => {
     expect(results.length).toBeGreaterThan(0);
   });
 
-  it("filters search results by links", async () => {
+  it("does not render search filter chips", async () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 1");
@@ -84,11 +84,9 @@ describe("App", () => {
       selector: ".search-highlight"
     });
     expect(results.length).toBeGreaterThan(0);
-    const linksButton = screen.getByRole("button", { name: "Links" });
-    await userEvent.click(linksButton);
-    expect(
-      screen.queryAllByText("Draft line 1", { selector: ".search-highlight" })
-    ).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "All" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Links" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tasks" })).not.toBeInTheDocument();
   });
 
   it("prompts for plugin permission grants", async () => {

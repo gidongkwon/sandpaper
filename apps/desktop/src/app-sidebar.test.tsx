@@ -33,9 +33,9 @@ describe("App sidebar", () => {
     await screen.findByText(/saved/i);
 
     expect(screen.getByPlaceholderText("Search...")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Links" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "All" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Links" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Tasks" })).not.toBeInTheDocument();
     expect(screen.getByText("Pages")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /create new page/i }));
     const dialog = await screen.findByRole("dialog", { name: "New page title" });

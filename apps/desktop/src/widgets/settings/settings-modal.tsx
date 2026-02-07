@@ -68,8 +68,6 @@ type SettingsModalProps = {
   statusSurfaces: {
     showStatusSurfaces: Accessor<boolean>;
     setShowStatusSurfaces: Setter<boolean>;
-    showShortcutHints: Accessor<boolean>;
-    setShowShortcutHints: Setter<boolean>;
   };
   vault: {
     active: Accessor<VaultRecord | null>;

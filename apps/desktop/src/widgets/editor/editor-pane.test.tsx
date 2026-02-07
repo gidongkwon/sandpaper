@@ -900,6 +900,363 @@ describe("EditorPane", () => {
     expect(untrack(() => blocks.length)).toBe(2);
   });
 
+  it("does not clear focusedId when an old block blur fires after focus moved", () => {
+    const baseBlocks = makeBlocks(2);
+    const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const first = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    const second = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b2"]'
+    );
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    if (!first || !second) return;
+
+    fireEvent.focus(first);
+    expect(untrack(focusedId)).toBe("b1");
+
+    fireEvent.focus(second);
+    expect(untrack(focusedId)).toBe("b2");
+
+    // Simulate blur event ordering where the old input blurs after focus already moved.
+    fireEvent.blur(first);
+    expect(untrack(focusedId)).toBe("b2");
+  });
+
+  it("keeps the same textarea node while typing in a focused block", () => {
+    const baseBlocks = makeBlocks(2);
+    const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const first = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    expect(first).not.toBeNull();
+    if (!first) return;
+
+    fireEvent.focus(first);
+    fireEvent.input(first, { target: { value: "Block 1 edited" } });
+
+    const next = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    expect(next).toBe(first);
+  });
+
+  it("auto-resizes a focused textarea while typing multiline content", () => {
+    const baseBlocks = makeBlocks(2);
+    const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const first = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    expect(first).not.toBeNull();
+    if (!first) return;
+
+    fireEvent.focus(first);
+    Object.defineProperty(first, "scrollHeight", {
+      configurable: true,
+      value: 72
+    });
+    fireEvent.input(first, { target: { value: "Line 1\nLine 2\nLine 3" } });
+
+    expect(first.style.height).toBe("72px");
+  });
+
+  it("shows full source syntax when editing code blocks, but keeps text lists unchanged", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "code-1", text: "console.log('hello')", indent: 0, block_type: "code" },
+      { id: "list-1", text: "- one\n- two", indent: 0, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const codeInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="code-1"]'
+    );
+    expect(codeInput).not.toBeNull();
+    if (!codeInput) return;
+    fireEvent.focus(codeInput);
+    expect(codeInput.value.startsWith("```")).toBe(true);
+
+    const listInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="list-1"]'
+    );
+    expect(listInput).not.toBeNull();
+    if (!listInput) return;
+    fireEvent.focus(listInput);
+    expect(listInput.value).toBe("- one\n- two");
+  });
+
+  it("updates block type while typing markdown prefixes", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "typed-1", text: "```text console.log('hello')", indent: 0, block_type: "code" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const input = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="typed-1"]'
+    );
+    expect(input).not.toBeNull();
+    if (!input) return;
+    fireEvent.focus(input);
+
+    fireEvent.input(input, { target: { value: "# Heading" } });
+    expect(untrack(() => blocks[0].block_type)).toBe("heading1");
+
+    fireEvent.input(input, { target: { value: "> Quoted" } });
+    expect(untrack(() => blocks[0].block_type)).toBe("quote");
+
+    fireEvent.input(input, { target: { value: "- [ ] Task" } });
+    expect(untrack(() => blocks[0].block_type)).toBe("todo");
+
+    fireEvent.input(input, { target: { value: "Just text" } });
+    expect(untrack(() => blocks[0].block_type)).toBe("text");
+  });
+
   it("does not render the block hover actions menu", () => {
     const baseBlocks = makeBlocks(2);
     const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
@@ -1339,6 +1696,87 @@ describe("EditorPane", () => {
     expect(todoCheckbox).not.toBeNull();
   });
 
+  it("hides type marker prefixes in display mode", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "h1", text: "# Heading title", indent: 0, block_type: "heading1" },
+      { id: "q1", text: "> Quoted text", indent: 0, block_type: "quote" },
+      { id: "c1", text: "```ts\nconst answer = 42\n```", indent: 0, block_type: "code" },
+      { id: "l1", text: "- Keep list marker", indent: 0, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const headingDisplay = container.querySelector<HTMLElement>(
+      '[data-block-id="h1"] .block__display'
+    );
+    expect(headingDisplay?.textContent).toContain("Heading title");
+    expect(headingDisplay?.textContent).not.toContain("# ");
+
+    const quoteDisplay = container.querySelector<HTMLElement>(
+      '[data-block-id="q1"] .block__display'
+    );
+    expect(quoteDisplay?.textContent).toContain("Quoted text");
+    expect(quoteDisplay?.textContent).not.toContain("> ");
+
+    const codeDisplay = container.querySelector<HTMLElement>(
+      '[data-block-id="c1"] .block__display'
+    );
+    expect(codeDisplay?.textContent).toContain("const answer = 42");
+    expect(codeDisplay?.textContent).not.toContain("```");
+
+    const listDisplay = container.querySelector<HTMLElement>(
+      '[data-block-id="l1"] .block__display'
+    );
+    expect(listDisplay?.textContent).toContain("- Keep list marker");
+  });
+
   it("renders column layout preview without title, count, or column names", () => {
     const [blocks, setBlocks] = createStore<Block[]>([
       { id: "layout", text: "", indent: 0, block_type: "column_layout" },
@@ -1504,6 +1942,103 @@ describe("EditorPane", () => {
     expect(untrack(() => blocks.find((block) => block.id === "row-1")?.text)).toBe(
       "Task row updated"
     );
+  });
+
+  it("keeps focus on the same column child textarea while typing", async () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "layout", text: "", indent: 0, block_type: "column_layout" },
+      { id: "col-1", text: "", indent: 1, block_type: "column" },
+      { id: "row-1", text: "Task row", indent: 2, block_type: "text" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const layoutInput = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="layout"]'
+    );
+    expect(layoutInput).not.toBeNull();
+    if (!layoutInput) return;
+    fireEvent.keyDown(layoutInput, { key: "Escape" });
+    await waitFor(() => {
+      expect(layoutInput.style.display).toBe("none");
+    });
+
+    const rowBlock = container.querySelector<HTMLElement>(
+      '[data-block-id="layout"] .column-layout-preview [data-block-id="row-1"]'
+    );
+    expect(rowBlock).not.toBeNull();
+    if (!rowBlock) return;
+
+    const rowDisplay = rowBlock.querySelector<HTMLElement>(".block__display");
+    expect(rowDisplay).not.toBeNull();
+    if (!rowDisplay) return;
+    fireEvent.click(rowDisplay);
+
+    const firstInput = rowBlock.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="row-1"]'
+    );
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    await waitFor(() => {
+      expect(firstInput.style.display).toBe("block");
+      expect(firstInput.getAttribute("aria-hidden")).toBe("false");
+      expect(document.activeElement).toBe(firstInput);
+    });
+
+    fireEvent.input(firstInput, { target: { value: "Task row updated once" } });
+
+    const nextInput = rowBlock.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="row-1"]'
+    );
+    expect(nextInput).toBe(firstInput);
+    expect(document.activeElement).toBe(nextInput);
   });
 
   it("stores new columns without a generated name", () => {

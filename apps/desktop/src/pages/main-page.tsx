@@ -19,11 +19,6 @@ function MainPage() {
           mode={topbar.mode}
           setMode={topbar.setMode}
           showStatusSurfaces={topbar.showStatusSurfaces}
-          showShortcutHints={topbar.showShortcutHints}
-          shortcutHints={topbar.shortcutHints}
-          syncStatus={topbar.syncStatus}
-          syncStateLabel={topbar.syncStateLabel}
-          syncStateDetail={topbar.syncStateDetail}
           autosaveError={topbar.autosaveError}
           autosaved={topbar.autosaved}
           autosaveStamp={topbar.autosaveStamp}

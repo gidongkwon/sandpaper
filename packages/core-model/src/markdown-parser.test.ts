@@ -54,14 +54,40 @@ describe("parseMarkdownPage", () => {
     expect(result.page.blocks[0]?.block_type).toBe("text");
   });
 
-  it("parses block type metadata markers", () => {
+  it("ignores legacy heading block type metadata markers", () => {
     const makeId = buildIdFactory();
     const result = parseMarkdownPage(
       "# Notes\n- Heading line ^block-1 <!--sp:{\"type\":\"heading1\"}-->\n",
       makeId
     );
 
-    expect(result.page.blocks[0]?.block_type).toBe("heading1");
+    expect(result.page.blocks[0]?.text).toBe("Heading line");
+    expect(result.page.blocks[0]?.block_type).toBe("text");
+  });
+
+  it("infers markdown-native block types from text", () => {
+    const makeId = buildIdFactory();
+    const result = parseMarkdownPage(
+      "# Notes\n" +
+        "- # Heading ^h1\n" +
+        "- > Quote ^q1\n" +
+        "- - [ ] Task ^t1\n" +
+        "- --- ^d1\n" +
+        "- ```ts const x = 1 ^c1\n" +
+        "- ![](https://example.com/cat.png) ^i1\n" +
+        "- Legacy callout ^k1 <!--sp:{\"type\":\"callout\"}-->\n",
+      makeId
+    );
+
+    expect(result.page.blocks.map((block) => block.block_type)).toEqual([
+      "heading1",
+      "quote",
+      "todo",
+      "divider",
+      "code",
+      "image",
+      "callout"
+    ]);
   });
 
   it("warns when ignoring non-list lines", () => {

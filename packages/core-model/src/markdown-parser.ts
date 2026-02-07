@@ -10,6 +10,51 @@ const INDENT_UNIT = 2;
 const DEFAULT_TITLE = "Imported";
 
 const SP_METADATA_PATTERN = /\s*<!--sp:(.*?)-->\s*$/u;
+const HEADING_1_PATTERN = /^#\s+/u;
+const HEADING_2_PATTERN = /^##\s+/u;
+const HEADING_3_PATTERN = /^###\s+/u;
+const TODO_PATTERN = /^(?:-?\s*)\[(?: |x|X)\]\s+/u;
+const MARKDOWN_IMAGE_PATTERN = /^!\[(.*?)\]\((.+)\)$/u;
+
+const normalizeImageSource = (source: string): string | null => {
+  const trimmed = source.trim();
+  if (!trimmed) return null;
+  const unwrapped =
+    trimmed.startsWith("<") && trimmed.endsWith(">") && trimmed.length > 2
+      ? trimmed.slice(1, -1)
+      : trimmed;
+  if (
+    unwrapped.startsWith("http://") ||
+    unwrapped.startsWith("https://") ||
+    unwrapped.startsWith("/assets/")
+  ) {
+    return unwrapped;
+  }
+  return null;
+};
+
+const extractImageSource = (value: string): string | null => {
+  const trimmed = value.trim();
+  const markdownMatch = trimmed.match(MARKDOWN_IMAGE_PATTERN);
+  if (markdownMatch) {
+    return normalizeImageSource(markdownMatch[2] ?? "");
+  }
+  return normalizeImageSource(trimmed);
+};
+
+const inferMarkdownNativeBlockType = (value: string): BlockType | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed === "---") return "divider";
+  if (HEADING_3_PATTERN.test(trimmed)) return "heading3";
+  if (HEADING_2_PATTERN.test(trimmed)) return "heading2";
+  if (HEADING_1_PATTERN.test(trimmed)) return "heading1";
+  if (trimmed.startsWith("> ")) return "quote";
+  if (TODO_PATTERN.test(trimmed)) return "todo";
+  if (trimmed.startsWith("```")) return "code";
+  if (extractImageSource(trimmed)) return "image";
+  return null;
+};
 
 const parseSpBlockType = (raw: string): BlockType | null => {
   try {
@@ -17,17 +62,8 @@ const parseSpBlockType = (raw: string): BlockType | null => {
     if (!parsed || typeof parsed.type !== "string") return null;
     const value = parsed.type;
     const known: BlockType[] = [
-      "text",
-      "heading1",
-      "heading2",
-      "heading3",
-      "quote",
       "callout",
-      "code",
-      "divider",
       "toggle",
-      "todo",
-      "image",
       "column_layout",
       "column",
       "database_view"
@@ -124,11 +160,13 @@ export const parseMarkdownPage = (
     }
 
     seenIds.add(resolvedId);
+    const normalizedText = text.trimEnd();
+    const inferredType = inferMarkdownNativeBlockType(normalizedText);
     blocks.push({
       id: resolvedId,
-      text: text.trimEnd(),
+      text: normalizedText,
       indent,
-      block_type: withMetadata.blockType ?? "text"
+      block_type: withMetadata.blockType ?? inferredType ?? "text"
     });
   }
 

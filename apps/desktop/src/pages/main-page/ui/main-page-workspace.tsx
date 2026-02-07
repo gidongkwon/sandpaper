@@ -34,6 +34,9 @@ export const MainPageWorkspace = () => {
             open={workspace.sidebarOpen}
             sectionJump={workspace.sectionJump.SectionJumpLink}
             footerLabel={workspace.sidebar.footerLabel}
+            connectionState={workspace.sidebar.connectionState}
+            connectionLabel={workspace.sidebar.connectionLabel}
+            connectionDetail={workspace.sidebar.connectionDetail}
           >
             <SidebarContent
               search={workspace.sidebar.search}

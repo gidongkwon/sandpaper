@@ -47,6 +47,9 @@ export type MainPageWorkspaceState = {
   backlinksOpen: Accessor<boolean>;
   sidebar: {
     footerLabel: Accessor<string>;
+    connectionState: Accessor<"idle" | "syncing" | "offline" | "error">;
+    connectionLabel: Accessor<string>;
+    connectionDetail: Accessor<string>;
     search: PropsOf<typeof SidebarContent>["search"];
     unlinked: PropsOf<typeof SidebarContent>["unlinked"];
     pages: PropsOf<typeof SidebarContent>["pages"];

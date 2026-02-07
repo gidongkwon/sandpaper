@@ -13,8 +13,6 @@ type SettingsGeneralTabProps = {
   statusSurfaces: {
     showStatusSurfaces: Accessor<boolean>;
     setShowStatusSurfaces: Setter<boolean>;
-    showShortcutHints: Accessor<boolean>;
-    setShowShortcutHints: Setter<boolean>;
   };
   activeVault: Accessor<VaultRecord | null>;
 };
@@ -73,7 +71,7 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
       <div class="settings-section">
         <h3 class="settings-section__title">Status surfaces</h3>
         <p class="settings-section__desc">
-          Control status chips and shortcut hints shown in the top bar.
+          Control status chips shown in the top bar.
         </p>
         <label class="settings-row settings-row--checkbox">
           <span class="settings-label">Show status chips</span>
@@ -82,17 +80,6 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
             checked={props.statusSurfaces.showStatusSurfaces()}
             onChange={(event) =>
               props.statusSurfaces.setShowStatusSurfaces(event.currentTarget.checked)
-            }
-          />
-        </label>
-        <label class="settings-row settings-row--checkbox">
-          <span class="settings-label">Show shortcut hints</span>
-          <input
-            type="checkbox"
-            checked={props.statusSurfaces.showShortcutHints()}
-            disabled={!props.statusSurfaces.showStatusSurfaces()}
-            onChange={(event) =>
-              props.statusSurfaces.setShowShortcutHints(event.currentTarget.checked)
             }
           />
         </label>

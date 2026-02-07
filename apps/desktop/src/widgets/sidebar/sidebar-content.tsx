@@ -10,8 +10,6 @@ type SidebarSearchProps = {
   inputRef?: (el: HTMLInputElement) => void;
   query: Accessor<string>;
   setQuery: Setter<string>;
-  filter: Accessor<"all" | "links" | "tasks" | "pinned">;
-  setFilter: Setter<"all" | "links" | "tasks" | "pinned">;
   commitTerm: (value: string) => void;
   history: Accessor<string[]>;
   applyTerm: (term: string) => void;
@@ -47,8 +45,6 @@ export const SidebarContent = (props: SidebarContentProps) => {
       searchInputRef={props.search.inputRef}
       query={props.search.query}
       setQuery={props.search.setQuery}
-      filter={props.search.filter}
-      setFilter={props.search.setFilter}
       commitTerm={props.search.commitTerm}
       history={props.search.history}
       applyTerm={props.search.applyTerm}
