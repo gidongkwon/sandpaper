@@ -694,7 +694,7 @@ impl Render for VaultDialogView {
             )
         };
 
-        let (list_bg, list_active, list_hover, foreground, muted, danger) = {
+        let (list_bg, list_active, list_hover, foreground, muted) = {
             let theme = cx.theme();
             (
                 theme.colors.list,
@@ -702,7 +702,6 @@ impl Render for VaultDialogView {
                 theme.list_hover,
                 theme.foreground,
                 theme.muted_foreground,
-                theme.danger_foreground,
             )
         };
 
@@ -746,7 +745,12 @@ impl Render for VaultDialogView {
         }
 
         if let Some(msg) = error {
-            list = list.child(div().mt_1().text_size(tokens::FONT_SM).text_color(danger).child(msg));
+            use crate::ui::components::error_display::InlineError;
+            list = list.child(
+                div().mt_1().child(
+                    InlineError::new(format!("{msg} Check the vault name and path, then try again.")),
+                ),
+            );
         }
 
         let browse_button = Button::new("vault-path-browse")
@@ -878,13 +882,9 @@ impl Render for PageDialogView {
             )
         };
 
-        let (foreground, muted, danger) = {
+        let (foreground, muted) = {
             let theme = cx.theme();
-            (
-                theme.foreground,
-                theme.muted_foreground,
-                theme.danger_foreground,
-            )
+            (theme.foreground, theme.muted_foreground)
         };
 
         let label = match mode {
@@ -901,7 +901,10 @@ impl Render for PageDialogView {
             .child(Input::new(&input).small());
 
         if let Some(error) = error {
-            content = content.child(div().text_size(tokens::FONT_SM).text_color(danger).child(error));
+            use crate::ui::components::error_display::InlineError;
+            content = content.child(
+                InlineError::new(format!("{error} Please choose a different title.")),
+            );
         } else {
             content = content.child(
                 div()

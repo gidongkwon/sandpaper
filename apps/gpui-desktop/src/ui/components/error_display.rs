@@ -8,6 +8,7 @@ use gpui_component::{button::Button, button::ButtonVariants as _, ActiveTheme as
 use std::rc::Rc;
 
 /// A full-width error/warning banner bar with icon, message, and optional action button.
+#[derive(IntoElement)]
 pub(crate) struct ErrorBanner {
     message: SharedString,
     action_label: Option<SharedString>,
@@ -88,6 +89,7 @@ impl RenderOnce for ErrorBanner {
 }
 
 /// An inline error message with a small icon and red text for form validation.
+#[derive(IntoElement)]
 pub(crate) struct InlineError {
     message: SharedString,
 }

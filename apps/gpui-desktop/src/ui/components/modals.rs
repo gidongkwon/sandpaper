@@ -452,11 +452,9 @@ impl AppStore {
         );
 
         if let Some(err) = self.ui.shadow_write_last_error.clone() {
+            use crate::ui::components::error_display::InlineError;
             content = content.child(
-                div()
-                    .text_size(tokens::FONT_SM)
-                    .text_color(theme.danger_foreground)
-                    .child(err),
+                InlineError::new(format!("{err} Try flushing the queue again or check file permissions.")),
             );
         }
 

@@ -8,67 +8,25 @@ impl AppStore {
         &mut self,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
+        use crate::ui::components::error_display::ErrorBanner;
         let message = self.plugins.plugin_error.clone()?;
         let message = crate::app::store::helpers::single_line_text(&message);
-        let theme = cx.theme();
 
         Some(
             div()
                 .id("plugin-error-banner")
-                .px_4()
-                .py_3()
-                .bg(theme.warning)
-                .border_b_1()
-                .border_color(theme.border)
-                .flex()
-                .items_center()
-                .justify_between()
                 .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.danger_foreground)
-                        .child(message),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .when(self.plugins.plugin_busy, |this| {
-                            this.child(
-                                crate::ui::components::spinner::Spinner::new().small(),
-                            )
-                        })
-                        .child(
-                            Button::new("plugin-error-reload")
-                                .label(if self.plugins.plugin_busy {
-                                    "Reloading..."
-                                } else {
-                                    "Reload plugins"
-                                })
-                                .xsmall()
-                                .ghost()
-                                .on_click(cx.listener(|this, _event, window, cx| {
-                                    this.load_plugins(Some(window), cx);
-                                })),
-                        )
-                        .child(
-                            Button::new("plugin-error-details")
-                                .label("Details")
-                                .xsmall()
-                                .ghost()
-                                .on_click(cx.listener(|this, _event, window, cx| {
-                                    this.open_plugin_error_details(window, cx);
-                                })),
-                        )
-                        .child(
-                            Button::new("plugin-error-dismiss")
-                                .label("Dismiss")
-                                .xsmall()
-                                .ghost()
-                                .on_click(cx.listener(|this, _event, _window, cx| {
-                                    this.clear_plugin_error(cx);
-                                })),
+                    ErrorBanner::new(format!("{message} — Try reloading plugins or check Details for more info."))
+                        .warning()
+                        .action(
+                            if self.plugins.plugin_busy {
+                                "Reloading..."
+                            } else {
+                                "Reload plugins"
+                            },
+                            cx.listener(|this, _event, window, cx| {
+                                this.load_plugins(Some(window), cx);
+                            }),
                         ),
                 )
                 .into_any_element(),
