@@ -1,6 +1,7 @@
 use crate::app::prelude::*;
 use crate::app::store::helpers::format_snippet;
 use crate::app::store::*;
+use crate::ui::tokens;
 
 impl AppStore {
     pub(super) fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -78,7 +79,7 @@ impl AppStore {
 
         div()
             .id("sidebar-rail")
-            .w(px(48.0))
+            .w(tokens::SIDEBAR_RAIL_WIDTH)
             .h_full()
             .bg(theme.sidebar)
             .border_r_1()
@@ -157,7 +158,7 @@ impl AppStore {
             .id(page.uid.clone())
             .mx_2()
             .px_3()
-            .py(px(6.0))
+            .py(tokens::SPACE_3)
             .cursor_pointer()
             .rounded_md()
             .bg(bg)
@@ -277,7 +278,7 @@ impl AppStore {
                         .child("RECENT"),
                 )
                 .children(recent_rows)
-                .child(div().h(px(8.0)));
+                .child(div().h(tokens::SPACE_4));
         }
 
         panel = panel.child(
@@ -332,7 +333,7 @@ impl AppStore {
                 div()
                     .id(format!("search-page-{}", page_uid))
                     .px_3()
-                    .py(px(10.0))
+                    .py(tokens::SPACE_5)
                     .hover(move |s| s.bg(list_hover))
                     .child(
                         div()
@@ -403,7 +404,7 @@ impl AppStore {
                 div()
                     .id(format!("search-block-{}", block.block_uid))
                     .px_3()
-                    .py(px(10.0))
+                    .py(tokens::SPACE_5)
                     .cursor_pointer()
                     .hover(move |s| s.bg(list_hover))
                     .child(div().text_sm().text_color(theme.foreground).child(snippet))
