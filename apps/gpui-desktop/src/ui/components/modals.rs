@@ -150,6 +150,7 @@ impl AppStore {
                             .checked(self.settings.context_panel_open)
                             .on_click(cx.listener(|this, checked, _window, cx| {
                                 this.settings.context_panel_open = *checked;
+                                this.ui.context_panel_epoch += 1;
                                 this.persist_settings();
                                 cx.notify();
                             }))

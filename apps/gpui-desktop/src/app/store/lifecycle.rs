@@ -319,6 +319,7 @@ impl AppStore {
 
     pub(crate) fn set_context_panel_tab(&mut self, tab: WorkspacePanel, cx: &mut Context<Self>) {
         self.settings.context_panel_open = true;
+        self.ui.context_panel_epoch += 1;
         self.settings.context_panel_tab = tab;
         if tab == WorkspacePanel::Review {
             self.load_review_items(cx);
@@ -1074,6 +1075,7 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) {
         self.settings.context_panel_open = !self.settings.context_panel_open;
+        self.ui.context_panel_epoch += 1;
         self.persist_settings();
         cx.notify();
     }
@@ -1165,6 +1167,7 @@ impl AppStore {
         cx: &mut Context<Self>,
     ) {
         self.ui.capture_overlay_open = true;
+        self.ui.capture_overlay_epoch += 1;
         self.ui.capture_overlay_target = self.settings.quick_add_target;
         window.focus(&self.editor.capture_input.focus_handle(cx), cx);
         cx.notify();
@@ -1172,6 +1175,7 @@ impl AppStore {
 
     pub(crate) fn dismiss_quick_capture(&mut self, cx: &mut Context<Self>) {
         self.ui.capture_overlay_open = false;
+        self.ui.capture_overlay_epoch += 1;
         cx.notify();
     }
 
@@ -1196,6 +1200,7 @@ impl AppStore {
             input.set_value("", window, cx);
         });
         self.ui.capture_overlay_open = false;
+        self.ui.capture_overlay_epoch += 1;
         self.ui.capture_confirmation = Some("Captured".into());
         self.schedule_capture_confirmation_clear(cx);
         cx.notify();

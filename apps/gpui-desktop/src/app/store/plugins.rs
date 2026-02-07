@@ -1078,6 +1078,7 @@ impl AppStore {
 
         self.plugins.plugin_active_panel = Some(panel);
         self.settings.context_panel_open = true;
+        self.ui.context_panel_epoch += 1;
         self.settings.context_panel_tab = WorkspacePanel::Plugins;
         self.persist_settings();
         cx.notify();

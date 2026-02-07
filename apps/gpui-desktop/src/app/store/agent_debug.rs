@@ -207,6 +207,7 @@ impl ActionExecutor for AppStore {
                 let view = cx.new(|cx| {
                     crate::ui::dialogs::CommandPaletteDialogView::new(app_entity.clone(), cx)
                 });
+                let popover_bg = cx.theme().popover;
                 self.with_window(cx, move |window, cx| {
                     input.update(cx, |input_state, cx| {
                         input_state.set_value(String::new(), window, cx);
@@ -218,9 +219,11 @@ impl ActionExecutor for AppStore {
                         let app = app_for_close.clone();
                         let view = view.clone();
                         dialog
-                            .title("Command palette")
-                            .w(gpui::px(520.0))
+                            .w(gpui::px(640.0))
                             .keyboard(false)
+                            .close_button(false)
+                            .p_0()
+                            .bg(popover_bg)
                             .child(view)
                             .on_close(move |_event, _window, cx| {
                                 app.update(cx, |app, cx| {
@@ -241,16 +244,29 @@ impl ActionExecutor for AppStore {
                 });
                 cx.notify();
             }
-            ("settings-sheet", "click") => {
-                self.settings.open = true;
-                self.settings.tab = SettingsTab::General;
+            ("settings-sheet", "click") | ("open-settings-action", "click") => {
+                self.settings.open(SettingsTab::General);
                 self.persist_settings();
-                cx.notify();
-            }
-            ("open-settings-action", "click") => {
-                self.settings.open = true;
-                self.settings.tab = SettingsTab::General;
-                self.persist_settings();
+                let app_entity = cx.entity().clone();
+                let view = cx.new(|cx| {
+                    crate::ui::dialogs::SettingsSheetView::new(app_entity.clone(), cx)
+                });
+                self.with_window(cx, move |window, cx| {
+                    let app_for_close = app_entity.clone();
+                    window.open_sheet(cx, move |sheet, _window, _cx| {
+                        let app = app_for_close.clone();
+                        let view = view.clone();
+                        sheet
+                            .title("Settings")
+                            .size(gpui::px(760.0))
+                            .child(view)
+                            .on_close(move |_event, _window, cx| {
+                                app.update(cx, |app, cx| {
+                                    app.close_settings(cx);
+                                });
+                            })
+                    });
+                });
                 cx.notify();
             }
             ("review-panel", "click") => {
@@ -328,6 +344,7 @@ impl ActionExecutor for AppStore {
             }
             ("open-quick-capture-action", "click") => {
                 self.ui.capture_overlay_open = true;
+                self.ui.capture_overlay_epoch += 1;
                 self.ui.capture_overlay_target = self.settings.quick_add_target;
                 let input = self.editor.capture_input.clone();
                 self.with_window(cx, move |window, cx| {
@@ -680,20 +697,8 @@ impl AppStore {
             "command-palette" | "command-palette-input" => self.ui.palette_open,
             "settings-sheet" => self.settings.open,
             "open-command-palette-action" | "open-settings-action" => true,
-            "review-panel" => {
-                !self.settings.focus_mode
-                    && self.settings.context_panel_open
-                    && self.settings.context_panel_tab == WorkspacePanel::Review
-            }
-            "backlinks-panel" => {
-                !self.settings.focus_mode
-                    && self.settings.context_panel_open
-                    && self.settings.context_panel_tab == WorkspacePanel::Backlinks
-            }
-            "plugin-panel" => {
-                !self.settings.focus_mode
-                    && self.settings.context_panel_open
-                    && self.settings.context_panel_tab == WorkspacePanel::Plugins
+            "review-panel" | "backlinks-panel" | "plugin-panel" => {
+                !self.settings.focus_mode && self.settings.context_panel_open
             }
             "capture-overlay-backdrop" | "quick-capture-input" => self.ui.capture_overlay_open,
             "page-dialog" | "page-dialog-input" => self.ui.page_dialog_open,

@@ -2,6 +2,7 @@ use crate::app::prelude::*;
 use crate::app::store::*;
 use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
+use gpui::{ease_in_out, Animation, AnimationExt as _};
 use gpui_component::{IconName, TitleBar};
 
 impl AppStore {
@@ -349,6 +350,7 @@ impl AppStore {
                             .tooltip("Close panel")
                             .on_click(cx.listener(|this, _event, _window, cx| {
                                 this.settings.context_panel_open = false;
+                                this.ui.context_panel_epoch += 1;
                                 this.persist_settings();
                                 cx.notify();
                             })),
@@ -536,32 +538,99 @@ impl AppStore {
             .into_any_element()
     }
 
-    fn render_context_panel(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if !self.settings.context_panel_open {
-            return None;
-        }
-
+    fn render_context_panel_content(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.settings.context_panel_tab {
-            WorkspacePanel::Review => Some(self.render_review_pane(cx).into_any_element()),
+            WorkspacePanel::Review => self.render_review_pane(cx).into_any_element(),
             WorkspacePanel::Backlinks => {
-                Some(self.render_backlinks_panel(cx).unwrap_or_else(|| {
+                self.render_backlinks_panel(cx).unwrap_or_else(|| {
                     self.render_empty_context_panel(
                         "Backlinks",
                         "Open a page to view backlinks and unlinked references.",
                         IconName::ExternalLink,
                         cx,
                     )
-                }))
+                })
             }
-            WorkspacePanel::Plugins => Some(self.render_plugin_panel(cx).unwrap_or_else(|| {
+            WorkspacePanel::Plugins => self.render_plugin_panel(cx).unwrap_or_else(|| {
                 self.render_empty_context_panel(
                     "Plugin Panel",
                     "Open a plugin panel from the command palette or plugin settings.",
                     IconName::Settings,
                     cx,
                 )
-            })),
-            WorkspacePanel::Connections => Some(self.render_connections_panel(cx)),
+            }),
+            WorkspacePanel::Connections => self.render_connections_panel(cx),
+        }
+    }
+
+    fn render_context_panel(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let open = self.settings.context_panel_open;
+        let epoch = self.ui.context_panel_epoch;
+        let animating = epoch > 0;
+        let panel_w = f32::from(tokens::CONTEXT_PANEL_WIDTH);
+
+        // Build the panel container — always rendered for animation
+        let container = div()
+            .id("context-panel-animated")
+            .overflow_hidden()
+            .h_full()
+            .flex_shrink_0();
+
+        if !open && !animating {
+            // Not open and no animation ever triggered — render nothing (zero width)
+            return container.w(px(0.0)).into_any_element();
+        }
+
+        // Render panel content only when open (or during close animation)
+        let content = if open || animating {
+            Some(self.render_context_panel_content(cx))
+        } else {
+            None
+        };
+
+        let content_div = div()
+            .w(tokens::CONTEXT_PANEL_WIDTH)
+            .h_full()
+            .flex_shrink_0()
+            .children(content);
+
+        if animating {
+            // Animated slide-in/slide-out
+            let duration = if open {
+                tokens::DURATION_NORMAL // 200ms for open
+            } else {
+                Duration::from_millis(150) // 150ms for close
+            };
+
+            container
+                .child(content_div.with_animation(
+                    format!("ctx-panel-opacity-{epoch}"),
+                    Animation::new(duration).with_easing(ease_in_out),
+                    move |el, delta| {
+                        let opacity = if open { delta } else { 1.0 - delta };
+                        el.opacity(opacity)
+                    },
+                ))
+                .with_animation(
+                    format!("ctx-panel-width-{epoch}"),
+                    Animation::new(duration).with_easing(ease_in_out),
+                    move |el, delta| {
+                        let (from_w, to_w) = if open {
+                            (0.0, panel_w)
+                        } else {
+                            (panel_w, 0.0)
+                        };
+                        let w = from_w + (to_w - from_w) * delta;
+                        el.w(px(w))
+                    },
+                )
+                .into_any_element()
+        } else {
+            // Static: panel is open, no animation on initial render
+            container
+                .w(tokens::CONTEXT_PANEL_WIDTH)
+                .child(content_div)
+                .into_any_element()
         }
     }
 
@@ -651,9 +720,7 @@ impl AppStore {
                 }
                 body = body.child(self.render_editor(cx));
                 if !focus_mode {
-                    if let Some(panel) = self.render_context_panel(cx) {
-                        body = body.child(panel);
-                    }
+                    body = body.child(self.render_context_panel(cx));
                 }
             }
             Mode::Review => {
@@ -809,12 +876,24 @@ impl AppStore {
             .justify_center()
             .child(card);
 
-        div()
+        let epoch = self.ui.capture_overlay_epoch;
+        let overlay = div()
             .absolute()
             .inset_0()
             .child(backdrop)
-            .child(card_container)
-            .into_any_element()
+            .child(card_container);
+
+        if epoch > 0 {
+            overlay
+                .with_animation(
+                    format!("capture-overlay-fade-{epoch}"),
+                    Animation::new(tokens::DURATION_FAST).with_easing(ease_in_out),
+                    |el, delta| el.opacity(delta),
+                )
+                .into_any_element()
+        } else {
+            overlay.into_any_element()
+        }
     }
 
     fn render_capture_mode(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {

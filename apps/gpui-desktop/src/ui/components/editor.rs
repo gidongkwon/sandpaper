@@ -554,6 +554,7 @@ impl AppStore {
                         this.settings.context_panel_open = true;
                         this.settings.context_panel_tab = WorkspacePanel::Backlinks;
                     }
+                    this.ui.context_panel_epoch += 1;
                     this.persist_settings();
                     cx.notify();
                 })),

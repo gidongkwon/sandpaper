@@ -83,6 +83,7 @@ impl AppStore {
         });
         let app = cx.entity();
         let view = cx.new(|cx| crate::ui::dialogs::CommandPaletteDialogView::new(app.clone(), cx));
+        let popover_bg = cx.theme().popover;
 
         window.open_dialog(cx, move |dialog, _window, _cx| {
             let app = app.clone();
@@ -92,6 +93,7 @@ impl AppStore {
                 .keyboard(false)
                 .close_button(false)
                 .p_0()
+                .bg(popover_bg)
                 .child(view)
                 .on_close(move |_event, _window, cx| {
                     app.update(cx, |app, cx| {
@@ -689,6 +691,7 @@ impl AppStore {
             }
             PaletteAction::ToggleContextPanel => {
                 self.settings.context_panel_open = !self.settings.context_panel_open;
+                self.ui.context_panel_epoch += 1;
                 self.persist_settings();
                 cx.notify();
             }
@@ -703,6 +706,7 @@ impl AppStore {
                     && self.settings.context_panel_tab == WorkspacePanel::Backlinks
                 {
                     self.settings.context_panel_open = false;
+                    self.ui.context_panel_epoch += 1;
                     self.persist_settings();
                     cx.notify();
                 } else {
@@ -737,6 +741,7 @@ impl AppStore {
             }
             PaletteAction::OpenQuickCapture => {
                 self.ui.capture_overlay_open = true;
+                self.ui.capture_overlay_epoch += 1;
                 self.ui.capture_overlay_target = self.settings.quick_add_target;
                 window.focus(&self.editor.capture_input.focus_handle(cx), cx);
                 cx.notify();
