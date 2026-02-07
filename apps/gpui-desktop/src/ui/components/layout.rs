@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
 use gpui_component::TitleBar;
 
@@ -202,6 +203,9 @@ impl AppStore {
 
     fn render_status_bar(&mut self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let foreground_muted = semantic.foreground_muted;
+        let border_subtle = semantic.border_subtle;
         let save_icon = match &self.app.save_state {
             SaveState::Saved => "·",
             SaveState::Dirty => "○",
@@ -216,13 +220,13 @@ impl AppStore {
         };
         let save_color = match &self.app.save_state {
             SaveState::Error(_) => theme.danger_foreground,
-            _ => theme.muted_foreground.opacity(0.7),
+            _ => foreground_muted,
         };
 
         let mut left = div().flex().items_center().gap_2().child(
             div()
                 .text_size(tokens::FONT_XS)
-                .text_color(theme.muted_foreground.opacity(0.7))
+                .text_color(foreground_muted)
                 .child(self.app.boot_status.clone()),
         );
 
@@ -247,7 +251,7 @@ impl AppStore {
             .justify_between()
             .bg(theme.background)
             .border_t_1()
-            .border_color(theme.border.opacity(0.5))
+            .border_color(border_subtle)
             .child(left)
             .child(
                 div()
@@ -379,6 +383,8 @@ impl AppStore {
 
     fn render_connections_panel(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let accent_subtle = semantic.accent_subtle;
         let border = theme.border;
         let sidebar_bg = theme.sidebar;
         let fg = theme.foreground;
@@ -432,7 +438,7 @@ impl AppStore {
                             .px_1()
                             .py(px(1.0))
                             .rounded_sm()
-                            .bg(accent.opacity(0.15))
+                            .bg(accent_subtle)
                             .text_color(accent)
                             .text_size(tokens::FONT_XS)
                             .child(label),
@@ -805,9 +811,11 @@ impl AppStore {
 
     fn render_capture_mode(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let border_subtle = semantic.border_subtle;
+        let foreground_muted = semantic.foreground_muted;
         let fg = theme.foreground;
         let muted_fg = theme.muted_foreground;
-        let border = theme.border;
         let bubble_bg = theme.list_hover;
         let input = Input::new(&self.editor.capture_input)
             .appearance(false)
@@ -838,7 +846,7 @@ impl AppStore {
                     .w_full()
                     .rounded_lg()
                     .border_1()
-                    .border_color(border.opacity(0.6))
+                    .border_color(border_subtle)
                     .bg(theme.background)
                     .px_4()
                     .py_3()
@@ -856,7 +864,7 @@ impl AppStore {
                     .rounded_lg()
                     .bg(bubble_bg.opacity(0.7))
                     .border_1()
-                    .border_color(border.opacity(0.6))
+                    .border_color(border_subtle)
                     .px_4()
                     .py_3()
                     .flex()
@@ -906,7 +914,7 @@ impl AppStore {
                     .pb_6()
                     .pt_3()
                     .border_t_1()
-                    .border_color(border.opacity(0.5))
+                    .border_color(border_subtle)
                     .bg(theme.background)
                     .flex()
                     .flex_col()
@@ -938,7 +946,7 @@ impl AppStore {
                             .child(
                                 div()
                                     .text_size(tokens::FONT_SM)
-                                    .text_color(muted_fg.opacity(0.8))
+                                    .text_color(foreground_muted)
                                     .child(format!(
                                         "{submit_hint} queue  ·  shift+enter newline  ·  esc back to editor"
                                     )),
@@ -959,6 +967,8 @@ impl AppStore {
 
     fn render_review_feed(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = cx.theme();
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let accent_subtle = semantic.accent_subtle;
         let fg = theme.foreground;
         let muted_fg = theme.muted_foreground;
         let sidebar_bg = theme.sidebar;
@@ -1102,7 +1112,7 @@ impl AppStore {
                                 .px_1()
                                 .py(px(1.0))
                                 .rounded_sm()
-                                .bg(accent.opacity(0.15))
+                                .bg(accent_subtle)
                                 .text_color(accent)
                                 .text_size(tokens::FONT_XS)
                                 .child(label),
