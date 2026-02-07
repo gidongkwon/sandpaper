@@ -35,6 +35,7 @@ impl Spinner {
         self
     }
 
+    #[allow(dead_code)] // Public API for medium size
     pub(crate) fn medium(mut self) -> Self {
         self.size = SpinnerSize::Medium;
         self

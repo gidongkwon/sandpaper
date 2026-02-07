@@ -22,6 +22,7 @@ impl Skeleton {
         }
     }
 
+    #[allow(dead_code)] // Public API for custom radius
     pub(crate) fn radius(mut self, radius: Pixels) -> Self {
         self.radius = radius;
         self
@@ -45,7 +46,7 @@ impl RenderOnce for Skeleton {
                     .with_easing(ease_in_out),
                 |el, delta| {
                     // Oscillate opacity between 0.4 and 1.0
-                    let opacity = 0.4 + 0.6 * (1.0 - (delta * 2.0 - 1.0).abs()) as f32;
+                    let opacity = 0.4 + 0.6 * (1.0 - (delta * 2.0 - 1.0).abs());
                     el.opacity(opacity)
                 },
             )

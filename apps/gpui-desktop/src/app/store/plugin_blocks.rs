@@ -94,7 +94,7 @@ fn strip_cache_ts(config_text: &str) -> String {
 
 fn resolve_cache_ttl_ms(view: &PluginBlockView) -> Option<i64> {
     match view.cache.as_ref().and_then(|cache| cache.ttl_seconds) {
-        Some(ttl) if ttl == 0 => None,
+        Some(0) => None,
         Some(ttl) => Some((ttl as i64).saturating_mul(1000)),
         None => Some(DEFAULT_CACHE_TTL_MS),
     }
@@ -105,7 +105,7 @@ fn estimate_wrapped_lines(text: &str, chars_per_line: usize) -> usize {
     let mut lines = 0usize;
     for segment in text.split('\n') {
         let len = segment.chars().count();
-        let segment_lines = (len + chars_per_line - 1) / chars_per_line;
+        let segment_lines = len.div_ceil(chars_per_line);
         lines += segment_lines.max(1);
     }
     lines.max(1)
@@ -148,9 +148,7 @@ impl AppStore {
 
     fn read_cached_plugin_block_view(&mut self, key: &str) -> Option<PluginBlockView> {
         let now = now_millis();
-        let Some(entry) = self.editor.plugin_block_view_cache.get(key) else {
-            return None;
-        };
+        let entry = self.editor.plugin_block_view_cache.get(key)?;
         if now.saturating_sub(entry.fetched_at_ms) > entry.ttl_ms {
             self.editor.plugin_block_view_cache.remove(key);
             return None;
@@ -607,7 +605,7 @@ impl AppStore {
                 _ => {
                     let pretty =
                         serde_json::to_string_pretty(body).unwrap_or_else(|_| body.to_string());
-                    let lines = pretty.lines().count().max(1).min(JSON_MAX_LINES);
+                    let lines = pretty.lines().count().clamp(1, JSON_MAX_LINES);
                     extra += SECTION_MARGIN_TOP + lines as f32 * JSON_LINE_HEIGHT;
                 }
             }
@@ -617,7 +615,7 @@ impl AppStore {
         }
 
         if !view.controls.is_empty() {
-            let rows = (view.controls.len() + CONTROLS_PER_ROW - 1) / CONTROLS_PER_ROW;
+            let rows = view.controls.len().div_ceil(CONTROLS_PER_ROW);
             extra += SECTION_MARGIN_TOP + rows as f32 * CONTROLS_ROW_HEIGHT;
         }
 

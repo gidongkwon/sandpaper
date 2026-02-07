@@ -184,13 +184,6 @@ impl EditorState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SettingsModalModel {
-    pub(crate) open: bool,
-    pub(crate) active_tab: SettingsTab,
-    pub(crate) tabs: Vec<SettingsTab>,
-}
-
 pub(crate) struct SettingsState {
     pub(crate) open: bool,
     pub(crate) tab: SettingsTab,
@@ -263,20 +256,6 @@ impl SettingsState {
 
     pub(crate) fn set_plugin_selection(&mut self, plugin_id: Option<String>) {
         self.plugin_settings_selected = plugin_id;
-    }
-
-    pub(crate) fn modal_model(&self) -> SettingsModalModel {
-        SettingsModalModel {
-            open: self.open,
-            active_tab: self.tab,
-            tabs: vec![
-                SettingsTab::General,
-                SettingsTab::Vault,
-                SettingsTab::Plugins,
-                SettingsTab::Permissions,
-                SettingsTab::Import,
-            ],
-        }
     }
 
     pub(crate) fn load_from_db(&mut self, db: &Database) -> Result<bool, String> {
@@ -662,34 +641,20 @@ mod tests {
     };
 
     #[test]
-    fn settings_modal_model_tracks_tabs() {
+    fn settings_state_tracks_tabs() {
         let mut settings = SettingsState::new();
-        let model = settings.modal_model();
-        assert!(!model.open);
-        assert_eq!(model.active_tab, SettingsTab::General);
-        assert_eq!(
-            model.tabs,
-            vec![
-                SettingsTab::General,
-                SettingsTab::Vault,
-                SettingsTab::Plugins,
-                SettingsTab::Permissions,
-                SettingsTab::Import,
-            ]
-        );
+        assert!(!settings.open);
+        assert_eq!(settings.tab, SettingsTab::General);
 
         settings.open(SettingsTab::Plugins);
-        let model = settings.modal_model();
-        assert!(model.open);
-        assert_eq!(model.active_tab, SettingsTab::Plugins);
+        assert!(settings.open);
+        assert_eq!(settings.tab, SettingsTab::Plugins);
 
         settings.set_tab(SettingsTab::General);
-        let model = settings.modal_model();
-        assert_eq!(model.active_tab, SettingsTab::General);
+        assert_eq!(settings.tab, SettingsTab::General);
 
         settings.close();
-        let model = settings.modal_model();
-        assert!(!model.open);
+        assert!(!settings.open);
     }
 
     #[test]

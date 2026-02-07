@@ -428,7 +428,7 @@ impl AppStore {
         let placeholder = field.title.clone().unwrap_or_else(|| key.to_string());
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let initial_value = self
-            .plugin_setting_value(plugin_id, &key)
+            .plugin_setting_value(plugin_id, key)
             .unwrap_or(Value::Null);
         let initial_text = setting_value_to_string(&initial_value);
         input.update(cx, |input, cx| {
@@ -1323,12 +1323,7 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn clear_plugin_error(&mut self, cx: &mut Context<Self>) {
-        self.plugins.plugin_error = None;
-        self.plugins.plugin_error_details = None;
-        cx.notify();
-    }
-
+    #[allow(dead_code)] // Used in tests
     pub(crate) fn open_plugin_error_details(
         &mut self,
         window: &mut Window,
@@ -1545,7 +1540,7 @@ mod tests {
         let (values, saved, status) = build_plugin_settings_state(&db, &[plugin]);
         assert_eq!(values.get("weather"), Some(&settings));
         assert_eq!(saved.get("weather"), Some(&settings));
-        assert!(status.get("weather").is_none());
+        assert!(!status.contains_key("weather"));
     }
 
     #[test]
@@ -1604,8 +1599,8 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            coerce_setting_value(&number_field, "3.14"),
-            Value::Number(serde_json::Number::from_f64(3.14).expect("num"))
+            coerce_setting_value(&number_field, "2.72"),
+            Value::Number(serde_json::Number::from_f64(2.72).expect("num"))
         );
     }
 

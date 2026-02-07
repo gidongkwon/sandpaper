@@ -112,7 +112,6 @@ fn now_epoch() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::VaultStore;
-    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
@@ -165,7 +164,7 @@ mod tests {
     #[test]
     fn load_defaults_when_missing_file() {
         let dir = tempdir().expect("tempdir");
-        let config_path = PathBuf::from(dir.path().join("vaults.json"));
+        let config_path = dir.path().join("vaults.json");
         let store = VaultStore::new(config_path);
 
         let config = store.load().expect("load config");

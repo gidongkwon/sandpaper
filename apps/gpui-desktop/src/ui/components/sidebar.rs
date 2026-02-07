@@ -427,7 +427,7 @@ impl AppStore {
                     .text_color(theme.muted_foreground)
                     .child("PAGES"),
             );
-            content = content.children(self.editor.search_pages.iter().cloned().map(|page| {
+            content = content.children(self.editor.search_pages.iter().map(|page| {
                 let page_uid = page.uid.clone();
                 let open_uid = page.uid.clone();
                 let split_uid = page.uid.clone();
@@ -500,8 +500,10 @@ impl AppStore {
                     .text_color(theme.muted_foreground)
                     .child("BLOCKS"),
             );
-            content = content.children(self.editor.search_blocks.iter().cloned().map(|block| {
+            content = content.children(self.editor.search_blocks.iter().map(|block| {
                 let snippet = format_snippet(&block.text, 80);
+                let page_uid = block.page_uid.clone();
+                let block_uid = block.block_uid.clone();
                 div()
                     .id(format!("search-block-{}", block.block_uid))
                     .px_3()
@@ -521,12 +523,7 @@ impl AppStore {
                             .child(block.page_title.clone()),
                     )
                     .on_click(cx.listener(move |this, _event, window, cx| {
-                        this.open_page_and_focus_block(
-                            &block.page_uid,
-                            &block.block_uid,
-                            window,
-                            cx,
-                        );
+                        this.open_page_and_focus_block(&page_uid, &block_uid, window, cx);
                     }))
             }));
         }
@@ -535,9 +532,7 @@ impl AppStore {
     }
 
     fn render_sidebar_references(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if self.editor.active_page.is_none() {
-            return None;
-        }
+        self.editor.active_page.as_ref()?;
 
         let theme = cx.theme();
         let references = self.editor.unlinked_references.clone();

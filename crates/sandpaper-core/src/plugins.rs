@@ -1249,7 +1249,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                             Ok(resp) => {
                                 let status = resp.status();
                                 let text = resp.into_string().unwrap_or_default();
-                                response.set("ok", status >= 200 && status < 300)?;
+                                response.set("ok", (200..300).contains(&status))?;
                                 response.set("status", status)?;
                                 response.set("text", text)?;
                             }
@@ -1305,7 +1305,7 @@ globalThis.__sandpaperToJson = (value) => JSON.stringify(value);"#,
                     plugin_id,
                     renderer_id,
                     block_uid,
-                    &vec!["clipboard".to_string()],
+                    &["clipboard".to_string()],
                 ));
             }
             let mut config_updated = false;
@@ -1449,7 +1449,7 @@ fn parse_plugin_config(text: &str) -> HashMap<String, String> {
             if quote == '"' || quote == '\'' {
                 chars.next();
                 let mut val = String::new();
-                while let Some(ch) = chars.next() {
+                for ch in chars.by_ref() {
                     if ch == quote {
                         break;
                     }
@@ -1753,9 +1753,9 @@ mod tests {
 
         assert_eq!(plugins.len(), 2);
         assert_eq!(plugins[0].manifest.id, "alpha");
-        assert_eq!(plugins[0].enabled, false);
+        assert!(!plugins[0].enabled);
         assert_eq!(plugins[1].manifest.id, "beta");
-        assert_eq!(plugins[1].enabled, true);
+        assert!(plugins[1].enabled);
     }
 
     #[test]
@@ -1976,7 +1976,7 @@ mod tests {
         let plugins = list_plugins(dir.path(), &registry).expect("list plugins");
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].id, "alpha");
-        assert_eq!(plugins[0].enabled, true);
+        assert!(plugins[0].enabled);
         assert_eq!(plugins[0].permissions, vec!["fs".to_string()]);
     }
 

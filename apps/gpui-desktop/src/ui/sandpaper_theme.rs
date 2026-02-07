@@ -6,6 +6,7 @@ use std::rc::Rc;
 const DEFAULT_THEME_JSON: &str = include_str!("../../themes/sandpaper.json");
 
 /// Semantic color tokens specific to Sandpaper that extend the base gpui_component theme.
+#[allow(dead_code)] // Complete token set — not all fields consumed yet
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SemanticColors {
     pub border_subtle: Hsla,

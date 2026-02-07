@@ -7,6 +7,8 @@ use gpui::{
 use gpui_component::{button::Button, Icon, IconName, Sizable, Size};
 use std::rc::Rc;
 
+type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
 /// A centered empty state placeholder with optional icon, heading, description,
 /// and action button.
 #[derive(IntoElement)]
@@ -15,7 +17,7 @@ pub(crate) struct EmptyState {
     heading: SharedString,
     description: SharedString,
     action_label: Option<SharedString>,
-    action_handler: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    action_handler: Option<ClickHandler>,
 }
 
 impl EmptyState {

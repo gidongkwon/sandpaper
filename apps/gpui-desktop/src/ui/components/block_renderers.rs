@@ -467,7 +467,7 @@ impl AppStore {
         pane: EditorPane,
         actual_ix: usize,
         toggle_hover_bg: gpui::Hsla,
-        collapse_bg: gpui::Hsla,
+        _collapse_bg: gpui::Hsla,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         if has_children {

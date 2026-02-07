@@ -5,6 +5,7 @@ use gpui_component::IconNamed;
 
 pub(crate) use assets::SandpaperAssets;
 
+#[allow(dead_code)] // Icon set — not all variants used yet
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SandpaperIcon {
     Search,
@@ -36,6 +37,7 @@ pub(crate) enum SandpaperIcon {
 }
 
 impl SandpaperIcon {
+    #[allow(dead_code)] // Enumerates all icons for tooling
     pub(crate) const ALL: [Self; 26] = [
         Self::Search,
         Self::Warning,

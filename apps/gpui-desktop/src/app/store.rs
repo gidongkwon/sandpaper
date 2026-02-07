@@ -166,7 +166,11 @@ pub(crate) struct CaptureQueueItem {
 pub(crate) enum FeedItem {
     ReviewDue(ReviewDisplayItem),
     RelatedPage(connections::RelatedPage),
-    RecentEdit { page: PageRecord, edited_at: i64 },
+    RecentEdit {
+        page: PageRecord,
+        #[allow(dead_code)] // Used in feed sorting logic planned for future
+        edited_at: i64,
+    },
     RandomDiscovery(PageRecord),
     SectionHeader(SharedString),
 }
@@ -379,6 +383,7 @@ impl PaneSelection {
             .is_some_and(|(start, end)| ix >= start && ix <= end)
     }
 
+    #[cfg(test)]
     pub(crate) fn selected_range(&self) -> Option<std::ops::Range<usize>> {
         self.range.map(|(start, end)| start..end + 1)
     }
@@ -594,6 +599,7 @@ impl WikilinkMenuState {
 pub(crate) struct OutlineMenuState {
     pub(crate) open: bool,
     pub(crate) pane: EditorPane,
+    #[allow(dead_code)] // Reserved for z-index layering
     pub(crate) layer_priority: usize,
 }
 
@@ -615,6 +621,7 @@ pub(crate) struct LinkPreviewState {
     pub(crate) blocks: Vec<String>,
     pub(crate) position: Point<Pixels>,
     pub(crate) loading: bool,
+    #[allow(dead_code)] // Reserved for z-index layering
     pub(crate) layer_priority: usize,
 }
 

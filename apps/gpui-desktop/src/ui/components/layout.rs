@@ -1024,7 +1024,6 @@ impl AppStore {
                                     if event.keystroke.key == "escape" {
                                         this.set_mode(Mode::Editor, cx);
                                         cx.stop_propagation();
-                                        return;
                                     }
                                 },
                             ))

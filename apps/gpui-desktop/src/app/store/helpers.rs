@@ -76,7 +76,7 @@ pub(crate) fn find_slash_query(text: &str, cursor: usize) -> Option<SlashQuery> 
     let before = &text[..cursor];
     let slash_index = before.rfind('/')?;
     if slash_index > 0 {
-        let prev = text[..slash_index].chars().rev().next()?;
+        let prev = text[..slash_index].chars().next_back()?;
         if !prev.is_whitespace() {
             return None;
         }
@@ -101,6 +101,7 @@ pub(crate) struct WikilinkQuery {
     pub query: String,
 }
 
+#[allow(dead_code)] // Used in tests via store.rs
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum WikilinkToken {
     Text(String),
@@ -155,6 +156,7 @@ pub(crate) fn find_wikilink_query(text: &str, cursor: usize) -> Option<WikilinkQ
     })
 }
 
+#[allow(dead_code)] // Used in tests via store.rs
 pub(crate) fn parse_wikilink_tokens(text: &str) -> Vec<WikilinkToken> {
     let mut tokens = Vec::new();
     let mut cursor = 0usize;
@@ -191,6 +193,7 @@ pub(crate) fn parse_wikilink_tokens(text: &str) -> Vec<WikilinkToken> {
     tokens
 }
 
+#[allow(dead_code)] // Used by parse_wikilink_tokens
 fn parse_wikilink_inner(inner: &str) -> Option<(String, String)> {
     let raw = inner.trim();
     if raw.is_empty() {
@@ -259,10 +262,7 @@ pub(crate) fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
                 break;
             }
         }
-        let ix = match found {
-            Some(ix) => ix,
-            None => return None,
-        };
+        let ix = found?;
 
         score += 10;
         if let Some(prev) = last_match {
@@ -492,8 +492,8 @@ fn apply_wrap_command(wrapper: &str, text: &str) -> (String, usize) {
 fn strip_heading_prefix(text: &str) -> &str {
     let trimmed = text.trim_start();
     let mut hash_count = 0usize;
-    let mut iter = trimmed.char_indices();
-    while let Some((_, ch)) = iter.next() {
+    let iter = trimmed.char_indices();
+    for (_, ch) in iter {
         if ch == '#' {
             hash_count += 1;
             continue;
@@ -510,11 +510,7 @@ fn strip_heading_prefix(text: &str) -> &str {
 }
 
 fn strip_prefix<'a>(text: &'a str, prefix: &str) -> &'a str {
-    if text.starts_with(prefix) {
-        &text[prefix.len()..]
-    } else {
-        text
-    }
+    text.strip_prefix(prefix).unwrap_or(text)
 }
 
 fn normalize_image_source(source: &str) -> Option<String> {

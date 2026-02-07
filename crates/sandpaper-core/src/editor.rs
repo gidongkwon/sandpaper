@@ -176,7 +176,7 @@ impl EditorModel {
         let removed: Vec<_> = self.blocks.drain(range.clone()).collect();
         let insert_at = prev_start;
         self.blocks
-            .splice(insert_at..insert_at, removed.into_iter());
+            .splice(insert_at..insert_at, removed);
         self.active_ix = insert_at;
         true
     }
@@ -192,7 +192,7 @@ impl EditorModel {
         let removed: Vec<_> = self.blocks.drain(range.clone()).collect();
         let insert_at = self.subtree_range_from(next_start - removed.len()).end;
         self.blocks
-            .splice(insert_at..insert_at, removed.into_iter());
+            .splice(insert_at..insert_at, removed);
         self.active_ix = insert_at;
         true
     }
@@ -236,7 +236,7 @@ impl EditorModel {
         }
         let insert_at = end;
         let count = clones.len();
-        self.blocks.splice(insert_at..insert_at, clones.into_iter());
+        self.blocks.splice(insert_at..insert_at, clones);
         self.active_ix = insert_at;
         Some(insert_at..insert_at + count)
     }
@@ -295,7 +295,7 @@ impl EditorModel {
             let removed: Vec<_> = self.blocks.drain(range.start..end).collect();
             let insert_at = range.start - 1;
             self.blocks
-                .splice(insert_at..insert_at, removed.into_iter());
+                .splice(insert_at..insert_at, removed);
             self.active_ix = insert_at;
             return Some(insert_at..insert_at + count);
         }
@@ -305,7 +305,7 @@ impl EditorModel {
         let removed: Vec<_> = self.blocks.drain(range.start..end).collect();
         let insert_at = end + 1 - count;
         self.blocks
-            .splice(insert_at..insert_at, removed.into_iter());
+            .splice(insert_at..insert_at, removed);
         self.active_ix = insert_at;
         Some(insert_at..insert_at + count)
     }

@@ -9,12 +9,14 @@ use gpui_component::{
 };
 use std::rc::Rc;
 
+type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
 /// A full-width error/warning banner bar with icon, message, and optional action button.
 #[derive(IntoElement)]
 pub(crate) struct ErrorBanner {
     message: SharedString,
     action_label: Option<SharedString>,
-    action_handler: Option<Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>>,
+    action_handler: Option<ClickHandler>,
     is_warning: bool,
 }
 

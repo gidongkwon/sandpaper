@@ -234,9 +234,7 @@ impl AppStore {
     }
 
     fn render_editor_header(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let Some(active_page) = self.editor.active_page.as_ref() else {
-            return None;
-        };
+        let active_page = self.editor.active_page.as_ref()?;
         let theme = cx.theme();
         let semantic = cx.global::<SandpaperTheme>().colors(cx);
         let border_subtle = semantic.border_subtle;
@@ -382,9 +380,7 @@ impl AppStore {
     }
 
     fn render_page_properties(&mut self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        if self.editor.active_page.is_none() {
-            return None;
-        }
+        self.editor.active_page.as_ref()?;
         let theme = cx.theme();
         let is_open = self.editor.properties_open;
         let prop_count = self.editor.page_properties.len();
@@ -1329,6 +1325,7 @@ impl AppStore {
             .opacity(0.0)
     }
 
+    #[allow(clippy::only_used_in_recursion)] // window is threaded through for GPUI API
     fn render_inline_markdown_text(
         &mut self,
         pane: EditorPane,
@@ -1576,10 +1573,10 @@ impl AppStore {
                     if let Some(ix) = hover_ix {
                         for (range_ix, range) in hover_ranges_clone.iter().enumerate() {
                             if range.contains(&ix) {
-                                if let Some(action) = hover_actions.get(range_ix) {
-                                    if let InlineAction::Wikilink(target) = action {
-                                        hovered_wikilink_target = Some(target.clone());
-                                    }
+                                if let Some(InlineAction::Wikilink(target)) =
+                                    hover_actions.get(range_ix)
+                                {
+                                    hovered_wikilink_target = Some(target.clone());
                                 }
                                 break;
                             }
@@ -2355,9 +2352,7 @@ impl AppStore {
         if !self.settings.context_panel_open {
             return None;
         }
-        if self.editor.active_page.is_none() {
-            return None;
-        }
+        self.editor.active_page.as_ref()?;
         let border = cx.theme().border;
         let sidebar_bg = cx.theme().sidebar;
         let list_hover = cx.theme().list_hover;
@@ -2417,7 +2412,7 @@ impl AppStore {
                     .text_color(muted)
                     .child("PAGE BACKLINKS"),
             );
-            body = body.children(self.editor.backlinks.iter().cloned().map(|entry| {
+            body = body.children(self.editor.backlinks.iter().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
                 let page_uid = entry.page_uid.clone();
                 let block_uid = entry.block_uid.clone();
@@ -2531,7 +2526,7 @@ impl AppStore {
                             .child(format!("Linked to {block_label}")),
                     ),
             );
-            body = body.children(self.editor.block_backlinks.iter().cloned().map(|entry| {
+            body = body.children(self.editor.block_backlinks.iter().map(|entry| {
                 let snippet = format_snippet(&entry.text, 90);
                 let page_uid = entry.page_uid.clone();
                 let block_uid = entry.block_uid.clone();
@@ -2944,24 +2939,22 @@ impl AppStore {
                 }))
                 .child(input)
                 .into_any_element()
+        } else if matches!(block.block_type, BlockType::Image) {
+            div().into_any_element()
         } else {
-            if matches!(block.block_type, BlockType::Image) {
-                div().into_any_element()
-            } else {
-                let display_text = match block.block_type {
-                    BlockType::Heading1
-                    | BlockType::Heading2
-                    | BlockType::Heading3
-                    | BlockType::Quote
-                    | BlockType::Todo
-                    | BlockType::Divider => crate::app::store::helpers::clean_text_for_block_type(
-                        &block.text,
-                        block.block_type,
-                    ),
-                    _ => block.text.clone(),
-                };
-                self.render_inline_markdown_text(pane, &block.uid, &display_text, window, cx)
-            }
+            let display_text = match block.block_type {
+                BlockType::Heading1
+                | BlockType::Heading2
+                | BlockType::Heading3
+                | BlockType::Quote
+                | BlockType::Todo
+                | BlockType::Divider => crate::app::store::helpers::clean_text_for_block_type(
+                    &block.text,
+                    block.block_type,
+                ),
+                _ => block.text.clone(),
+            };
+            self.render_inline_markdown_text(pane, &block.uid, &display_text, window, cx)
         };
 
         let mut content_container = div().flex_1().min_w_0().relative().child(content);

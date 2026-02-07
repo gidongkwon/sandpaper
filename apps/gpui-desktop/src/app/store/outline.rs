@@ -166,6 +166,7 @@ pub(crate) fn fold_to_level(blocks: &[BlockSnapshot], level: i64) -> HashSet<Str
     collapsed
 }
 
+#[allow(dead_code)] // Used in tests
 pub(crate) fn expand_ancestors(
     blocks: &[BlockSnapshot],
     parent_by_actual: &[Option<usize>],
@@ -275,7 +276,7 @@ mod tests {
         let range = restore_visible_range_by_uids(
             &blocks,
             &actual_to_visible,
-            &vec!["c".to_string(), "missing".to_string(), "b".to_string()],
+            &["c".to_string(), "missing".to_string(), "b".to_string()],
         );
         assert_eq!(range, Some((1, 1)));
     }

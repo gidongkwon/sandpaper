@@ -1325,9 +1325,7 @@ impl AppStore {
                 return false;
             };
             let insert_at = insert_at.min(editor.blocks.len());
-            editor
-                .blocks
-                .splice(insert_at..insert_at, clones.into_iter());
+            editor.blocks.splice(insert_at..insert_at, clones);
             if let Some(active_uid) = active_uid.as_ref() {
                 if let Some(ix) = editor
                     .blocks
@@ -1693,29 +1691,13 @@ impl AppStore {
             active_changed |= self.ensure_active_visible_for_pane(EditorPane::Secondary);
         }
 
-        if active_changed_in_pane || active_changed {
-            if pane == self.editor.active_pane {
-                let cursor = self
-                    .editor_for_pane(pane)
-                    .and_then(|editor| editor.blocks.get(editor.active_ix))
-                    .map(|block| block.text.len())
-                    .unwrap_or(0);
-                match window {
-                    Some(window) => {
-                        self.sync_block_input_from_active_with_cursor_for_pane(
-                            pane,
-                            cursor,
-                            Some(window),
-                            cx,
-                        );
-                    }
-                    None => {
-                        self.sync_block_input_from_active_with_cursor_for_pane(
-                            pane, cursor, None, cx,
-                        );
-                    }
-                }
-            }
+        if (active_changed_in_pane || active_changed) && pane == self.editor.active_pane {
+            let cursor = self
+                .editor_for_pane(pane)
+                .and_then(|editor| editor.blocks.get(editor.active_ix))
+                .map(|block| block.text.len())
+                .unwrap_or(0);
+            self.sync_block_input_from_active_with_cursor_for_pane(pane, cursor, window, cx);
         }
 
         cx.notify();
@@ -2224,8 +2206,7 @@ impl AppStore {
                 editor.blocks[editor.active_ix].text = text;
             }
 
-            let cursor = editor.split_active_and_insert_after(cursor_offset);
-            cursor
+            editor.split_active_and_insert_after(cursor_offset)
         };
         self.update_block_list_for_pane(pane);
 
@@ -3332,9 +3313,7 @@ impl AppStore {
                 return;
             };
             let insert_at = insert_at.min(editor.blocks.len());
-            editor
-                .blocks
-                .splice(insert_at..insert_at, clones.into_iter());
+            editor.blocks.splice(insert_at..insert_at, clones);
 
             if let Some(active_uid) = active_uid.as_ref() {
                 if let Some(ix) = editor
@@ -3566,7 +3545,7 @@ impl AppStore {
         }
         let segment: Vec<_> = blocks.drain(start..=end).collect();
         let target = insert_at.min(blocks.len());
-        blocks.splice(target..target, segment.into_iter());
+        blocks.splice(target..target, segment);
         true
     }
 
@@ -4149,6 +4128,7 @@ impl AppStore {
         Ok(uid)
     }
 
+    #[allow(dead_code)] // Planned for capture queue management UI
     pub(crate) fn move_capture_queue_item_to_page(
         &mut self,
         item_uid: &str,
@@ -7001,7 +6981,7 @@ mod tests {
 
                 let inserted = app.insert_image_blocks_from_paths_in_pane(
                     EditorPane::Primary,
-                    &[image_path.clone()],
+                    std::slice::from_ref(&image_path),
                     Some(window),
                     cx,
                 );
@@ -7067,7 +7047,7 @@ mod tests {
 
                 let inserted = app.insert_image_blocks_from_paths_in_pane(
                     EditorPane::Primary,
-                    &[text_path.clone()],
+                    std::slice::from_ref(&text_path),
                     Some(window),
                     cx,
                 );
