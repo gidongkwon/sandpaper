@@ -1104,7 +1104,13 @@ impl AppStore {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ui.capture_overlay_previous_focus =
+            Some(self.editor.block_input.focus_handle(cx).clone());
+        self.ui.capture_overlay_open = true;
+        self.ui.capture_overlay_epoch += 1;
+        self.ui.capture_overlay_target = self.settings.quick_add_target;
         window.focus(&self.editor.capture_input.focus_handle(cx), cx);
+        cx.notify();
     }
 
     pub(crate) fn load_page_properties(&mut self) {
@@ -1166,6 +1172,8 @@ impl AppStore {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.ui.capture_overlay_previous_focus =
+            Some(self.editor.block_input.focus_handle(cx).clone());
         self.ui.capture_overlay_open = true;
         self.ui.capture_overlay_epoch += 1;
         self.ui.capture_overlay_target = self.settings.quick_add_target;
@@ -1173,9 +1181,12 @@ impl AppStore {
         cx.notify();
     }
 
-    pub(crate) fn dismiss_quick_capture(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn dismiss_quick_capture(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.ui.capture_overlay_open = false;
         self.ui.capture_overlay_epoch += 1;
+        if let Some(prev) = self.ui.capture_overlay_previous_focus.take() {
+            window.focus(&prev, cx);
+        }
         cx.notify();
     }
 
@@ -1201,6 +1212,9 @@ impl AppStore {
         });
         self.ui.capture_overlay_open = false;
         self.ui.capture_overlay_epoch += 1;
+        if let Some(prev) = self.ui.capture_overlay_previous_focus.take() {
+            window.focus(&prev, cx);
+        }
         self.ui.capture_confirmation = Some("Captured".into());
         self.schedule_capture_confirmation_clear(cx);
         cx.notify();

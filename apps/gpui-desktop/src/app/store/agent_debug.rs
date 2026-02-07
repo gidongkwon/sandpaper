@@ -279,7 +279,15 @@ impl ActionExecutor for AppStore {
                 self.set_context_panel_tab(WorkspacePanel::Plugins, cx);
             }
             ("capture-overlay-backdrop", "click") => {
-                self.dismiss_quick_capture(cx);
+                self.ui.capture_overlay_open = false;
+                self.ui.capture_overlay_epoch += 1;
+                let prev = self.ui.capture_overlay_previous_focus.take();
+                if let Some(prev) = prev {
+                    self.with_window(cx, move |window, cx| {
+                        window.focus(&prev, cx);
+                    });
+                }
+                cx.notify();
             }
             ("editor-page-title", "click") => {
                 self.set_active_pane(EditorPane::Primary, cx);
@@ -343,6 +351,8 @@ impl ActionExecutor for AppStore {
                 });
             }
             ("open-quick-capture-action", "click") => {
+                self.ui.capture_overlay_previous_focus =
+                    Some(self.editor.block_input.focus_handle(cx).clone());
                 self.ui.capture_overlay_open = true;
                 self.ui.capture_overlay_epoch += 1;
                 self.ui.capture_overlay_target = self.settings.quick_add_target;

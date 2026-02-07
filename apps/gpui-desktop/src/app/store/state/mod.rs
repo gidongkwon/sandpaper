@@ -513,6 +513,7 @@ pub(crate) struct UiState {
     pub(crate) sidebar_collapse_epoch: u64,
     pub(crate) capture_overlay_open: bool,
     pub(crate) capture_overlay_target: QuickAddTarget,
+    pub(crate) capture_overlay_previous_focus: Option<FocusHandle>,
     pub(crate) context_panel_epoch: u64,
     pub(crate) capture_overlay_epoch: u64,
 }
@@ -562,6 +563,7 @@ impl UiState {
             sidebar_collapse_epoch: 0,
             capture_overlay_open: false,
             capture_overlay_target: QuickAddTarget::Inbox,
+            capture_overlay_previous_focus: None,
             context_panel_epoch: 0,
             capture_overlay_epoch: 0,
         }

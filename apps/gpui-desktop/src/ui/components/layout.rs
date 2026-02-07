@@ -804,8 +804,8 @@ impl AppStore {
             .absolute()
             .inset_0()
             .bg(gpui::black().opacity(0.4))
-            .on_click(cx.listener(|this, _event, _window, cx| {
-                this.dismiss_quick_capture(cx);
+            .on_click(cx.listener(|this, _event, window, cx| {
+                this.dismiss_quick_capture(window, cx);
             }));
 
         let card = div()
@@ -832,9 +832,9 @@ impl AppStore {
             )
             .child(
                 div()
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _window, cx| {
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                         if event.keystroke.key == "escape" {
-                            this.dismiss_quick_capture(cx);
+                            this.dismiss_quick_capture(window, cx);
                             cx.stop_propagation();
                         }
                     }))
@@ -855,7 +855,9 @@ impl AppStore {
                         div()
                             .text_size(tokens::FONT_SM)
                             .text_color(muted_fg)
-                            .child(format!("Queue in Inbox: {hint}")),
+                            .child(format!(
+                                "{hint} queue  ·  shift+enter newline  ·  esc dismiss"
+                            )),
                     )
                     .child(
                         Button::new("capture-submit")

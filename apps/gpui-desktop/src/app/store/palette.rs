@@ -679,7 +679,13 @@ impl AppStore {
                 window.focus(&self.editor.block_input.focus_handle(cx), cx);
             }
             PaletteAction::FocusQuickAdd => {
+                self.ui.capture_overlay_previous_focus =
+                    Some(self.editor.block_input.focus_handle(cx).clone());
+                self.ui.capture_overlay_open = true;
+                self.ui.capture_overlay_epoch += 1;
+                self.ui.capture_overlay_target = self.settings.quick_add_target;
                 window.focus(&self.editor.capture_input.focus_handle(cx), cx);
+                cx.notify();
             }
             PaletteAction::CreateTestPage => self.create_test_page(window, cx),
             PaletteAction::NewPage => self.open_page_dialog(PageDialogMode::Create, cx),
@@ -740,6 +746,8 @@ impl AppStore {
                 cx.notify();
             }
             PaletteAction::OpenQuickCapture => {
+                self.ui.capture_overlay_previous_focus =
+                    Some(self.editor.block_input.focus_handle(cx).clone());
                 self.ui.capture_overlay_open = true;
                 self.ui.capture_overlay_epoch += 1;
                 self.ui.capture_overlay_target = self.settings.quick_add_target;
