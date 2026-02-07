@@ -1118,7 +1118,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       })
     );
     scheduleSave();
-    const target = next ?? prev;
+    const target = prev ?? next;
     if (target) focusBlock(target.id);
   };
 

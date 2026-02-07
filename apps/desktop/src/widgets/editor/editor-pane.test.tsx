@@ -900,6 +900,76 @@ describe("EditorPane", () => {
     expect(untrack(() => blocks.length)).toBe(2);
   });
 
+  it("focuses the previous block when deleting an empty block with Backspace", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "b1", text: "First", indent: 0 },
+      { id: "b2", text: "", indent: 0 },
+      { id: "b3", text: "Third", indent: 0 }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const second = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b2"]'
+    );
+    expect(second).not.toBeNull();
+    if (!second) return;
+
+    fireEvent.focus(second);
+    fireEvent.keyDown(second, { key: "Backspace" });
+
+    expect(untrack(() => blocks.map((block) => block.id))).toEqual(["b1", "b3"]);
+    expect(untrack(focusedId)).toBe("b1");
+    expect(untrack(activeId)).toBe("b1");
+  });
+
   it("does not clear focusedId when an old block blur fires after focus moved", () => {
     const baseBlocks = makeBlocks(2);
     const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
