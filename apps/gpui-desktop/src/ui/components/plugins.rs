@@ -597,22 +597,29 @@ impl AppStore {
                                 })),
                         )
                         .child(
-                            Button::new("plugin-settings-reset")
-                                .label("Reset")
-                                .xsmall()
-                                .ghost()
-                                .disabled(!has_schema)
-                                .on_click(cx.listener(|this, _event, window, cx| {
-                                    this.reset_plugin_settings(window, cx);
-                                })),
-                        )
-                        .child(
                             Button::new("plugin-settings-reload")
                                 .label("Reload plugins")
                                 .xsmall()
                                 .ghost()
                                 .on_click(cx.listener(|this, _event, window, cx| {
                                     this.load_plugins(Some(window), cx);
+                                })),
+                        ),
+                )
+                .child(
+                    div()
+                        .mt_3()
+                        .pt_3()
+                        .border_t_1()
+                        .border_color(theme.border)
+                        .child(
+                            Button::new("plugin-settings-reset")
+                                .label("Reset to defaults")
+                                .xsmall()
+                                .danger()
+                                .disabled(!has_schema)
+                                .on_click(cx.listener(|this, _event, window, cx| {
+                                    this.reset_plugin_settings(window, cx);
                                 })),
                         ),
                 )

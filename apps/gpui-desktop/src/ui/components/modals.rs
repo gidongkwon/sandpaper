@@ -46,11 +46,11 @@ impl AppStore {
             .unwrap_or_else(|| "—".to_string());
 
         let mut content = div().flex().flex_col().gap_4().child(
-            div()
-                .text_size(tokens::FONT_LG)
-                .text_color(theme.foreground)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .child("General"),
+            self.render_settings_section_header(
+                "General",
+                "App-wide preferences and active vault info.",
+                cx,
+            ),
         );
 
         content = content.child(
@@ -84,11 +84,11 @@ impl AppStore {
                 .flex_col()
                 .gap_3()
                 .child(
-                    div()
-                        .text_size(tokens::FONT_LG)
-                        .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child("Workspace"),
+                    self.render_settings_section_header(
+                        "Workspace",
+                        "Appearance and layout options.",
+                        cx,
+                    ),
                 )
                 .child(
                     self.render_settings_row(
@@ -166,11 +166,11 @@ impl AppStore {
                 .flex_col()
                 .gap_3()
                 .child(
-                    div()
-                        .text_size(tokens::FONT_LG)
-                        .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child("Quick Add"),
+                    self.render_settings_section_header(
+                        "Quick Add",
+                        "Configure quick capture behavior.",
+                        cx,
+                    ),
                 )
                 .child(
                     self.render_settings_row(
@@ -285,11 +285,11 @@ impl AppStore {
                 .flex_col()
                 .gap_3()
                 .child(
-                    div()
-                        .text_size(tokens::FONT_LG)
-                        .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child("Editor"),
+                    self.render_settings_section_header(
+                        "Editor",
+                        "Editing and pane behavior.",
+                        cx,
+                    ),
                 )
                 .child(
                     self.render_settings_row(
@@ -345,11 +345,11 @@ impl AppStore {
         };
 
         let mut content = div().flex().flex_col().gap_4().child(
-            div()
-                .text_size(tokens::FONT_LG)
-                .text_color(theme.foreground)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .child("Vault"),
+            self.render_settings_section_header(
+                "Vault",
+                "Storage location and sync settings for the active vault.",
+                cx,
+            ),
         );
 
         content = content.child(
@@ -383,17 +383,11 @@ impl AppStore {
                 .flex_col()
                 .gap_3()
                 .child(
-                    div()
-                        .text_size(tokens::FONT_LG)
-                        .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child("Shadow Markdown"),
-                )
-                .child(
-                    div()
-                        .text_size(tokens::FONT_SM)
-                        .text_color(theme.muted_foreground)
-                        .child("Writes read-only per-page Markdown under the vault pages folder."),
+                    self.render_settings_section_header(
+                        "Shadow Markdown",
+                        "Writes read-only per-page Markdown under the vault pages folder.",
+                        cx,
+                    ),
                 )
                 .child(
                     self.render_settings_row(
@@ -508,17 +502,11 @@ impl AppStore {
             .flex_col()
             .gap_3()
             .child(
-                div()
-                    .text_size(tokens::FONT_LG)
-                    .text_color(theme.foreground)
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .child("Permission Audit"),
-            )
-            .child(
-                div()
-                    .text_size(tokens::FONT_SM)
-                    .text_color(theme.muted_foreground)
-                    .child("Review required permissions, missing grants, and unused grants."),
+                self.render_settings_section_header(
+                    "Permission Audit",
+                    "Review required permissions, missing grants, and unused grants.",
+                    cx,
+                ),
             )
             .child(legend);
 
@@ -642,11 +630,11 @@ impl AppStore {
         let importing = self.ui.offline_import_busy;
 
         let mut content = div().flex().flex_col().gap_4().child(
-            div()
-                .text_size(tokens::FONT_LG)
-                .text_color(theme.foreground)
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .child("Import / Export"),
+            self.render_settings_section_header(
+                "Import / Export",
+                "Move data in and out of Sandpaper.",
+                cx,
+            ),
         );
 
         content = content.child(
@@ -655,15 +643,12 @@ impl AppStore {
                 .flex_col()
                 .gap_3()
                 .child(
-                    div()
-                        .text_size(tokens::FONT_LG)
-                        .text_color(theme.foreground)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child("Offline archive"),
+                    self.render_settings_section_header(
+                        "Offline archive",
+                        "Export a zip with pages and a manifest, or import one back into the vault.",
+                        cx,
+                    ),
                 )
-                .child(div().text_size(tokens::FONT_SM).text_color(theme.muted_foreground).child(
-                    "Export a zip with pages and a manifest, or import one back into the vault.",
-                ))
                 .child(
                     div()
                         .flex()

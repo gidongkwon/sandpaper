@@ -40,6 +40,33 @@ impl AppStore {
             .into_any_element()
     }
 
+    pub(super) fn render_settings_section_header(
+        &self,
+        title: &str,
+        subtitle: &str,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let theme = cx.theme();
+        div()
+            .flex()
+            .flex_col()
+            .gap(tokens::SPACE_1)
+            .child(
+                div()
+                    .text_size(tokens::FONT_LG)
+                    .text_color(theme.foreground)
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .child(title.to_string()),
+            )
+            .child(
+                div()
+                    .text_size(tokens::FONT_SM)
+                    .text_color(theme.muted_foreground)
+                    .child(subtitle.to_string()),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_plugin_card(
         &self,
         plugin: &PluginPermissionInfo,

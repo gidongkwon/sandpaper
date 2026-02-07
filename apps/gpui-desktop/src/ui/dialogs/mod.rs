@@ -2,6 +2,7 @@ use crate::app::prelude::*;
 use crate::app::store::*;
 use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
+use gpui_component::IconName;
 
 const PALETTE_ROW_HEIGHT: f32 = 40.0;
 const PALETTE_HEADER_HEIGHT: f32 = 28.0;
@@ -74,6 +75,16 @@ fn settings_tab_label(tab: SettingsTab) -> &'static str {
     }
 }
 
+fn settings_tab_icon(tab: SettingsTab) -> IconName {
+    match tab {
+        SettingsTab::General => IconName::Settings,
+        SettingsTab::Vault => IconName::Folder,
+        SettingsTab::Plugins => IconName::Cpu,
+        SettingsTab::Permissions => IconName::Eye,
+        SettingsTab::Import => IconName::ArrowDown,
+    }
+}
+
 fn settings_tab_index(tab: SettingsTab) -> usize {
     SETTINGS_SHEET_TABS
         .iter()
@@ -130,11 +141,31 @@ impl Render for SettingsSheetView {
                     app.set_settings_tab(tab, window, cx);
                 });
             }))
-            .child(Tab::new().label(settings_tab_label(SettingsTab::General)))
-            .child(Tab::new().label(settings_tab_label(SettingsTab::Vault)))
-            .child(Tab::new().label(settings_tab_label(SettingsTab::Plugins)))
-            .child(Tab::new().label(settings_tab_label(SettingsTab::Permissions)))
-            .child(Tab::new().label(settings_tab_label(SettingsTab::Import)));
+            .child(
+                Tab::new()
+                    .prefix(Icon::new(settings_tab_icon(SettingsTab::General)).size_3())
+                    .label(settings_tab_label(SettingsTab::General)),
+            )
+            .child(
+                Tab::new()
+                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Vault)).size_3())
+                    .label(settings_tab_label(SettingsTab::Vault)),
+            )
+            .child(
+                Tab::new()
+                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Plugins)).size_3())
+                    .label(settings_tab_label(SettingsTab::Plugins)),
+            )
+            .child(
+                Tab::new()
+                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Permissions)).size_3())
+                    .label(settings_tab_label(SettingsTab::Permissions)),
+            )
+            .child(
+                Tab::new()
+                    .prefix(Icon::new(settings_tab_icon(SettingsTab::Import)).size_3())
+                    .label(settings_tab_label(SettingsTab::Import)),
+            );
 
         let content = match active_tab {
             SettingsTab::General => self
@@ -966,6 +997,8 @@ mod tests {
             assert_eq!(settings_tab_index(*tab), ix);
             assert_eq!(settings_tab_from_index(ix), *tab);
             assert!(!settings_tab_label(*tab).is_empty());
+            // Verify each tab has an icon mapping (will panic if missing arm)
+            let _ = settings_tab_icon(*tab);
         }
     }
 
