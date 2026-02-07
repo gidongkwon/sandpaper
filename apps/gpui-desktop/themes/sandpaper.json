@@ -55,7 +55,16 @@
         "danger.background": "#F4E2E4",
         "danger.foreground": "#842D3C",
 
-        "overlay": "#1A1D2338"
+        "overlay": "#1A1D2338",
+
+        "border_subtle": "#F0F2F6",
+        "foreground_muted": "#7E8594",
+        "foreground_faint": "#BBBFC8",
+        "background_hover": "#EEF1F6",
+        "background_active": "#E8ECF2",
+        "accent_subtle": "#DEE4EE",
+        "scrollbar_thumb": "#CCCDD0",
+        "scrollbar_track": "#F3F5F8"
       }
     },
     {
@@ -112,7 +121,16 @@
         "danger.background": "#361318",
         "danger.foreground": "#FFB0BC",
 
-        "overlay": "#10141C40"
+        "overlay": "#10141C40",
+
+        "border_subtle": "#191F2C",
+        "foreground_muted": "#6A768A",
+        "foreground_faint": "#3E4655",
+        "background_hover": "#202838",
+        "background_active": "#232B3C",
+        "accent_subtle": "#1D2633",
+        "scrollbar_thumb": "#3A3E47",
+        "scrollbar_track": "#171C27"
       }
     }
   ]
