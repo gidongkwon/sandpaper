@@ -571,6 +571,7 @@ impl AppStore {
         } = match load_result {
             Ok(result) => result,
             Err(err) => {
+                tracing::warn!(error = %format_runtime_error(&err), "plugin load plan failed");
                 let message: SharedString = format_runtime_error(&err).into();
                 self.plugins.plugin_error = Some(message.clone());
                 self.plugins.plugin_error_details = Some((*err).clone());
@@ -617,6 +618,7 @@ impl AppStore {
                 });
             }
             Err(err) => {
+                tracing::warn!(error = %format_runtime_error(&err), "plugin runtime load failed");
                 let message: SharedString = format_runtime_error(&err).into();
                 self.plugins.plugin_error_details = Some((*err).clone());
                 self.plugins.plugin_error = Some(message.clone());

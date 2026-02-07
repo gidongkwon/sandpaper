@@ -211,6 +211,7 @@ impl AppStore {
                 });
             }
             Err(err) => {
+                tracing::error!(error = ?err, "database boot failed");
                 self.app.boot_status = format!("Boot error: {err:?}").into();
                 self.app.db = None;
                 self.editor.active_page = None;
@@ -413,6 +414,7 @@ impl AppStore {
     }
 
     pub(crate) fn set_active_vault(&mut self, vault_id: String, cx: &mut Context<Self>) {
+        tracing::info!(vault_id = %vault_id, "switching vault");
         let store = match VaultStore::default_store() {
             Ok(store) => store,
             Err(_) => return,
@@ -765,10 +767,12 @@ impl AppStore {
                         }
                     };
                     if db.insert_page(&uid, &title).is_err() {
+                        tracing::error!(page_id = %uid, "failed to create page");
                         self.ui.page_dialog_error = Some("Failed to create page.".into());
                         cx.notify();
                         return false;
                     }
+                    tracing::info!(page_id = %uid, title = %title, "page created");
                     let pages = db.list_pages().unwrap_or_default();
                     (uid, pages)
                 };
@@ -949,6 +953,7 @@ impl AppStore {
 
     pub(crate) fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         let prev = self.app.mode;
+        tracing::info!(from = ?prev, to = ?mode, "mode change");
         self.app.mode = mode;
         if mode != Mode::Capture {
             self.editor.capture_move_item_uid = None;
@@ -1228,8 +1233,10 @@ impl AppStore {
         }
 
         if self.enqueue_capture_queue_item(&raw_text, cx).is_err() {
+            tracing::warn!("capture submit failed to enqueue");
             return;
         }
+        tracing::info!(action = "capture_submit", "quick capture submitted");
 
         // Clear the capture input and close overlay
         self.editor.capture_input.update(cx, |input, cx| {
