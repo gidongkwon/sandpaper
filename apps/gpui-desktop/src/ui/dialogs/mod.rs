@@ -1,5 +1,6 @@
 use crate::app::prelude::*;
 use crate::app::store::*;
+use crate::ui::sandpaper_theme::SandpaperTheme;
 use crate::ui::tokens;
 
 const PALETTE_ROW_HEIGHT: f32 = 40.0;
@@ -206,18 +207,20 @@ impl Render for CommandPaletteDialogView {
             .count();
         let list_height = px(command_palette_list_height_px(&rows));
 
-        let (list_active, list_hover, foreground, muted, border, secondary, accent) = {
+        let (list_active, list_hover, foreground, muted, secondary, accent) = {
             let theme = cx.theme();
             (
                 theme.list_active,
                 theme.list_hover,
                 theme.foreground,
                 theme.muted_foreground,
-                theme.border,
                 theme.secondary,
                 theme.accent,
             )
         };
+        let semantic = cx.global::<SandpaperTheme>().colors(cx);
+        let accent_subtle = semantic.accent_subtle;
+        let border_subtle = semantic.border_subtle;
         let mut active_ix = active_ix;
         if active_ix >= rows.len() {
             active_ix = 0;
@@ -289,7 +292,7 @@ impl Render for CommandPaletteDialogView {
                                 let hint = item.hint.clone();
                                 let icon_kind = command_palette_icon_for_action(&item.action);
                                 let icon_bg = if is_active {
-                                    accent.opacity(0.15)
+                                    accent_subtle
                                 } else {
                                     secondary
                                 };
@@ -374,7 +377,7 @@ impl Render for CommandPaletteDialogView {
         // Action bar footer
         let action_bar = div()
             .border_t_1()
-            .border_color(border.opacity(0.5))
+            .border_color(border_subtle)
             .px_4()
             .py(tokens::SPACE_4)
             .flex()
@@ -427,7 +430,7 @@ impl Render for CommandPaletteDialogView {
             .min_h_0()
             // Search bar
             .child(
-                div().px_4().py_3().border_b_1().border_color(border.opacity(0.6)).child(
+                div().px_4().py_3().border_b_1().border_color(border_subtle).child(
                     Input::new(&palette_input)
                         .appearance(false)
                         .bordered(false)
