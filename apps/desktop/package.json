@@ -25,6 +25,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "fflate": "^0.8.2",
     "mermaid": "^10.9.0",
+    "shiki": "^3.22.0",
     "solid-js": "^1.9.3"
   },
   "devDependencies": {

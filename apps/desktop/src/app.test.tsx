@@ -203,8 +203,11 @@ describe("App", () => {
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     fireEvent.input(firstInput, { target: { value: "```ts const x = 1;" } });
-    const previews = await screen.findAllByText("Code preview");
-    expect(previews.length).toBeGreaterThan(0);
+    const languageSelectors = await screen.findAllByRole("combobox", {
+      name: "Code language"
+    });
+    expect(languageSelectors.length).toBeGreaterThan(0);
+    expect(languageSelectors[0]).toHaveValue("TypeScript");
     const snippets = await screen.findAllByText("const x = 1;");
     expect(snippets.length).toBeGreaterThan(0);
   });
@@ -375,6 +378,7 @@ describe("App", () => {
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
+    (getInput() as HTMLTextAreaElement).blur();
     const wikilink = await screen.findByRole("button", { name: "Project Atlas" });
     await userEvent.click(wikilink);
     expect(

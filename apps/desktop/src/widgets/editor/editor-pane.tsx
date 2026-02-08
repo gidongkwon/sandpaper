@@ -37,11 +37,18 @@ import {
   parseInlineLinkToken,
   parseMarkdownList,
   parseMarkdownTable,
+  rewriteInlineFenceLanguage,
   parseWikilinkToken
 } from "../../shared/lib/markdown/inline-parser";
+import {
+  CODE_LANGUAGE_OPTIONS,
+  normalizeCodeLanguage
+} from "../../shared/lib/markdown/code-language";
+import { highlightCodeWithShiki } from "../../shared/lib/markdown/shiki-highlight";
 import { normalizePageUid } from "../../shared/lib/page/normalize-page-uid";
 import { getSafeLocalStorage } from "../../shared/lib/storage/safe-local-storage";
 import { getCaretPosition } from "../../shared/lib/textarea/get-caret-position";
+import { Document16Icon } from "../../shared/ui/icons";
 import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
 import {
   cleanTextForBlockType,
@@ -232,6 +239,9 @@ export const EditorPane = (props: EditorPaneProps) => {
   /* eslint-enable solid/reactivity */
 
   const [scrollTop, setScrollTop] = createSignal(0);
+  const [codeEditIntentId, setCodeEditIntentId] = createSignal<string | null>(
+    null
+  );
   const [viewportHeight, setViewportHeight] = createSignal(0);
   const [copiedBlockId, setCopiedBlockId] = createSignal<string | null>(null);
   const [slashMenu, setSlashMenu] = createSignal<SlashMenuState>({
@@ -2419,13 +2429,11 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const getCodePreview = (text: string) => {
-    const renderer = renderersByKind().get("code");
-    if (!renderer) return null;
     const fence = parseInlineFence(text);
     if (!fence || DIAGRAM_LANGS.has(fence.lang)) return null;
     return {
-      renderer,
-      ...fence
+      ...fence,
+      lang: normalizeCodeLanguage(fence.lang)
     };
   };
 
@@ -2517,46 +2525,349 @@ export const EditorPane = (props: EditorPaneProps) => {
     return nodes;
   };
 
-  const renderCodePreview = (
-    code: CodeFence & { renderer: PluginRenderer },
-    blockId: string
-  ) => (
-    <div class="block-renderer block-renderer--code">
-      <div class="block-renderer__header">
-        <div class="block-renderer__heading">
-          <div class="block-renderer__title">Code preview</div>
-          <div class="block-renderer__meta">
-            <span class="block-renderer__badge">
-              {code.lang.toUpperCase()}
-            </span>
-            <span>{code.renderer.title}</span>
+  const CodePreview = (props: {
+    code: CodeFence;
+    blockId: string;
+    onChangeLanguage: (blockId: string, nextLanguage: string) => void;
+    onEditCode: (blockId: string) => void;
+  }) => {
+    const currentBlockId = props.blockId;
+    const [highlightedHtml, setHighlightedHtml] = createSignal<string | null>(null);
+    const [languageOpen, setLanguageOpen] = createSignal(false);
+    const [languageQuery, setLanguageQuery] = createSignal("");
+    const [activeLanguageIndex, setActiveLanguageIndex] = createSignal(0);
+    let renderToken = 0;
+    const languageListboxId = `code-language-options-${currentBlockId}`;
+
+    createEffect(() => {
+      const lang = normalizeCodeLanguage(props.code.lang);
+      const content = props.code.content;
+      const token = (renderToken += 1);
+      setHighlightedHtml(null);
+      void highlightCodeWithShiki(content, lang).then((html) => {
+        if (token !== renderToken) return;
+        setHighlightedHtml(html);
+      });
+    });
+
+    const selectedLanguage = createMemo(() =>
+      normalizeCodeLanguage(props.code.lang)
+    );
+    const selectedLanguageOption = createMemo(
+      () =>
+        CODE_LANGUAGE_OPTIONS.find(
+          (option) => option.value === selectedLanguage()
+        ) ?? CODE_LANGUAGE_OPTIONS[0]
+    );
+    const filteredLanguageOptions = createMemo(() => {
+      if (!languageOpen()) return CODE_LANGUAGE_OPTIONS;
+      const query = languageQuery().trim().toLowerCase();
+      if (!query) return CODE_LANGUAGE_OPTIONS;
+      return CODE_LANGUAGE_OPTIONS.filter((option) => {
+        return (
+          option.label.toLowerCase().includes(query) ||
+          option.value.includes(query)
+        );
+      });
+    });
+    const activeLanguageId = createMemo(() => {
+      if (!languageOpen()) return undefined;
+      const options = filteredLanguageOptions();
+      const index = activeLanguageIndex();
+      if (index < 0 || index >= options.length) return undefined;
+      return `${languageListboxId}-${options[index]?.value}`;
+    });
+
+    createEffect(() => {
+      if (languageOpen()) return;
+      setLanguageQuery(selectedLanguageOption().label);
+    });
+
+    createEffect(() => {
+      if (!languageOpen()) return;
+      const options = filteredLanguageOptions();
+      if (options.length === 0) {
+        setActiveLanguageIndex(-1);
+        return;
+      }
+      setActiveLanguageIndex((current) => {
+        if (current < 0 || current >= options.length) {
+          return 0;
+        }
+        return current;
+      });
+    });
+
+    const stopPreviewEvent = (event: Event) => {
+      event.stopPropagation();
+    };
+
+    const escapeCodeHtml = (value: string) => {
+      return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    };
+
+    const toRenderableCodeLines = (html: string | null, content: string) => {
+      const fallbackLines = content
+        .split(/\r?\n/u)
+        .map((line) => (line.length > 0 ? escapeCodeHtml(line) : "&nbsp;"));
+      if (!html || typeof DOMParser !== "function") return fallbackLines;
+      const documentNode = new DOMParser().parseFromString(html, "text/html");
+      const codeNode = documentNode.querySelector("code");
+      if (!codeNode) return fallbackLines;
+      const highlightedLines = codeNode.querySelectorAll(":scope > span.line");
+      if (highlightedLines.length > 0) {
+        return Array.from(highlightedLines, (line) =>
+          line.innerHTML.length > 0 ? line.innerHTML : "&nbsp;"
+        );
+      }
+      return fallbackLines;
+    };
+
+    const renderedCodeLines = createMemo(() =>
+      toRenderableCodeLines(highlightedHtml(), props.code.content)
+    );
+
+    const openLanguageMenu = () => {
+      if (languageOpen()) return;
+      setLanguageOpen(true);
+      setLanguageQuery(selectedLanguageOption().label);
+      const selectedIndex = CODE_LANGUAGE_OPTIONS.findIndex(
+        (option) => option.value === selectedLanguage()
+      );
+      setActiveLanguageIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    };
+
+    const closeLanguageMenu = () => {
+      setLanguageOpen(false);
+    };
+
+    const applyLanguage = (nextLanguage: string) => {
+      props.onChangeLanguage(currentBlockId, nextLanguage);
+      closeLanguageMenu();
+    };
+
+    const handleLanguageInput = (event: Event) => {
+      event.stopPropagation();
+      const target = event.currentTarget;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (!languageOpen()) {
+        setLanguageOpen(true);
+      }
+      setLanguageQuery(target.value);
+      setActiveLanguageIndex(0);
+    };
+
+    const handleLanguageKeyDown = (event: KeyboardEvent) => {
+      event.stopPropagation();
+      const options = filteredLanguageOptions();
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (!languageOpen()) {
+          openLanguageMenu();
+          return;
+        }
+        if (options.length === 0) return;
+        setActiveLanguageIndex((current) =>
+          current >= options.length - 1 ? 0 : current + 1
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!languageOpen()) {
+          openLanguageMenu();
+          return;
+        }
+        if (options.length === 0) return;
+        setActiveLanguageIndex((current) =>
+          current <= 0 ? options.length - 1 : current - 1
+        );
+        return;
+      }
+      if (event.key === "Enter") {
+        if (!languageOpen()) {
+          openLanguageMenu();
+          return;
+        }
+        const index = activeLanguageIndex();
+        if (index < 0 || index >= options.length) return;
+        event.preventDefault();
+        applyLanguage(options[index]?.value ?? selectedLanguage());
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeLanguageMenu();
+      }
+      if (event.key === "Tab") {
+        closeLanguageMenu();
+      }
+    };
+
+    return (
+      <div class="block-renderer block-renderer--code">
+        <div class="block-renderer__header">
+          <div class="block-renderer__heading">
+            <div
+              class="block-renderer__meta"
+              data-code-edit="true"
+              data-code-language-menu={currentBlockId}
+            >
+              <div class="block-renderer__lang-combobox">
+                <input
+                  class="block-renderer__lang-input"
+                  type="text"
+                  role="combobox"
+                  aria-label="Code language"
+                  aria-expanded={languageOpen()}
+                  aria-controls={languageListboxId}
+                  aria-autocomplete="list"
+                  aria-activedescendant={activeLanguageId()}
+                  value={languageOpen() ? languageQuery() : selectedLanguageOption().label}
+                  placeholder={selectedLanguageOption().label}
+                  data-code-edit="true"
+                  onFocus={(event) => {
+                    openLanguageMenu();
+                    event.currentTarget.select();
+                  }}
+                  onBlur={(event) => {
+                    const current = event.currentTarget;
+                    window.setTimeout(() => {
+                      if (document.activeElement === current) return;
+                      const active = document.activeElement;
+                      if (
+                        active instanceof Element &&
+                        active.closest(
+                          `[data-code-language-menu="${currentBlockId}"]`
+                        )
+                      ) {
+                        return;
+                      }
+                      closeLanguageMenu();
+                    }, 0);
+                  }}
+                  onPointerDown={stopPreviewEvent}
+                  onMouseDown={stopPreviewEvent}
+                  onPointerUp={stopPreviewEvent}
+                  onMouseUp={stopPreviewEvent}
+                  onClick={stopPreviewEvent}
+                  onInput={handleLanguageInput}
+                  onKeyDown={handleLanguageKeyDown}
+                />
+                <span class="block-renderer__lang-caret" aria-hidden="true" />
+                <Show when={languageOpen()}>
+                  <div
+                    id={languageListboxId}
+                    class="block-renderer__lang-options"
+                    role="listbox"
+                    aria-label="Code language options"
+                    onPointerDown={stopPreviewEvent}
+                    onMouseDown={stopPreviewEvent}
+                    onPointerUp={stopPreviewEvent}
+                    onMouseUp={stopPreviewEvent}
+                    onClick={stopPreviewEvent}
+                  >
+                    <Show
+                      when={filteredLanguageOptions().length > 0}
+                      fallback={
+                        <div class="block-renderer__lang-empty">No matches</div>
+                      }
+                    >
+                      <For each={filteredLanguageOptions()}>
+                        {(option, index) => {
+                          const optionId = `${languageListboxId}-${option.value}`;
+                          const isActive = () => index() === activeLanguageIndex();
+                          const isSelected = () =>
+                            option.value === selectedLanguage();
+                          return (
+                            <button
+                              id={optionId}
+                              type="button"
+                              role="option"
+                              class={`block-renderer__lang-option ${
+                                isActive() ? "is-active" : ""
+                              } ${isSelected() ? "is-selected" : ""}`}
+                              aria-selected={isSelected()}
+                              data-code-edit="true"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applyLanguage(option.value);
+                              }}
+                            >
+                              <span>{option.label}</span>
+                              <span class="block-renderer__lang-option-value">
+                                {option.value}
+                              </span>
+                            </button>
+                          );
+                        }}
+                      </For>
+                    </Show>
+                  </div>
+                </Show>
+              </div>
+            </div>
           </div>
+          <div class="block-renderer__actions">
+            <button
+              class="block-renderer__edit"
+              type="button"
+              aria-label="Edit code"
+              data-code-edit="true"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onEditCode(currentBlockId);
+              }}
+            >
+              <Document16Icon width={14} height={14} />
+              <span>Edit</span>
+            </button>
+          </div>
+          <button
+            class="block-renderer__copy"
+            type="button"
+            aria-label="Copy code"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void copyToClipboard(props.code.content);
+              setCopiedBlockId(currentBlockId);
+              if (copyTimeout) {
+                window.clearTimeout(copyTimeout);
+              }
+              copyTimeout = window.setTimeout(() => {
+                setCopiedBlockId(null);
+              }, 1200);
+            }}
+          >
+            {copiedBlockId() === props.blockId ? "Copied" : "Copy"}
+          </button>
         </div>
-        <button
-          class="block-renderer__copy"
-          type="button"
-          aria-label="Copy code"
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void copyToClipboard(code.content);
-            setCopiedBlockId(blockId);
-            if (copyTimeout) {
-              window.clearTimeout(copyTimeout);
-            }
-            copyTimeout = window.setTimeout(() => {
-              setCopiedBlockId(null);
-            }, 1200);
-          }}
-        >
-          {copiedBlockId() === blockId ? "Copied" : "Copy"}
-        </button>
+        <div class="block-renderer__code-body">
+          <For each={renderedCodeLines()}>
+            {(line, index) => (
+              <div class="block-renderer__code-line">
+                <span class="block-renderer__line-number" aria-hidden="true">
+                  {index() + 1}
+                </span>
+                <div class="block-renderer__line-content">
+                  <span
+                    class="block-renderer__line-content-inner"
+                    innerHTML={line}
+                  />
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
       </div>
-      <pre class="block-renderer__content">
-        <code>{code.content}</code>
-      </pre>
-    </div>
-  );
+    );
+  };
 
   const DiagramPreview = (props: {
     diagram: CodeFence & { renderer: PluginRenderer };
@@ -2682,7 +2993,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!source) {
       return (
         <div class="block-renderer block-renderer--image">
-          <div class="block-renderer__title">Image</div>
           <div class="block-renderer__empty">Enter an HTTP(S) URL or /assets path.</div>
         </div>
       );
@@ -2690,14 +3000,12 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (source.startsWith("http://") || source.startsWith("https://")) {
       return (
         <div class="block-renderer block-renderer--image">
-          <div class="block-renderer__title">Image</div>
           <img class="block-renderer__image" src={source} alt="" loading="lazy" />
         </div>
       );
     }
     return (
       <div class="block-renderer block-renderer--image">
-        <div class="block-renderer__title">Image asset</div>
         <div class="block-renderer__asset-path">{source}</div>
       </div>
     );
@@ -2708,8 +3016,11 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!source) {
       return (
         <div class="block-renderer block-renderer--bookmark">
-          <div class="block-renderer__title">Bookmark</div>
-          <div class="block-renderer__empty">Enter an HTTP(S) URL.</div>
+          <div class="block-renderer__icon">&#x1F517;</div>
+          <div class="block-renderer__body">
+            <div class="block-renderer__body-title">Bookmark</div>
+            <div class="block-renderer__empty">Enter an HTTP(S) URL.</div>
+          </div>
         </div>
       );
     }
@@ -2720,18 +3031,18 @@ export const EditorPane = (props: EditorPaneProps) => {
       host = source;
     }
     return (
-      <div class="block-renderer block-renderer--bookmark">
-        <div class="block-renderer__title">Bookmark</div>
-        <a
-          class="block-renderer__link"
-          href={source}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {host}
-        </a>
-        <div class="block-renderer__asset-path">{source}</div>
+      <div
+        class="block-renderer block-renderer--bookmark"
+        onClick={(event) => {
+          event.stopPropagation();
+          window.open(source, "_blank", "noopener,noreferrer");
+        }}
+      >
+        <div class="block-renderer__icon">&#x1F517;</div>
+        <div class="block-renderer__body">
+          <div class="block-renderer__body-title">{host}</div>
+          <div class="block-renderer__body-meta">{source}</div>
+        </div>
       </div>
     );
   };
@@ -2741,24 +3052,29 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!reference) {
       return (
         <div class="block-renderer block-renderer--file">
-          <div class="block-renderer__title">File</div>
-          <div class="block-renderer__empty">Attach a file or paste an asset link.</div>
+          <div class="block-renderer__icon">&#x1F4CE;</div>
+          <div class="block-renderer__body">
+            <div class="block-renderer__body-title">File</div>
+            <div class="block-renderer__empty">Attach a file or paste an asset link.</div>
+          </div>
         </div>
       );
     }
     return (
       <div class="block-renderer block-renderer--file">
-        <div class="block-renderer__title">File</div>
-        <a
-          class="block-renderer__link"
-          href={reference.source}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {reference.label}
-        </a>
-        <div class="block-renderer__asset-path">{reference.source}</div>
+        <div class="block-renderer__icon">&#x1F4CE;</div>
+        <div class="block-renderer__body">
+          <a
+            class="block-renderer__body-title block-renderer__link"
+            href={reference.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {reference.label}
+          </a>
+          <div class="block-renderer__body-meta">{reference.source}</div>
+        </div>
       </div>
     );
   };
@@ -2776,7 +3092,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     return (
       <div class="block-renderer block-renderer--math">
         <div class="block-renderer__title">Math</div>
-        <pre class="block-renderer__content">
+        <pre class="block-renderer__content" style={{ "font-size": "var(--text-md)", "text-align": "center", "font-style": "italic" }}>
           <code>{content}</code>
         </pre>
       </div>
@@ -2817,7 +3133,10 @@ export const EditorPane = (props: EditorPaneProps) => {
             {(heading) => (
               <li
                 class="toc-preview__item"
-                style={{ "padding-left": `${(heading.level - 1) * 14}px` }}
+                style={{
+                  "padding-left": `${(heading.level - 1) * 16}px`,
+                  "font-weight": heading.level === 1 ? "500" : "400"
+                }}
               >
                 {heading.text}
               </li>
@@ -2968,12 +3287,16 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
     return (
       <div class="block-renderer block-renderer--database">
-        <div class="block-renderer__title">Database view</div>
-        <div class="block-renderer__meta">{queryLabel()}</div>
+        <div class="block-renderer__header">
+          <div class="block-renderer__heading">
+            <div class="block-renderer__title" style={{ "margin-bottom": "0" }}>Database view</div>
+            <div class="block-renderer__meta">{queryLabel()}</div>
+          </div>
+        </div>
         <Show
           when={filteredPages().length > 0}
           fallback={
-            <div class="block-renderer__empty">No pages match this query.</div>
+            <div class="block-renderer__empty" style={{ padding: "var(--space-3) var(--space-4)" }}>No pages match this query.</div>
           }
         >
           <table class="database-preview__table">
@@ -3056,7 +3379,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       }
       return getPluginBlockRenderer(currentBlock().text);
     };
-    const isEditing = () => focusedId() === block.id;
+    const isEditing = () =>
+      focusedId() === block.id || codeEditIntentId() === block.id;
     const isSelected = () => {
       const idx = visibleIndex();
       if (idx < 0) return false;
@@ -3082,6 +3406,20 @@ export const EditorPane = (props: EditorPaneProps) => {
       setBlocks(index, "text", nextText);
       setBlocks(index, "block_type", nextType);
       scheduleSave();
+    };
+    const updateCodeLanguage = (blockId: string, nextLanguage: string) => {
+      const index = findIndexById(blockId);
+      if (index < 0) return;
+      const rowBlock = blocks[index] as Block;
+      const nextText = rewriteInlineFenceLanguage(rowBlock.text, nextLanguage);
+      if (nextText === rowBlock.text) return;
+      setBlocks(index, "text", nextText);
+      setBlocks(index, "block_type", "code");
+      scheduleSave();
+    };
+    const enterCodeRawEdit = (blockId: string) => {
+      setCodeEditIntentId(blockId);
+      focusBlock(blockId, "end");
     };
     const editingText = createMemo(() => {
       const rowBlock = currentBlock();
@@ -3209,7 +3547,14 @@ export const EditorPane = (props: EditorPaneProps) => {
       }
       const code = codePreview();
       if (code) {
-        return renderCodePreview(code, rowBlock.id);
+        return (
+          <CodePreview
+            code={code}
+            blockId={rowBlock.id}
+            onChangeLanguage={updateCodeLanguage}
+            onEditCode={enterCodeRawEdit}
+          />
+        );
       }
       const diagram = diagramPreview();
       if (diagram) {
@@ -3361,14 +3706,31 @@ export const EditorPane = (props: EditorPaneProps) => {
               }
               setActiveId(block.id);
               setFocusedId(block.id);
+              setCodeEditIntentId((current) =>
+                current === block.id ? null : current
+              );
               const input = inputRefs.get(block.id);
               if (input) {
                 autoResizeBlockInput(input);
               }
             }}
             onBlur={(event) => {
+              const inputEl = event.currentTarget;
               storeSelection(block.id, event.currentTarget, true);
-              setFocusedId((current) => (current === block.id ? null : current));
+              window.setTimeout(() => {
+                if (document.activeElement === inputEl) return;
+                const keepCodeIntent =
+                  document.activeElement instanceof Element &&
+                  document.activeElement.closest("[data-code-edit='true']");
+                setFocusedId((current) =>
+                  current === block.id ? null : current
+                );
+                if (!keepCodeIntent) {
+                  setCodeEditIntentId((current) =>
+                    current === block.id ? null : current
+                  );
+                }
+              }, 0);
               if (slashMenu().open && slashMenu().blockId === block.id) {
                 window.setTimeout(() => {
                   closeSlashMenu();
@@ -3482,6 +3844,9 @@ export const EditorPane = (props: EditorPaneProps) => {
                 applyShiftSelection(visibleIndex());
                 return;
               }
+              if (blockType() === "code") {
+                return;
+              }
               if (selectionRange()) {
                 clearSelection();
               }
@@ -3504,7 +3869,14 @@ export const EditorPane = (props: EditorPaneProps) => {
             )}
           </Show>
           <Show when={isEditing() && codePreview()}>
-            {(preview) => renderCodePreview(preview(), currentBlock().id)}
+            {(preview) => (
+              <CodePreview
+                code={preview()}
+                blockId={currentBlock().id}
+                onChangeLanguage={updateCodeLanguage}
+                onEditCode={enterCodeRawEdit}
+              />
+            )}
           </Show>
           <Show when={isEditing() && diagramPreview()}>
             {(preview) => (

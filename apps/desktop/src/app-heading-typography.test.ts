@@ -40,21 +40,43 @@ const getFontSize = (css: string, selector: string) => {
   throw new Error(`Missing selector ${selector}`);
 };
 
-const toRem = (value: string) => {
-  const match = value.match(/^([0-9]*\.?[0-9]+)rem$/u);
-  if (!match?.[1]) {
-    throw new Error(`Expected rem size, got ${value}`);
+/** Resolve a CSS var reference to its declared px value, or parse a rem/px literal. */
+const toNumericPx = (value: string, css: string): number => {
+  // Handle rem literal
+  const remMatch = value.match(/^([0-9]*\.?[0-9]+)rem$/u);
+  if (remMatch?.[1]) return Number.parseFloat(remMatch[1]) * 16;
+
+  // Handle px literal
+  const pxMatch = value.match(/^([0-9]*\.?[0-9]+)px$/u);
+  if (pxMatch?.[1]) return Number.parseFloat(pxMatch[1]);
+
+  // Handle calc(Npx * var(--type-scale)) — extract the px constant
+  const calcMatch = value.match(/calc\(\s*([0-9]*\.?[0-9]+)px\s*\*/u);
+  if (calcMatch?.[1]) return Number.parseFloat(calcMatch[1]);
+
+  // Handle var(--custom-prop) by looking up the declaration in :root
+  const varMatch = value.match(/^var\((--[\w-]+)\)$/u);
+  if (varMatch?.[1]) {
+    const propName = varMatch[1];
+    const declPattern = new RegExp(
+      String.raw`${propName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\s*([^;]+);`,
+      "u"
+    );
+    const declMatch = css.match(declPattern);
+    if (declMatch?.[1]) {
+      return toNumericPx(declMatch[1].trim(), css);
+    }
   }
-  return Number.parseFloat(match[1]);
+  throw new Error(`Cannot resolve size: ${value}`);
 };
 
 describe("Heading typography", () => {
   const css = readCss();
 
   it("uses explicit heading display selectors with descending sizes", () => {
-    const h1 = toRem(getFontSize(css, ".block__display.block__display--heading1"));
-    const h2 = toRem(getFontSize(css, ".block__display.block__display--heading2"));
-    const h3 = toRem(getFontSize(css, ".block__display.block__display--heading3"));
+    const h1 = toNumericPx(getFontSize(css, ".block__display.block__display--heading1"), css);
+    const h2 = toNumericPx(getFontSize(css, ".block__display.block__display--heading2"), css);
+    const h3 = toNumericPx(getFontSize(css, ".block__display.block__display--heading3"), css);
 
     expect(h1).toBeGreaterThan(h2);
     expect(h2).toBeGreaterThan(h3);

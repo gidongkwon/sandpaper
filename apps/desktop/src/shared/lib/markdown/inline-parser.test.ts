@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseInlineFence, parseMarkdownTable } from "./inline-parser";
+import {
+  parseInlineFence,
+  parseMarkdownTable,
+  rewriteInlineFenceLanguage
+} from "./inline-parser";
 
 describe("parseInlineFence", () => {
   it("parses single-line inline fences", () => {
@@ -14,6 +18,31 @@ describe("parseInlineFence", () => {
       lang: "ts",
       content: "const x = 1"
     });
+  });
+
+  it("parses empty inline and multiline fences", () => {
+    expect(parseInlineFence("```ts")).toEqual({
+      lang: "ts",
+      content: ""
+    });
+    expect(parseInlineFence("```ts\n```")).toEqual({
+      lang: "ts",
+      content: ""
+    });
+  });
+});
+
+describe("rewriteInlineFenceLanguage", () => {
+  it("rewrites the language for inline fences", () => {
+    expect(rewriteInlineFenceLanguage("```js const x = 1", "ts")).toBe(
+      "```ts const x = 1"
+    );
+  });
+
+  it("rewrites the language for multiline fences", () => {
+    expect(rewriteInlineFenceLanguage("```js\nconst x = 1\n```", "ts")).toBe(
+      "```ts\nconst x = 1\n```"
+    );
   });
 });
 

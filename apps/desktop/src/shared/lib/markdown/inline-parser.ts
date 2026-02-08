@@ -14,6 +14,11 @@ const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
 const TABLE_ROW_PATTERN = /^\|(.+)\|$/u;
 const TABLE_DIVIDER_CELL_PATTERN = /^:?-{3,}:?$/u;
 
+const normalizeFenceLanguage = (lang: string) => {
+  const trimmed = lang.trim().toLowerCase();
+  return trimmed || "text";
+};
+
 export const parseInlineFence = (text: string): CodeFence | null => {
   const trimmed = text.trim();
   if (!trimmed.startsWith("```")) return null;
@@ -26,11 +31,10 @@ export const parseInlineFence = (text: string): CodeFence | null => {
     const [lang] = header.split(/\s+/);
     if (!lang) return null;
     const contentBody = body.slice(newlineIndex + 1);
-    const closingFence = contentBody.match(/^(.*?)(?:\n```[\t ]*)$/su);
+    const closingFence = contentBody.match(/^(.*?)(?:\n?```[\t ]*)$/su);
     const content = (closingFence?.[1] ?? contentBody).trimEnd();
-    if (!content) return null;
     return {
-      lang: lang.toLowerCase(),
+      lang: normalizeFenceLanguage(lang),
       content
     };
   }
@@ -38,13 +42,42 @@ export const parseInlineFence = (text: string): CodeFence | null => {
   const rest = body.trim();
   if (!rest) return null;
   const [lang, ...codeParts] = rest.split(/\s+/);
-  if (!lang || codeParts.length === 0) return null;
+  if (!lang) return null;
   const content = codeParts.join(" ").replace(/\s+```$/u, "").trimEnd();
-  if (!content) return null;
   return {
-    lang: lang.toLowerCase(),
+    lang: normalizeFenceLanguage(lang),
     content
   };
+};
+
+export const rewriteInlineFenceLanguage = (
+  text: string,
+  nextLanguage: string
+) => {
+  const lang = normalizeFenceLanguage(nextLanguage);
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) {
+    const content = text.trim();
+    return content ? `\`\`\`${lang} ${content}` : `\`\`\`${lang}`;
+  }
+
+  const body = trimmed.slice(3);
+  const newlineIndex = body.indexOf("\n");
+  if (newlineIndex >= 0) {
+    const contentBody = body.slice(newlineIndex + 1);
+    const hasClosingFence = /\n```[\t ]*$/u.test(contentBody);
+    const content = contentBody.replace(/\n```[\t ]*$/u, "");
+    if (hasClosingFence) {
+      return `\`\`\`${lang}\n${content}\n\`\`\``;
+    }
+    return content.length > 0 ? `\`\`\`${lang}\n${content}` : `\`\`\`${lang}\n`;
+  }
+
+  const rest = body.trim();
+  if (!rest) return `\`\`\`${lang}`;
+  const [, ...codeParts] = rest.split(/\s+/);
+  const content = codeParts.join(" ").replace(/\s+```$/u, "").trimEnd();
+  return content ? `\`\`\`${lang} ${content}` : `\`\`\`${lang}`;
 };
 
 export const parseWikilinkToken = (token: string): InlineWikilinkToken | null => {
