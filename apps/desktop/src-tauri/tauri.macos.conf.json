@@ -1,0 +1,17 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "sandpaper",
+        "width": 1100,
+        "height": 720,
+        "decorations": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 14, "y": 25 }
+      }
+    ],
+    "macOSPrivateApi": true
+  }
+}

@@ -18,6 +18,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+#[cfg(target_os = "windows")]
+use window_vibrancy::apply_mica;
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
@@ -2707,6 +2711,21 @@ pub fn run() {
         .manage(Arc::new(RuntimeState::new()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let window = app.get_webview_window("main").unwrap();
+
+            #[cfg(target_os = "macos")]
+            apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, None)
+                .expect("Failed to apply macOS vibrancy");
+
+            #[cfg(target_os = "windows")]
+            {
+                let _ = apply_mica(&window, None)
+                    .or_else(|_| window_vibrancy::apply_acrylic(&window, Some((0, 0, 0, 0))));
+            }
+
+            Ok(())
+        })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if let Some(state) = window.app_handle().try_state::<Arc<RuntimeState>>() {

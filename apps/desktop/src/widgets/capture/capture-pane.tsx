@@ -6,7 +6,7 @@ import {
   type Accessor,
   type Setter
 } from "solid-js";
-import { Send20Icon } from "../../shared/ui/icons";
+import { ArrowUp16FilledIcon } from "../../shared/ui/icons";
 
 export type CaptureItem = {
   id: string;
@@ -167,7 +167,7 @@ export const CapturePane = (props: CapturePaneProps) => {
           onClick={() => handleCapture()}
           aria-label="Send capture"
         >
-          <Send20Icon width="18" height="18" />
+          <ArrowUp16FilledIcon width="16" height="16" />
         </button>
       </div>
     </div>

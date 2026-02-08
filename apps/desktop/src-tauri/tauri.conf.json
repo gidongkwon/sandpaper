@@ -13,10 +13,13 @@
     "windows": [
       {
         "title": "sandpaper",
-        "width": 800,
-        "height": 600
+        "width": 1100,
+        "height": 720,
+        "decorations": false,
+        "transparent": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }

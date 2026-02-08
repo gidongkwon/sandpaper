@@ -1,7 +1,10 @@
 import { Show, type Accessor, type Setter } from "solid-js";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Mode } from "../../shared/model/mode";
-import { Alert16Icon, PanelLeft16Icon, Settings16Icon } from "../../shared/ui/icons";
+import { Alert16Icon, Dismiss12Icon, PanelLeft16Icon, Settings16Icon, Square12Icon, Subtract12Icon } from "../../shared/ui/icons";
 import { IconButton } from "../../shared/ui/icon-button";
+
+const isMac = () => document.documentElement.dataset.platform === "macos";
 
 type TopbarProps = {
   sidebarOpen: Accessor<boolean>;
@@ -32,7 +35,7 @@ export const Topbar = (props: TopbarProps) => {
   };
 
   return (
-    <header class="topbar">
+    <header class="topbar" data-tauri-drag-region>
       <div class="topbar__left">
         <button
           class="topbar__sidebar-toggle"
@@ -94,6 +97,31 @@ export const Topbar = (props: TopbarProps) => {
         >
           <Settings16Icon width="16" height="16" />
         </IconButton>
+        <Show when={!isMac()}>
+          <div class="window-controls">
+            <button
+              class="window-control"
+              onClick={() => getCurrentWindow().minimize()}
+              aria-label="Minimize"
+            >
+              <Subtract12Icon width="12" height="12" />
+            </button>
+            <button
+              class="window-control"
+              onClick={() => getCurrentWindow().toggleMaximize()}
+              aria-label="Maximize"
+            >
+              <Square12Icon width="12" height="12" />
+            </button>
+            <button
+              class="window-control window-control--close"
+              onClick={() => getCurrentWindow().close()}
+              aria-label="Close"
+            >
+              <Dismiss12Icon width="12" height="12" />
+            </button>
+          </div>
+        </Show>
       </div>
     </header>
   );

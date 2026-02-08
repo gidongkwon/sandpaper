@@ -20,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 sandpaper-core = { path = "../../../crates/sandpaper-core" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +33,7 @@ rand_core = "0.6"
 directories = "5"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["alloc", "std", "clock"] }
+window-vibrancy = "0.7"
 
 [dev-dependencies]
 tempfile = "3"
