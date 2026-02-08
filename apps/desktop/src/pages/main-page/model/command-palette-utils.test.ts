@@ -16,6 +16,7 @@ const buildActions = () => ({
   focusSearch: noop,
   focusEditor: noop,
   newPage: noop,
+  newPageWithAllBlockTypes: noop,
   renamePage: noop,
   toggleBacklinks: noop,
   syncNow: noop,
@@ -40,6 +41,7 @@ describe("command palette utils", () => {
     const ids = commands.map((command) => command.id);
     expect(ids).toContain("open-settings");
     expect(ids).toContain("new-page");
+    expect(ids).toContain("new-page-all-block-types");
     expect(ids).toContain("rename-page");
     expect(ids).toContain("toggle-backlinks");
     expect(ids).toContain("sync-now");

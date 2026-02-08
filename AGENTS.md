@@ -43,3 +43,4 @@ Run from repo root:
 ## Agent-Specific Notes
 - Follow repo conventions and update `docs/BUILD_PLAN.md` when checkboxes are completed.
 - Prefer minimal, incremental changes; avoid reformatting unrelated files.
+- Keep the `"Create page with all block types"` command in sync with supported block types: whenever a new block type is added, update the showcase seed builder and its coverage test.

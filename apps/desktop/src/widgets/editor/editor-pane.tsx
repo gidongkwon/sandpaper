@@ -36,6 +36,7 @@ import {
   parseInlineFence,
   parseInlineLinkToken,
   parseMarkdownList,
+  parseMarkdownTable,
   parseWikilinkToken
 } from "../../shared/lib/markdown/inline-parser";
 import { normalizePageUid } from "../../shared/lib/page/normalize-page-uid";
@@ -44,7 +45,11 @@ import { getCaretPosition } from "../../shared/lib/textarea/get-caret-position";
 import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
 import {
   cleanTextForBlockType,
+  extractBookmarkSource,
+  extractDatabaseQuery,
+  extractFileSource,
   extractImageSource,
+  formatDatabaseBlockText,
   inferBlockTypeFromText,
   isTodoChecked,
   resolveRenderBlockType,
@@ -108,6 +113,13 @@ type BlockDropHint = {
   desiredRootIndent?: number;
 };
 
+type ImportedAssetPayload = {
+  asset_path: string;
+  markdown: string;
+  mime_type: string;
+  original_name: string;
+};
+
 type EditorPaneProps = {
   blocks: Block[];
   setBlocks: SetStoreFunction<Block[]>;
@@ -152,6 +164,7 @@ const ROW_HEIGHT = 44;
 const OVERSCAN = 6;
 const BLOCK_INPUT_MIN_HEIGHT = 26;
 const TODO_PREFIX_PATTERN = /^-?\s*\[(?: |x|X)\]\s+/u;
+const ORDERED_LIST_PREFIX_PATTERN = /^\d+\.\s+/u;
 
 const isStructuralBlockType = (blockType: BlockType) =>
   blockType === "column_layout" ||
@@ -314,6 +327,12 @@ export const EditorPane = (props: EditorPaneProps) => {
     "tiff",
     "ico"
   ] as const;
+  const IMAGE_EXTENSION_SET = new Set<string>(IMAGE_EXTENSIONS);
+  const isImageFile = (file: File) => {
+    if (file.type.startsWith("image/")) return true;
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    return IMAGE_EXTENSION_SET.has(ext);
+  };
   let editorRef: HTMLDivElement | undefined;
   let copyTimeout: number | undefined;
   let previewCloseTimeout: number | undefined;
@@ -798,19 +817,23 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!isTauri()) return;
     const items = Array.from(files);
     if (items.length === 0) return;
-    const markdowns: string[] = [];
+    const importedBlocks: Array<{ markdown: string; blockType: BlockType }> = [];
     for (const file of items) {
       try {
-        if (!file.type.startsWith("image/")) continue;
-        const imported = await importImageFile(file);
+        const imported = isImageFile(file)
+          ? await importImageFile(file)
+          : await importFileBytes(file);
         if (imported?.markdown) {
-          markdowns.push(imported.markdown);
+          importedBlocks.push({
+            markdown: imported.markdown,
+            blockType: isImageFile(file) ? "image" : "file"
+          });
         }
       } catch (error) {
-        console.error("Failed to import dropped image", error);
+        console.error("Failed to import dropped file", error);
       }
     }
-    insertImageBlocksAfterActive(markdowns);
+    insertImportedBlocksAfterActive(importedBlocks);
   };
 
   const handleDrop = (event: DragEvent) => {
@@ -825,8 +848,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!isTauri()) return;
     const files = event.clipboardData?.files;
     if (!files || files.length === 0) return;
-    const hasImage = Array.from(files).some((file) => file.type.startsWith("image/"));
-    if (!hasImage) return;
     event.preventDefault();
     void handleDroppedFiles(files);
   };
@@ -1088,13 +1109,19 @@ export const EditorPane = (props: EditorPaneProps) => {
     scheduleSave();
   };
 
-  const insertImageBlocksAfterActive = (markdowns: string[]) => {
-    const nonEmpty = markdowns.map((value) => value.trim()).filter(Boolean);
+  const insertImportedBlocksAfterActive = (
+    importedBlocks: Array<{ markdown: string; blockType: BlockType }>
+  ) => {
+    const nonEmpty = importedBlocks.filter((value) => value.markdown.trim().length > 0);
     if (nonEmpty.length === 0) return;
     const activeIndex = activeId() ? findIndexById(activeId() as string) : -1;
     const insertAt = activeIndex >= 0 ? activeIndex + 1 : blocks.length;
-    const created = nonEmpty.map((markdown) =>
-      createNewBlock(markdown, activeIndex >= 0 ? blocks[activeIndex].indent : 0, "image")
+    const created = nonEmpty.map((asset) =>
+      createNewBlock(
+        asset.markdown.trim(),
+        activeIndex >= 0 ? blocks[activeIndex].indent : 0,
+        asset.blockType
+      )
     );
     setBlocks(
       produce((draft) => {
@@ -1795,23 +1822,14 @@ export const EditorPane = (props: EditorPaneProps) => {
     const mimeType = file.type || "application/octet-stream";
     const buffer = await file.arrayBuffer();
     const bytes = new Uint8Array(buffer);
-    const result = (await invoke<{
-      asset_path: string;
-      markdown: string;
-      mime_type: string;
-      original_name: string;
-    }>("import_image_asset_bytes", {
+    const bytesB64 = bytesToBase64(bytes);
+    const result = await invoke<ImportedAssetPayload>("import_image_asset_bytes", {
       filename,
       mimeType,
       mime_type: mimeType,
-      bytesB64: bytesToBase64(bytes),
-      bytes_b64: bytesToBase64(bytes)
-    })) as {
-      asset_path: string;
-      markdown: string;
-      mime_type: string;
-      original_name: string;
-    };
+      bytesB64,
+      bytes_b64: bytesB64
+    });
     return result;
   };
 
@@ -1828,12 +1846,37 @@ export const EditorPane = (props: EditorPaneProps) => {
     });
     const path = Array.isArray(selected) ? selected[0] : selected;
     if (!path || typeof path !== "string") return null;
-    const result = await invoke<{
-      asset_path: string;
-      markdown: string;
-      mime_type: string;
-      original_name: string;
-    }>("import_image_asset", {
+    const result = await invoke<ImportedAssetPayload>("import_image_asset", {
+      path
+    });
+    return result;
+  };
+
+  const importFileBytes = async (file: File) => {
+    if (!isTauri()) return null;
+    const filename = file.name || "file.bin";
+    const mimeType = file.type || "application/octet-stream";
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const bytesB64 = bytesToBase64(bytes);
+    const result = await invoke<ImportedAssetPayload>("import_file_asset_bytes", {
+      filename,
+      mimeType,
+      mime_type: mimeType,
+      bytesB64,
+      bytes_b64: bytesB64
+    });
+    return result;
+  };
+
+  const importFileFromPicker = async () => {
+    if (!isTauri()) return null;
+    const selected = await openDialog({
+      multiple: false
+    });
+    const path = Array.isArray(selected) ? selected[0] : selected;
+    if (!path || typeof path !== "string") return null;
+    const result = await invoke<ImportedAssetPayload>("import_file_asset", {
       path
     });
     return result;
@@ -1895,13 +1938,65 @@ export const EditorPane = (props: EditorPaneProps) => {
       const content = `${before}${after}`.trim();
       nextText = content ? `\`\`\`text ${content}` : "```text ";
       nextCaret = nextText.length;
+    } else if (commandId === "ordered-list") {
+      nextType = "ordered_list";
+      const content = cleanTextForBlockType(`${before}${after}`, "ordered_list");
+      nextText = content ? `1. ${content}` : "1. ";
+      nextCaret = nextText.length;
+    } else if (commandId === "bookmark") {
+      nextType = "bookmark";
+      const content = `${before}${after}`.trim();
+      nextText = extractBookmarkSource(content) ?? (content || "https://");
+      nextCaret = nextText.length;
+    } else if (commandId === "file") {
+      if (!isTauri()) {
+        nextType = "file";
+        const content = `${before}${after}`.trim();
+        const reference = extractFileSource(content);
+        nextText = reference
+          ? `[${reference.label}](${reference.source})`
+          : "[file](/assets/file.ext)";
+        nextCaret = nextText.length;
+      } else {
+        closeSlashMenu();
+        void (async () => {
+          const imported = await importFileFromPicker();
+          if (!imported) return;
+          setBlocks(index, "text", imported.markdown);
+          setBlocks(index, "block_type", "file");
+          scheduleSave();
+          requestAnimationFrame(() => {
+            const input = inputRefs.get(block.id);
+            if (!input) return;
+            const caret = imported.markdown.length;
+            input.focus();
+            input.setSelectionRange(caret, caret);
+            storeSelection(block.id, input, true);
+          });
+        })();
+        return;
+      }
+    } else if (commandId === "math") {
+      nextType = "math";
+      const content = cleanTextForBlockType(`${before}${after}`, "math");
+      nextText = content ? `$$ ${content} $$` : "$$ $$";
+      nextCaret = nextText.length;
+    } else if (commandId === "toc") {
+      nextType = "toc";
+      nextText = "[TOC]";
+      nextCaret = nextText.length;
+    } else if (commandId === "table") {
+      nextType = "table";
+      nextText =
+        "| Column 1 | Column 2 |\n| --- | --- |\n|  |  |";
+      nextCaret = nextText.length;
     } else if (commandId === "divider") {
       nextType = "divider";
       nextText = "";
       nextCaret = 0;
     } else if (commandId === "database") {
       nextType = "database_view";
-      nextText = `${before}${after}`.trim();
+      nextText = formatDatabaseBlockText(`${before}${after}`);
       nextCaret = nextText.length;
     } else if (commandId === "image") {
       closeSlashMenu();
@@ -2517,6 +2612,33 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const renderMarkdownDisplay = (text: string): JSX.Element => {
+    const table = parseMarkdownTable(text);
+    if (table) {
+      return (
+        <div class="markdown-table-wrap">
+          <table class="markdown-table">
+            <thead>
+              <tr>
+                <For each={table.headers}>
+                  {(cell) => <th>{renderInlineMarkdown(cell)}</th>}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <For each={table.rows}>
+                {(row) => (
+                  <tr>
+                    <For each={row}>
+                      {(cell) => <td>{renderInlineMarkdown(cell)}</td>}
+                    </For>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </div>
+      );
+    }
     const list = parseMarkdownList(text);
     if (list) {
       const items = (
@@ -2554,6 +2676,131 @@ export const EditorPane = (props: EditorPaneProps) => {
       <div class="block-renderer block-renderer--image">
         <div class="block-renderer__title">Image asset</div>
         <div class="block-renderer__asset-path">{source}</div>
+      </div>
+    );
+  };
+
+  const renderBookmarkDisplay = (text: string): JSX.Element => {
+    const source = extractBookmarkSource(text);
+    if (!source) {
+      return (
+        <div class="block-renderer block-renderer--bookmark">
+          <div class="block-renderer__title">Bookmark</div>
+          <div class="block-renderer__empty">Enter an HTTP(S) URL.</div>
+        </div>
+      );
+    }
+    let host = source;
+    try {
+      host = new URL(source).host || source;
+    } catch {
+      host = source;
+    }
+    return (
+      <div class="block-renderer block-renderer--bookmark">
+        <div class="block-renderer__title">Bookmark</div>
+        <a
+          class="block-renderer__link"
+          href={source}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {host}
+        </a>
+        <div class="block-renderer__asset-path">{source}</div>
+      </div>
+    );
+  };
+
+  const renderFileDisplay = (text: string): JSX.Element => {
+    const reference = extractFileSource(text);
+    if (!reference) {
+      return (
+        <div class="block-renderer block-renderer--file">
+          <div class="block-renderer__title">File</div>
+          <div class="block-renderer__empty">Attach a file or paste an asset link.</div>
+        </div>
+      );
+    }
+    return (
+      <div class="block-renderer block-renderer--file">
+        <div class="block-renderer__title">File</div>
+        <a
+          class="block-renderer__link"
+          href={reference.source}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {reference.label}
+        </a>
+        <div class="block-renderer__asset-path">{reference.source}</div>
+      </div>
+    );
+  };
+
+  const renderMathDisplay = (text: string): JSX.Element => {
+    const content = cleanTextForBlockType(text, "math");
+    if (!content) {
+      return (
+        <div class="block-renderer block-renderer--math">
+          <div class="block-renderer__title">Math</div>
+          <div class="block-renderer__empty">Wrap an expression with $$ ... $$.</div>
+        </div>
+      );
+    }
+    return (
+      <div class="block-renderer block-renderer--math">
+        <div class="block-renderer__title">Math</div>
+        <pre class="block-renderer__content">
+          <code>{content}</code>
+        </pre>
+      </div>
+    );
+  };
+
+  const renderTocDisplay = (): JSX.Element => {
+    const headings = blocks
+      .map((candidate) => {
+        const type = getBlockType(candidate);
+        const level =
+          type === "heading1"
+            ? 1
+            : type === "heading2"
+              ? 2
+              : type === "heading3"
+                ? 3
+                : null;
+        if (!level) return null;
+        const text = cleanTextForBlockType(candidate.text, type).trim();
+        if (!text) return null;
+        return { id: candidate.id, text, level };
+      })
+      .filter((entry): entry is { id: string; text: string; level: 1 | 2 | 3 } => entry !== null);
+    if (headings.length === 0) {
+      return (
+        <div class="block-renderer block-renderer--toc">
+          <div class="block-renderer__title">Table of contents</div>
+          <div class="block-renderer__empty">Add headings to populate the outline.</div>
+        </div>
+      );
+    }
+    return (
+      <div class="block-renderer block-renderer--toc">
+        <div class="block-renderer__title">Table of contents</div>
+        <ul class="toc-preview">
+          <For each={headings}>
+            {(heading) => (
+              <li
+                class="toc-preview__item"
+                style={{ "padding-left": `${(heading.level - 1) * 14}px` }}
+              >
+                {heading.text}
+              </li>
+            )}
+          </For>
+        </ul>
       </div>
     );
   };
@@ -2679,35 +2926,78 @@ export const EditorPane = (props: EditorPaneProps) => {
     );
   };
 
-  const DatabaseViewPreview = () => (
-    <div class="block-renderer block-renderer--database">
-      <div class="block-renderer__title">Database view</div>
-      <table class="database-preview__table">
-        <thead>
-          <tr>
-            <th>Page</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={pages().slice(0, 12)}>
-            {(page) => (
+  const DatabaseViewPreview = (props: { block: Block }) => {
+    const query = createMemo(() => extractDatabaseQuery(props.block.text)?.trim() ?? "");
+    const queryLabel = createMemo(() => (query() ? `Query: ${query()}` : "Query: all"));
+    const filteredPages = createMemo(() => {
+      const normalizedQuery = query().toLowerCase();
+      const allPages = pages();
+      if (!normalizedQuery) return allPages.slice(0, 50);
+      return allPages.filter((page) => {
+        const title = (page.title || page.uid || "").toLowerCase();
+        if (title.includes(normalizedQuery)) return true;
+        const localPage = localPages[page.uid];
+        if (!localPage) return false;
+        return localPage.blocks.some((candidate) =>
+          candidate.text.toLowerCase().includes(normalizedQuery)
+        );
+      });
+    });
+    return (
+      <div class="block-renderer block-renderer--database">
+        <div class="block-renderer__title">Database view</div>
+        <div class="block-renderer__meta">{queryLabel()}</div>
+        <Show
+          when={filteredPages().length > 0}
+          fallback={
+            <div class="block-renderer__empty">No pages match this query.</div>
+          }
+        >
+          <table class="database-preview__table">
+            <thead>
               <tr>
-                <td>
-                  <button
-                    class="database-preview__page"
-                    type="button"
-                    onClick={() => void switchPage(page.uid)}
-                  >
-                    {page.title || page.uid}
-                  </button>
-                </td>
+                <th>Page</th>
               </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
-    </div>
-  );
+            </thead>
+            <tbody>
+              <For each={filteredPages().slice(0, 24)}>
+                {(page) => (
+                  <tr>
+                    <td>
+                      <button
+                        class="database-preview__page"
+                        type="button"
+                        onClick={() => void switchPage(page.uid)}
+                      >
+                        {page.title || page.uid}
+                      </button>
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Show>
+      </div>
+    );
+  };
+
+  const getOrderedListIndexAt = (index: number) => {
+    const target = blocks[index];
+    if (!target || getBlockType(target) !== "ordered_list") return 1;
+    const indent = target.indent;
+    let orderedIndex = 1;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = blocks[cursor];
+      if (!candidate) continue;
+      if (candidate.indent < indent) break;
+      if (candidate.indent !== indent) continue;
+      if (getBlockType(candidate) === "ordered_list") {
+        orderedIndex += 1;
+      }
+    }
+    return orderedIndex;
+  };
 
   type BlockRowRenderArgs = {
     block: Block;
@@ -2756,6 +3046,11 @@ export const EditorPane = (props: EditorPaneProps) => {
       blockDropHint()?.blockId === block.id
         ? blockDropHint()?.position
         : null;
+    const orderedListIndex = createMemo(() => {
+      const index = actualIndex();
+      if (index < 0) return 1;
+      return getOrderedListIndexAt(index);
+    });
     const updateBlockText = (blockId: string, nextText: string) => {
       const index = findIndexById(blockId);
       if (index < 0) return;
@@ -2795,10 +3090,26 @@ export const EditorPane = (props: EditorPaneProps) => {
         if (TODO_PREFIX_PATTERN.test(trimmedStart)) return text;
         return toggleTodoText(text, false);
       }
+      if (rowType === "ordered_list") {
+        if (ORDERED_LIST_PREFIX_PATTERN.test(trimmedStart)) return text;
+        const content = cleanTextForBlockType(text, "ordered_list");
+        return content ? `1. ${content}` : "1. ";
+      }
       if (rowType === "code") {
         if (trimmedStart.startsWith("```")) return text;
         const content = text.trim();
         return content ? `\`\`\`text ${content}` : "```text ";
+      }
+      if (rowType === "math") {
+        if (trimmedStart.startsWith("$$")) return text;
+        const content = cleanTextForBlockType(text, "math");
+        return content ? `$$ ${content} $$` : "$$ $$";
+      }
+      if (rowType === "toc") {
+        return "[TOC]";
+      }
+      if (rowType === "database_view") {
+        return formatDatabaseBlockText(text);
       }
       if (rowType === "divider") {
         return text.trim().length > 0 ? text : "---";
@@ -2817,6 +3128,9 @@ export const EditorPane = (props: EditorPaneProps) => {
       if (rowType === "todo") {
         return cleanTextForBlockType(rowBlock.text, "todo");
       }
+      if (rowType === "ordered_list") {
+        return cleanTextForBlockType(rowBlock.text, "ordered_list");
+      }
       if (rowType === "code") {
         return stripCodeTypeMarker(rowBlock.text);
       }
@@ -2830,13 +3144,25 @@ export const EditorPane = (props: EditorPaneProps) => {
         return <ColumnLayoutPreview layoutIndex={index} />;
       }
       if (rowType === "database_view") {
-        return <DatabaseViewPreview />;
+        return <DatabaseViewPreview block={rowBlock} />;
       }
       if (rowType === "divider") {
         return <div class="block-renderer block-renderer--divider" />;
       }
       if (rowType === "image") {
         return renderImageDisplay(rowBlock.text);
+      }
+      if (rowType === "bookmark") {
+        return renderBookmarkDisplay(rowBlock.text);
+      }
+      if (rowType === "file") {
+        return renderFileDisplay(rowBlock.text);
+      }
+      if (rowType === "math") {
+        return renderMathDisplay(rowBlock.text);
+      }
+      if (rowType === "toc") {
+        return renderTocDisplay();
       }
       if (rowType === "todo") {
         const todoText = displayText();
@@ -2962,7 +3288,16 @@ export const EditorPane = (props: EditorPaneProps) => {
         </Show>
         <Show
           when={blockType() === "todo"}
-          fallback={<span class="block__bullet" aria-hidden="true" />}
+          fallback={
+            <Show
+              when={blockType() === "ordered_list"}
+              fallback={<span class="block__bullet" aria-hidden="true" />}
+            >
+              <span class="block__ordered-index" aria-hidden="true">
+                {orderedListIndex()}.
+              </span>
+            </Show>
+          }
         >
           <button
             class={`block__todo-check ${

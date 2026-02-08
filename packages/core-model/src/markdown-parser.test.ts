@@ -75,6 +75,13 @@ describe("parseMarkdownPage", () => {
         "- --- ^d1\n" +
         "- ```ts const x = 1 ^c1\n" +
         "- ![](https://example.com/cat.png) ^i1\n" +
+        "- 1. Numbered item ^n1\n" +
+        "- https://example.com/article ^bm1\n" +
+        "- [spec](/assets/spec--abc123.pdf) ^f1\n" +
+        "- $$ E = mc^2 $$ ^m1\n" +
+        "- [TOC] ^toc1\n" +
+        "- | Name | Qty | ^tb1\n" +
+        "- ```database query=project ^db1\n" +
         "- Legacy callout ^k1 <!--sp:{\"type\":\"callout\"}-->\n",
       makeId
     );
@@ -86,7 +93,34 @@ describe("parseMarkdownPage", () => {
       "divider",
       "code",
       "image",
+      "ordered_list",
+      "bookmark",
+      "file",
+      "math",
+      "toc",
+      "table",
+      "database_view",
       "callout"
+    ]);
+  });
+
+  it("parses multiline list item text and keeps trailing ids", () => {
+    const makeId = buildIdFactory();
+    const result = parseMarkdownPage(
+      "# Notes\n" +
+        "- | Name | Qty |\n" +
+        "  | --- | --- |\n" +
+        "  | Pencil | 2 | ^tb1\n",
+      makeId
+    );
+
+    expect(result.page.blocks).toEqual([
+      {
+        id: "tb1",
+        text: "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |",
+        indent: 0,
+        block_type: "table"
+      }
     ]);
   });
 

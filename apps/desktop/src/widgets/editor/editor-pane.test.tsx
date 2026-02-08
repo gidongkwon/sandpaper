@@ -1847,6 +1847,267 @@ describe("EditorPane", () => {
     expect(listDisplay?.textContent).toContain("- Keep list marker");
   });
 
+  it("renders ordered list, bookmark, file, math, and toc block previews", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "h1", text: "# Intro", indent: 0, block_type: "heading1" },
+      { id: "toc1", text: "[TOC]", indent: 0, block_type: "toc" },
+      { id: "o1", text: "1. First item", indent: 0, block_type: "ordered_list" },
+      { id: "b1", text: "https://example.com/article", indent: 0, block_type: "bookmark" },
+      { id: "f1", text: "[Spec](/assets/spec--abc123.pdf)", indent: 0, block_type: "file" },
+      { id: "m1", text: "$$ E = mc^2 $$", indent: 0, block_type: "math" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const ordered = container.querySelector<HTMLElement>(
+      '[data-block-id="o1"] .block__ordered-index'
+    );
+    expect(ordered).not.toBeNull();
+    expect(ordered?.textContent?.trim()).toBe("1.");
+
+    const bookmark = container.querySelector<HTMLElement>(
+      '[data-block-id="b1"] .block-renderer--bookmark'
+    );
+    expect(bookmark).not.toBeNull();
+    expect(bookmark?.textContent).toContain("example.com");
+
+    const file = container.querySelector<HTMLElement>(
+      '[data-block-id="f1"] .block-renderer--file'
+    );
+    expect(file).not.toBeNull();
+    expect(file?.textContent).toContain("Spec");
+
+    const math = container.querySelector<HTMLElement>(
+      '[data-block-id="m1"] .block-renderer--math'
+    );
+    expect(math).not.toBeNull();
+    expect(math?.textContent).toContain("E = mc^2");
+    expect(math?.textContent).not.toContain("$$");
+
+    const toc = container.querySelector<HTMLElement>(
+      '[data-block-id="toc1"] .block-renderer--toc'
+    );
+    expect(toc).not.toBeNull();
+    expect(toc?.textContent).toContain("Intro");
+  });
+
+  it("renders markdown tables in display mode and preserves full source while editing", async () => {
+    const tableSource = "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |";
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "tb1", text: tableSource, indent: 0, block_type: "table" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => [] as PageSummary[]}
+        activePageUid={() => "page-1" as PageId}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={{} as Record<PageId, LocalPageRecord>}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const table = container.querySelector<HTMLElement>(
+      '[data-block-id="tb1"] .markdown-table'
+    );
+    expect(table).not.toBeNull();
+    expect(table?.textContent).toContain("Name");
+    expect(table?.textContent).toContain("Pencil");
+    expect(table?.textContent).not.toContain("| --- | --- |");
+
+    const display = container.querySelector<HTMLElement>(
+      '[data-block-id="tb1"] .block__display'
+    );
+    expect(display).not.toBeNull();
+    if (!display) return;
+    fireEvent.click(display);
+
+    const input = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="tb1"]'
+    );
+    expect(input).not.toBeNull();
+    if (!input) return;
+    await waitFor(() => {
+      expect(input.style.display).toBe("block");
+      expect(input.value).toBe(tableSource);
+    });
+  });
+
+  it("filters database view results using database language block query", () => {
+    const [blocks, setBlocks] = createStore<Block[]>([
+      { id: "db1", text: "```database project", indent: 0, block_type: "database_view" }
+    ]);
+    const [activeId, setActiveId] = createSignal<string | null>(null);
+    const [focusedId, setFocusedId] = createSignal<string | null>(null);
+    type EditorPaneProps = Parameters<typeof EditorPane>[0];
+    const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+    const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+    const [renameTitle, setRenameTitle] = createSignal("");
+    const [pageTitle] = createSignal("Test Page");
+    const projectUid = "project-alpha" as PageId;
+    const inboxUid = "inbox" as PageId;
+    const randomUid = "random" as PageId;
+    const pageList: PageSummary[] = [
+      { uid: projectUid, title: "Project Alpha" },
+      { uid: inboxUid, title: "Inbox" },
+      { uid: randomUid, title: "Random" }
+    ];
+    const cachedPages: Record<PageId, LocalPageRecord> = {
+      [projectUid]: {
+        uid: projectUid,
+        title: "Project Alpha",
+        blocks: [{ id: "p1", text: "overview", indent: 0, block_type: "text" }]
+      },
+      [inboxUid]: {
+        uid: inboxUid,
+        title: "Inbox",
+        blocks: [{ id: "i1", text: "project notes", indent: 0, block_type: "text" }]
+      },
+      [randomUid]: {
+        uid: randomUid,
+        title: "Random",
+        blocks: [{ id: "r1", text: "misc", indent: 0, block_type: "text" }]
+      }
+    };
+
+    const { container } = render(() => (
+      <EditorPane
+        blocks={blocks}
+        setBlocks={setBlocks}
+        activeId={activeId}
+        setActiveId={setActiveId}
+        focusedId={focusedId}
+        setFocusedId={setFocusedId}
+        highlightedBlockId={() => null}
+        jumpTarget={jumpTarget}
+        setJumpTarget={setJumpTarget}
+        createNewBlock={(text = "", indent = 0) => ({
+          id: "new",
+          text,
+          indent
+        })}
+        scheduleSave={vi.fn()}
+        recordLatency={vi.fn()}
+        addReviewItem={vi.fn()}
+        pageBusy={() => false}
+        renameTitle={renameTitle}
+        setRenameTitle={setRenameTitle}
+        renamePage={vi.fn()}
+        pages={() => pageList}
+        activePageUid={() => projectUid}
+        resolvePageUid={(value) => value as PageId}
+        setNewPageTitle={vi.fn()}
+        createPage={vi.fn()}
+        switchPage={vi.fn()}
+        createPageFromLink={vi.fn()}
+        isTauri={() => false}
+        localPages={cachedPages}
+        saveLocalPageSnapshot={vi.fn()}
+        snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+        pageTitle={pageTitle}
+        renderersByKind={() => new Map()}
+        blockRenderersByLang={() => new Map()}
+        perfEnabled={() => false}
+        scrollMeter={{ notifyScroll: vi.fn() }}
+      />
+    ));
+
+    const preview = container.querySelector<HTMLElement>(
+      '[data-block-id="db1"] .block-renderer--database'
+    );
+    expect(preview).not.toBeNull();
+    expect(preview?.textContent).toContain("Query: project");
+    expect(preview?.textContent).toContain("Project Alpha");
+    expect(preview?.textContent).toContain("Inbox");
+    expect(preview?.textContent).not.toContain("Random");
+  });
+
   it("renders column layout preview without title, count, or column names", () => {
     const [blocks, setBlocks] = createStore<Block[]>([
       { id: "layout", text: "", indent: 0, block_type: "column_layout" },

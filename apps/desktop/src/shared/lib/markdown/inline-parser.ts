@@ -1,6 +1,7 @@
 import type {
   CodeFence,
   InlineLinkToken,
+  MarkdownTable,
   InlineWikilinkToken,
   MarkdownList
 } from "../../model/markdown-types";
@@ -10,6 +11,8 @@ export const INLINE_MARKDOWN_PATTERN =
 
 const ORDERED_LIST_PATTERN = /^\s*\d+\.\s+(.+)$/;
 const UNORDERED_LIST_PATTERN = /^\s*[-*+]\s+(.+)$/;
+const TABLE_ROW_PATTERN = /^\|(.+)\|$/u;
+const TABLE_DIVIDER_CELL_PATTERN = /^:?-{3,}:?$/u;
 
 export const parseInlineFence = (text: string): CodeFence | null => {
   const trimmed = text.trim();
@@ -83,4 +86,32 @@ export const parseMarkdownList = (text: string): MarkdownList | null => {
     type: isOrdered ? "ol" : "ul",
     items
   };
+};
+
+const parseTableRow = (line: string): string[] | null => {
+  const trimmed = line.trim();
+  const match = trimmed.match(TABLE_ROW_PATTERN);
+  if (!match) return null;
+  const content = match[1] ?? "";
+  const cells = content.split("|").map((cell) => cell.trim());
+  return cells.length >= 2 ? cells : null;
+};
+
+export const parseMarkdownTable = (text: string): MarkdownTable | null => {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length < 2) return null;
+  const headers = parseTableRow(lines[0]);
+  const divider = parseTableRow(lines[1]);
+  if (!headers || !divider || headers.length !== divider.length) return null;
+  if (!divider.every((cell) => TABLE_DIVIDER_CELL_PATTERN.test(cell))) return null;
+  const rows: string[][] = [];
+  for (const line of lines.slice(2)) {
+    const row = parseTableRow(line);
+    if (!row || row.length !== headers.length) return null;
+    rows.push(row);
+  }
+  return { headers, rows };
 };

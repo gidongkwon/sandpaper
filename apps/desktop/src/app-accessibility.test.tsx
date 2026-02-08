@@ -51,6 +51,36 @@ describe("App accessibility", () => {
     });
   });
 
+  it("creates a block type showcase page from the command palette", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+
+    await screen.findByText(/saved/i);
+    await user.keyboard("{Control>}k{/Control}");
+
+    const palette = await screen.findByRole("dialog", {
+      name: "Command palette"
+    });
+    const input = within(palette).getByPlaceholderText("Search commands...");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+
+    await user.type(input, "all block types");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText("Block Type Showcase", {
+        selector: ".editor-pane__title"
+      })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Block Type Showcase", {
+        selector: ".page-item__title"
+      })
+    ).toBeInTheDocument();
+  });
+
   it("tabs between section jump points", async () => {
     const user = userEvent.setup();
     render(() => <App />);

@@ -8,6 +8,11 @@ export type MarkdownList = {
   items: string[];
 };
 
+export type MarkdownTable = {
+  headers: string[];
+  rows: string[][];
+};
+
 export type InlineWikilinkToken = {
   target: string;
   label: string;

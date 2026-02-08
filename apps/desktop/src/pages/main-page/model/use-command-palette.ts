@@ -26,6 +26,7 @@ type CommandPaletteDeps = {
   getSearchInput: () => HTMLInputElement | undefined;
   focusEditorSection: () => void;
   openNewPageDialog: () => void;
+  createPageWithAllBlockTypes: () => void | Promise<void>;
   openRenamePageDialog: () => void;
   setSettingsOpen: (open: boolean) => void;
   syncConnected: Accessor<boolean>;
@@ -76,6 +77,7 @@ export const createCommandPalette = (deps: CommandPaletteDeps) => {
         },
         focusEditor: deps.focusEditorSection,
         newPage: deps.openNewPageDialog,
+        newPageWithAllBlockTypes: () => void deps.createPageWithAllBlockTypes(),
         renamePage: deps.openRenamePageDialog,
         toggleBacklinks: () => deps.setBacklinksOpen((prev) => !prev),
         syncNow: () => void deps.syncNow(),

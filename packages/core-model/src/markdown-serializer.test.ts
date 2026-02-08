@@ -65,7 +65,19 @@ describe("serializePageToMarkdown", () => {
         { id: "t1", text: "Task", indent: 0, block_type: "todo" },
         { id: "d1", text: "", indent: 0, block_type: "divider" },
         { id: "c1", text: "const x = 1", indent: 0, block_type: "code" },
-        { id: "i1", text: "https://example.com/cat.png", indent: 0, block_type: "image" }
+        { id: "i1", text: "https://example.com/cat.png", indent: 0, block_type: "image" },
+        { id: "n1", text: "Numbered", indent: 0, block_type: "ordered_list" },
+        { id: "bm1", text: "https://example.com/article", indent: 0, block_type: "bookmark" },
+        { id: "f1", text: "/assets/spec--abc123.pdf", indent: 0, block_type: "file" },
+        { id: "m1", text: "E = mc^2", indent: 0, block_type: "math" },
+        { id: "toc1", text: "", indent: 0, block_type: "toc" },
+        { id: "db1", text: "query=inbox", indent: 0, block_type: "database_view" },
+        {
+          id: "tb1",
+          text: "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |",
+          indent: 0,
+          block_type: "table"
+        }
       ]
     };
 
@@ -75,7 +87,14 @@ describe("serializePageToMarkdown", () => {
         "- - [ ] Task ^t1\n" +
         "- --- ^d1\n" +
         "- ```text const x = 1 ^c1\n" +
-        "- ![](https://example.com/cat.png) ^i1\n"
+        "- ![](https://example.com/cat.png) ^i1\n" +
+        "- 1. Numbered ^n1\n" +
+        "- https://example.com/article ^bm1\n" +
+        "- [spec--abc123.pdf](/assets/spec--abc123.pdf) ^f1\n" +
+        "- $$ E = mc^2 $$ ^m1\n" +
+        "- [TOC] ^toc1\n" +
+        "- ```database inbox ^db1\n" +
+        "- | Name | Qty |\n  | --- | --- |\n  | Pencil | 2 | ^tb1\n"
     );
   });
 });

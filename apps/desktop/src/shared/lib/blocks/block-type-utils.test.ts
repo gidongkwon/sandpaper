@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   cleanTextForBlockType,
   extractImageSource,
+  formatDatabaseBlockText,
   inferBlockTypeFromText,
+  extractDatabaseQuery,
   resolveRenderBlockType,
   isTodoChecked,
   toggleTodoText
 } from "./block-type-utils";
 
 describe("block-type-utils", () => {
-  it("infers heading, todo, divider, quote and code types", () => {
+  it("infers markdown-native and rich block types", () => {
     expect(inferBlockTypeFromText("# Title")).toBe("heading1");
     expect(inferBlockTypeFromText("## Title")).toBe("heading2");
     expect(inferBlockTypeFromText("### Title")).toBe("heading3");
@@ -17,6 +19,17 @@ describe("block-type-utils", () => {
     expect(inferBlockTypeFromText("- [ ] task")).toBe("todo");
     expect(inferBlockTypeFromText("---")).toBe("divider");
     expect(inferBlockTypeFromText("```ts const x = 1")).toBe("code");
+    expect(inferBlockTypeFromText("1. First")).toBe("ordered_list");
+    expect(inferBlockTypeFromText("```database project")).toBe("database_view");
+    expect(inferBlockTypeFromText("https://example.com/article")).toBe("bookmark");
+    expect(inferBlockTypeFromText("[doc](/assets/spec--abc123.pdf)")).toBe("file");
+    expect(inferBlockTypeFromText("$$ E = mc^2 $$")).toBe("math");
+    expect(inferBlockTypeFromText("[TOC]")).toBe("toc");
+    expect(
+      inferBlockTypeFromText(
+        "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |"
+      )
+    ).toBe("table");
   });
 
   it("extracts image sources from markdown and direct paths", () => {
@@ -38,6 +51,11 @@ describe("block-type-utils", () => {
     expect(cleanTextForBlockType("# Hello", "heading1")).toBe("Hello");
     expect(cleanTextForBlockType("> Quote", "quote")).toBe("Quote");
     expect(cleanTextForBlockType("- [x] done", "todo")).toBe("done");
+    expect(cleanTextForBlockType("1. Item", "ordered_list")).toBe("Item");
+    expect(cleanTextForBlockType("```database query=project", "database_view")).toBe(
+      "project"
+    );
+    expect(cleanTextForBlockType("$$ E = mc^2 $$", "math")).toBe("E = mc^2");
     expect(cleanTextForBlockType("text", "divider")).toBe("");
     expect(
       cleanTextForBlockType("![Cat](https://example.com/cat.png)", "image")
@@ -61,5 +79,16 @@ describe("block-type-utils", () => {
     expect(
       resolveRenderBlockType({ text: "# Title", block_type: "quote" })
     ).toBe("quote");
+  });
+
+  it("normalizes database language blocks and extracts queries", () => {
+    expect(formatDatabaseBlockText("project alpha")).toBe("```database project alpha");
+    expect(formatDatabaseBlockText("```database query=project alpha")).toBe(
+      "```database project alpha"
+    );
+    expect(extractDatabaseQuery("```database project alpha")).toBe("project alpha");
+    expect(
+      extractDatabaseQuery("```database\nquery: inbox\n```")
+    ).toBe("inbox");
   });
 });

@@ -2,6 +2,7 @@ import { createSignal, type Accessor, type Setter } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
 import { normalizePageUid } from "../../../shared/lib/page/normalize-page-uid";
 import type { Block, BlockPayload } from "../../../entities/block/model/block-types";
+import { BLOCK_TYPE_SHOWCASE_TITLE } from "../../../shared/lib/blocks/block-seeds";
 import type {
   LocalPageRecord,
   PageBlocksResponse,
@@ -30,7 +31,9 @@ type PageOpsDeps = {
   loadBlocks: (pageUid: string) => Promise<void>;
   saveLocalPageSnapshot: (pageUid: string, title: string, items: Block[]) => void;
   buildEmptyBlocks: (makeId: () => string) => Block[];
+  buildAllBlockTypeShowcaseBlocks: (makeId: () => string) => Block[];
   makeLocalId: () => string;
+  makeBlockId: () => string;
   cancelPendingSave: (pageUid: string) => void;
   toPayload: (block: Block) => BlockPayload;
   defaultPageUid: string;
@@ -169,6 +172,71 @@ export const createPageOps = (deps: PageOpsDeps) => {
       setRenameTitle(created.title);
     } catch (error) {
       console.error("Failed to create page", error);
+      setPageMessage("Failed to create page.");
+    } finally {
+      setPageBusy(false);
+    }
+  };
+
+  const resolveUniqueTitle = (baseTitle: string) => {
+    const knownUids = new Set<string>();
+    for (const page of deps.pages()) {
+      knownUids.add(deps.resolvePageUid(page.uid));
+      knownUids.add(deps.resolvePageUid(page.title));
+    }
+    for (const page of Object.values(deps.localPages)) {
+      knownUids.add(deps.resolvePageUid(page.uid));
+      knownUids.add(deps.resolvePageUid(page.title));
+    }
+
+    if (!knownUids.has(deps.resolvePageUid(baseTitle))) {
+      return baseTitle;
+    }
+
+    let counter = 2;
+    while (knownUids.has(deps.resolvePageUid(`${baseTitle} ${counter}`))) {
+      counter += 1;
+    }
+    return `${baseTitle} ${counter}`;
+  };
+
+  const createPageWithBlocks = async (title: string, seededBlocks: Block[]) => {
+    let created: PageSummary;
+    if (deps.isTauri()) {
+      created = (await deps.invoke("create_page", {
+        payload: { title }
+      })) as PageSummary;
+      await deps.invoke("save_page_blocks", {
+        pageUid: created.uid,
+        page_uid: created.uid,
+        blocks: seededBlocks.map((block) => deps.toPayload(block))
+      });
+      await deps.loadPages();
+    } else {
+      const uid = resolveUniqueLocalPageUid(
+        title,
+        deps.localPages,
+        deps.resolvePageUid
+      );
+      deps.saveLocalPageSnapshot(uid, title, seededBlocks);
+      created = { uid, title };
+      await deps.loadPages();
+    }
+
+    await persistActivePage(created.uid);
+    await deps.loadBlocks(created.uid);
+    setRenameTitle(created.title);
+  };
+
+  const createPageWithAllBlockTypes = async () => {
+    setPageBusy(true);
+    setPageMessage(null);
+    try {
+      const title = resolveUniqueTitle(BLOCK_TYPE_SHOWCASE_TITLE);
+      const seededBlocks = deps.buildAllBlockTypeShowcaseBlocks(deps.makeBlockId);
+      await createPageWithBlocks(title, seededBlocks);
+    } catch (error) {
+      console.error("Failed to create block type showcase page", error);
       setPageMessage("Failed to create page.");
     } finally {
       setPageBusy(false);
@@ -321,6 +389,7 @@ export const createPageOps = (deps: PageOpsDeps) => {
     switchPage,
     ensureDailyNote,
     createPage,
+    createPageWithAllBlockTypes,
     createPageFromLink,
     renamePage,
     updateWikilinksAcrossPages

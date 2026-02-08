@@ -16,6 +16,7 @@ type PaletteActions = {
   focusSearch: () => void;
   focusEditor: () => void;
   newPage: () => void;
+  newPageWithAllBlockTypes: () => void;
   renamePage: () => void;
   toggleBacklinks: () => void;
   syncNow: () => void;
@@ -78,6 +79,11 @@ export const buildPaletteCommands = (args: BuildPaletteArgs) => {
         id: "new-page",
         label: "Create new page",
         action: args.actions.newPage
+      },
+      {
+        id: "new-page-all-block-types",
+        label: "Create page with all block types",
+        action: args.actions.newPageWithAllBlockTypes
       },
       {
         id: "rename-page",

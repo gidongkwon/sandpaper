@@ -1613,6 +1613,20 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.block__ordered-index {
+  min-width: 22px;
+  margin-top: 4px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.block.is-active .block__ordered-index {
+  color: var(--accent);
+}
+
 .block--type-heading1 .block__bullet,
 .block--type-heading2 .block__bullet,
 .block--type-heading3 .block__bullet,
@@ -1622,6 +1636,11 @@ button:disabled {
 .block--type-divider .block__bullet,
 .block--type-toggle .block__bullet,
 .block--type-image .block__bullet,
+.block--type-table .block__bullet,
+.block--type-bookmark .block__bullet,
+.block--type-file .block__bullet,
+.block--type-math .block__bullet,
+.block--type-toc .block__bullet,
 .block--type-column_layout .block__bullet,
 .block--type-database_view .block__bullet {
   opacity: 0;
@@ -1899,6 +1918,32 @@ button:disabled {
   margin: 2px 0;
 }
 
+.block__display .markdown-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.block__display .markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  white-space: normal;
+}
+
+.block__display .markdown-table th,
+.block__display .markdown-table td {
+  border: 1px solid var(--border-subtle);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.block__display .markdown-table th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
 .block__placeholder {
   color: var(--text-tertiary);
 }
@@ -2011,6 +2056,15 @@ button:disabled {
   gap: var(--space-2);
 }
 
+.block-renderer--bookmark,
+.block-renderer--file,
+.block-renderer--math,
+.block-renderer--toc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
 .block-renderer__image {
   width: 100%;
   max-height: 260px;
@@ -2033,6 +2087,32 @@ button:disabled {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   padding: var(--space-1-5);
+}
+
+.block-renderer__link {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.block-renderer__link:hover {
+  color: var(--accent-hover);
+}
+
+.toc-preview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toc-preview__item {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
 
 .column-layout-preview {

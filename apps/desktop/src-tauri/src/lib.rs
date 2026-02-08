@@ -192,6 +192,14 @@ struct ImportImageAssetBytesPayload {
     bytes_b64: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportFileAssetBytesPayload {
+    filename: String,
+    mime_type: Option<String>,
+    bytes_b64: String,
+}
+
 #[derive(Debug, Clone)]
 struct BlockState {
     id: String,
@@ -747,6 +755,35 @@ fn image_mime_for_extension(ext: &str) -> Option<&'static str> {
     }
 }
 
+fn file_extension_for_path(path: &std::path::Path) -> Option<String> {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn file_mime_for_extension(ext: &str) -> &'static str {
+    match ext {
+        "pdf" => "application/pdf",
+        "txt" | "md" => "text/plain",
+        "json" => "application/json",
+        "csv" => "text/csv",
+        "zip" => "application/zip",
+        "gz" => "application/gzip",
+        "tar" => "application/x-tar",
+        "7z" => "application/x-7z-compressed",
+        "doc" => "application/msword",
+        "docx" => {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        }
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" => "application/vnd.ms-powerpoint",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        _ => "application/octet-stream",
+    }
+}
+
 fn hash_bytes_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -760,6 +797,15 @@ fn markdown_image_text(source: &str, original_name: &str) -> String {
         .unwrap_or("image");
     let safe_alt = name.replace(['[', ']'], "");
     format!("![{safe_alt}]({source})")
+}
+
+fn markdown_file_text(source: &str, original_name: &str) -> String {
+    let name = std::path::Path::new(original_name)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("file");
+    let safe_label = name.replace(['[', ']'], "");
+    format!("[{safe_label}]({source})")
 }
 
 fn ensure_image_asset_from_bytes(
@@ -824,6 +870,74 @@ fn ensure_image_asset_from_bytes(
     Ok(ImageAssetImportResponse {
         asset_path: source.clone(),
         markdown: markdown_image_text(&source, original_name),
+        mime_type: record.mime_type,
+        original_name: record
+            .original_name
+            .unwrap_or_else(|| original_name.to_string()),
+    })
+}
+
+fn ensure_file_asset_from_bytes(
+    db: &Database,
+    vault_root: &std::path::Path,
+    bytes: &[u8],
+    original_name: &str,
+    explicit_mime: Option<&str>,
+) -> Result<ImageAssetImportResponse, String> {
+    let ext = std::path::Path::new(original_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "bin".to_string());
+    let mime = explicit_mime
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| file_mime_for_extension(&ext).to_string());
+
+    let hash = hash_bytes_hex(bytes);
+    if let Some(existing) = db
+        .get_asset_by_hash(&hash)
+        .map_err(|err| format!("{:?}", err))?
+    {
+        let source = format!("/{}", existing.path.trim_start_matches('/'));
+        return Ok(ImageAssetImportResponse {
+            asset_path: source.clone(),
+            markdown: markdown_file_text(&source, original_name),
+            mime_type: existing.mime_type,
+            original_name: existing
+                .original_name
+                .unwrap_or_else(|| original_name.to_string()),
+        });
+    }
+
+    let original_stem = std::path::Path::new(original_name)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    let safe_stem = sanitize_asset_stem(original_stem);
+    let hash_short = &hash[..12];
+    let file_name = format!("{safe_stem}--{hash_short}.{ext}");
+    let relative_path = std::path::Path::new("assets").join(file_name);
+    let full_path = vault_root.join(&relative_path);
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
+    }
+    std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
+
+    let record = db
+        .upsert_asset(
+            &hash,
+            relative_path.to_string_lossy().as_ref(),
+            &mime,
+            bytes.len() as i64,
+            Some(original_name),
+        )
+        .map_err(|err| format!("{:?}", err))?;
+    let source = format!("/{}", record.path.trim_start_matches('/'));
+    Ok(ImageAssetImportResponse {
+        asset_path: source.clone(),
+        markdown: markdown_file_text(&source, original_name),
         mime_type: record.mime_type,
         original_name: record
             .original_name
@@ -1954,6 +2068,46 @@ fn import_image_asset_bytes(
     )
 }
 
+#[tauri::command]
+fn import_file_asset(path: String) -> Result<ImageAssetImportResponse, String> {
+    let file_path = PathBuf::from(path.trim());
+    if !file_path.exists() {
+        return Err("File not found.".to_string());
+    }
+    let original_name = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Invalid file name.".to_string())?
+        .to_string();
+    let ext = file_extension_for_path(&file_path).unwrap_or_else(|| "bin".to_string());
+    let mime = file_mime_for_extension(&ext);
+    let bytes = std::fs::read(&file_path).map_err(|err| format!("{:?}", err))?;
+    let db = open_active_database()?;
+    let vault_root = resolve_active_vault_path()?;
+    ensure_file_asset_from_bytes(&db, &vault_root, &bytes, &original_name, Some(mime))
+}
+
+#[tauri::command]
+fn import_file_asset_bytes(
+    payload: ImportFileAssetBytesPayload,
+) -> Result<ImageAssetImportResponse, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload.bytes_b64.as_bytes())
+        .map_err(|_| "Invalid file payload".to_string())?;
+    if bytes.is_empty() {
+        return Err("File payload is empty.".to_string());
+    }
+    let db = open_active_database()?;
+    let vault_root = resolve_active_vault_path()?;
+    ensure_file_asset_from_bytes(
+        &db,
+        &vault_root,
+        &bytes,
+        &payload.filename,
+        payload.mime_type.as_deref(),
+    )
+}
+
 fn strip_heading_prefix(value: &str) -> &str {
     let trimmed = value.trim_start();
     if let Some(rest) = trimmed.strip_prefix("### ") {
@@ -2024,6 +2178,156 @@ fn format_todo_text(value: &str) -> String {
     }
 }
 
+fn strip_ordered_list_prefix(value: &str) -> &str {
+    let trimmed = value.trim_start();
+    let mut chars = trimmed.char_indices();
+    while let Some((_, ch)) = chars.next() {
+        if ch.is_ascii_digit() {
+            continue;
+        }
+        if ch == '.' {
+            if let Some((space_index, next)) = chars.next() {
+                if next == ' ' {
+                    return &trimmed[space_index + 1..];
+                }
+            }
+            break;
+        }
+        break;
+    }
+    trimmed
+}
+
+fn format_ordered_list_text(value: &str) -> String {
+    let trimmed = value.trim_start();
+    if strip_ordered_list_prefix(trimmed) != trimmed {
+        return trimmed.trim_end().to_string();
+    }
+    let content = strip_ordered_list_prefix(trimmed).trim_end();
+    if content.is_empty() {
+        "1. ".to_string()
+    } else {
+        format!("1. {content}")
+    }
+}
+
+fn parse_markdown_link(value: &str) -> Option<(String, String)> {
+    let trimmed = value.trim();
+    if !trimmed.starts_with('[') || !trimmed.ends_with(')') {
+        return None;
+    }
+    let split = trimmed.find("](")?;
+    let label = trimmed[1..split].trim().to_string();
+    let href_raw = &trimmed[split + 2..trimmed.len() - 1];
+    let href = normalize_url_like_source(href_raw)?;
+    let resolved_label = if label.is_empty() { href.clone() } else { label };
+    Some((resolved_label, href))
+}
+
+fn source_file_label(source: &str) -> String {
+    source
+        .rsplit('/')
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(source)
+        .to_string()
+}
+
+fn format_bookmark_text(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "https://".to_string();
+    }
+    if let Some((_, href)) = parse_markdown_link(trimmed) {
+        if href.starts_with("http://") || href.starts_with("https://") {
+            return href;
+        }
+    }
+    trimmed.to_string()
+}
+
+fn extract_file_reference(value: &str) -> Option<(String, String)> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some((label, href)) = parse_markdown_link(trimmed) {
+        return Some((label, href));
+    }
+    let source = normalize_url_like_source(trimmed)?;
+    Some((source_file_label(&source), source))
+}
+
+fn format_file_text(value: &str) -> String {
+    let Some((label, source)) = extract_file_reference(value) else {
+        return value.trim_end().to_string();
+    };
+    format!("[{label}]({source})")
+}
+
+fn format_math_text(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return "$$ $$".to_string();
+    }
+    if trimmed.starts_with("$$") {
+        if trimmed.ends_with("$$") {
+            trimmed.to_string()
+        } else {
+            format!("{trimmed} $$")
+        }
+    } else {
+        format!("$$ {trimmed} $$")
+    }
+}
+
+fn format_toc_text() -> String {
+    "[TOC]".to_string()
+}
+
+fn parse_database_query(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if !lower.starts_with("```database") {
+        return None;
+    }
+
+    let after_prefix = trimmed.get("```database".len()..).unwrap_or("").trim();
+    if after_prefix.is_empty() {
+        return Some(String::new());
+    }
+
+    let normalized = if let Some(rest) = after_prefix.strip_prefix("query=") {
+        rest.trim()
+    } else if let Some(rest) = after_prefix.strip_prefix("query:") {
+        rest.trim()
+    } else {
+        after_prefix
+    };
+    Some(normalized.to_string())
+}
+
+fn normalize_database_query(value: &str) -> String {
+    let trimmed = value.trim();
+    if let Some(rest) = trimmed.strip_prefix("query=") {
+        return rest.trim().to_string();
+    }
+    if let Some(rest) = trimmed.strip_prefix("query:") {
+        return rest.trim().to_string();
+    }
+    trimmed.to_string()
+}
+
+fn format_database_text(value: &str) -> String {
+    let parsed = parse_database_query(value).unwrap_or_else(|| value.trim().to_string());
+    let query = normalize_database_query(&parsed);
+    if query.is_empty() {
+        "```database".to_string()
+    } else {
+        format!("```database {query}")
+    }
+}
+
 fn format_code_text(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.starts_with("```") {
@@ -2036,7 +2340,7 @@ fn format_code_text(value: &str) -> String {
     }
 }
 
-fn normalize_image_source(source: &str) -> Option<String> {
+fn normalize_url_like_source(source: &str) -> Option<String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
         return None;
@@ -2054,6 +2358,10 @@ fn normalize_image_source(source: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn normalize_image_source(source: &str) -> Option<String> {
+    normalize_url_like_source(source)
 }
 
 fn extract_image_source(value: &str) -> Option<String> {
@@ -2084,6 +2392,20 @@ fn format_image_text(value: &str) -> String {
     }
 }
 
+fn format_multiline_list_text(value: &str, continuation_indent: &str) -> String {
+    let mut lines = value.split('\n');
+    let Some(first) = lines.next() else {
+        return String::new();
+    };
+    let mut output = first.to_string();
+    for line in lines {
+        output.push('\n');
+        output.push_str(continuation_indent);
+        output.push_str(line);
+    }
+    output
+}
+
 fn build_markdown_export(page: &PageBlocksResponse) -> String {
     let mut lines = Vec::new();
     lines.push(format!("# {} ^{}", page.title, page.page_uid));
@@ -2098,6 +2420,13 @@ fn build_markdown_export(page: &PageBlocksResponse) -> String {
             BlockType::Divider => ("---".to_string(), String::new()),
             BlockType::Code => (format_code_text(&block.text), String::new()),
             BlockType::Image => (format_image_text(&block.text), String::new()),
+            BlockType::OrderedList => (format_ordered_list_text(&block.text), String::new()),
+            BlockType::Bookmark => (format_bookmark_text(&block.text), String::new()),
+            BlockType::File => (format_file_text(&block.text), String::new()),
+            BlockType::Math => (format_math_text(&block.text), String::new()),
+            BlockType::Toc => (format_toc_text(), String::new()),
+            BlockType::DatabaseView => (format_database_text(&block.text), String::new()),
+            BlockType::Table => (block.text.trim_end().to_string(), String::new()),
             BlockType::Text => (block.text.trim_end().to_string(), String::new()),
             _ => {
                 let encoded =
@@ -2108,8 +2437,12 @@ fn build_markdown_export(page: &PageBlocksResponse) -> String {
                 )
             }
         };
+        let formatted_text = format_multiline_list_text(&text, &format!("{indent}  "));
         let spacer = if text.is_empty() { "" } else { " " };
-        lines.push(format!("{indent}- {text}{spacer}^{}{}", block.uid, marker));
+        lines.push(format!(
+            "{indent}- {formatted_text}{spacer}^{}{}",
+            block.uid, marker
+        ));
     }
     format!("{}\n", lines.join("\n"))
 }
@@ -2414,6 +2747,8 @@ pub fn run() {
             export_markdown,
             import_image_asset,
             import_image_asset_bytes,
+            import_file_asset,
+            import_file_asset_bytes,
             list_plugins_command,
             install_plugin_command,
             update_plugin_command,
@@ -2452,7 +2787,8 @@ mod tests {
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
-        ensure_image_asset_from_bytes, load_sync_config, next_review_due, resolve_review_interval,
+        ensure_file_asset_from_bytes, ensure_image_asset_from_bytes, load_sync_config,
+        next_review_due, resolve_review_interval,
         run_blocking, sanitize_asset_stem, sanitize_kebab, set_plugin_settings,
         shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot, BlockType, Database,
         PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
@@ -2496,6 +2832,26 @@ mod tests {
         assert!(response.asset_path.starts_with("/assets/cat-photo--"));
         assert!(response.asset_path.ends_with(".png"));
         assert!(response.markdown.contains("](/assets/cat-photo--"));
+        let relative = response.asset_path.trim_start_matches('/');
+        assert!(dir.path().join(relative).exists());
+    }
+
+    #[test]
+    fn ensure_file_asset_uses_name_hash_extension_path() {
+        let dir = tempdir().expect("tempdir");
+        let db = Database::new_in_memory().expect("db init");
+        db.run_migrations().expect("migrations");
+        let response = ensure_file_asset_from_bytes(
+            &db,
+            dir.path(),
+            b"pdf-bytes",
+            "Project Plan.pdf",
+            Some("application/pdf"),
+        )
+        .expect("import file asset");
+        assert!(response.asset_path.starts_with("/assets/project-plan--"));
+        assert!(response.asset_path.ends_with(".pdf"));
+        assert!(response.markdown.contains("[Project Plan.pdf](/assets/project-plan--"));
         let relative = response.asset_path.trim_start_matches('/');
         assert!(dir.path().join(relative).exists());
     }
@@ -2842,6 +3198,48 @@ mod tests {
                     indent: 0,
                     block_type: BlockType::Image,
                 },
+                BlockSnapshot {
+                    uid: "tb1".to_string(),
+                    text: "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Table,
+                },
+                BlockSnapshot {
+                    uid: "n1".to_string(),
+                    text: "Numbered".to_string(),
+                    indent: 0,
+                    block_type: BlockType::OrderedList,
+                },
+                BlockSnapshot {
+                    uid: "bm1".to_string(),
+                    text: "https://example.com/article".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Bookmark,
+                },
+                BlockSnapshot {
+                    uid: "f1".to_string(),
+                    text: "/assets/spec--abc123.pdf".to_string(),
+                    indent: 0,
+                    block_type: BlockType::File,
+                },
+                BlockSnapshot {
+                    uid: "m1".to_string(),
+                    text: "E = mc^2".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Math,
+                },
+                BlockSnapshot {
+                    uid: "toc1".to_string(),
+                    text: "".to_string(),
+                    indent: 0,
+                    block_type: BlockType::Toc,
+                },
+                BlockSnapshot {
+                    uid: "db1".to_string(),
+                    text: "query=project".to_string(),
+                    indent: 0,
+                    block_type: BlockType::DatabaseView,
+                },
             ],
         };
 
@@ -2851,11 +3249,25 @@ mod tests {
         assert!(markdown.contains("- --- ^d1"));
         assert!(markdown.contains("- ```text const x = 1 ^c1"));
         assert!(markdown.contains("- ![](https://example.com/cat.png) ^i1"));
+        assert!(markdown.contains("- | Name | Qty |\n  | --- | --- |\n  | Pencil | 2 | ^tb1"));
+        assert!(markdown.contains("- 1. Numbered ^n1"));
+        assert!(markdown.contains("- https://example.com/article ^bm1"));
+        assert!(markdown.contains("- [spec--abc123.pdf](/assets/spec--abc123.pdf) ^f1"));
+        assert!(markdown.contains("- $$ E = mc^2 $$ ^m1"));
+        assert!(markdown.contains("- [TOC] ^toc1"));
+        assert!(markdown.contains("- ```database project ^db1"));
         assert!(!markdown.contains("<!--sp:{\"type\":\"quote\"}-->"));
         assert!(!markdown.contains("<!--sp:{\"type\":\"todo\"}-->"));
         assert!(!markdown.contains("<!--sp:{\"type\":\"divider\"}-->"));
         assert!(!markdown.contains("<!--sp:{\"type\":\"code\"}-->"));
         assert!(!markdown.contains("<!--sp:{\"type\":\"image\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"table\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"ordered_list\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"bookmark\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"file\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"math\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"toc\"}-->"));
+        assert!(!markdown.contains("<!--sp:{\"type\":\"database_view\"}-->"));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInlineFence } from "./inline-parser";
+import { parseInlineFence, parseMarkdownTable } from "./inline-parser";
 
 describe("parseInlineFence", () => {
   it("parses single-line inline fences", () => {
@@ -14,5 +14,25 @@ describe("parseInlineFence", () => {
       lang: "ts",
       content: "const x = 1"
     });
+  });
+});
+
+describe("parseMarkdownTable", () => {
+  it("parses a markdown table with header and body rows", () => {
+    expect(
+      parseMarkdownTable(
+        "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |\n| Pen | 5 |"
+      )
+    ).toEqual({
+      headers: ["Name", "Qty"],
+      rows: [
+        ["Pencil", "2"],
+        ["Pen", "5"]
+      ]
+    });
+  });
+
+  it("returns null for invalid table markdown", () => {
+    expect(parseMarkdownTable("| Name | Qty |\n| Pencil | 2 |")).toBeNull();
   });
 });

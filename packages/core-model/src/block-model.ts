@@ -10,6 +10,12 @@ export type BlockType =
   | "toggle"
   | "todo"
   | "image"
+  | "table"
+  | "ordered_list"
+  | "bookmark"
+  | "file"
+  | "math"
+  | "toc"
   | "column_layout"
   | "column"
   | "database_view";

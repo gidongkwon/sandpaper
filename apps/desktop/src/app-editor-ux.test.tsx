@@ -251,6 +251,54 @@ describe("App editor UX", () => {
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("```")).toBe(true);
     });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuTable = await screen.findByText("Commands");
+    const menuTableScope = within(menuTable.closest(".slash-menu") as HTMLElement);
+    await user.click(menuTableScope.getByRole("button", { name: "Table" }));
+    await waitFor(() => {
+      expect(getInput()?.value).toContain("| --- | --- |");
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuOrdered = await screen.findByText("Commands");
+    const menuOrderedScope = within(menuOrdered.closest(".slash-menu") as HTMLElement);
+    await user.click(menuOrderedScope.getByRole("button", { name: "Numbered list" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").startsWith("1. ")).toBe(true);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuBookmark = await screen.findByText("Commands");
+    const menuBookmarkScope = within(menuBookmark.closest(".slash-menu") as HTMLElement);
+    await user.click(menuBookmarkScope.getByRole("button", { name: "Bookmark" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").startsWith("https://")).toBe(true);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuMath = await screen.findByText("Commands");
+    const menuMathScope = within(menuMath.closest(".slash-menu") as HTMLElement);
+    await user.click(menuMathScope.getByRole("button", { name: "Math" }));
+    await waitFor(() => {
+      expect(getInput()?.value).toContain("$$");
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuToc = await screen.findByText("Commands");
+    const menuTocScope = within(menuToc.closest(".slash-menu") as HTMLElement);
+    await user.click(menuTocScope.getByRole("button", { name: "Table of contents" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").trim()).toBe("[TOC]");
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
+    const menuDatabase = await screen.findByText("Commands");
+    const menuDatabaseScope = within(menuDatabase.closest(".slash-menu") as HTMLElement);
+    await user.click(menuDatabaseScope.getByRole("button", { name: "Database view" }));
+    await waitFor(() => {
+      expect((getInput()?.value ?? "").startsWith("```database")).toBe(true);
+    });
   });
 
   it("does not show the old block hover toolbar actions", async () => {

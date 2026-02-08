@@ -35,6 +35,7 @@ import type {
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import type { Mode } from "../../../shared/model/mode";
 import {
+  buildAllBlockTypeShowcaseBlocks,
   buildDefaultBlocks,
   buildEmptyBlocks
 } from "../../../shared/lib/blocks/block-seeds";
@@ -404,7 +405,9 @@ export const createMainPageState = () => {
     loadBlocks,
     saveLocalPageSnapshot,
     buildEmptyBlocks,
+    buildAllBlockTypeShowcaseBlocks,
     makeLocalId,
+    makeBlockId: () => (isTauri() ? makeRandomId() : makeLocalId()),
     cancelPendingSave,
     toPayload,
     defaultPageUid: DEFAULT_PAGE_UID,
@@ -426,6 +429,7 @@ export const createMainPageState = () => {
     switchPage,
     ensureDailyNote,
     createPage,
+    createPageWithAllBlockTypes,
     createPageFromLink,
     renamePage
   } = pageOps;
@@ -705,6 +709,7 @@ export const createMainPageState = () => {
     getSearchInput: () => searchInputRef,
     focusEditorSection,
     openNewPageDialog,
+    createPageWithAllBlockTypes,
     openRenamePageDialog,
     setSettingsOpen,
     syncConnected,
