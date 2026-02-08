@@ -25,6 +25,109 @@ const makeBlocks = (total: number) =>
   }));
 
 describe("EditorPane", () => {
+  it("renders enough rows when measured row height is smaller than estimate", async () => {
+    const originalInnerHeight = window.innerHeight;
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 1400
+    });
+    class MockResizeObserver {
+      private callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(target: Element) {
+        queueMicrotask(() => {
+          this.callback(
+            [
+              {
+                target,
+                contentRect: { height: 26 } as DOMRectReadOnly
+              } as ResizeObserverEntry
+            ],
+            this as unknown as ResizeObserver
+          );
+        });
+      }
+
+      unobserve() {
+        // no-op
+      }
+
+      disconnect() {
+        // no-op
+      }
+    }
+    globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+
+    try {
+      const [blocks, setBlocks] = createStore<Block[]>(makeBlocks(200));
+      const [activeId, setActiveId] = createSignal<string | null>(null);
+      const [focusedId, setFocusedId] = createSignal<string | null>(null);
+      type EditorPaneProps = Parameters<typeof EditorPane>[0];
+      const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+      const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+      const [renameTitle, setRenameTitle] = createSignal("");
+      const [pageTitle] = createSignal("Test Page");
+
+      const { container } = render(() => (
+        <EditorPane
+          blocks={blocks}
+          setBlocks={setBlocks}
+          activeId={activeId}
+          setActiveId={setActiveId}
+          focusedId={focusedId}
+          setFocusedId={setFocusedId}
+          highlightedBlockId={() => null}
+          jumpTarget={jumpTarget}
+          setJumpTarget={setJumpTarget}
+          createNewBlock={(text = "", indent = 0) => ({
+            id: "new",
+            text,
+            indent
+          })}
+          scheduleSave={vi.fn()}
+          recordLatency={vi.fn()}
+          addReviewItem={vi.fn()}
+          pageBusy={() => false}
+          renameTitle={renameTitle}
+          setRenameTitle={setRenameTitle}
+          renamePage={vi.fn()}
+          pages={() => [] as PageSummary[]}
+          activePageUid={() => "page-1" as PageId}
+          resolvePageUid={(value) => value as PageId}
+          setNewPageTitle={vi.fn()}
+          createPage={vi.fn()}
+          switchPage={vi.fn()}
+          createPageFromLink={vi.fn()}
+          isTauri={() => false}
+          localPages={{} as Record<PageId, LocalPageRecord>}
+          saveLocalPageSnapshot={vi.fn()}
+          snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+          pageTitle={pageTitle}
+          renderersByKind={() => new Map()}
+          blockRenderersByLang={() => new Map()}
+          perfEnabled={() => false}
+          scrollMeter={{ notifyScroll: vi.fn() }}
+        />
+      ));
+
+      await waitFor(() => {
+        const renderedBlocks = container.querySelectorAll(".block");
+        expect(renderedBlocks.length).toBeGreaterThan(50);
+      });
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalInnerHeight
+      });
+    }
+  });
+
   it("ignores plugin updates after the block unmounts", async () => {
     const baseBlocks = makeBlocks(40);
     baseBlocks[0] = {

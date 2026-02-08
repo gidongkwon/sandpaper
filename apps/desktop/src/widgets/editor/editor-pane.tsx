@@ -160,7 +160,7 @@ type EditorPaneProps = {
   scrollMeter: { notifyScroll: () => void };
 };
 
-const ROW_HEIGHT = 44;
+const ROW_HEIGHT = 28;
 const OVERSCAN = 6;
 const BLOCK_INPUT_MIN_HEIGHT = 26;
 const TODO_PREFIX_PATTERN = /^-?\s*\[(?: |x|X)\]\s+/u;
@@ -344,9 +344,16 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   const getBlockType = (block: Block) => resolveRenderBlockType(block);
 
-  const effectiveViewport = createMemo(() =>
-    viewportHeight() === 0 ? 560 : viewportHeight()
-  );
+  const effectiveViewport = createMemo(() => {
+    const measured = viewportHeight();
+    if (measured > 0) return measured;
+    const hostHeight = editorRef?.clientHeight ?? 0;
+    if (hostHeight > 0) return hostHeight;
+    if (typeof window !== "undefined" && Number.isFinite(window.innerHeight)) {
+      return Math.max(ROW_HEIGHT, Math.floor(window.innerHeight));
+    }
+    return 560;
+  });
   const storage = getSafeLocalStorage();
   const canUseStorage = storage !== null;
   const collapsedStorageKey = createMemo(
@@ -447,9 +454,11 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   const rowMetrics = createMemo(() => {
     const visible = outline().visible;
-    const heights = visible.map((item) =>
-      Math.max(ROW_HEIGHT, blockHeights[item.block.id] ?? ROW_HEIGHT)
-    );
+    const heights = visible.map((item) => {
+      const measured = blockHeights[item.block.id];
+      const fallback = measured ?? ROW_HEIGHT;
+      return Math.max(BLOCK_INPUT_MIN_HEIGHT, fallback);
+    });
     let offset = 0;
     const offsets = heights.map((height) => {
       const current = offset;
@@ -741,7 +750,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             const id = target.dataset.blockId;
             if (!id) continue;
             const nextHeight = Math.max(
-              ROW_HEIGHT,
+              BLOCK_INPUT_MIN_HEIGHT,
               Math.round(entry.contentRect.height)
             );
             const prevHeight = blockHeights[id] ?? ROW_HEIGHT;
@@ -872,7 +881,18 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   onMount(() => {
     if (!editorRef) return;
-    setViewportHeight(editorRef.clientHeight);
+    const syncViewportHeight = () => {
+      if (!editorRef) return;
+      const hostHeight = editorRef.clientHeight;
+      if (hostHeight > 0) {
+        setViewportHeight(hostHeight);
+        return;
+      }
+      if (typeof window !== "undefined" && Number.isFinite(window.innerHeight)) {
+        setViewportHeight(Math.max(ROW_HEIGHT, Math.floor(window.innerHeight)));
+      }
+    };
+    syncViewportHeight();
     setScrollTop(editorRef.scrollTop);
     if (!activeId() && blocks.length > 0) {
       setActiveId(blocks[0].id);
@@ -896,16 +916,17 @@ export const EditorPane = (props: EditorPaneProps) => {
     editorRef.addEventListener("paste", handlePaste);
 
     const resizeObserver = new ResizeObserver(() => {
-      if (!editorRef) return;
-      setViewportHeight(editorRef.clientHeight);
+      syncViewportHeight();
     });
     resizeObserver.observe(editorRef);
+    window.addEventListener("resize", syncViewportHeight);
 
     onCleanup(() => {
       editorRef?.removeEventListener("scroll", handleScroll);
       editorRef?.removeEventListener("dragover", handleDragOver);
       editorRef?.removeEventListener("drop", handleDrop);
       editorRef?.removeEventListener("paste", handlePaste);
+      window.removeEventListener("resize", syncViewportHeight);
       resizeObserver.disconnect();
     });
   });
@@ -989,17 +1010,19 @@ export const EditorPane = (props: EditorPaneProps) => {
   });
 
   const scrollToVisibleIndex = (index: number) => {
-    if (!editorRef || viewportHeight() === 0) return;
+    if (!editorRef) return;
+    const viewHeight = effectiveViewport();
+    if (viewHeight <= 0) return;
     const metrics = rowMetrics();
     const top = metrics.offsets[index] ?? index * ROW_HEIGHT;
     const height = metrics.heights[index] ?? ROW_HEIGHT;
     const bottom = top + height;
     const viewTop = editorRef.scrollTop;
-    const viewBottom = viewTop + viewportHeight();
+    const viewBottom = viewTop + viewHeight;
     if (top < viewTop) {
       editorRef.scrollTop = top;
     } else if (bottom > viewBottom) {
-      editorRef.scrollTop = bottom - viewportHeight();
+      editorRef.scrollTop = bottom - viewHeight;
     }
   };
 
