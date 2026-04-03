@@ -111,6 +111,9 @@ export const createMainPageState = () => {
   const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>([]);
   const [selectedReviewThreadId, setSelectedReviewThreadId] =
     createSignal<string | null>(null);
+  const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
+  const [reviewDestinationPageUid, setReviewDestinationPageUid] =
+    createSignal<string | null>(null);
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -935,6 +938,33 @@ export const createMainPageState = () => {
     }
   });
 
+  const reviewDestinationMatches = createMemo(() => {
+    const query = reviewDestinationQuery().trim().toLowerCase();
+    if (!query) return [];
+    return visiblePages().filter((page) =>
+      page.title.toLowerCase().includes(query)
+    );
+  });
+
+  const reviewDestinationHasExactMatch = createMemo(() => {
+    const query = reviewDestinationQuery().trim();
+    if (!query) return false;
+    const normalized = resolvePageUid(query);
+    return visiblePages().some(
+      (page) =>
+        resolvePageUid(page.uid) === normalized ||
+        resolvePageUid(page.title) === normalized
+    );
+  });
+
+  const reviewDestinationSelected = createMemo(
+    () => reviewDestinationPageUid() !== null
+  );
+
+  const reviewDestinationTitle = createMemo(() =>
+    reviewDestinationSelected() ? pageTitle() : null
+  );
+
   const editCaptureItem = (id: string, text: string) => {
     let updated = false;
     setLocalPages(
@@ -1039,6 +1069,68 @@ export const createMainPageState = () => {
     setCaptureFocusEpoch((current) => current + 1);
   };
 
+  const openReviewDestination = async (pageUid: string) => {
+    await switchPage(pageUid);
+    setReviewDestinationPageUid(resolvePageUid(pageUid));
+    setReviewDestinationQuery("");
+  };
+
+  const createReviewDestination = async () => {
+    const title = reviewDestinationQuery().trim();
+    if (!title) return;
+    setNewPageTitle(title);
+    await createPage();
+    setReviewDestinationPageUid(resolvePageUid(activePageUid()));
+    setReviewDestinationQuery("");
+  };
+
+  const completeReview = () => {
+    if (!reviewDestinationSelected()) return;
+    const threadId = selectedReviewThreadId();
+    if (!threadId) return;
+    deleteCaptureThread(threadId);
+  };
+
+  const canCompleteReview = createMemo(
+    () => reviewDestinationSelected() && selectedReviewThreadId() !== null
+  );
+
+  const editorWorkspace = {
+    blocks,
+    setBlocks,
+    activeId,
+    setActiveId,
+    focusedId,
+    setFocusedId,
+    highlightedBlockId,
+    jumpTarget,
+    setJumpTarget,
+    createNewBlock,
+    scheduleSave,
+    recordLatency,
+    addReviewItem,
+    pageBusy,
+    renameTitle,
+    setRenameTitle,
+    renamePage,
+    pages,
+    activePageUid,
+    resolvePageUid,
+    setNewPageTitle,
+    createPage,
+    switchPage,
+    createPageFromLink,
+    isTauri,
+    localPages,
+    saveLocalPageSnapshot,
+    snapshotBlocks,
+    pageTitle,
+    renderersByKind,
+    blockRenderersByLang,
+    perfEnabled,
+    scrollMeter
+  };
+
   const mainPageContext: MainPageContextValue = {
     workspace: {
       mode,
@@ -1082,41 +1174,7 @@ export const createMainPageState = () => {
           }
         }
       },
-      editor: {
-        blocks,
-        setBlocks,
-        activeId,
-        setActiveId,
-        focusedId,
-        setFocusedId,
-        highlightedBlockId,
-        jumpTarget,
-        setJumpTarget,
-        createNewBlock,
-        scheduleSave,
-        recordLatency,
-        addReviewItem,
-        pageBusy,
-        renameTitle,
-        setRenameTitle,
-        renamePage,
-        pages,
-        activePageUid,
-        resolvePageUid,
-        setNewPageTitle,
-        createPage,
-        switchPage,
-        createPageFromLink,
-        isTauri,
-        localPages,
-        saveLocalPageSnapshot,
-        snapshotBlocks,
-        pageTitle,
-        renderersByKind,
-        blockRenderersByLang,
-        perfEnabled,
-        scrollMeter
-      },
+      editor: editorWorkspace,
       backlinksToggle: {
         open: backlinksOpen,
         total: totalBacklinks,
@@ -1173,7 +1231,18 @@ export const createMainPageState = () => {
         onAddCurrent: addReviewItem,
         threads: reviewThreads,
         selectedThreadId: selectedReviewThreadId,
-        onSelectThread: setSelectedReviewThreadId
+        onSelectThread: setSelectedReviewThreadId,
+        destinationQuery: reviewDestinationQuery,
+        setDestinationQuery: setReviewDestinationQuery,
+        destinationMatches: reviewDestinationMatches,
+        destinationHasExactMatch: reviewDestinationHasExactMatch,
+        destinationTitle: reviewDestinationTitle,
+        destinationSelected: reviewDestinationSelected,
+        onOpenDestination: openReviewDestination,
+        onCreateDestination: createReviewDestination,
+        onCompleteReview: completeReview,
+        canCompleteReview,
+        editor: editorWorkspace
       }
     },
     overlays: {

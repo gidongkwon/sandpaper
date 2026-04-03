@@ -1,11 +1,15 @@
 import { For, Show, type Accessor, type Setter } from "solid-js";
+import { EditorPane } from "../editor/editor-pane";
 import type {
   ReviewQueueItem,
   ReviewQueueSummary,
   ReviewThread,
   ReviewTemplate
 } from "../../entities/review/model/review-types";
+import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
+
+type PropsOf<T> = T extends (props: infer P) => unknown ? P : never;
 
 type ReviewPaneProps = {
   summary: Accessor<ReviewQueueSummary>;
@@ -24,6 +28,17 @@ type ReviewPaneProps = {
   threads: Accessor<ReviewThread[]>;
   selectedThreadId: Accessor<string | null>;
   onSelectThread: (id: string) => void;
+  destinationQuery: Accessor<string>;
+  setDestinationQuery: Setter<string>;
+  destinationMatches: Accessor<PageSummary[]>;
+  destinationHasExactMatch: Accessor<boolean>;
+  destinationTitle: Accessor<string | null>;
+  destinationSelected: Accessor<boolean>;
+  onOpenDestination: (pageUid: string) => void | Promise<void>;
+  onCreateDestination: () => void | Promise<void>;
+  onCompleteReview: () => void;
+  canCompleteReview: Accessor<boolean>;
+  editor: PropsOf<typeof EditorPane>;
 };
 
 export const ReviewPane = (props: ReviewPaneProps) => {
@@ -110,7 +125,59 @@ export const ReviewPane = (props: ReviewPaneProps) => {
 
           <section class="review__editor-panel" aria-labelledby="review-editor-heading">
             <h3 id="review-editor-heading">Destination note</h3>
-            <p>Destination selection and editing land in the next slice.</p>
+            <div class="review__destination-search">
+              <input
+                type="text"
+                placeholder="Search or create a page..."
+                value={props.destinationQuery()}
+                onInput={(event) => props.setDestinationQuery(event.currentTarget.value)}
+              />
+            </div>
+            <Show when={props.destinationQuery().trim().length > 0}>
+              <div class="review__destination-results">
+                <For each={props.destinationMatches()}>
+                  {(page) => (
+                    <button
+                      class="review__destination-result"
+                      onClick={() => void props.onOpenDestination(page.uid)}
+                    >
+                      {`Open ${page.title}`}
+                    </button>
+                  )}
+                </For>
+                <Show when={!props.destinationHasExactMatch()}>
+                  <button
+                    class="review__destination-result is-primary"
+                    onClick={() => void props.onCreateDestination()}
+                  >
+                    {`Create "${props.destinationQuery().trim()}"`}
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <Show
+              when={props.destinationSelected()}
+              fallback={
+                <p>Select or create a destination page to start writing.</p>
+              }
+            >
+              <div class="review__destination-active">
+                <div class="review__destination-meta">
+                  <span class="review__eyebrow">Destination</span>
+                  <strong>{props.destinationTitle() ?? "Untitled"}</strong>
+                </div>
+                <EditorPane {...props.editor} />
+                <div class="review__actions">
+                  <button
+                    class="review__button is-primary"
+                    disabled={!props.canCompleteReview()}
+                    onClick={() => props.onCompleteReview()}
+                  >
+                    Complete review
+                  </button>
+                </div>
+              </div>
+            </Show>
           </section>
         </div>
       </Show>

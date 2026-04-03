@@ -556,4 +556,75 @@ describe("App editor UX", () => {
     ).toBeInTheDocument();
   });
 
+  it("creates a destination page from review and completes the thread", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const destinationSearch = await screen.findByPlaceholderText(
+      "Search or create a page..."
+    );
+    await user.type(destinationSearch, "Project Atlas");
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    expect(
+      within(destinationPanel).getByText("Project Atlas", {
+        selector: ".editor-pane__title"
+      })
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(destinationPanel).getByRole("button", { name: "Complete review" })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("No capture threads to review.")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Editor" }));
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+  });
+
+  it("opens an existing destination page from review search", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const destinationSearch = await screen.findByPlaceholderText(
+      "Search or create a page..."
+    );
+    await user.type(destinationSearch, "Home");
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
+
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    expect(
+      within(destinationPanel).getByText("Home", {
+        selector: ".editor-pane__title"
+      })
+    ).toBeInTheDocument();
+  });
+
 });
