@@ -63,6 +63,9 @@ import { shouldFocusModeInput } from "./mode-focus-utils";
 import { type MainPageContextValue } from "./main-page-context";
 import {
   DEFAULT_PAGE_UID,
+  DEFAULT_PAGE_TITLE,
+  HIDDEN_INBOX_PAGE_TITLE,
+  HIDDEN_INBOX_PAGE_UID,
   buildLocalDefaults,
   resolveInitialBlocks
 } from "./main-page-defaults";
@@ -84,23 +87,25 @@ export const createMainPageState = () => {
   >({
     [DEFAULT_PAGE_UID]: {
       uid: DEFAULT_PAGE_UID,
-      title: "Inbox",
+      title: DEFAULT_PAGE_TITLE,
       blocks: initialBlockSnapshot
+    },
+    [HIDDEN_INBOX_PAGE_UID]: {
+      uid: HIDDEN_INBOX_PAGE_UID,
+      title: HIDDEN_INBOX_PAGE_TITLE,
+      blocks: []
     }
   });
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [focusedId, setFocusedId] = createSignal<string | null>(null);
-  const [highlightedBlockId, setHighlightedBlockId] = createSignal<string | null>(
-    null
-  );
+  const [highlightedBlockId] = createSignal<string | null>(null);
   const [mode, setModeState] = createSignal<Mode>("editor");
-  const [pageTitle, setPageTitle] = createSignal("Inbox");
+  const [pageTitle, setPageTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [pageMessage, setPageMessage] = createSignal<string | null>(null);
   const [pageBusy, setPageBusy] = createSignal(false);
   const [newPageTitle, setNewPageTitle] = createSignal("");
-  const [renameTitle, setRenameTitle] = createSignal("");
+  const [renameTitle, setRenameTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [captureText, setCaptureText] = createSignal("");
-  const [captureItemIds, setCaptureItemIds] = createSignal<string[]>([]);
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -805,23 +810,21 @@ export const createMainPageState = () => {
     perfTracker.mark(label);
   };
 
-  createEffect(() => {
-    const availableIds = new Set(blocks.map((block) => block.id));
-    setCaptureItemIds((current) => {
-      const filtered = current.filter((id) => availableIds.has(id));
-      return filtered.length === current.length ? current : filtered;
-    });
-  });
-
-  const captureItems = createMemo(() =>
-    captureItemIds()
-      .map((captureId) => blocks.find((block) => block.id === captureId))
-      .filter((block): block is Block => Boolean(block))
+  const visiblePages = createMemo(() =>
+    pages().filter((page) => resolvePageUid(page.uid) !== HIDDEN_INBOX_PAGE_UID)
   );
+
+  const captureInboxBlocks = createMemo(
+    () => localPages[HIDDEN_INBOX_PAGE_UID]?.blocks ?? []
+  );
+
+  const captureItems = createMemo(() => captureInboxBlocks());
 
   const editCaptureItem = (id: string, text: string) => {
     let updated = false;
-    setBlocks(
+    setLocalPages(
+      HIDDEN_INBOX_PAGE_UID,
+      "blocks",
       produce((draft) => {
         const target = draft.find((block) => block.id === id);
         if (!target || target.text === text) return;
@@ -830,35 +833,21 @@ export const createMainPageState = () => {
       })
     );
     if (!updated) return;
-    scheduleSave();
-    setActiveId(id);
-    setFocusedId(id);
-    setJumpTarget({ id, caret: "end" });
   };
 
   const addCapture = () => {
     const text = captureText().trim();
     if (!text) return;
     const block = createNewBlock(text, 0);
-    setBlocks(
+    setLocalPages(
+      HIDDEN_INBOX_PAGE_UID,
+      "blocks",
       produce((draft) => {
         draft.unshift(block);
       })
     );
-    scheduleSave();
-    setCaptureItemIds((current) => [...current, block.id]);
     setCaptureText("");
     setCaptureFocusEpoch((current) => current + 1);
-    setActiveId(block.id);
-    setFocusedId(block.id);
-    setJumpTarget({ id: block.id, caret: "end" });
-    setHighlightedBlockId(block.id);
-    if (highlightTimeout) {
-      window.clearTimeout(highlightTimeout);
-    }
-    highlightTimeout = window.setTimeout(() => {
-      setHighlightedBlockId(null);
-    }, 1500);
   };
 
   const mainPageContext: MainPageContextValue = {
@@ -894,7 +883,7 @@ export const createMainPageState = () => {
           onLink: linkUnlinkedReference
         },
         pages: {
-          pages,
+          pages: visiblePages,
           activePageUid,
           resolvePageUid,
           onSwitch: switchPage,

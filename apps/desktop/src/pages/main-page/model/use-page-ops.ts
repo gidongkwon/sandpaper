@@ -12,6 +12,7 @@ import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { writeLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 import { formatDailyNoteTitle, resolveUniqueLocalPageUid } from "./page-utils";
 import { updateBlocksWithWikilinks } from "./page-ops-utils";
+import { DEFAULT_PAGE_TITLE } from "./main-page-defaults";
 
 type InvokeFn = typeof import("@tauri-apps/api/core").invoke;
 
@@ -52,7 +53,7 @@ type PageOpsDeps = {
 };
 
 export const createPageOps = (deps: PageOpsDeps) => {
-  const [internalPageTitle, setInternalPageTitle] = createSignal("Inbox");
+  const [internalPageTitle, setInternalPageTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [internalPageMessage, setInternalPageMessage] =
     createSignal<string | null>(null);
   const [internalPageBusy, setInternalPageBusy] = createSignal(false);

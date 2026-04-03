@@ -43,7 +43,7 @@ describe("App daily note auto-create", () => {
     ).toBeInTheDocument();
 
     expect(
-      await screen.findByText("Inbox", { selector: ".editor-pane__title" })
+      await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
   });
 });

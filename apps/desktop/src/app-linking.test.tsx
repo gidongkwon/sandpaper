@@ -149,8 +149,8 @@ describe("App linking UX", () => {
       target: { value: "Beta" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Open Inbox" }));
-    await screen.findByText("Inbox", { selector: ".editor-pane__title" });
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
       target: {
@@ -172,8 +172,8 @@ describe("App linking UX", () => {
     );
     await screen.findByText("Project Nova", { selector: ".editor-pane__title" });
 
-    await user.click(screen.getByRole("button", { name: "Open Inbox" }));
-    await screen.findByText("Inbox", { selector: ".editor-pane__title" });
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     await waitFor(() => {
       expect((getActiveEditorInput() as HTMLTextAreaElement).value).toContain(
@@ -207,17 +207,14 @@ describe("App linking UX", () => {
       target: { value: "Second block" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Open Inbox" }));
-    await screen.findByText("Inbox", { selector: ".editor-pane__title" });
+    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     const activeInput = getActiveEditorInput() as HTMLTextAreaElement;
     fireEvent.input(activeInput, {
       target: { value: "Jump to [[Preview Page]]" }
     });
-    fireEvent.blur(activeInput);
-    await waitFor(() => {
-      expect(document.activeElement).not.toBe(activeInput);
-    });
+    await user.click(screen.getByRole("button", { name: /hide sidebar/i }));
 
     const wikilink = await screen.findByRole("button", { name: "Preview Page" });
     fireEvent.mouseEnter(wikilink);

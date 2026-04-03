@@ -14,6 +14,11 @@ import type {
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { readLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
+import {
+  DEFAULT_PAGE_TITLE,
+  HIDDEN_INBOX_PAGE_TITLE,
+  HIDDEN_INBOX_PAGE_UID
+} from "../../../pages/main-page/model/main-page-defaults";
 
 export type VaultLoaderDependencies = {
   isTauri: () => boolean;
@@ -53,6 +58,12 @@ export type VaultLoaderDependencies = {
   setReviewItems: Setter<ReviewQueueItem[]>;
   setReviewBusy: Setter<boolean>;
   defaultPageUid: PageId;
+};
+
+const resolveKnownPageTitle = (pageUid: PageId, defaultPageUid: PageId) => {
+  if (pageUid === defaultPageUid) return DEFAULT_PAGE_TITLE;
+  if (pageUid === HIDDEN_INBOX_PAGE_UID) return HIDDEN_INBOX_PAGE_TITLE;
+  return "Untitled";
 };
 
 export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
@@ -154,8 +165,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
           resolvedUid === deps.defaultPageUid
             ? deps.buildLocalDefaults()
             : deps.buildEmptyBlocks(deps.makeLocalId);
-        const title =
-          resolvedUid === deps.defaultPageUid ? "Inbox" : "Untitled";
+        const title = resolveKnownPageTitle(resolvedUid, deps.defaultPageUid);
         deps.saveLocalPageSnapshot(resolvedUid, title, seeded);
         deps.setBlocks(seeded);
         deps.setPageTitle(title);
@@ -186,8 +196,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
         block_type: resolveBlockType({ text: block.text, block_type: block.block_type })
       }));
       const title =
-        response.title ||
-        (resolvedUid === deps.defaultPageUid ? "Inbox" : "Untitled");
+        response.title || resolveKnownPageTitle(resolvedUid, deps.defaultPageUid);
       deps.setPageTitle(title);
       deps.setRenameTitle(title);
       if (loaded.length === 0) {
@@ -230,8 +239,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     } catch (error) {
       console.error("Failed to load blocks", error);
       deps.setBlocks(deps.buildLocalDefaults());
-      deps.setPageTitle("Inbox");
-      deps.setRenameTitle("Inbox");
+      deps.setPageTitle(DEFAULT_PAGE_TITLE);
+      deps.setRenameTitle(DEFAULT_PAGE_TITLE);
       deps.markSaved();
     }
   };

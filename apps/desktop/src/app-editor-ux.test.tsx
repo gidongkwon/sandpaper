@@ -330,9 +330,10 @@ describe("App editor UX", () => {
     expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
   });
 
-  it("allows editing captured items before returning to editor", async () => {
+  it("keeps edited captures in the hidden inbox when returning to editor", async () => {
     render(() => <App />);
     const user = userEvent.setup();
+    await screen.findByText(/saved/i);
     await user.click(screen.getByRole("button", { name: "Capture" }));
     const captureInput = screen.getByPlaceholderText(
       "Capture a thought, link, or task..."
@@ -351,18 +352,45 @@ describe("App editor UX", () => {
     await user.type(capturedItemInput, "Quick note updated");
 
     await user.click(screen.getByRole("button", { name: "Editor" }));
+    expect(
+      await screen.findByText("Home", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Quick note updated")).not.toBeInTheDocument();
 
-    let newInput: HTMLTextAreaElement | undefined;
-    await waitFor(() => {
-      const inputs = screen.getAllByPlaceholderText(
-        "Write something..."
-      ) as HTMLTextAreaElement[];
-      newInput = inputs.find((input) => input.value === "Quick note updated");
-      expect(newInput).toBeDefined();
-      expect(document.activeElement).toBe(newInput);
-    });
-    const block = newInput?.closest(".block");
-    expect(block).not.toBeNull();
-    expect(block).toHaveClass("is-highlighted");
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    expect(
+      await screen.findByRole("textbox", { name: "Captured item 1" })
+    ).toHaveValue("Quick note updated");
   });
+
+  it("stores quick captures in a hidden inbox instead of the active editor page", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await screen.findByText(/saved/i);
+
+    await user.click(screen.getByRole("button", { name: /create new page/i }));
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const titleInput = within(dialog).getByRole("textbox");
+    await user.type(titleInput, "Project Atlas");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
+
+    expect(screen.queryByRole("button", { name: "Open Inbox" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+    await user.type(captureInput, "Quick note");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Editor" }));
+
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Quick note")).not.toBeInTheDocument();
+  });
+
 });

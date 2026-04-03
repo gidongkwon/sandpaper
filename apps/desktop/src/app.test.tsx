@@ -256,13 +256,13 @@ describe("App", () => {
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     const secondInput = inputs[1];
-    fireEvent.input(secondInput, { target: { value: "See [[Inbox]]" } });
+    fireEvent.input(secondInput, { target: { value: "See [[Home]]" } });
     fireEvent.focus(firstInput);
     await userEvent.click(
       screen.getByRole("button", { name: /show backlinks/i })
     );
     expect(await screen.findByText("Page backlinks")).toBeInTheDocument();
-    const backlinks = await screen.findAllByText("See [[Inbox]]", {
+    const backlinks = await screen.findAllByText("See [[Home]]", {
       selector: ".backlink-item__text"
     });
     expect(backlinks.length).toBeGreaterThan(0);
@@ -281,16 +281,15 @@ describe("App", () => {
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
     const inputs = await screen.findAllByPlaceholderText("Write something...");
-    fireEvent.input(inputs[0], { target: { value: "See [[Inbox]]" } });
-    const inboxButton = screen.getByRole("button", { name: "Open Inbox" });
-    await userEvent.click(inboxButton);
+    fireEvent.input(inputs[0], { target: { value: "See [[Home]]" } });
+    await userEvent.click(screen.getByRole("button", { name: "Open Home" }));
     expect(
-      await screen.findByText("Inbox", { selector: ".editor-pane__title" })
+      await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: /show backlinks/i })
     );
-    const backlinks = await screen.findAllByText("See [[Inbox]]", {
+    const backlinks = await screen.findAllByText("See [[Home]]", {
       selector: ".backlink-item__text"
     });
     expect(backlinks.length).toBeGreaterThan(0);
@@ -298,11 +297,6 @@ describe("App", () => {
       await screen.findByText("Project Atlas", {
         selector: ".backlink-group__title"
       })
-    ).toBeInTheDocument();
-    const backlinkButton = backlinks[0].closest(".backlink-item") as HTMLElement;
-    await userEvent.click(backlinkButton);
-    expect(
-      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
   });
 
@@ -318,10 +312,9 @@ describe("App", () => {
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    const inboxButton = screen.getByRole("button", { name: "Open Inbox" });
-    await userEvent.click(inboxButton);
+    await userEvent.click(screen.getByRole("button", { name: "Open Home" }));
     expect(
-      await screen.findByText("Inbox", { selector: ".editor-pane__title" })
+      await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     fireEvent.input(inputs[0], {
