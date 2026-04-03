@@ -176,25 +176,31 @@ describe("App", () => {
   it("renders the review mode panel", async () => {
     render(() => <App />);
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
-    expect(await screen.findByText("Daily queue")).toBeInTheDocument();
+    expect(await screen.findByText("Review workbench")).toBeInTheDocument();
     expect(await screen.findByText(/review mode/i)).toBeInTheDocument();
   });
 
-  it("renders the review add button in review mode", async () => {
+  it("renders the review empty state in review mode", async () => {
     render(() => <App />);
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(
-      await screen.findByRole("button", {
-        name: /add current block to review queue/i
-      })
+      await screen.findByText("No capture threads to review.")
     ).toBeInTheDocument();
   });
 
-  it("shows review templates in review mode", async () => {
+  it("renders the review destination shell in review mode", async () => {
     render(() => <App />);
+    await userEvent.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    );
+    await userEvent.type(captureInput, "Thread root");
+    await userEvent.click(screen.getByRole("button", { name: "Send capture" }));
+
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
-    expect(await screen.findByText("Templates")).toBeInTheDocument();
-    expect(await screen.findByText("Daily Brief")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Destination note" })
+    ).toBeInTheDocument();
   });
 
   it("renders a code preview for fenced blocks", async () => {

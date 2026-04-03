@@ -32,6 +32,7 @@ import type {
   ReviewQueueItem,
   ReviewQueueSummary
 } from "../../../entities/review/model/review-types";
+import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import type { Mode } from "../../../shared/model/mode";
 import {
@@ -107,6 +108,9 @@ export const createMainPageState = () => {
   const [renameTitle, setRenameTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [captureText, setCaptureText] = createSignal("");
   const [captureReplyToId, setCaptureReplyToId] = createSignal<string | null>(null);
+  const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>([]);
+  const [selectedReviewThreadId, setSelectedReviewThreadId] =
+    createSignal<string | null>(null);
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -875,6 +879,62 @@ export const createMainPageState = () => {
     return thread?.root.block.text ?? null;
   });
 
+  createEffect(() => {
+    const captureThreadIds = captureItems().map((thread) => thread.id);
+    const captureThreadIdSet = new Set(captureThreadIds);
+    setReviewThreadOrder((current) => {
+      const kept = current.filter((id) => captureThreadIdSet.has(id));
+      const missing = [...captureThreadIds]
+        .reverse()
+        .filter((id) => !kept.includes(id));
+      if (
+        kept.length === current.length &&
+        missing.length === 0 &&
+        kept.every((id, index) => id === current[index])
+      ) {
+        return current;
+      }
+      return [...kept, ...missing];
+    });
+  });
+
+  const reviewThreads = createMemo<ReviewThread[]>(() => {
+    const byId = new Map(captureItems().map((thread) => [thread.id, thread]));
+    return reviewThreadOrder()
+      .map((id) => byId.get(id))
+      .filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
+      .map((thread) => ({
+        id: thread.id,
+        root_text: thread.root.block.text,
+        entries: [
+          {
+            id: thread.root.block.id,
+            text: thread.root.block.text,
+            is_root: true
+          },
+          ...thread.replies.map((reply) => ({
+            id: reply.block.id,
+            text: reply.block.text,
+            is_root: false
+          }))
+        ]
+      }));
+  });
+
+  createEffect(() => {
+    const threads = reviewThreads();
+    if (threads.length === 0) {
+      if (selectedReviewThreadId() !== null) {
+        setSelectedReviewThreadId(null);
+      }
+      return;
+    }
+
+    if (!threads.some((thread) => thread.id === selectedReviewThreadId())) {
+      setSelectedReviewThreadId(threads[0].id);
+    }
+  });
+
   const editCaptureItem = (id: string, text: string) => {
     let updated = false;
     setLocalPages(
@@ -924,6 +984,8 @@ export const createMainPageState = () => {
     if (captureReplyToId() === id) {
       setCaptureReplyToId(null);
     }
+    setReviewThreadOrder((current) => current.filter((threadId) => threadId !== id));
+    setSelectedReviewThreadId((current) => (current === id ? null : current));
   };
 
   const startCaptureReply = (id: string) => {
@@ -967,6 +1029,12 @@ export const createMainPageState = () => {
         draft.unshift(...threadBlocks);
       })
     );
+    if (!replyToId) {
+      setReviewThreadOrder((current) =>
+        current.includes(block.id) ? current : [...current, block.id]
+      );
+      setSelectedReviewThreadId((current) => current ?? block.id);
+    }
     setCaptureText("");
     setCaptureFocusEpoch((current) => current + 1);
   };
@@ -1102,7 +1170,10 @@ export const createMainPageState = () => {
         onCreateTemplate: createReviewTemplate,
         isTauri,
         activeId,
-        onAddCurrent: addReviewItem
+        onAddCurrent: addReviewItem,
+        threads: reviewThreads,
+        selectedThreadId: selectedReviewThreadId,
+        onSelectThread: setSelectedReviewThreadId
       }
     },
     overlays: {

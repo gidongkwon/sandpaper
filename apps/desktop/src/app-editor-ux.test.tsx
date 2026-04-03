@@ -518,4 +518,42 @@ describe("App editor UX", () => {
     });
   });
 
+  it("shows capture threads in the review workbench FIFO even after capture reordering", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Older thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Newer thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const olderThread = await screen.findByRole("group", {
+      name: "Thread Older thread"
+    });
+    await user.click(
+      within(olderThread).getByRole("button", { name: "Reply to Older thread" })
+    );
+    await user.type(captureInput, "Older reply");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    const queueButtons = within(queue).getAllByRole("button");
+    expect(queueButtons[0]).toHaveTextContent("Older thread");
+    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+
+    expect(
+      screen.getByRole("heading", { name: "Capture thread" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Older reply")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Destination note" })
+    ).toBeInTheDocument();
+  });
+
 });

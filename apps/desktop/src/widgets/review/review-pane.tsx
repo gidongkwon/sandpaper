@@ -2,6 +2,7 @@ import { For, Show, type Accessor, type Setter } from "solid-js";
 import type {
   ReviewQueueItem,
   ReviewQueueSummary,
+  ReviewThread,
   ReviewTemplate
 } from "../../entities/review/model/review-types";
 import { EmptyState } from "../../shared/ui/empty-state";
@@ -20,120 +21,103 @@ type ReviewPaneProps = {
   isTauri: () => boolean;
   activeId: Accessor<string | null>;
   onAddCurrent: (id: string) => void | Promise<void>;
+  threads: Accessor<ReviewThread[]>;
+  selectedThreadId: Accessor<string | null>;
+  onSelectThread: (id: string) => void;
 };
 
-export const ReviewPane = (props: ReviewPaneProps) => (
-  <div class="review">
-    <div class="review__header">
-      <div>
-        <div class="review__eyebrow">Review mode</div>
-        <h2>Daily queue</h2>
-        <p>Collect highlights, revisit key blocks, and clear the queue.</p>
-      </div>
-      <div class="review__summary">
-        <div class="review__stat">
-          <span>Due now</span>
-          <strong>{props.summary().due_count}</strong>
+export const ReviewPane = (props: ReviewPaneProps) => {
+  const selectedThread = () =>
+    props.threads().find((thread) => thread.id === props.selectedThreadId()) ?? null;
+
+  return (
+    <div class="review">
+      <div class="review__header">
+        <div>
+          <div class="review__eyebrow">Review mode</div>
+          <h2>Review workbench</h2>
+          <p>Refine temporary capture threads into permanent notes.</p>
         </div>
-        <div class="review__stat">
-          <span>Next due</span>
-          <strong>{props.formatReviewDate(props.summary().next_due_at)}</strong>
+        <div class="review__summary">
+          <div class="review__stat">
+            <span>Threads</span>
+            <strong>{props.threads().length}</strong>
+          </div>
+          <div class="review__stat">
+            <span>Current</span>
+            <strong>{selectedThread()?.root_text ?? "—"}</strong>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="review__deck">
+
       <Show
-        when={props.items().length > 0}
+        when={props.threads().length > 0}
         fallback={
           <EmptyState class="review__empty">
-            <div>Nothing due yet.</div>
-            <div>Tag blocks for review from the editor.</div>
+            <div>No capture threads to review.</div>
+            <div>Capture a thread first, then refine it here.</div>
           </EmptyState>
         }
       >
-        <For each={props.items()}>
-          {(item) => (
-            <article class="review-card">
-              <div class="review-card__meta">
-                <span>{item.page_uid}</span>
-                <span>Due {props.formatReviewDate(item.due_at)}</span>
-              </div>
-              <div class="review-card__text">{item.text || "Untitled"}</div>
-              <div class="review-card__actions">
-                <button
-                  class="review-card__button"
-                  disabled={props.busy()}
-                  onClick={() => props.onAction(item, "snooze")}
-                >
-                  Snooze
-                </button>
-                <button
-                  class="review-card__button"
-                  disabled={props.busy()}
-                  onClick={() => props.onAction(item, "later")}
-                >
-                  Schedule
-                </button>
-                <button
-                  class="review-card__button is-primary"
-                  disabled={props.busy()}
-                  onClick={() => props.onAction(item, "done")}
-                >
-                  Done
-                </button>
-              </div>
-            </article>
-          )}
-        </For>
-      </Show>
-    </div>
-    <Show when={props.message()}>
-      {(message) => <div class="review__message">{message()}</div>}
-    </Show>
-    <div class="review__templates">
-      <div class="review__template-header">
-        <div>
-          <div class="review__eyebrow">Templates</div>
-          <div class="review__subtitle">Seed a daily review page</div>
+        <div class="review__workspace">
+          <nav class="review__queue" aria-label="Review queue">
+            <div class="review__queue-header">
+              <div class="review__eyebrow">Queue</div>
+              <div class="review__subtitle">Oldest threads first</div>
+            </div>
+            <div class="review__queue-list">
+              <For each={props.threads()}>
+                {(thread) => (
+                  <button
+                    class={`review-thread-item ${
+                      props.selectedThreadId() === thread.id ? "is-active" : ""
+                    }`}
+                    onClick={() => props.onSelectThread(thread.id)}
+                  >
+                    <div class="review-thread-item__title">{thread.root_text}</div>
+                    <div class="review-thread-item__meta">
+                      {thread.entries.length} entries
+                    </div>
+                  </button>
+                )}
+              </For>
+            </div>
+          </nav>
+
+          <section class="review__thread-panel" aria-labelledby="review-thread-heading">
+            <h3 id="review-thread-heading">Capture thread</h3>
+            <Show when={selectedThread()}>
+              {(thread) => (
+                <div class="review-thread">
+                  <For each={thread().entries}>
+                    {(entry) => (
+                      <article
+                        class={`review-thread__entry ${
+                          entry.is_root ? "is-root" : "is-reply"
+                        }`}
+                      >
+                        <div class="review-thread__label">
+                          {entry.is_root ? "Root" : "Reply"}
+                        </div>
+                        <div class="review-thread__text">{entry.text}</div>
+                      </article>
+                    )}
+                  </For>
+                </div>
+              )}
+            </Show>
+          </section>
+
+          <section class="review__editor-panel" aria-labelledby="review-editor-heading">
+            <h3 id="review-editor-heading">Destination note</h3>
+            <p>Destination selection and editing land in the next slice.</p>
+          </section>
         </div>
-        <button
-          class="review__button is-secondary"
-          disabled={props.busy() || !props.isTauri()}
-          onClick={() => props.onCreateTemplate()}
-        >
-          Create template
-        </button>
-      </div>
-      <div class="review__template-grid">
-        <For each={props.templates}>
-          {(template) => (
-            <button
-              class={`review-template ${
-                props.selectedTemplate() === template.id ? "is-active" : ""
-              }`}
-              onClick={() => props.setSelectedTemplate(template.id)}
-            >
-              <div class="review-template__title">{template.title}</div>
-              <div class="review-template__desc">{template.description}</div>
-            </button>
-          )}
-        </For>
-      </div>
-    </div>
-    <div class="review__actions">
-      <button
-        class="review__button"
-        disabled={!props.activeId() || !props.isTauri()}
-        onClick={() => {
-          const id = props.activeId();
-          if (id) void props.onAddCurrent(id);
-        }}
-      >
-        Add current block to review queue
-      </button>
-      <Show when={!props.isTauri()}>
-        <span class="review__hint">Desktop app required.</span>
+      </Show>
+
+      <Show when={props.message()}>
+        {(message) => <div class="review__message">{message()}</div>}
       </Show>
     </div>
-  </div>
-);
+  );
+};

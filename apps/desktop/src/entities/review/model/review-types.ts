@@ -22,3 +22,15 @@ export type ReviewTemplate = {
   title: string;
   description: string;
 };
+
+export type ReviewThreadEntry = {
+  id: string;
+  text: string;
+  is_root: boolean;
+};
+
+export type ReviewThread = {
+  id: string;
+  root_text: string;
+  entries: ReviewThreadEntry[];
+};
