@@ -31,6 +31,7 @@ type CapturePaneProps = {
   onCapture: () => void;
   onEditItem: (id: string, text: string) => void;
   onDeleteItem: (id: string) => void;
+  onDeleteThread: (id: string) => void;
   onReplyTo: (id: string) => void;
   onCancelReply: () => void;
   replyingTo: Accessor<string | null>;
@@ -56,6 +57,11 @@ export const CapturePane = (props: CapturePaneProps) => {
   const [pendingReplyDelete, setPendingReplyDelete] = createSignal<{
     id: string;
     text: string;
+  } | null>(null);
+  const [pendingThreadDelete, setPendingThreadDelete] = createSignal<{
+    id: string;
+    text: string;
+    replyCount: number;
   } | null>(null);
 
   createEffect(() => {
@@ -99,6 +105,20 @@ export const CapturePane = (props: CapturePaneProps) => {
     if (!pending) return;
     props.onDeleteItem(pending.id);
     setPendingReplyDelete(null);
+  };
+
+  const confirmThreadDelete = () => {
+    const pending = pendingThreadDelete();
+    if (!pending) return;
+    props.onDeleteThread(pending.id);
+    setPendingThreadDelete(null);
+  };
+
+  const threadDeleteDescription = () => {
+    const pending = pendingThreadDelete();
+    if (!pending) return undefined;
+    const replyLabel = pending.replyCount === 1 ? "1 reply" : `${pending.replyCount} replies`;
+    return `Delete "${pending.text}" and ${replyLabel} from capture?`;
   };
 
   return (
@@ -165,6 +185,20 @@ export const CapturePane = (props: CapturePaneProps) => {
                       onClick={() => props.onReplyTo(thread.root.block.id)}
                     >
                       Reply
+                    </button>
+                    <button
+                      class="capture-chat__reply"
+                      type="button"
+                      aria-label={`Delete ${thread.root.block.text}`}
+                      onClick={() =>
+                        setPendingThreadDelete({
+                          id: thread.root.block.id,
+                          text: thread.root.block.text,
+                          replyCount: thread.replies.length
+                        })
+                      }
+                    >
+                      Delete
                     </button>
                   </div>
                   <For each={thread.replies}>
@@ -273,6 +307,14 @@ export const CapturePane = (props: CapturePaneProps) => {
         confirmLabel="Delete"
         onConfirm={confirmReplyDelete}
         onCancel={() => setPendingReplyDelete(null)}
+      />
+      <ConfirmDialog
+        open={() => pendingThreadDelete() !== null}
+        title="Delete thread"
+        description={threadDeleteDescription()}
+        confirmLabel="Delete thread"
+        onConfirm={confirmThreadDelete}
+        onCancel={() => setPendingThreadDelete(null)}
       />
     </>
   );

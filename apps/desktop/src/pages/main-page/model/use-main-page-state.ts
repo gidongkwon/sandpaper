@@ -902,6 +902,30 @@ export const createMainPageState = () => {
     );
   };
 
+  const deleteCaptureThread = (id: string) => {
+    setLocalPages(
+      HIDDEN_INBOX_PAGE_UID,
+      "blocks",
+      produce((draft) => {
+        const rootIndex = draft.findIndex(
+          (block) => block.id === id && block.indent === 0
+        );
+        if (rootIndex < 0) return;
+
+        let threadEndIndex = rootIndex + 1;
+        while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
+          threadEndIndex += 1;
+        }
+
+        draft.splice(rootIndex, threadEndIndex - rootIndex);
+      })
+    );
+
+    if (captureReplyToId() === id) {
+      setCaptureReplyToId(null);
+    }
+  };
+
   const startCaptureReply = (id: string) => {
     setCaptureReplyToId(id);
     setCaptureFocusEpoch((current) => current + 1);
@@ -1059,6 +1083,7 @@ export const createMainPageState = () => {
         onCapture: addCapture,
         onEditItem: editCaptureItem,
         onDeleteItem: deleteCaptureItem,
+        onDeleteThread: deleteCaptureThread,
         onReplyTo: startCaptureReply,
         onCancelReply: cancelCaptureReply,
         replyingTo: captureReplyTarget,

@@ -483,4 +483,39 @@ describe("App editor UX", () => {
     expect(screen.getByDisplayValue("Root post")).toBeInTheDocument();
   });
 
+  it("confirms before deleting a thread root and removes the whole thread", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Root post");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    const thread = await screen.findByRole("group", { name: "Thread Root post" });
+    await user.click(
+      within(thread).getByRole("button", { name: "Reply to Root post" })
+    );
+    await user.type(captureInput, "Reply post");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const updatedThread = await screen.findByRole("group", {
+      name: "Thread Root post"
+    });
+    await user.click(
+      within(updatedThread).getByRole("button", { name: "Delete Root post" })
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Delete thread" });
+    expect(dialog).toHaveTextContent("Root post");
+    expect(dialog).toHaveTextContent("1 reply");
+    await user.click(within(dialog).getByRole("button", { name: "Delete thread" }));
+
+    await waitFor(() => {
+      expect(screen.queryByDisplayValue("Root post")).not.toBeInTheDocument();
+      expect(screen.queryByDisplayValue("Reply post")).not.toBeInTheDocument();
+    });
+  });
+
 });
