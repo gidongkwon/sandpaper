@@ -890,6 +890,18 @@ export const createMainPageState = () => {
     if (!updated) return;
   };
 
+  const deleteCaptureItem = (id: string) => {
+    setLocalPages(
+      HIDDEN_INBOX_PAGE_UID,
+      "blocks",
+      produce((draft) => {
+        const index = draft.findIndex((block) => block.id === id);
+        if (index < 0) return;
+        draft.splice(index, 1);
+      })
+    );
+  };
+
   const startCaptureReply = (id: string) => {
     setCaptureReplyToId(id);
     setCaptureFocusEpoch((current) => current + 1);
@@ -1046,6 +1058,7 @@ export const createMainPageState = () => {
         items: captureItems,
         onCapture: addCapture,
         onEditItem: editCaptureItem,
+        onDeleteItem: deleteCaptureItem,
         onReplyTo: startCaptureReply,
         onCancelReply: cancelCaptureReply,
         replyingTo: captureReplyTarget,

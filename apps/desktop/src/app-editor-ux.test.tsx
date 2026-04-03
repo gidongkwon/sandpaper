@@ -447,4 +447,40 @@ describe("App editor UX", () => {
     expect(within(threads[0] as HTMLElement).getByDisplayValue("Older reply")).toBeInTheDocument();
   });
 
+  it("confirms before deleting a reply", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Root post");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    const thread = await screen.findByRole("group", { name: "Thread Root post" });
+    await user.click(
+      within(thread).getByRole("button", { name: "Reply to Root post" })
+    );
+    await user.type(captureInput, "Reply post");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const updatedThread = await screen.findByRole("group", {
+      name: "Thread Root post"
+    });
+    await user.click(
+      within(updatedThread).getByRole("button", { name: "Delete Reply post" })
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "Delete reply" });
+    expect(dialog).toHaveTextContent("Reply post");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByDisplayValue("Reply post")
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByDisplayValue("Root post")).toBeInTheDocument();
+  });
+
 });
