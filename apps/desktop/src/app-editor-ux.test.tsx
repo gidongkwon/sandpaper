@@ -564,6 +564,36 @@ describe("App editor UX", () => {
     ).toBeInTheDocument();
   });
 
+  it("preserves review queue FIFO order across app restart", async () => {
+    const firstRender = render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "First thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Second thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    let queue = await screen.findByRole("navigation", { name: "Review queue" });
+    let queueButtons = within(queue).getAllByRole("button");
+    expect(queueButtons[0]).toHaveTextContent("First thread");
+    expect(queueButtons[1]).toHaveTextContent("Second thread");
+
+    firstRender.unmount();
+
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    queue = await screen.findByRole("navigation", { name: "Review queue" });
+    queueButtons = within(queue).getAllByRole("button");
+    expect(queueButtons[0]).toHaveTextContent("First thread");
+    expect(queueButtons[1]).toHaveTextContent("Second thread");
+  });
+
   it("creates a destination page from review and completes the thread", async () => {
     render(() => <App />);
     const user = userEvent.setup();

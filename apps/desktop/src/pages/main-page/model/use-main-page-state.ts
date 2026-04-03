@@ -70,6 +70,10 @@ import {
   buildLocalDefaults,
   resolveInitialBlocks
 } from "./main-page-defaults";
+import {
+  readLocalStorage,
+  writeLocalStorage
+} from "../../../shared/lib/storage/safe-local-storage";
 
 type JumpTarget = {
   id: string;
@@ -77,6 +81,8 @@ type JumpTarget = {
 };
 
 const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
+const LOCAL_PAGES_KEY = "sandpaper:local:pages";
+const REVIEW_THREAD_ORDER_KEY = "sandpaper:capture:review-thread-order";
 
 const readStoredCaptureTimestamps = () => {
   if (
@@ -99,15 +105,80 @@ const readStoredCaptureTimestamps = () => {
   }
 };
 
+const normalizeStoredBlocks = (value: unknown): Block[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const candidate = entry as Partial<Block>;
+    if (
+      typeof candidate.id !== "string" ||
+      typeof candidate.text !== "string" ||
+      typeof candidate.indent !== "number"
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: candidate.id,
+        text: candidate.text,
+        indent: candidate.indent,
+        block_type: candidate.block_type
+      }
+    ];
+  });
+};
+
+const readStoredLocalPages = (
+  fallback: Record<string, LocalPageRecord>
+): Record<string, LocalPageRecord> => {
+  const raw = readLocalStorage(LOCAL_PAGES_KEY);
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const storedEntries = Object.entries(parsed).flatMap(([key, value]) => {
+      if (!value || typeof value !== "object") return [];
+      const candidate = value as Partial<LocalPageRecord>;
+      const uid =
+        typeof candidate.uid === "string" && candidate.uid.trim().length > 0
+          ? candidate.uid
+          : key;
+      if (typeof candidate.title !== "string") return [];
+      return [
+        [
+          uid,
+          {
+            uid,
+            title: candidate.title,
+            blocks: normalizeStoredBlocks(candidate.blocks)
+          }
+        ] as const
+      ];
+    });
+    return {
+      ...fallback,
+      ...Object.fromEntries(storedEntries)
+    };
+  } catch {
+    return fallback;
+  }
+};
+
+const readStoredReviewThreadOrder = () => {
+  const raw = readLocalStorage(REVIEW_THREAD_ORDER_KEY);
+  if (!raw) return [] as string[];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return [];
+  }
+};
+
 export const createMainPageState = () => {
   const initialBlocks = resolveInitialBlocks();
   const initialBlockSnapshot = initialBlocks.map((block) => ({ ...block }));
-  const [blocks, setBlocks] = createStore<Block[]>([...initialBlocks]);
-  const [pages, setPages] = createSignal<PageSummary[]>([]);
-  const [activePageUid, setActivePageUid] = createSignal(DEFAULT_PAGE_UID);
-  const [localPages, setLocalPages] = createStore<
-    Record<string, LocalPageRecord>
-  >({
+  const initialLocalPages = readStoredLocalPages({
     [DEFAULT_PAGE_UID]: {
       uid: DEFAULT_PAGE_UID,
       title: DEFAULT_PAGE_TITLE,
@@ -119,6 +190,12 @@ export const createMainPageState = () => {
       blocks: []
     }
   });
+  const [blocks, setBlocks] = createStore<Block[]>([...initialBlocks]);
+  const [pages, setPages] = createSignal<PageSummary[]>([]);
+  const [activePageUid, setActivePageUid] = createSignal(DEFAULT_PAGE_UID);
+  const [localPages, setLocalPages] = createStore<
+    Record<string, LocalPageRecord>
+  >(initialLocalPages);
   const [activeId, setActiveId] = createSignal<string | null>(null);
   const [focusedId, setFocusedId] = createSignal<string | null>(null);
   const [highlightedBlockId] = createSignal<string | null>(null);
@@ -133,7 +210,9 @@ export const createMainPageState = () => {
   const [captureItemTimestamps, setCaptureItemTimestamps] = createSignal<
     Record<string, number>
   >(readStoredCaptureTimestamps());
-  const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>([]);
+  const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>(
+    readStoredReviewThreadOrder()
+  );
   const [selectedReviewThreadId, setSelectedReviewThreadId] =
     createSignal<string | null>(null);
   const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
@@ -874,6 +953,11 @@ export const createMainPageState = () => {
     );
   });
 
+  createEffect(() => {
+    if (isTauri()) return;
+    writeLocalStorage(LOCAL_PAGES_KEY, JSON.stringify(localPages));
+  });
+
   const recordLatency = (label: string) => {
     if (!perfEnabled()) return;
     perfTracker.mark(label);
@@ -951,11 +1035,18 @@ export const createMainPageState = () => {
   createEffect(() => {
     const captureThreadIds = captureItems().map((thread) => thread.id);
     const captureThreadIdSet = new Set(captureThreadIds);
+    const orderedMissing = [...captureItems()]
+      .filter((thread) => !reviewThreadOrder().includes(thread.id))
+      .sort((left, right) => {
+        const leftTime = left.root.capturedAt ?? Number.MAX_SAFE_INTEGER;
+        const rightTime = right.root.capturedAt ?? Number.MAX_SAFE_INTEGER;
+        if (leftTime !== rightTime) return leftTime - rightTime;
+        return left.root.position - right.root.position;
+      })
+      .map((thread) => thread.id);
     setReviewThreadOrder((current) => {
       const kept = current.filter((id) => captureThreadIdSet.has(id));
-      const missing = [...captureThreadIds]
-        .reverse()
-        .filter((id) => !kept.includes(id));
+      const missing = orderedMissing.filter((id) => !kept.includes(id));
       if (
         kept.length === current.length &&
         missing.length === 0 &&
@@ -965,6 +1056,14 @@ export const createMainPageState = () => {
       }
       return [...kept, ...missing];
     });
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    window.localStorage.setItem(
+      REVIEW_THREAD_ORDER_KEY,
+      JSON.stringify(reviewThreadOrder())
+    );
   });
 
   const reviewThreads = createMemo<ReviewThread[]>(() => {
