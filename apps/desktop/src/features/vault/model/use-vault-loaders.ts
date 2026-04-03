@@ -200,6 +200,12 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
       deps.setPageTitle(title);
       deps.setRenameTitle(title);
       if (loaded.length === 0) {
+        if (resolvedUid === HIDDEN_INBOX_PAGE_UID) {
+          deps.setBlocks([]);
+          deps.setActiveId(null);
+          deps.markSaved();
+          return;
+        }
         const seeded = deps.buildDefaultBlocks(deps.makeRandomId);
         deps.setBlocks(seeded);
         await deps.invoke("save_page_blocks", {

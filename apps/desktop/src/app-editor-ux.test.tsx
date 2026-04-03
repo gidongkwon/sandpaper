@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn()
@@ -19,6 +20,7 @@ import App from "./app/app";
 describe("App editor UX", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(invoke).mockReset();
   });
 
   afterEach(() => {
@@ -348,8 +350,9 @@ describe("App editor UX", () => {
       name: "Captured item 1"
     })) as HTMLTextAreaElement;
     await user.click(capturedItemInput);
-    await user.clear(capturedItemInput);
-    await user.type(capturedItemInput, "Quick note updated");
+    fireEvent.input(capturedItemInput, {
+      target: { value: "Quick note updated" }
+    });
 
     await user.click(screen.getByRole("button", { name: "Editor" }));
     expect(
@@ -592,6 +595,119 @@ describe("App editor UX", () => {
     queueButtons = within(queue).getAllByRole("button");
     expect(queueButtons[0]).toHaveTextContent("First thread");
     expect(queueButtons[1]).toHaveTextContent("Second thread");
+  });
+
+  it("persists hidden inbox thread changes through the tauri page store", async () => {
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "list_vaults") {
+        return Promise.resolve({
+          active_id: "vault-1",
+          vaults: [{ id: "vault-1", name: "Vault", path: "/vault" }]
+        });
+      }
+      if (command === "get_active_page") return Promise.resolve("inbox");
+      if (command === "list_pages") {
+        return Promise.resolve([{ uid: "inbox", title: "Inbox" }]);
+      }
+      if (command === "load_page_blocks") {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          "pageUid" in payload &&
+          payload.pageUid === "inbox"
+        ) {
+          return Promise.resolve({
+            page_uid: "inbox",
+            title: "Inbox",
+            blocks: []
+          });
+        }
+        return Promise.resolve({
+          page_uid: "home",
+          title: "Home",
+          blocks: [{ uid: "home-1", text: "Home block", indent: 0 }]
+        });
+      }
+      if (command === "list_page_wikilink_backlinks") return Promise.resolve([]);
+      if (command === "list_plugins_command") return Promise.resolve([]);
+      if (command === "load_plugins_command") {
+        return Promise.resolve({
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        });
+      }
+      if (command === "vault_key_status") {
+        return Promise.resolve({
+          configured: false,
+          kdf: null,
+          iterations: null,
+          salt_b64: null
+        });
+      }
+      if (command === "get_sync_config") {
+        return Promise.resolve({
+          server_url: null,
+          vault_id: null,
+          device_id: null,
+          key_fingerprint: null,
+          last_push_cursor: 0,
+          last_pull_cursor: 0
+        });
+      }
+      if (command === "review_queue_summary") {
+        return Promise.resolve({ due_count: 0, next_due_at: null });
+      }
+      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "save_page_blocks") return Promise.resolve(null);
+      if (command === "write_shadow_markdown") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Persisted root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const thread = await screen.findByRole("group", {
+      name: "Thread Persisted root"
+    });
+    await user.click(
+      within(thread).getByRole("button", { name: "Reply to Persisted root" })
+    );
+    await user.type(captureInput, "Persisted reply");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const rootInput = screen.getByDisplayValue("Persisted root");
+    fireEvent.input(rootInput, {
+      target: { value: "Edited root" }
+    });
+
+    const saveCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "save_page_blocks");
+
+    expect(saveCalls.length).toBeGreaterThan(0);
+    const lastSave = saveCalls[saveCalls.length - 1];
+    expect(lastSave?.[1]).toMatchObject({
+      pageUid: "inbox",
+      page_uid: "inbox",
+      blocks: [
+        expect.objectContaining({ text: "Edited root", indent: 0 }),
+        expect.objectContaining({ text: "Persisted reply", indent: 1 })
+      ]
+    });
   });
 
   it("creates a destination page from review and completes the thread", async () => {

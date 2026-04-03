@@ -5,7 +5,7 @@ import {
   onCleanup,
   onMount
 } from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import { createStore } from "solid-js/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
   createShadowWriter,
@@ -467,6 +467,34 @@ export const createMainPageState = () => {
     cancelPendingSave,
     scheduleShadowWrite
   } = autosave;
+
+  const persistCaptureInboxBlocks = async (items: Block[]) => {
+    if (!isTauri()) return;
+    try {
+      await invoke("save_page_blocks", {
+        pageUid: HIDDEN_INBOX_PAGE_UID,
+        page_uid: HIDDEN_INBOX_PAGE_UID,
+        blocks: items.map((block) => toPayload(block))
+      });
+    } catch (error) {
+      console.error("Failed to persist capture inbox", error);
+    }
+  };
+
+  const commitCaptureInboxBlocks = (items: Block[]) => {
+    const snapshot = snapshotBlocks(items);
+    setLocalPages(HIDDEN_INBOX_PAGE_UID, "uid", HIDDEN_INBOX_PAGE_UID);
+    setLocalPages(HIDDEN_INBOX_PAGE_UID, "title", HIDDEN_INBOX_PAGE_TITLE);
+    setLocalPages(HIDDEN_INBOX_PAGE_UID, "blocks", snapshot);
+    void persistCaptureInboxBlocks(items);
+  };
+
+  const updateCaptureInboxBlocks = (update: (draft: Block[]) => void) => {
+    const next = snapshotBlocks(captureInboxBlocks());
+    update(next);
+    commitCaptureInboxBlocks(next);
+    return next;
+  };
 
   const vaultLoaders = createVaultLoaders({
     isTauri,
@@ -1132,29 +1160,21 @@ export const createMainPageState = () => {
 
   const editCaptureItem = (id: string, text: string) => {
     let updated = false;
-    setLocalPages(
-      HIDDEN_INBOX_PAGE_UID,
-      "blocks",
-      produce((draft) => {
-        const target = draft.find((block) => block.id === id);
-        if (!target || target.text === text) return;
-        target.text = text;
-        updated = true;
-      })
-    );
+    updateCaptureInboxBlocks((draft) => {
+      const target = draft.find((block) => block.id === id);
+      if (!target || target.text === text) return;
+      target.text = text;
+      updated = true;
+    });
     if (!updated) return;
   };
 
   const deleteCaptureItem = (id: string) => {
-    setLocalPages(
-      HIDDEN_INBOX_PAGE_UID,
-      "blocks",
-      produce((draft) => {
-        const index = draft.findIndex((block) => block.id === id);
-        if (index < 0) return;
-        draft.splice(index, 1);
-      })
-    );
+    updateCaptureInboxBlocks((draft) => {
+      const index = draft.findIndex((block) => block.id === id);
+      if (index < 0) return;
+      draft.splice(index, 1);
+    });
     setCaptureItemTimestamps((current) => {
       if (!(id in current)) return current;
       const next = { ...current };
@@ -1164,34 +1184,28 @@ export const createMainPageState = () => {
   };
 
   const deleteCaptureThread = (id: string) => {
-    setLocalPages(
-      HIDDEN_INBOX_PAGE_UID,
-      "blocks",
-      produce((draft) => {
-        const rootIndex = draft.findIndex(
-          (block) => block.id === id && block.indent === 0
-        );
-        if (rootIndex < 0) return;
+    const existingThread = captureItems().find((thread) => thread.id === id) ?? null;
+    updateCaptureInboxBlocks((draft) => {
+      const rootIndex = draft.findIndex(
+        (block) => block.id === id && block.indent === 0
+      );
+      if (rootIndex < 0) return;
 
-        let threadEndIndex = rootIndex + 1;
-        while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
-          threadEndIndex += 1;
-        }
+      let threadEndIndex = rootIndex + 1;
+      while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
+        threadEndIndex += 1;
+      }
 
-        draft.splice(rootIndex, threadEndIndex - rootIndex);
-      })
-    );
+      draft.splice(rootIndex, threadEndIndex - rootIndex);
+    });
     setCaptureItemTimestamps((current) => {
       let changed = false;
       const next = { ...current };
       delete next[id];
-      for (const thread of captureItems()) {
-        if (thread.id !== id) continue;
-        for (const reply of thread.replies) {
-          if (!(reply.block.id in next)) continue;
-          delete next[reply.block.id];
-          changed = true;
-        }
+      for (const reply of existingThread?.replies ?? []) {
+        if (!(reply.block.id in next)) continue;
+        delete next[reply.block.id];
+        changed = true;
       }
       if (id in current) changed = true;
       return changed ? next : current;
@@ -1224,32 +1238,28 @@ export const createMainPageState = () => {
       ...current,
       [block.id]: capturedAt
     }));
-    setLocalPages(
-      HIDDEN_INBOX_PAGE_UID,
-      "blocks",
-      produce((draft) => {
-        if (!replyToId) {
-          draft.push(block);
-          return;
-        }
+    updateCaptureInboxBlocks((draft) => {
+      if (!replyToId) {
+        draft.push(block);
+        return;
+      }
 
-        const rootIndex = draft.findIndex(
-          (item) => item.id === replyToId && item.indent === 0
-        );
-        if (rootIndex < 0) {
-          draft.push(createNewBlock(text, 0));
-          return;
-        }
+      const rootIndex = draft.findIndex(
+        (item) => item.id === replyToId && item.indent === 0
+      );
+      if (rootIndex < 0) {
+        draft.push({ ...block, indent: 0 });
+        return;
+      }
 
-        let threadEndIndex = rootIndex + 1;
-        while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
-          threadEndIndex += 1;
-        }
-        const threadBlocks = draft.splice(rootIndex, threadEndIndex - rootIndex);
-        threadBlocks.push(block);
-        draft.push(...threadBlocks);
-      })
-    );
+      let threadEndIndex = rootIndex + 1;
+      while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
+        threadEndIndex += 1;
+      }
+      const threadBlocks = draft.splice(rootIndex, threadEndIndex - rootIndex);
+      threadBlocks.push(block);
+      draft.push(...threadBlocks);
+    });
     if (!replyToId) {
       setReviewThreadOrder((current) =>
         current.includes(block.id) ? current : [...current, block.id]
