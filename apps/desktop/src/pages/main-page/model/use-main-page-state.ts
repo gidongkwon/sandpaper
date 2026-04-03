@@ -76,6 +76,28 @@ type JumpTarget = {
   caret: "start" | "end" | "preserve";
 };
 
+const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
+
+const readStoredCaptureTimestamps = () => {
+  if (
+    typeof window === "undefined" ||
+    typeof window.localStorage?.getItem !== "function"
+  ) {
+    return {} as Record<string, number>;
+  }
+  try {
+    const raw = window.localStorage.getItem(CAPTURE_TIMESTAMPS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (entry): entry is [string, number] => typeof entry[1] === "number"
+      )
+    );
+  } catch {
+    return {};
+  }
+};
 
 export const createMainPageState = () => {
   const initialBlocks = resolveInitialBlocks();
@@ -108,6 +130,9 @@ export const createMainPageState = () => {
   const [renameTitle, setRenameTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [captureText, setCaptureText] = createSignal("");
   const [captureReplyToId, setCaptureReplyToId] = createSignal<string | null>(null);
+  const [captureItemTimestamps, setCaptureItemTimestamps] = createSignal<
+    Record<string, number>
+  >(readStoredCaptureTimestamps());
   const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>([]);
   const [selectedReviewThreadId, setSelectedReviewThreadId] =
     createSignal<string | null>(null);
@@ -813,6 +838,42 @@ export const createMainPageState = () => {
     );
   });
 
+  createEffect(() => {
+    const blockIds = captureInboxBlocks().map((block) => block.id);
+    const blockIdSet = new Set(blockIds);
+    const now = Date.now();
+    setCaptureItemTimestamps((current) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const id of blockIds) {
+        const timestamp = current[id];
+        if (typeof timestamp === "number") {
+          next[id] = timestamp;
+          continue;
+        }
+        next[id] = now;
+        changed = true;
+      }
+      if (!changed) {
+        for (const id of Object.keys(current)) {
+          if (!blockIdSet.has(id)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      return changed ? next : current;
+    });
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    window.localStorage.setItem(
+      CAPTURE_TIMESTAMPS_KEY,
+      JSON.stringify(captureItemTimestamps())
+    );
+  });
+
   const recordLatency = (label: string) => {
     if (!perfEnabled()) return;
     perfTracker.mark(label);
@@ -833,10 +894,12 @@ export const createMainPageState = () => {
       root: {
         block: Block;
         position: number;
+        capturedAt: number | null;
       };
       replies: Array<{
         block: Block;
         position: number;
+        capturedAt: number | null;
       }>;
     }> = [];
     let currentThread:
@@ -845,10 +908,12 @@ export const createMainPageState = () => {
           root: {
             block: Block;
             position: number;
+            capturedAt: number | null;
           };
           replies: Array<{
             block: Block;
             position: number;
+            capturedAt: number | null;
           }>;
         }
       | undefined;
@@ -856,7 +921,8 @@ export const createMainPageState = () => {
     for (const block of captureInboxBlocks()) {
       const item = {
         block,
-        position: (position += 1)
+        position: (position += 1),
+        capturedAt: captureItemTimestamps()[block.id] ?? null
       };
 
       if (block.indent > 0 && currentThread) {
@@ -990,6 +1056,12 @@ export const createMainPageState = () => {
         draft.splice(index, 1);
       })
     );
+    setCaptureItemTimestamps((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   };
 
   const deleteCaptureThread = (id: string) => {
@@ -1010,6 +1082,21 @@ export const createMainPageState = () => {
         draft.splice(rootIndex, threadEndIndex - rootIndex);
       })
     );
+    setCaptureItemTimestamps((current) => {
+      let changed = false;
+      const next = { ...current };
+      delete next[id];
+      for (const thread of captureItems()) {
+        if (thread.id !== id) continue;
+        for (const reply of thread.replies) {
+          if (!(reply.block.id in next)) continue;
+          delete next[reply.block.id];
+          changed = true;
+        }
+      }
+      if (id in current) changed = true;
+      return changed ? next : current;
+    });
 
     if (captureReplyToId() === id) {
       setCaptureReplyToId(null);
@@ -1033,12 +1120,17 @@ export const createMainPageState = () => {
     if (!text) return;
     const replyToId = captureReplyToId();
     const block = createNewBlock(text, replyToId ? 1 : 0);
+    const capturedAt = Date.now();
+    setCaptureItemTimestamps((current) => ({
+      ...current,
+      [block.id]: capturedAt
+    }));
     setLocalPages(
       HIDDEN_INBOX_PAGE_UID,
       "blocks",
       produce((draft) => {
         if (!replyToId) {
-          draft.unshift(block);
+          draft.push(block);
           return;
         }
 
@@ -1046,7 +1138,7 @@ export const createMainPageState = () => {
           (item) => item.id === replyToId && item.indent === 0
         );
         if (rootIndex < 0) {
-          draft.unshift(createNewBlock(text, 0));
+          draft.push(createNewBlock(text, 0));
           return;
         }
 
@@ -1056,7 +1148,7 @@ export const createMainPageState = () => {
         }
         const threadBlocks = draft.splice(rootIndex, threadEndIndex - rootIndex);
         threadBlocks.push(block);
-        draft.unshift(...threadBlocks);
+        draft.push(...threadBlocks);
       })
     );
     if (!replyToId) {
@@ -1212,6 +1304,7 @@ export const createMainPageState = () => {
         onDeleteThread: deleteCaptureThread,
         onReplyTo: startCaptureReply,
         onCancelReply: cancelCaptureReply,
+        replyingToId: captureReplyToId,
         replyingTo: captureReplyTarget,
         focusEpoch: captureFocusEpoch
       },

@@ -420,11 +420,14 @@ describe("App editor UX", () => {
       name: "Thread Root post"
     });
     expect(within(updatedThread).getByDisplayValue("Follow up")).toBeInTheDocument();
+    expect(
+      within(updatedThread).getAllByText(/\d{1,2}:\d{2} [AP]M|Now/)
+    ).toHaveLength(2);
     expect(screen.getByText("Replying to")).toBeInTheDocument();
     expect(screen.getByText("Root post")).toBeInTheDocument();
   });
 
-  it("bumps a thread to the top when it receives a new reply", async () => {
+  it("moves an active thread to the bottom when it receives a new reply", async () => {
     render(() => <App />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Capture" }));
@@ -447,8 +450,9 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
     const threads = screen.getAllByRole("group");
-    expect(threads[0]).toHaveAttribute("aria-label", "Thread Older thread");
-    expect(within(threads[0] as HTMLElement).getByDisplayValue("Older reply")).toBeInTheDocument();
+    const lastThread = threads[threads.length - 1] as HTMLElement;
+    expect(lastThread).toHaveAttribute("aria-label", "Thread Older thread");
+    expect(within(lastThread).getByDisplayValue("Older reply")).toBeInTheDocument();
   });
 
   it("confirms before deleting a reply", async () => {

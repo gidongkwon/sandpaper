@@ -20,6 +20,7 @@ export type CaptureItem = {
     indent: number;
   };
   position: number;
+  capturedAt: number | null;
 };
 
 export type CaptureThread = {
@@ -38,14 +39,16 @@ type CapturePaneProps = {
   onDeleteThread: (id: string) => void;
   onReplyTo: (id: string) => void;
   onCancelReply: () => void;
+  replyingToId: Accessor<string | null>;
   replyingTo: Accessor<string | null>;
   focusEpoch: Accessor<number>;
 };
 
-const formatTime = () => {
-  const now = new Date();
-  const h = now.getHours();
-  const m = now.getMinutes().toString().padStart(2, "0");
+const formatCaptureTime = (timestamp: number | null) => {
+  if (!timestamp) return "Now";
+  const date = new Date(timestamp);
+  const h = date.getHours();
+  const m = date.getMinutes().toString().padStart(2, "0");
   const period = h >= 12 ? "PM" : "AM";
   const h12 = h % 12 || 12;
   return `${h12}:${m} ${period}`;
@@ -55,9 +58,6 @@ export const CapturePane = (props: CapturePaneProps) => {
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
   const [justCaptured, setJustCaptured] = createSignal(false);
-  const [lastCaptureTime, setLastCaptureTime] = createSignal<string | null>(
-    null
-  );
   const [pendingReplyDelete, setPendingReplyDelete] = createSignal<{
     id: string;
     text: string;
@@ -89,7 +89,6 @@ export const CapturePane = (props: CapturePaneProps) => {
   const handleCapture = () => {
     const text = props.text().trim();
     if (!text) return;
-    setLastCaptureTime(formatTime());
     props.onCapture();
     setJustCaptured(false);
     queueMicrotask(() => {
@@ -123,6 +122,21 @@ export const CapturePane = (props: CapturePaneProps) => {
     if (!pending) return undefined;
     const replyLabel = pending.replyCount === 1 ? "1 reply" : `${pending.replyCount} replies`;
     return `Delete "${pending.text}" and ${replyLabel} from capture?`;
+  };
+
+  const syncThreadLine = (
+    threadEl: HTMLElement | undefined,
+    lastReplyEl: HTMLDivElement | undefined
+  ) => {
+    requestAnimationFrame(() => {
+      if (!threadEl) return;
+      if (!lastReplyEl) {
+        threadEl.style.removeProperty("--thread-line-end");
+        return;
+      }
+      const end = Math.max(lastReplyEl.offsetTop - 6, 18);
+      threadEl.style.setProperty("--thread-line-end", `${end}px`);
+    });
   };
 
   return (
@@ -161,24 +175,44 @@ export const CapturePane = (props: CapturePaneProps) => {
             }
           >
             <For each={props.items()}>
-              {(thread) => (
-                <section
-                  class="capture-chat__thread"
-                  role="group"
-                  aria-label={`Thread ${thread.root.block.text}`}
-                >
-                  <div class="capture-chat__bubble-row">
+              {(thread) => {
+                let threadRef: HTMLElement | undefined;
+                let lastReplyRef: HTMLDivElement | undefined;
+
+                return (
+                  <section
+                    class="capture-chat__thread"
+                    classList={{
+                      "capture-chat__thread--reply-target":
+                        props.replyingToId() === thread.root.block.id,
+                      "capture-chat__thread--with-replies":
+                        thread.replies.length > 0
+                    }}
+                    role="group"
+                    aria-label={`Thread ${thread.root.block.text}`}
+                    ref={(el) => {
+                      threadRef = el;
+                      syncThreadLine(threadRef, lastReplyRef);
+                    }}
+                  >
+                    <div class="capture-chat__bubble-row capture-chat__bubble-row--root">
+                    <time class="capture-chat__item-time">
+                      {formatCaptureTime(thread.root.capturedAt)}
+                    </time>
                     <div class="capture-chat__bubble">
                       <textarea
                         class="capture-chat__bubble-text"
+                        rows={1}
                         aria-label={`Captured item ${thread.root.position}`}
                         value={thread.root.block.text}
                         ref={(el) => {
                           requestAnimationFrame(() => autoResize(el));
+                          syncThreadLine(threadRef, lastReplyRef);
                         }}
                         onInput={(event) => {
                           props.onEditItem(thread.root.block.id, event.currentTarget.value);
                           autoResize(event.currentTarget);
+                          syncThreadLine(threadRef, lastReplyRef);
                         }}
                       />
                     </div>
@@ -208,19 +242,33 @@ export const CapturePane = (props: CapturePaneProps) => {
                     </div>
                   </div>
                   <For each={thread.replies}>
-                    {(reply) => (
-                      <div class="capture-chat__bubble-row capture-chat__bubble-row--reply">
+                    {(reply, index) => (
+                      <div
+                        class="capture-chat__bubble-row capture-chat__bubble-row--reply"
+                        ref={(el) => {
+                          if (index() === thread.replies.length - 1) {
+                            lastReplyRef = el;
+                            syncThreadLine(threadRef, lastReplyRef);
+                          }
+                        }}
+                      >
+                        <time class="capture-chat__item-time">
+                          {formatCaptureTime(reply.capturedAt)}
+                        </time>
                         <div class="capture-chat__bubble">
                           <textarea
                             class="capture-chat__bubble-text"
+                            rows={1}
                             aria-label={`Captured item ${reply.position}`}
                             value={reply.block.text}
                             ref={(el) => {
                               requestAnimationFrame(() => autoResize(el));
+                              syncThreadLine(threadRef, lastReplyRef);
                             }}
                             onInput={(event) => {
                               props.onEditItem(reply.block.id, event.currentTarget.value);
                               autoResize(event.currentTarget);
+                              syncThreadLine(threadRef, lastReplyRef);
                             }}
                           />
                         </div>
@@ -242,12 +290,10 @@ export const CapturePane = (props: CapturePaneProps) => {
                       </div>
                     )}
                   </For>
-                </section>
-              )}
+                  </section>
+                );
+              }}
             </For>
-            <Show when={lastCaptureTime()}>
-              <span class="capture-chat__time">{lastCaptureTime()}</span>
-            </Show>
           </Show>
         </div>
 
