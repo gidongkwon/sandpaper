@@ -408,7 +408,10 @@ describe("App editor UX", () => {
     await user.click(
       within(thread).getByRole("button", { name: "Reply to Root post" })
     );
-    expect(screen.getByText("Replying to Root post")).toBeInTheDocument();
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    expect(screen.getByText("Root post")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel reply" })).toBeInTheDocument();
+    expect(screen.getByText("Esc")).toBeInTheDocument();
 
     await user.type(captureInput, "Follow up");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
@@ -417,7 +420,8 @@ describe("App editor UX", () => {
       name: "Thread Root post"
     });
     expect(within(updatedThread).getByDisplayValue("Follow up")).toBeInTheDocument();
-    expect(screen.getByText("Replying to Root post")).toBeInTheDocument();
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    expect(screen.getByText("Root post")).toBeInTheDocument();
   });
 
   it("bumps a thread to the top when it receives a new reply", async () => {

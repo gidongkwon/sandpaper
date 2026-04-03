@@ -7,7 +7,11 @@ import {
   type Setter
 } from "solid-js";
 import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
-import { ArrowUp16FilledIcon } from "../../shared/ui/icons";
+import {
+  ArrowReply16Icon,
+  ArrowUp16FilledIcon,
+  Delete16Icon
+} from "../../shared/ui/icons";
 
 export type CaptureItem = {
   block: {
@@ -178,28 +182,30 @@ export const CapturePane = (props: CapturePaneProps) => {
                         }}
                       />
                     </div>
-                    <button
-                      class="capture-chat__reply"
-                      type="button"
-                      aria-label={`Reply to ${thread.root.block.text}`}
-                      onClick={() => props.onReplyTo(thread.root.block.id)}
-                    >
-                      Reply
-                    </button>
-                    <button
-                      class="capture-chat__reply"
-                      type="button"
-                      aria-label={`Delete ${thread.root.block.text}`}
-                      onClick={() =>
-                        setPendingThreadDelete({
-                          id: thread.root.block.id,
-                          text: thread.root.block.text,
-                          replyCount: thread.replies.length
-                        })
-                      }
-                    >
-                      Delete
-                    </button>
+                    <div class="capture-chat__actions">
+                      <button
+                        class="capture-chat__icon-button"
+                        type="button"
+                        aria-label={`Reply to ${thread.root.block.text}`}
+                        onClick={() => props.onReplyTo(thread.root.block.id)}
+                      >
+                        <ArrowReply16Icon width="16" height="16" />
+                      </button>
+                      <button
+                        class="capture-chat__icon-button"
+                        type="button"
+                        aria-label={`Delete ${thread.root.block.text}`}
+                        onClick={() =>
+                          setPendingThreadDelete({
+                            id: thread.root.block.id,
+                            text: thread.root.block.text,
+                            replyCount: thread.replies.length
+                          })
+                        }
+                      >
+                        <Delete16Icon width="16" height="16" />
+                      </button>
+                    </div>
                   </div>
                   <For each={thread.replies}>
                     {(reply) => (
@@ -218,19 +224,21 @@ export const CapturePane = (props: CapturePaneProps) => {
                             }}
                           />
                         </div>
-                        <button
-                          class="capture-chat__reply"
-                          type="button"
-                          aria-label={`Delete ${reply.block.text}`}
-                          onClick={() =>
-                            setPendingReplyDelete({
-                              id: reply.block.id,
-                              text: reply.block.text
-                            })
-                          }
-                        >
-                          Delete
-                        </button>
+                        <div class="capture-chat__actions">
+                          <button
+                            class="capture-chat__icon-button"
+                            type="button"
+                            aria-label={`Delete ${reply.block.text}`}
+                            onClick={() =>
+                              setPendingReplyDelete({
+                                id: reply.block.id,
+                                text: reply.block.text
+                              })
+                            }
+                          >
+                            <Delete16Icon width="16" height="16" />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </For>
@@ -247,56 +255,62 @@ export const CapturePane = (props: CapturePaneProps) => {
           <Show when={props.replyingTo()}>
             {(replyingTo) => (
               <div class="capture-chat__replying">
-                <span>{`Replying to ${replyingTo()}`}</span>
-                <button
-                  type="button"
-                  class="capture-chat__reply-cancel"
-                  aria-label="Cancel reply"
-                  onClick={() => props.onCancelReply()}
-                >
-                  Cancel
-                </button>
+                <span class="capture-chat__replying-label">Replying to</span>
+                <div class="capture-chat__replying-row">
+                  <span class="capture-chat__replying-target">{replyingTo()}</span>
+                  <button
+                    type="button"
+                    class="capture-chat__reply-cancel"
+                    aria-label="Cancel reply"
+                    onClick={() => props.onCancelReply()}
+                  >
+                    <span>Cancel</span>
+                    <kbd class="capture-chat__kbd">Esc</kbd>
+                  </button>
+                </div>
               </div>
             )}
           </Show>
-          <div class="capture-chat__input-wrap">
-            <textarea
-              ref={(el) => {
-                inputRef = el;
-              }}
-              class="capture-chat__input"
-              rows={1}
-              placeholder="Capture a thought, link, or task..."
-              value={props.text()}
-              onInput={(event) => {
-                props.setText(event.currentTarget.value);
-                autoResize(event.currentTarget);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && props.replyingTo()) {
+          <div class="capture-chat__composer-row">
+            <div class="capture-chat__input-wrap">
+              <textarea
+                ref={(el) => {
+                  inputRef = el;
+                }}
+                class="capture-chat__input"
+                rows={1}
+                placeholder="Capture a thought, link, or task..."
+                value={props.text()}
+                onInput={(event) => {
+                  props.setText(event.currentTarget.value);
+                  autoResize(event.currentTarget);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && props.replyingTo()) {
+                    event.preventDefault();
+                    props.onCancelReply();
+                    return;
+                  }
+                  if (event.key !== "Enter" || event.shiftKey) return;
                   event.preventDefault();
-                  props.onCancelReply();
-                  return;
-                }
-                if (event.key !== "Enter" || event.shiftKey) return;
-                event.preventDefault();
-                handleCapture();
-              }}
-            />
-            <div
-              class="capture-chat__flash"
-              classList={{ "is-visible": justCaptured() }}
-              aria-hidden="true"
-            />
+                  handleCapture();
+                }}
+              />
+              <div
+                class="capture-chat__flash"
+                classList={{ "is-visible": justCaptured() }}
+                aria-hidden="true"
+              />
+            </div>
+            <button
+              class="capture-chat__send"
+              disabled={props.text().trim().length === 0}
+              onClick={() => handleCapture()}
+              aria-label="Send capture"
+            >
+              <ArrowUp16FilledIcon width="16" height="16" />
+            </button>
           </div>
-          <button
-            class="capture-chat__send"
-            disabled={props.text().trim().length === 0}
-            onClick={() => handleCapture()}
-            aria-label="Send capture"
-          >
-            <ArrowUp16FilledIcon width="16" height="16" />
-          </button>
         </div>
       </div>
 
