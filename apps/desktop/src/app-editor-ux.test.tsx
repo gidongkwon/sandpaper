@@ -393,4 +393,31 @@ describe("App editor UX", () => {
     expect(screen.queryByDisplayValue("Quick note")).not.toBeInTheDocument();
   });
 
+  it("reuses the shared composer for replies and keeps reply mode active", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Root post");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const thread = await screen.findByRole("group", { name: "Thread Root post" });
+    await user.click(
+      within(thread).getByRole("button", { name: "Reply to Root post" })
+    );
+    expect(screen.getByText("Replying to Root post")).toBeInTheDocument();
+
+    await user.type(captureInput, "Follow up");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const updatedThread = await screen.findByRole("group", {
+      name: "Thread Root post"
+    });
+    expect(within(updatedThread).getByDisplayValue("Follow up")).toBeInTheDocument();
+    expect(screen.getByText("Replying to Root post")).toBeInTheDocument();
+  });
+
 });

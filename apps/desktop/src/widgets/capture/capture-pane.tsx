@@ -9,16 +9,29 @@ import {
 import { ArrowUp16FilledIcon } from "../../shared/ui/icons";
 
 export type CaptureItem = {
+  block: {
+    id: string;
+    text: string;
+    indent: number;
+  };
+  position: number;
+};
+
+export type CaptureThread = {
   id: string;
-  text: string;
+  root: CaptureItem;
+  replies: CaptureItem[];
 };
 
 type CapturePaneProps = {
   text: Accessor<string>;
   setText: Setter<string>;
-  items: Accessor<CaptureItem[]>;
+  items: Accessor<CaptureThread[]>;
   onCapture: () => void;
   onEditItem: (id: string, text: string) => void;
+  onReplyTo: (id: string) => void;
+  onCancelReply: () => void;
+  replyingTo: Accessor<string | null>;
   focusEpoch: Accessor<number>;
 };
 
@@ -110,23 +123,57 @@ export const CapturePane = (props: CapturePaneProps) => {
           }
         >
           <For each={props.items()}>
-            {(item, index) => (
-              <div class="capture-chat__bubble-row">
-                <div class="capture-chat__bubble">
-                  <textarea
-                    class="capture-chat__bubble-text"
-                    aria-label={`Captured item ${index() + 1}`}
-                    value={item.text}
-                    ref={(el) => {
-                      requestAnimationFrame(() => autoResize(el));
-                    }}
-                    onInput={(event) => {
-                      props.onEditItem(item.id, event.currentTarget.value);
-                      autoResize(event.currentTarget);
-                    }}
-                  />
+            {(thread) => (
+              <section
+                class="capture-chat__thread"
+                role="group"
+                aria-label={`Thread ${thread.root.block.text}`}
+              >
+                <div class="capture-chat__bubble-row">
+                  <div class="capture-chat__bubble">
+                    <textarea
+                      class="capture-chat__bubble-text"
+                      aria-label={`Captured item ${thread.root.position}`}
+                      value={thread.root.block.text}
+                      ref={(el) => {
+                        requestAnimationFrame(() => autoResize(el));
+                      }}
+                      onInput={(event) => {
+                        props.onEditItem(thread.root.block.id, event.currentTarget.value);
+                        autoResize(event.currentTarget);
+                      }}
+                    />
+                  </div>
+                  <button
+                    class="capture-chat__reply"
+                    type="button"
+                    aria-label={`Reply to ${thread.root.block.text}`}
+                    onClick={() => props.onReplyTo(thread.root.block.id)}
+                  >
+                    Reply
+                  </button>
                 </div>
-              </div>
+                <For each={thread.replies}>
+                  {(reply) => (
+                    <div class="capture-chat__bubble-row capture-chat__bubble-row--reply">
+                      <div class="capture-chat__bubble">
+                        <textarea
+                          class="capture-chat__bubble-text"
+                          aria-label={`Captured item ${reply.position}`}
+                          value={reply.block.text}
+                          ref={(el) => {
+                            requestAnimationFrame(() => autoResize(el));
+                          }}
+                          onInput={(event) => {
+                            props.onEditItem(reply.block.id, event.currentTarget.value);
+                            autoResize(event.currentTarget);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </For>
+              </section>
             )}
           </For>
           <Show when={lastCaptureTime()}>
@@ -136,6 +183,21 @@ export const CapturePane = (props: CapturePaneProps) => {
       </div>
 
       <div class="capture-chat__composer">
+        <Show when={props.replyingTo()}>
+          {(replyingTo) => (
+            <div class="capture-chat__replying">
+              <span>{`Replying to ${replyingTo()}`}</span>
+              <button
+                type="button"
+                class="capture-chat__reply-cancel"
+                aria-label="Cancel reply"
+                onClick={() => props.onCancelReply()}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </Show>
         <div class="capture-chat__input-wrap">
           <textarea
             ref={(el) => {
@@ -150,6 +212,11 @@ export const CapturePane = (props: CapturePaneProps) => {
               autoResize(event.currentTarget);
             }}
             onKeyDown={(event) => {
+              if (event.key === "Escape" && props.replyingTo()) {
+                event.preventDefault();
+                props.onCancelReply();
+                return;
+              }
               if (event.key !== "Enter" || event.shiftKey) return;
               event.preventDefault();
               handleCapture();

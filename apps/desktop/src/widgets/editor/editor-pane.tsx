@@ -2531,13 +2531,13 @@ export const EditorPane = (props: EditorPaneProps) => {
     onChangeLanguage: (blockId: string, nextLanguage: string) => void;
     onEditCode: (blockId: string) => void;
   }) => {
-    const currentBlockId = props.blockId;
+    const currentBlockId = () => props.blockId;
     const [highlightedHtml, setHighlightedHtml] = createSignal<string | null>(null);
     const [languageOpen, setLanguageOpen] = createSignal(false);
     const [languageQuery, setLanguageQuery] = createSignal("");
     const [activeLanguageIndex, setActiveLanguageIndex] = createSignal(0);
     let renderToken = 0;
-    const languageListboxId = `code-language-options-${currentBlockId}`;
+    const languageListboxId = () => `code-language-options-${currentBlockId()}`;
 
     createEffect(() => {
       const lang = normalizeCodeLanguage(props.code.lang);
@@ -2575,7 +2575,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       const options = filteredLanguageOptions();
       const index = activeLanguageIndex();
       if (index < 0 || index >= options.length) return undefined;
-      return `${languageListboxId}-${options[index]?.value}`;
+      return `${languageListboxId()}-${options[index]?.value}`;
     });
 
     createEffect(() => {
@@ -2645,7 +2645,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     };
 
     const applyLanguage = (nextLanguage: string) => {
-      props.onChangeLanguage(currentBlockId, nextLanguage);
+      props.onChangeLanguage(currentBlockId(), nextLanguage);
       closeLanguageMenu();
     };
 
@@ -2714,7 +2714,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             <div
               class="block-renderer__meta"
               data-code-edit="true"
-              data-code-language-menu={currentBlockId}
+                data-code-language-menu={currentBlockId()}
             >
               <div class="block-renderer__lang-combobox">
                 <input
@@ -2723,7 +2723,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                   role="combobox"
                   aria-label="Code language"
                   aria-expanded={languageOpen()}
-                  aria-controls={languageListboxId}
+                  aria-controls={languageListboxId()}
                   aria-autocomplete="list"
                   aria-activedescendant={activeLanguageId()}
                   value={languageOpen() ? languageQuery() : selectedLanguageOption().label}
@@ -2735,13 +2735,14 @@ export const EditorPane = (props: EditorPaneProps) => {
                   }}
                   onBlur={(event) => {
                     const current = event.currentTarget;
+                    const blockId = currentBlockId();
                     window.setTimeout(() => {
                       if (document.activeElement === current) return;
                       const active = document.activeElement;
                       if (
                         active instanceof Element &&
                         active.closest(
-                          `[data-code-language-menu="${currentBlockId}"]`
+                          `[data-code-language-menu="${blockId}"]`
                         )
                       ) {
                         return;
@@ -2760,7 +2761,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                 <span class="block-renderer__lang-caret" aria-hidden="true" />
                 <Show when={languageOpen()}>
                   <div
-                    id={languageListboxId}
+                      id={languageListboxId()}
                     class="block-renderer__lang-options"
                     role="listbox"
                     aria-label="Code language options"
@@ -2778,7 +2779,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                     >
                       <For each={filteredLanguageOptions()}>
                         {(option, index) => {
-                          const optionId = `${languageListboxId}-${option.value}`;
+                           const optionId = `${languageListboxId()}-${option.value}`;
                           const isActive = () => index() === activeLanguageIndex();
                           const isSelected = () =>
                             option.value === selectedLanguage();
@@ -2821,7 +2822,7 @@ export const EditorPane = (props: EditorPaneProps) => {
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                props.onEditCode(currentBlockId);
+                props.onEditCode(currentBlockId());
               }}
             >
               <Document16Icon width={14} height={14} />

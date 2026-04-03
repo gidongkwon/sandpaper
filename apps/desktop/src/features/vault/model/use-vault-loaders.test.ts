@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createSignal, untrack } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { Block } from "../../../entities/block/model/block-types";
 import type {
@@ -62,19 +62,19 @@ describe("createVaultLoaders", () => {
 
     await api.loadPages();
 
-    expect(pages()).toEqual([
+    expect(untrack(pages)).toEqual([
       { uid: "a", title: "Alpha" },
       { uid: "b", title: "Beta" }
     ]);
-    expect(activePageUid()).toBe("a");
-    expect(reviewSummary()).toEqual({ due_count: 0, next_due_at: null });
-    expect(reviewItems()).toEqual([]);
-    expect(reviewBusy()).toBe(false);
+    expect(untrack(activePageUid)).toBe("a");
+    expect(untrack(reviewSummary)).toEqual({ due_count: 0, next_due_at: null });
+    expect(untrack(reviewItems)).toEqual([]);
+    expect(untrack(reviewBusy)).toBe(false);
   });
 
   it("seeds a missing local page and updates state", async () => {
     const localPages: Record<string, LocalPageRecord> = {};
-    const [, setPages] = createSignal<PageSummary[]>([]);
+    const [pages, setPages] = createSignal<PageSummary[]>([]);
     const [activePageUid, setActivePageUid] = createSignal("inbox");
     const [activeVault] = createSignal<VaultRecord | null>(null);
     const seeded: Block[] = [{ id: "seed", text: "", indent: 0 }];
@@ -123,7 +123,8 @@ describe("createVaultLoaders", () => {
 
     await api.loadBlocks("custom");
 
-    expect(activePageUid()).toBe("custom");
+    expect(untrack(activePageUid)).toBe("custom");
+    expect(untrack(pages)).toEqual([]);
     expect(saveLocalPageSnapshot).toHaveBeenCalledWith(
       "custom",
       "Untitled",

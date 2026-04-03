@@ -106,6 +106,7 @@ export const createMainPageState = () => {
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [captureText, setCaptureText] = createSignal("");
+  const [captureReplyToId, setCaptureReplyToId] = createSignal<string | null>(null);
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -818,7 +819,61 @@ export const createMainPageState = () => {
     () => localPages[HIDDEN_INBOX_PAGE_UID]?.blocks ?? []
   );
 
-  const captureItems = createMemo(() => captureInboxBlocks());
+  const captureItems = createMemo(() => {
+    let position = 0;
+    const threads: Array<{
+      id: string;
+      root: {
+        block: Block;
+        position: number;
+      };
+      replies: Array<{
+        block: Block;
+        position: number;
+      }>;
+    }> = [];
+    let currentThread:
+      | {
+          id: string;
+          root: {
+            block: Block;
+            position: number;
+          };
+          replies: Array<{
+            block: Block;
+            position: number;
+          }>;
+        }
+      | undefined;
+
+    for (const block of captureInboxBlocks()) {
+      const item = {
+        block,
+        position: (position += 1)
+      };
+
+      if (block.indent > 0 && currentThread) {
+        currentThread.replies.push(item);
+        continue;
+      }
+
+      currentThread = {
+        id: block.id,
+        root: item,
+        replies: []
+      };
+      threads.push(currentThread);
+    }
+
+    return threads;
+  });
+
+  const captureReplyTarget = createMemo(() => {
+    const replyToId = captureReplyToId();
+    if (!replyToId) return null;
+    const thread = captureItems().find((item) => item.id === replyToId);
+    return thread?.root.block.text ?? null;
+  });
 
   const editCaptureItem = (id: string, text: string) => {
     let updated = false;
@@ -835,15 +890,43 @@ export const createMainPageState = () => {
     if (!updated) return;
   };
 
+  const startCaptureReply = (id: string) => {
+    setCaptureReplyToId(id);
+    setCaptureFocusEpoch((current) => current + 1);
+  };
+
+  const cancelCaptureReply = () => {
+    setCaptureReplyToId(null);
+    setCaptureFocusEpoch((current) => current + 1);
+  };
+
   const addCapture = () => {
     const text = captureText().trim();
     if (!text) return;
-    const block = createNewBlock(text, 0);
+    const replyToId = captureReplyToId();
+    const block = createNewBlock(text, replyToId ? 1 : 0);
     setLocalPages(
       HIDDEN_INBOX_PAGE_UID,
       "blocks",
       produce((draft) => {
-        draft.unshift(block);
+        if (!replyToId) {
+          draft.unshift(block);
+          return;
+        }
+
+        const rootIndex = draft.findIndex(
+          (item) => item.id === replyToId && item.indent === 0
+        );
+        if (rootIndex < 0) {
+          draft.unshift(createNewBlock(text, 0));
+          return;
+        }
+
+        let insertIndex = rootIndex + 1;
+        while (insertIndex < draft.length && draft[insertIndex]?.indent > 0) {
+          insertIndex += 1;
+        }
+        draft.splice(insertIndex, 0, block);
       })
     );
     setCaptureText("");
@@ -961,6 +1044,9 @@ export const createMainPageState = () => {
         items: captureItems,
         onCapture: addCapture,
         onEditItem: editCaptureItem,
+        onReplyTo: startCaptureReply,
+        onCancelReply: cancelCaptureReply,
+        replyingTo: captureReplyTarget,
         focusEpoch: captureFocusEpoch
       },
       review: {
