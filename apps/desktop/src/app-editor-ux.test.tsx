@@ -420,4 +420,31 @@ describe("App editor UX", () => {
     expect(screen.getByText("Replying to Root post")).toBeInTheDocument();
   });
 
+  it("bumps a thread to the top when it receives a new reply", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Older thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Newer thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const olderThread = await screen.findByRole("group", {
+      name: "Thread Older thread"
+    });
+    await user.click(
+      within(olderThread).getByRole("button", { name: "Reply to Older thread" })
+    );
+    await user.type(captureInput, "Older reply");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const threads = screen.getAllByRole("group");
+    expect(threads[0]).toHaveAttribute("aria-label", "Thread Older thread");
+    expect(within(threads[0] as HTMLElement).getByDisplayValue("Older reply")).toBeInTheDocument();
+  });
+
 });

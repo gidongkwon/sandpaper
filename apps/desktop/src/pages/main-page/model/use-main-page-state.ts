@@ -922,11 +922,13 @@ export const createMainPageState = () => {
           return;
         }
 
-        let insertIndex = rootIndex + 1;
-        while (insertIndex < draft.length && draft[insertIndex]?.indent > 0) {
-          insertIndex += 1;
+        let threadEndIndex = rootIndex + 1;
+        while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
+          threadEndIndex += 1;
         }
-        draft.splice(insertIndex, 0, block);
+        const threadBlocks = draft.splice(rootIndex, threadEndIndex - rootIndex);
+        threadBlocks.push(block);
+        draft.unshift(...threadBlocks);
       })
     );
     setCaptureText("");
