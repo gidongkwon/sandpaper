@@ -207,7 +207,7 @@
   }
 
   .capture-chat__bubble {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-secondary);
     box-shadow:
       0 0 0 0.5px rgba(255, 255, 255, 0.08),
       0 1px 3px rgba(0, 0, 0, 0.3);
@@ -220,7 +220,7 @@
   }
 
   .capture-chat__composer {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-primary);
     box-shadow:
       0 0 0 0.5px rgba(255, 255, 255, 0.06),
       0 1px 3px rgba(0, 0, 0, 0.3),
@@ -2971,6 +2971,12 @@ button:disabled {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  background:
+    linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+  border: 1px solid var(--border-light);
+  border-radius: 24px;
+  box-shadow: var(--shadow-md), var(--shadow-ring);
+  overflow: hidden;
 }
 
 /* --- Messages area (scrollable, bottom-aligned) --- */
@@ -3024,25 +3030,33 @@ button:disabled {
 /* --- Bubble rows --- */
 .capture-chat__bubble-row {
   display: flex;
+  align-items: flex-end;
   justify-content: flex-start;
+  gap: var(--space-2);
   animation: bubbleIn 320ms var(--ease-spring) both;
+}
+
+.capture-chat__thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 /* --- Chat bubbles --- */
 .capture-chat__bubble {
   max-width: 80%;
   padding: 7px 12px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--bg-secondary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   color: var(--text-primary);
-  border: none;
+  border: 1px solid var(--border-light);
   border-radius: 16px 16px 16px 4px;
   word-wrap: break-word;
   overflow-wrap: break-word;
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.06),
-    0 1px 3px rgba(0, 0, 0, 0.06);
+    0 8px 24px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   transition: box-shadow var(--duration-base) var(--ease-out);
 }
 
@@ -3087,19 +3101,62 @@ button:disabled {
 /* --- Composer bar (pinned at bottom) --- */
 .capture-chat__composer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 4px 4px 4px 14px;
   margin: 0 var(--space-4) var(--space-4);
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-xl);
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.06),
-    0 1px 3px rgba(0, 0, 0, 0.04),
-    0 4px 12px rgba(0, 0, 0, 0.03);
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    0 1px 2px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
+}
+
+.capture-chat__reply,
+.capture-chat__reply-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.capture-chat__reply:hover,
+.capture-chat__reply-cancel:hover {
+  background: var(--bg-hover);
+}
+
+.capture-chat__reply:active,
+.capture-chat__reply-cancel:active {
+  transform: translateY(1px);
+}
+
+.capture-chat__replying {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 /* --- Input wrap (relative for flash overlay) --- */
@@ -3197,16 +3254,16 @@ button:disabled {
 .focus-panel:has(.capture-chat) {
   max-width: 640px;
   width: 100%;
-  padding: 0;
-  margin: 0 auto;
+  padding: var(--space-3);
+  margin: var(--space-3) auto;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 28px;
+  box-shadow: var(--shadow-md), var(--shadow-ring);
+  background: var(--bg-overlay);
 }
 
 /* Review Mode */

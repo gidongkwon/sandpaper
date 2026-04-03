@@ -108,4 +108,30 @@ describe("App color contrast", () => {
   it("meets AA contrast for core text tokens in dark theme", () => {
     assertContrast("dark", darkVars);
   });
+
+  it("does not define capture-specific design tokens", () => {
+    const allTokens = [...Object.keys(lightVars), ...Object.keys(darkVars)];
+    expect(allTokens.some((token) => token.startsWith("--capture-"))).toBe(false);
+  });
+
+  it("meets AA contrast for elevated surfaces in both themes", () => {
+    const elevatedSurfaces = ["--bg-secondary", "--bg-elevated"];
+
+    for (const [theme, vars] of [
+      ["light", lightVars],
+      ["dark", darkVars]
+    ] as const) {
+      for (const bgToken of elevatedSurfaces) {
+        const background = vars[bgToken];
+        if (!background) {
+          throw new Error(`Missing ${bgToken} in ${theme} theme`);
+        }
+        const ratio = contrastRatio(vars["--text-primary"], background);
+        expect(
+          ratio,
+          `${theme} elevated surface contrast against ${bgToken} failed`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
 });
