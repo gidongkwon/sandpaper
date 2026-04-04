@@ -3985,6 +3985,10 @@ button:disabled {
   width: clamp(240px, 28vw, 360px);
 }
 
+.review-session-bar__search-control {
+  position: relative;
+}
+
 .review-session-bar[data-has-meta="false"] .review-session-bar__actions {
   margin-left: 0;
 }
@@ -3994,7 +3998,7 @@ button:disabled {
   max-width: none;
 }
 
-.review-session-bar__search input {
+.review-session-bar__search-input {
   width: 100%;
   min-height: 40px;
   padding: 0 var(--space-3);
@@ -4004,26 +4008,28 @@ button:disabled {
   box-shadow: var(--shadow-xs);
 }
 
-.review-session-bar__search input:focus {
+.review-session-bar__search-input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .review-session-bar__results {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
   padding: var(--space-2);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-light);
   background: var(--bg-primary);
   box-shadow: var(--shadow-lg);
   z-index: 5;
+}
+
+.review-session-bar__results-listbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .review-session-bar__result {
@@ -4034,16 +4040,14 @@ button:disabled {
   padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-md);
   text-align: left;
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
-.review-session-bar__result:hover {
+.review-session-bar__result[data-highlighted] {
   background: var(--bg-hover);
 }
 
-.review-session-bar__result.is-active {
+.review-session-bar__result[data-selected] {
   background: var(--accent-soft);
 }
 
@@ -4052,12 +4056,12 @@ button:disabled {
   color: var(--text-inverse);
 }
 
-.review-session-bar__result small {
+.review-session-bar__result-description {
   font-size: 10px;
   color: var(--text-tertiary);
 }
 
-.review-session-bar__result.is-primary small {
+.review-session-bar__result.is-primary .review-session-bar__result-description {
   color: rgba(255, 255, 255, 0.82);
 }
 

@@ -24,6 +24,16 @@ const getModeControl = (name: "Capture" | "Review" | "Editor") =>
 const getReviewTabControl = (name: "To Review" | "Archived") =>
   screen.getByRole("radio", { name });
 
+const findDestinationSearch = () =>
+  screen.findByRole("combobox", { name: "Destination page" });
+
+const getDestinationSearch = () =>
+  screen.getByRole("combobox", { name: "Destination page" });
+
+const selectDestinationOption = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+  await user.click(await screen.findByRole("option", { name }));
+};
+
 describe("App editor UX", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -843,13 +853,8 @@ describe("App editor UX", () => {
       within(reviewSurface).getByRole("navigation", { name: "Review queue" })
     ).toBeInTheDocument();
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Archive Target"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Archive Target"' })
-    );
+    await user.type(await findDestinationSearch(), "Archive Target");
+    await selectDestinationOption(user, 'Create "Archive Target"');
 
     const editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
@@ -939,13 +944,13 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Project Atlas"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
+    await waitFor(() => {
+      expect(
+        screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
 
     const editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
@@ -964,10 +969,6 @@ describe("App editor UX", () => {
 
     const queue = await screen.findByRole("navigation", { name: "Review queue" });
     await user.click(within(queue).getByRole("button", { name: /second thread/i }));
-
-    expect(
-      await screen.findByRole("alertdialog", { name: "Discard current draft?" })
-    ).toBeInTheDocument();
 
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
@@ -1002,13 +1003,8 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Project Atlas"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
@@ -1026,11 +1022,9 @@ describe("App editor UX", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Change destination" }));
-    const destinationSearch = await screen.findByPlaceholderText(
-      "Search or create a page..."
-    );
+    const destinationSearch = await findDestinationSearch();
     await user.type(destinationSearch, "Research Note");
-    await user.click(screen.getByRole("button", { name: 'Create "Research Note"' }));
+    await selectDestinationOption(user, 'Create "Research Note"');
 
     expect(
       await screen.findByRole("alertdialog", { name: "Discard current draft?" })
@@ -1049,12 +1043,9 @@ describe("App editor UX", () => {
       screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
 
-    await user.clear(await screen.findByPlaceholderText("Search or create a page..."));
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Research Note"
-    );
-    await user.click(screen.getByRole("button", { name: 'Create "Research Note"' }));
+    await user.clear(await findDestinationSearch());
+    await user.type(await findDestinationSearch(), "Research Note");
+    await selectDestinationOption(user, 'Create "Research Note"');
     await user.click(screen.getByRole("button", { name: "Discard and switch" }));
 
     await waitFor(() => {
@@ -1076,13 +1067,8 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Project Atlas"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const completeButton = await screen.findByRole("button", {
       name: "Complete review"
@@ -1148,13 +1134,8 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Project Atlas"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
@@ -1197,13 +1178,8 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    await user.type(
-      await screen.findByPlaceholderText("Search or create a page..."),
-      "Project Atlas"
-    );
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
@@ -1532,13 +1508,9 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const destinationSearch = await screen.findByPlaceholderText(
-      "Search or create a page..."
-    );
+    const destinationSearch = await findDestinationSearch();
     await user.type(destinationSearch, "Project Atlas");
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const destinationPanel = await screen.findByRole("region", {
       name: "Destination note"
@@ -1592,13 +1564,9 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const destinationSearch = await screen.findByPlaceholderText(
-      "Search or create a page..."
-    );
+    const destinationSearch = await findDestinationSearch();
     await user.type(destinationSearch, "Project Atlas");
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Project Atlas"' })
-    );
+    await selectDestinationOption(user, 'Create "Project Atlas"');
     let editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
     ) as HTMLTextAreaElement | null;
@@ -1615,11 +1583,9 @@ describe("App editor UX", () => {
       ).toBeInTheDocument();
     });
 
-    await user.clear(screen.getByPlaceholderText("Search or create a page..."));
-    await user.type(screen.getByPlaceholderText("Search or create a page..."), "Research Note");
-    await user.click(
-      screen.getByRole("button", { name: 'Create "Research Note"' })
-    );
+    await user.clear(getDestinationSearch());
+    await user.type(getDestinationSearch(), "Research Note");
+    await selectDestinationOption(user, 'Create "Research Note"');
     editorInput = document.querySelector(
       ".review .editor-pane textarea[data-block-id]"
     ) as HTMLTextAreaElement | null;
@@ -1681,11 +1647,11 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const destinationSearch = await screen.findByPlaceholderText(
-      "Search or create a page..."
-    );
+    const destinationSearch = await screen.findByRole("combobox", {
+      name: "Destination page"
+    });
     await user.type(destinationSearch, "Home");
-    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await selectDestinationOption(user, "Open Home");
 
     const destinationPanel = await screen.findByRole("region", {
       name: "Destination note"

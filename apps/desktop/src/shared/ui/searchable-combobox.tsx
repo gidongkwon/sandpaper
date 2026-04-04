@@ -4,25 +4,30 @@ import { Show, createMemo, createSignal } from "solid-js";
 export type SearchableComboboxOption = {
   value: string;
   label: string;
+  inputLabel?: string;
   description?: string | null;
   disabled?: boolean;
 };
 
 type SearchableComboboxProps = {
   options: readonly SearchableComboboxOption[];
-  value: string;
-  onChange: (value: string) => void;
+  value?: string | null;
+  onChange: (value: string, option: SearchableComboboxOption) => void;
+  onOptionSelect?: (option: SearchableComboboxOption) => void | Promise<void>;
   ariaLabel: string;
   listboxLabel?: string;
   placeholder?: string;
   noResultsLabel?: string;
+  queryValue?: string;
+  onQueryChange?: (value: string) => void;
+  shouldFilter?: boolean;
   class?: string;
   controlClass?: string;
   inputClass?: string;
   iconClass?: string;
   contentClass?: string;
   listboxClass?: string;
-  itemClass?: string;
+  itemClass?: string | ((option: SearchableComboboxOption) => string);
   itemLabelClass?: string;
   itemDescriptionClass?: string;
   emptyClass?: string;
@@ -30,11 +35,25 @@ type SearchableComboboxProps = {
 };
 
 export const SearchableCombobox = (props: SearchableComboboxProps) => {
-  const [query, setQuery] = createSignal("");
+  const [localQuery, setLocalQuery] = createSignal("");
+  const query = createMemo(() => props.queryValue ?? localQuery());
+  const setQuery = (value: string) => {
+    props.onQueryChange?.(value);
+    if (props.queryValue === undefined) setLocalQuery(value);
+  };
   const selectedOption = createMemo(
-    () => props.options.find((option) => option.value === props.value) ?? null
+    () =>
+      (props.value
+        ? props.options.find((option) => option.value === props.value) ?? null
+        : null)
   );
+  const inputValue = createMemo(() => {
+    const currentQuery = query();
+    if (currentQuery.length > 0) return currentQuery;
+    return selectedOption()?.inputLabel ?? selectedOption()?.label ?? "";
+  });
   const filteredOptions = createMemo(() => {
+    if (props.shouldFilter === false) return props.options;
     const normalizedQuery = query().trim().toLowerCase();
     if (!normalizedQuery) return props.options;
     return props.options.filter((option) => {
@@ -43,24 +62,30 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
     });
   });
 
+  const resolveItemClass = (option: SearchableComboboxOption) => {
+    return typeof props.itemClass === "function"
+      ? props.itemClass(option)
+      : props.itemClass;
+  };
+
   return (
-    <Combobox.Root
-      options={[...props.options]}
+    <Combobox.Root<SearchableComboboxOption>
+      options={[...filteredOptions()]}
       value={selectedOption()}
       onChange={(nextOption) => {
-        if (nextOption) props.onChange(nextOption.value);
+        if (nextOption) props.onChange(nextOption.value, nextOption);
       }}
-      onInputChange={(nextValue) => setQuery(nextValue)}
       onOpenChange={(open) => {
-        if (!open) setQuery("");
+        if (!open && props.queryValue === undefined) setQuery("");
       }}
       optionValue="value"
       optionTextValue={(option) =>
-        `${option.label} ${option.value} ${option.description ?? ""}`.trim()
+        `${option.inputLabel ?? option.label} ${option.label} ${option.value} ${option.description ?? ""}`.trim()
       }
-      optionLabel="label"
+      optionLabel={(option) => option.inputLabel ?? option.label}
       optionDisabled="disabled"
       triggerMode="focus"
+      noResetInputOnBlur={props.queryValue !== undefined}
       closeOnSelection
       allowsEmptyCollection
       gutter={4}
@@ -68,7 +93,21 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
       placement="bottom-start"
       class={props.class}
       itemComponent={(itemProps) => (
-        <Combobox.Item item={itemProps.item} class={props.itemClass}>
+        <Combobox.Item
+          item={itemProps.item}
+          class={resolveItemClass(itemProps.item.rawValue)}
+          onPointerDown={(event) => {
+            if (!props.onOptionSelect) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void props.onOptionSelect(itemProps.item.rawValue);
+          }}
+          onMouseDown={(event) => {
+            if (!props.onOptionSelect) return;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
           <Combobox.ItemLabel class={props.itemLabelClass}>
             {itemProps.item.rawValue.label}
           </Combobox.ItemLabel>
@@ -85,6 +124,8 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
           aria-label={props.ariaLabel}
           placeholder={props.placeholder ?? selectedOption()?.label ?? ""}
           class={props.inputClass}
+          value={inputValue()}
+          onInput={(event) => setQuery(event.currentTarget.value)}
           onFocus={(event) => {
             if (props.selectOnFocus) event.currentTarget.select();
           }}
