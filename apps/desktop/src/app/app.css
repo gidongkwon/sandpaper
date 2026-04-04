@@ -465,6 +465,60 @@ button:disabled {
   transform: scale(0.98);
 }
 
+.segmented-tabs {
+  display: inline-flex;
+  align-self: center;
+  width: fit-content;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.segmented-tabs__trigger {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: calc(var(--radius-lg) - 2px);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition:
+    background var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+
+.segmented-tabs__trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.segmented-tabs__trigger[data-checked],
+.segmented-tabs__trigger[data-selected] {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm), var(--shadow-ring);
+}
+
+:root[data-theme="dark"] .segmented-tabs {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="dark"] .segmented-tabs__trigger:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .segmented-tabs__trigger[data-checked],
+:root[data-theme="dark"] .segmented-tabs__trigger[data-selected] {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+}
+
 @keyframes mode-pane-enter-left {
   from {
     opacity: 0;
@@ -3650,56 +3704,11 @@ button:disabled {
 }
 
 .review-workbench__tabs {
-  display: inline-flex;
-  align-self: center;
   justify-self: center;
-  width: fit-content;
-  flex-shrink: 0;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-light);
-  background: var(--bg-secondary);
 }
 
 .review-workbench__tab {
   min-height: 32px;
-  padding: 0 var(--space-3);
-  border-radius: calc(var(--radius-lg) - 2px);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--text-secondary);
-  transition:
-    background var(--duration-base) var(--ease-out),
-    color var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
-}
-
-.review-workbench__tab:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.review-workbench__tab.is-active {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm), var(--shadow-ring);
-}
-
-:root[data-theme="dark"] .review-workbench__tabs {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.05);
-}
-
-:root[data-theme="dark"] .review-workbench__tab:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-secondary);
-}
-
-:root[data-theme="dark"] .review-workbench__tab.is-active {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
 }
 
 .review-queue-deck {

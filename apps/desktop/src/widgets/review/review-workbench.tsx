@@ -11,6 +11,7 @@ import type {
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
+import { SegmentedTabs } from "../../shared/ui/segmented-tabs";
 import { ReviewArchiveList } from "./review-archive-list";
 import { ReviewQueueDeck } from "./review-queue-deck";
 import { ReviewSessionBar } from "./review-session-bar";
@@ -160,30 +161,17 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
 
             <div class="review-workbench__footer">
               <div class="review-workbench__footer-spacer" aria-hidden="true" />
-              <div class="review-workbench__tabs" role="tablist" aria-label="Review tabs">
-                <button
-                  class={`review-workbench__tab ${
-                    props.activeTab() === "to-review" ? "is-active" : ""
-                  }`}
-                  type="button"
-                  role="tab"
-                  aria-selected={props.activeTab() === "to-review"}
-                  onClick={() => props.setActiveTab("to-review")}
-                >
-                  To Review
-                </button>
-                <button
-                  class={`review-workbench__tab ${
-                    props.activeTab() === "archived" ? "is-active" : ""
-                  }`}
-                  type="button"
-                  role="tab"
-                  aria-selected={props.activeTab() === "archived"}
-                  onClick={() => props.setActiveTab("archived")}
-                >
-                  Archived
-                </button>
-              </div>
+              <SegmentedTabs
+                value={props.activeTab()}
+                onChange={props.setActiveTab}
+                items={[
+                  { value: "to-review", label: "To Review" },
+                  { value: "archived", label: "Archived" }
+                ]}
+                aria-label="Review tabs"
+                class="review-workbench__tabs"
+                triggerClass="review-workbench__tab"
+              />
               <div class="review-workbench__footer-meta">
                 <Show when={props.activeTab() === "to-review" && remainingDeckCount() > 0}>
                   <span class="review-queue-deck__more">{`${remainingDeckCount()} more`}</span>
