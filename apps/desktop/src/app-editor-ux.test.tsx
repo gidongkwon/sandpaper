@@ -530,7 +530,7 @@ describe("App editor UX", () => {
       within(updatedThread).getByRole("button", { name: "Delete Reply post" })
     );
 
-    const dialog = await screen.findByRole("dialog", { name: "Delete reply" });
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete reply" });
     expect(dialog).toHaveTextContent("Reply post");
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
@@ -566,7 +566,7 @@ describe("App editor UX", () => {
       within(updatedThread).getByRole("button", { name: "Delete Root post" })
     );
 
-    const dialog = await screen.findByRole("dialog", { name: "Delete thread" });
+    const dialog = await screen.findByRole("alertdialog", { name: "Delete thread" });
     expect(dialog).toHaveTextContent("Root post");
     expect(dialog).toHaveTextContent("1 reply");
     await user.click(within(dialog).getByRole("button", { name: "Delete thread" }));
@@ -965,7 +965,7 @@ describe("App editor UX", () => {
     await user.click(within(queue).getByRole("button", { name: /second thread/i }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Discard current draft?" })
+      await screen.findByRole("alertdialog", { name: "Discard current draft?" })
     ).toBeInTheDocument();
 
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -974,7 +974,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Continue writing" }));
     await waitFor(() => {
       expect(
-        screen.queryByRole("dialog", { name: "Discard current draft?" })
+        screen.queryByRole("alertdialog", { name: "Discard current draft?" })
       ).not.toBeInTheDocument();
     });
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -1032,7 +1032,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: 'Create "Research Note"' }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Discard current draft?" })
+      await screen.findByRole("alertdialog", { name: "Discard current draft?" })
     ).toBeInTheDocument();
     expect(
       screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
@@ -1041,7 +1041,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Continue writing" }));
     await waitFor(() => {
       expect(
-        screen.queryByRole("dialog", { name: "Discard current draft?" })
+        screen.queryByRole("alertdialog", { name: "Discard current draft?" })
       ).not.toBeInTheDocument();
     });
     expect(

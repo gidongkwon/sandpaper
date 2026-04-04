@@ -158,7 +158,7 @@ describe("Sync conflict UI", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Sync" }));
 
     await waitFor(() => {
       expect(

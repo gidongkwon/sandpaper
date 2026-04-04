@@ -1,5 +1,5 @@
 import { CommandPalette } from "../../../features/command-palette/ui/command-palette";
-import { ConfirmDialog } from "../../../shared/ui/confirm-dialog";
+import { ModalDialog } from "../../../shared/ui/modal-dialog";
 import { NotificationPanel } from "../../../widgets/notifications/notification-panel";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
@@ -13,7 +13,7 @@ export const MainPageOverlays = () => {
       <CommandPalette {...overlays.commandPalette} />
       <NotificationPanel {...overlays.notifications} />
       <SettingsModal {...overlays.settings} />
-      <ConfirmDialog
+      <ModalDialog
         open={overlays.pageDialog.open}
         title={overlays.pageDialog.title()}
         confirmLabel={overlays.pageDialog.confirmLabel()}
@@ -34,7 +34,7 @@ export const MainPageOverlays = () => {
             overlays.pageDialog.setValue(event.currentTarget.value)
           }
         />
-      </ConfirmDialog>
+      </ModalDialog>
       <PermissionPromptModal {...overlays.permissionPrompt} />
     </>
   );

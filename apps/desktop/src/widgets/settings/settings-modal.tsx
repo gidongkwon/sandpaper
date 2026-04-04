@@ -13,7 +13,6 @@ import type {
 import type { SyncConfig, SyncConflict, SyncLogEntry, SyncStatus } from "../../entities/sync/model/sync-types";
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import type { PageId, VaultId } from "../../shared/model/id-types";
-import { IconButton } from "../../shared/ui/icon-button";
 import {
   ArrowSync16Icon,
   ArrowUpload16Icon,
@@ -226,6 +225,8 @@ export const SettingsModal = (props: SettingsModalProps) => {
   return (
     <Dialog.Root
       open={props.open()}
+      modal={false}
+      preventScroll={false}
       onOpenChange={(open) => {
         if (!open) props.onClose();
       }}
@@ -236,13 +237,12 @@ export const SettingsModal = (props: SettingsModalProps) => {
           <Dialog.Content class="settings-modal">
             <div class="settings-modal__header">
               <Dialog.Title id="settings-title">Settings</Dialog.Title>
-              <IconButton
+              <Dialog.CloseButton
                 class="settings-modal__close"
-                label="Close settings"
-                onClick={() => props.onClose()}
+                aria-label="Close settings"
               >
                 <Dismiss12Icon width="14" height="14" />
-              </IconButton>
+              </Dialog.CloseButton>
             </div>
             <Tabs.Root
               class="settings-modal__body"

@@ -56,13 +56,13 @@ describe("App Fluent icons", () => {
 
     await user.click(screen.getByRole("button", { name: /open settings/i }));
     expect(
-      screen.getByRole("button", { name: "General" }).querySelector("[data-fluent-icon]")
+      screen.getByRole("tab", { name: "General" }).querySelector("[data-fluent-icon]")
     ).not.toBeNull();
     expect(
-      screen.getByRole("button", { name: "Vault" }).querySelector("[data-fluent-icon]")
+      screen.getByRole("tab", { name: "Vault" }).querySelector("[data-fluent-icon]")
     ).not.toBeNull();
     expect(
-      screen.getByRole("button", { name: "Sync" }).querySelector("[data-fluent-icon]")
+      screen.getByRole("tab", { name: "Sync" }).querySelector("[data-fluent-icon]")
     ).not.toBeNull();
   });
 });

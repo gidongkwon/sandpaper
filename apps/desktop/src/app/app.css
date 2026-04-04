@@ -4073,7 +4073,12 @@ button:disabled {
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
-  animation: fadeIn var(--duration-fast) var(--ease-out);
+}
+
+.modal-backdrop__overlay[data-closed],
+.settings-modal[data-closed],
+.modal[data-closed] {
+  display: none;
 }
 
 @keyframes fadeIn {
@@ -4330,7 +4335,6 @@ button:disabled {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modalIn var(--duration-base) var(--ease-out);
   position: relative;
   z-index: 1;
   pointer-events: auto;
@@ -5181,7 +5185,9 @@ button:disabled {
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
-  animation: modalIn var(--duration-base) var(--ease-out);
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .modal__header {

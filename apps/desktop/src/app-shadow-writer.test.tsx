@@ -47,7 +47,7 @@ describe("Shadow writer queue", () => {
     fireEvent.input(inputs[0], { target: { value: "Shadow queue" } });
 
     fireEvent.click(screen.getByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Vault" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Vault" }));
 
     expect(screen.getByText(/shadow write queue/i)).toBeInTheDocument();
     expect(screen.getByText(/1 pending/i)).toBeInTheDocument();

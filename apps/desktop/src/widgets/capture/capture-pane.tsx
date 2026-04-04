@@ -6,7 +6,7 @@ import {
   type Accessor,
   type Setter
 } from "solid-js";
-import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
+import { AlertDialog } from "../../shared/ui/alert-dialog";
 import {
   ArrowReply16Icon,
   ArrowUp16FilledIcon,
@@ -360,7 +360,7 @@ export const CapturePane = (props: CapturePaneProps) => {
         </div>
       </div>
 
-      <ConfirmDialog
+      <AlertDialog
         open={() => pendingReplyDelete() !== null}
         title="Delete reply"
         description={pendingReplyDelete()?.text}
@@ -368,7 +368,7 @@ export const CapturePane = (props: CapturePaneProps) => {
         onConfirm={confirmReplyDelete}
         onCancel={() => setPendingReplyDelete(null)}
       />
-      <ConfirmDialog
+      <AlertDialog
         open={() => pendingThreadDelete() !== null}
         title="Delete thread"
         description={threadDeleteDescription()}

@@ -26,7 +26,7 @@ import type { CaretPosition } from "../../shared/model/position";
 import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
-import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
+import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
@@ -4193,7 +4193,7 @@ export const EditorPane = (props: EditorPaneProps) => {
           onMouseEnter={() => cancelLinkPreviewClose()}
           onMouseLeave={() => scheduleLinkPreviewClose()}
         />
-        <ConfirmDialog
+        <ModalDialog
           open={dialogOpen}
           title={dialogTitle()}
           confirmLabel={dialogConfirmLabel()}
@@ -4210,7 +4210,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             value={dialogValue()}
             onInput={(event) => setDialogValue(event.currentTarget.value)}
           />
-        </ConfirmDialog>
+        </ModalDialog>
       </div>
     </section>
   );

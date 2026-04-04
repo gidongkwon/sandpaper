@@ -128,7 +128,7 @@ describe("Sync activity log", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Sync" }));
 
     const syncNow = screen.getByRole("button", { name: /sync now/i });
     fireEvent.click(syncNow);

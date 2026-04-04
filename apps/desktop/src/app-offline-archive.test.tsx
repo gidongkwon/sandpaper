@@ -57,7 +57,7 @@ describe("App offline archive", () => {
 
     render(() => <App />);
     await user.click(screen.getByRole("button", { name: /open settings/i }));
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("tab", { name: "Import" }));
     const exportButton = await screen.findByRole("button", {
       name: /export offline archive/i
     });
@@ -102,7 +102,7 @@ describe("App offline archive", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
     await user.click(screen.getByRole("button", { name: /open settings/i }));
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("tab", { name: "Import" }));
     await user.click(
       await screen.findByRole("button", { name: /export offline archive/i })
     );
@@ -140,7 +140,7 @@ describe("App offline archive", () => {
 
     render(() => <App />);
     await user.click(screen.getByRole("button", { name: /open settings/i }));
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("tab", { name: "Import" }));
 
     const picker = screen.getByTestId(
       "offline-archive-picker"
@@ -190,7 +190,7 @@ describe("App offline archive", () => {
 
     render(() => <App />);
     await user.click(screen.getByRole("button", { name: /open settings/i }));
-    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(screen.getByRole("tab", { name: "Import" }));
 
     const picker = screen.getByTestId(
       "offline-archive-picker"

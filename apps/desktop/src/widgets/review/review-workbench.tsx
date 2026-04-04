@@ -10,7 +10,7 @@ import type {
 } from "../../entities/review/model/review-types";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
-import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
+import { AlertDialog } from "../../shared/ui/alert-dialog";
 import { ReviewArchiveList } from "./review-archive-list";
 import { ReviewQueueDeck } from "./review-queue-deck";
 import { ReviewSessionBar } from "./review-session-bar";
@@ -221,7 +221,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
         </div>
       </Show>
 
-      <ConfirmDialog
+      <AlertDialog
         open={confirmOpen}
         title="Discard current draft?"
         description="This review already changed the destination note. Continue writing to keep the draft, or discard it before switching."

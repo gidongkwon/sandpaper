@@ -28,7 +28,7 @@ describe("Permission audit view", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Permissions" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Permissions" }));
 
     const missing = await screen.findAllByText(/network/i, {
       selector: ".settings-permission"

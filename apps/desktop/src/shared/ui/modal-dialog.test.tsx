@@ -2,9 +2,9 @@ import { render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
-import { ConfirmDialog } from "./confirm-dialog";
+import { ModalDialog } from "./modal-dialog";
 
-describe("ConfirmDialog", () => {
+describe("ModalDialog", () => {
   it("renders content and handles actions", async () => {
     const [open] = createSignal(true);
     const onConfirm = vi.fn();
@@ -12,7 +12,7 @@ describe("ConfirmDialog", () => {
     const user = userEvent.setup();
 
     render(() => (
-      <ConfirmDialog
+      <ModalDialog
         open={open}
         title="Confirm action"
         description="Are you sure?"
@@ -22,7 +22,7 @@ describe("ConfirmDialog", () => {
         onCancel={onCancel}
       >
         <input aria-label="Value" />
-      </ConfirmDialog>
+      </ModalDialog>
     ));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();

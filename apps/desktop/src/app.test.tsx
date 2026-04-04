@@ -143,7 +143,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     const grantButton = await screen.findByRole("button", { name: /grant network/i });
     await userEvent.click(grantButton);
     expect(await screen.findByText("Grant permission")).toBeInTheDocument();
@@ -154,7 +154,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     expect(await screen.findByText("Plugin Commands")).toBeInTheDocument();
     expect(await screen.findByText("Plugin Panels")).toBeInTheDocument();
     expect(await screen.findByText("Calendar panel")).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Vault" }));
     expect(await screen.findByText("Encryption Key")).toBeInTheDocument();
     const setButton = screen.getByRole("button", { name: /set passphrase/i });
     expect(setButton).toBeDisabled();
@@ -177,7 +177,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Vault" }));
     await userEvent.click(screen.getByRole("button", { name: /new vault/i }));
     const pathInput = screen.getByPlaceholderText("Vault path") as HTMLInputElement;
     const picker = screen.getByTestId("vault-folder-picker") as HTMLInputElement;
@@ -195,7 +195,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Vault" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Vault" }));
     await userEvent.click(screen.getByRole("button", { name: /new vault/i }));
     (window as typeof window & { __TAURI_INTERNALS__: Record<string, unknown> })
       .__TAURI_INTERNALS__ = {};
@@ -214,7 +214,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Sync" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Sync" }));
     const connectButton = screen.getByRole("button", { name: /connect/i });
     expect(connectButton).toBeDisabled();
     expect(
@@ -540,7 +540,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
     const exportButton = await screen.findByRole("button", { name: /export all pages/i });
     await userEvent.click(exportButton);
     expect(
@@ -553,7 +553,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
     const input = screen.getByPlaceholderText(/paste markdown here/i);
     await userEvent.type(
       input,
@@ -591,7 +591,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
     const picker = screen.getByTestId("markdown-file-picker") as HTMLInputElement;
     const file = new File(["# Import\n- Line"], "note.md", {
       type: "text/markdown"
@@ -609,7 +609,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
     (window as typeof window & { __TAURI_INTERNALS__: Record<string, unknown> })
       .__TAURI_INTERNALS__ = {};
     const pickButton = screen.getByRole("button", { name: "Choose file" });
@@ -692,7 +692,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     const openButtons = await screen.findAllByRole("button", { name: "Open" });
     await userEvent.click(openButtons[0]);
     expect(await screen.findByText(/active panel/i)).toBeInTheDocument();
@@ -703,7 +703,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     const openButtons = await screen.findAllByRole("button", { name: "Open" });
     await userEvent.click(openButtons[1]);
     expect(await screen.findByText("Grant permission")).toBeInTheDocument();
@@ -714,7 +714,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     const runButtons = await screen.findAllByRole("button", { name: "Run" });
     await userEvent.click(runButtons[0]);
     const matches = await screen.findAllByDisplayValue(/plugin action/i);
@@ -726,7 +726,7 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /open settings/i })
     );
-    await userEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     const runButtons = await screen.findAllByRole("button", { name: "Run" });
     await userEvent.click(runButtons[1]);
     expect(await screen.findByText("Grant permission")).toBeInTheDocument();

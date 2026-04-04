@@ -85,7 +85,7 @@ describe("Notifications panel", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
     fireEvent.click(screen.getByRole("button", { name: /reload plugins/i }));
     fireEvent.click(screen.getByRole("button", { name: /open notifications/i }));
 

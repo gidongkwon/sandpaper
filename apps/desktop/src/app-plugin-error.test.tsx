@@ -85,7 +85,7 @@ describe("Plugin error banner", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
 
     const reloadButton = screen.getByRole("button", { name: /reload plugins/i });
     const beforeCalls = vi
