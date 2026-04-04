@@ -293,6 +293,9 @@ export const EditorPane = (props: EditorPaneProps) => {
     x: number;
     y: number;
   } | null>(null);
+  const isSuggestionPopoverFocus = () =>
+    document.activeElement instanceof Element &&
+    document.activeElement.closest("[data-editor-suggestion-popover='true']");
   const [dragBox, setDragBox] = createSignal<{
     top: number;
     height: number;
@@ -3729,6 +3732,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                 const keepCodeIntent =
                   document.activeElement instanceof Element &&
                   document.activeElement.closest("[data-code-edit='true']");
+                const keepSuggestionIntent = isSuggestionPopoverFocus();
                 setFocusedId((current) =>
                   current === block.id ? null : current
                 );
@@ -3737,10 +3741,15 @@ export const EditorPane = (props: EditorPaneProps) => {
                     current === block.id ? null : current
                   );
                 }
+                if (keepSuggestionIntent) {
+                  return;
+                }
               }, 0);
               if (slashMenu().open && slashMenu().blockId === block.id) {
                 window.setTimeout(() => {
-                  closeSlashMenu();
+                  if (!isSuggestionPopoverFocus()) {
+                    closeSlashMenu();
+                  }
                 }, 0);
               }
               if (
@@ -3748,7 +3757,9 @@ export const EditorPane = (props: EditorPaneProps) => {
                 wikilinkMenu().blockId === block.id
               ) {
                 window.setTimeout(() => {
-                  closeWikilinkMenu();
+                  if (!isSuggestionPopoverFocus()) {
+                    closeWikilinkMenu();
+                  }
                 }, 0);
               }
             }}

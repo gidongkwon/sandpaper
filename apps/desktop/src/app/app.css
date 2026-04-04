@@ -2053,10 +2053,15 @@ button:disabled {
   white-space: pre-wrap;
 }
 
-.slash-menu {
+.suggestion-popover__anchor {
   position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.suggestion-popover {
   z-index: 40;
-  min-width: 180px;
   padding: var(--space-2);
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
@@ -2064,7 +2069,7 @@ button:disabled {
   box-shadow: var(--shadow-md);
 }
 
-.slash-menu__title {
+.suggestion-popover__title {
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -2072,9 +2077,16 @@ button:disabled {
   margin-bottom: var(--space-1);
 }
 
-.slash-menu__list {
+.suggestion-popover__list {
   display: flex;
   flex-direction: column;
+}
+
+.slash-menu {
+  min-width: 180px;
+}
+
+.slash-menu__list {
   gap: 2px;
 }
 
@@ -2092,27 +2104,10 @@ button:disabled {
 }
 
 .wikilink-menu {
-  position: fixed;
-  z-index: 40;
   min-width: 220px;
-  padding: var(--space-2);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-}
-
-.wikilink-menu__title {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-tertiary);
-  margin-bottom: var(--space-1);
 }
 
 .wikilink-menu__list {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
 }
 
