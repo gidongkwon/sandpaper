@@ -4218,7 +4218,18 @@ button:disabled {
   width: min(520px, 92vw);
 }
 
+.command-palette__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .command-palette__item {
+  list-style: none;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4236,7 +4247,8 @@ button:disabled {
   color: var(--text-primary);
 }
 
-.command-palette__item.is-active {
+.command-palette__item[data-highlighted],
+.command-palette__item[data-selected] {
   background: var(--accent-soft);
   color: var(--accent);
 }

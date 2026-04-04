@@ -42,11 +42,7 @@ export const SearchDialog = (props: SearchDialogProps) => {
                 onInput={(event) => props.setQuery(event.currentTarget.value)}
                 onKeyDown={(event) => props.onInputKeyDown?.(event)}
               />
-              <div
-                class="search-dialog__list"
-                role="listbox"
-                aria-label={props.listLabel}
-              >
+              <div class="search-dialog__list" data-list-label={props.listLabel}>
                 {props.children}
               </div>
             </Dialog.Content>

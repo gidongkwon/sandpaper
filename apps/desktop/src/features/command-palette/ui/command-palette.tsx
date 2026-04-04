@@ -1,5 +1,6 @@
-import { For, Show, type Accessor, type Setter } from "solid-js";
+import { Show, createMemo, type Accessor, type Setter } from "solid-js";
 import { EmptyState } from "../../../shared/ui/empty-state";
+import { ActionListbox, type ActionListboxOption } from "../../../shared/ui/action-listbox";
 import { SearchDialog } from "../../../shared/ui/search-dialog";
 
 type CommandPaletteItem = {
@@ -23,6 +24,18 @@ type CommandPaletteProps = {
 };
 
 export const CommandPalette = (props: CommandPaletteProps) => {
+  const commandOptions = createMemo<ActionListboxOption<CommandPaletteItem>[]>(() =>
+    props.commands().map((command) => ({
+      value: command.id,
+      label: command.label,
+      description: command.hint,
+      data: command
+    }))
+  );
+  const activeCommandId = createMemo(
+    () => props.commands()[props.activeIndex()]?.id ?? null
+  );
+
   return (
     <SearchDialog
       open={props.open}
@@ -62,27 +75,16 @@ export const CommandPalette = (props: CommandPaletteProps) => {
           <EmptyState class="command-palette__empty" message="No matches" />
         }
       >
-        <For each={props.commands()}>
-          {(command, index) => (
-            <button
-              class={`command-palette__item ${
-                index() === props.activeIndex() ? "is-active" : ""
-              }`}
-              type="button"
-              role="option"
-              aria-selected={index() === props.activeIndex()}
-              onMouseEnter={() => props.setActiveIndex(index())}
-              onClick={() => void props.onRun(command)}
-            >
-              <span>{command.label}</span>
-              <Show when={command.hint}>
-                {(hint) => (
-                  <span class="command-palette__hint">{hint()}</span>
-                )}
-              </Show>
-            </button>
-          )}
-        </For>
+        <ActionListbox
+          options={commandOptions()}
+          selectedValue={activeCommandId()}
+          onSelect={(option) => void props.onRun(option.data)}
+          ariaLabel="Command results"
+          class="command-palette__list"
+          itemClass="command-palette__item"
+          itemLabelClass="command-palette__label"
+          itemDescriptionClass="command-palette__hint"
+        />
       </Show>
     </SearchDialog>
   );
