@@ -3878,6 +3878,8 @@ button:disabled {
 
 .review-queue-deck__stack {
   --review-deck-card-height: calc(100% - 40px);
+  --review-deck-layer-offset-1: clamp(26px, calc(10px + 2.2vh), 44px);
+  --review-deck-layer-offset-2: clamp(52px, calc(20px + 4.4vh), 88px);
   position: relative;
   flex: 1;
   height: 100%;
@@ -3910,12 +3912,12 @@ button:disabled {
 
 .review-queue-deck__layer.layer-1 {
   z-index: 2;
-  transform: translate3d(0, 26px, -40px) scale(0.972);
+  transform: translate3d(0, var(--review-deck-layer-offset-1), -40px) scale(0.972);
 }
 
 .review-queue-deck__layer.layer-2 {
   z-index: 1;
-  transform: translate3d(0, 52px, -80px) scale(0.944);
+  transform: translate3d(0, var(--review-deck-layer-offset-2), -80px) scale(0.944);
   opacity: 0.92;
 }
 
@@ -3926,12 +3928,17 @@ button:disabled {
 }
 
 .review-queue-deck__layer.layer-0[data-promotion-role="outgoing"] {
-  transform: translate3d(0, 24px, -32px) scale(0.978);
+  transform: translate3d(
+      0,
+      calc(var(--review-deck-layer-offset-1) - 2px),
+      -32px
+    )
+    scale(0.978);
   z-index: 3;
 }
 
 .review-queue-deck__layer.layer-1[data-promotion-target="2"][data-promotion-role="settling"] {
-  transform: translate3d(0, 52px, -80px) scale(0.944);
+  transform: translate3d(0, var(--review-deck-layer-offset-2), -80px) scale(0.944);
   opacity: 0.92;
 }
 
