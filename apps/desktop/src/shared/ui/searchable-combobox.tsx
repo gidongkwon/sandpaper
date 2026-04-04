@@ -1,5 +1,7 @@
 import * as Combobox from "@kobalte/core/combobox";
+import { cx } from "class-variance-authority";
 import { Show, createMemo, createSignal } from "solid-js";
+import { textFieldVariants } from "./text-field";
 
 export type SearchableComboboxOption = {
   value: string;
@@ -123,7 +125,7 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
         <Combobox.Input
           aria-label={props.ariaLabel}
           placeholder={props.placeholder ?? selectedOption()?.label ?? ""}
-          class={props.inputClass}
+          class={cx(textFieldVariants(), props.inputClass)}
           value={inputValue()}
           onInput={(event) => setQuery(event.currentTarget.value)}
           onFocus={(event) => {

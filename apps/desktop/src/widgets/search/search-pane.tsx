@@ -3,6 +3,7 @@ import type { SearchResult } from "../../entities/search/model/search-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { Search16Icon } from "../../shared/ui/icons";
 import { ActionListbox, type ActionListboxOption } from "../../shared/ui/action-listbox";
+import { TextField } from "../../shared/ui/text-field";
 
 type SearchPaneProps = {
   searchInputRef?: (el: HTMLInputElement) => void;
@@ -38,7 +39,7 @@ export const SearchPane = (props: SearchPaneProps) => {
       <div class="sidebar__header">
         <div class="sidebar__search">
           <Search16Icon class="sidebar__search-icon" width="14" height="14" />
-          <input
+          <TextField
             ref={(el) => props.searchInputRef?.(el)}
             class="sidebar__input"
             type="search"

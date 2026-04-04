@@ -1,5 +1,6 @@
 import * as Dialog from "@kobalte/core/dialog";
 import { Show, type Accessor, type JSX, type Setter } from "solid-js";
+import { TextField } from "./text-field";
 
 type SearchDialogProps = {
   open: Accessor<boolean>;
@@ -33,7 +34,7 @@ export const SearchDialog = (props: SearchDialogProps) => {
               <Dialog.Title class="search-dialog__title">
                 {props.title}
               </Dialog.Title>
-              <input
+              <TextField
                 ref={props.inputRef}
                 class="search-dialog__input"
                 type="search"
