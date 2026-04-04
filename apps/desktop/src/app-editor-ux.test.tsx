@@ -425,9 +425,13 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "See [[Inbox]]" }
     });
-    fireEvent.keyDown(editorInput, { key: "Escape" });
+    fireEvent.keyDown(editorInput, { key: "Escape", code: "Escape" });
+    fireEvent.blur(editorInput);
 
-    const inboxLink = await screen.findByRole("button", { name: "Inbox" });
+    const inboxLabel = await screen.findByText("Inbox");
+    const inboxLink = inboxLabel.closest("button");
+    expect(inboxLink).not.toBeNull();
+    if (!inboxLink) return;
     await user.click(inboxLink);
 
     expect(screen.getByRole("button", { name: "Capture" })).toHaveClass("is-active");
@@ -754,6 +758,69 @@ describe("App editor UX", () => {
       expect(
         within(destinationPanel).getByRole("button", { name: "Change destination" })
       ).toBeInTheDocument();
+    });
+  });
+
+  it("enables review completion even when editing immediately after opening review", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Home follow up");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const editorInput = await waitFor(() => {
+      const input = document.querySelector(
+        ".review .editor-pane textarea[data-block-id]"
+      ) as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+      return input as HTMLTextAreaElement;
+    });
+
+    await user.click(editorInput);
+    await user.clear(editorInput);
+    await user.type(editorInput, "Immediate review summary");
+
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Complete review" })).toBeEnabled();
+    });
+  });
+
+  it("treats the visible page as the destination after editing when no recommendation exists", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Hello");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(screen.getByPlaceholderText("Search or create a page...")).toBeInTheDocument();
+
+    const editorInput = await waitFor(() => {
+      const input = document.querySelector(
+        ".review .editor-pane textarea[data-block-id]"
+      ) as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+      return input as HTMLTextAreaElement;
+    });
+
+    await user.click(editorInput);
+    await user.clear(editorInput);
+    await user.type(editorInput, "Hello summary");
+
+    await waitFor(() => {
+      expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Change destination" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Complete review" })).toBeEnabled();
     });
   });
 

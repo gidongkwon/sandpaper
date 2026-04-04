@@ -229,14 +229,23 @@
   padding: 0;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   min-height: 100vh;
+  height: 100%;
   overflow: hidden;
   background: transparent;
 }
 
 #root {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 button, input, textarea, select {
@@ -303,10 +312,17 @@ button:disabled {
 }
 
 .main-page-workspace {
+  display: flex;
+  flex: 1;
   min-height: 0;
   height: 100%;
   overflow: hidden;
   margin: 0 var(--space-3) var(--space-3);
+}
+
+.main-page-workspace > * {
+  flex: 1;
+  min-height: 0;
 }
 
 .section-jump {
@@ -620,6 +636,7 @@ button:disabled {
 .workspace {
   display: grid;
   grid-template-columns: 240px 1fr;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   padding: 0 var(--space-2) var(--space-2) 0;
@@ -1042,6 +1059,7 @@ button:disabled {
 .main-pane {
   position: relative;
   display: flex;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   padding: var(--space-4);
@@ -3020,12 +3038,19 @@ button:disabled {
 .focus-panel {
   position: relative;
   max-width: 560px;
-  margin: var(--space-6) auto;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  margin: 0 auto;
   padding: var(--space-5);
   background: var(--bg-primary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-md), var(--shadow-ring);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .focus-panel.is-review {

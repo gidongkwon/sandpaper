@@ -1537,6 +1537,13 @@ export const createMainPageState = () => {
     }));
     setReviewDestinationQuery("");
     clearReviewBaselineState();
+    if (
+      recommendations[0]?.page_uid &&
+      resolvePageUid(activePageUid()) === resolvePageUid(recommendations[0].page_uid) &&
+      isLoadedPageForUid(recommendations[0].page_uid)
+    ) {
+      setReviewPendingBaselineFromCurrentPage();
+    }
     setReviewConfiguredThreadId(threadId);
   });
 
@@ -1545,15 +1552,34 @@ export const createMainPageState = () => {
     const destinationPageUid = reviewSession().destination_page_uid;
     if (!destinationPageUid) return;
     if (resolvePageUid(activePageUid()) === resolvePageUid(destinationPageUid)) {
-      if (!reviewSession().is_hard_selected && reviewPendingBaselineHash() === null) {
+      if (
+        !reviewSession().is_hard_selected &&
+        reviewPendingBaselineHash() === null &&
+        isLoadedPageForUid(destinationPageUid)
+      ) {
         setReviewPendingBaselineFromCurrentPage();
       }
       return;
     }
     setReviewDestinationTransitioning(true);
     void switchPage(destinationPageUid).finally(() => {
-      setReviewDestinationTransitioning(false);
-    });
+        setReviewDestinationTransitioning(false);
+      });
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    if (
+      session.tab !== "to-review" ||
+      session.destination_page_uid ||
+      session.is_hard_selected ||
+      reviewPendingBaselineHash() !== null
+    ) {
+      return;
+    }
+    const currentPageUid = resolvePageUid(activePageUid());
+    if (!isLoadedPageForUid(currentPageUid)) return;
+    setReviewPendingBaselineFromCurrentPage();
   });
 
   createEffect(() => {
@@ -1655,6 +1681,38 @@ export const createMainPageState = () => {
       updated_at: Date.now()
     }));
     setReviewSessionBaselineSnapshot(null);
+    setReviewRestorePendingValidation(false);
+    setReviewSessionNeedsValidation(false);
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    const pendingBaselineHash = reviewPendingBaselineHash();
+    if (
+      session.tab !== "to-review" ||
+      session.destination_page_uid !== null ||
+      session.is_hard_selected ||
+      !pendingBaselineHash
+    ) {
+      return;
+    }
+    const currentPageUid = resolvePageUid(activePageUid());
+    if (!isLoadedPageForUid(currentPageUid)) return;
+    const currentHash = currentReviewPageHash();
+    if (currentHash === pendingBaselineHash) return;
+    setReviewSession((current) => ({
+      ...current,
+      destination_page_uid: currentPageUid,
+      is_hard_selected: true,
+      baseline_page_hash: pendingBaselineHash,
+      last_known_page_hash: currentHash,
+      invalidated: false,
+      updated_at: Date.now()
+    }));
+    saveLocalPageSnapshot(currentPageUid, pageTitle(), blocks);
+    setReviewSessionBaselineSnapshot(reviewPendingBaselineSnapshot());
+    setReviewPendingBaselineHash(null);
+    setReviewPendingBaselineSnapshot(null);
     setReviewRestorePendingValidation(false);
     setReviewSessionNeedsValidation(false);
   });
