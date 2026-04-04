@@ -67,9 +67,7 @@ export const SearchPane = (props: SearchPaneProps) => {
               options={historyOptions()}
               onSelect={(option) => props.applyTerm(option.data)}
               ariaLabel="Recent searches"
-              class="search-history"
-              itemClass="search-history__item"
-              itemLabelClass="search-history__label"
+              variant="search-history"
             />
           </div>
         </Show>
@@ -83,9 +81,7 @@ export const SearchPane = (props: SearchPaneProps) => {
               options={resultOptions()}
               onSelect={(option) => props.onResultSelect(option.data)}
               ariaLabel="Search results"
-              class="sidebar__results"
-              itemClass="result"
-              itemLabelClass="result__text"
+              variant="search-results"
               renderLabel={(option) => props.renderHighlight(option.data.text || "Untitled")}
               emptyState={
                 <EmptyState class="sidebar__empty" message="No matches found" />

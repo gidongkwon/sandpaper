@@ -41,6 +41,7 @@ export const CommandPalette = (props: CommandPaletteProps) => {
       open={props.open}
       onClose={props.onClose}
       title="Command palette"
+      variant="command"
       query={props.query}
       setQuery={props.setQuery}
       inputRef={props.inputRef}
@@ -80,10 +81,7 @@ export const CommandPalette = (props: CommandPaletteProps) => {
           selectedValue={activeCommandId()}
           onSelect={(option) => void props.onRun(option.data)}
           ariaLabel="Command results"
-          class="command-palette__list"
-          itemClass="command-palette__item"
-          itemLabelClass="command-palette__label"
-          itemDescriptionClass="command-palette__hint"
+          variant="command"
         />
       </Show>
     </SearchDialog>
