@@ -638,6 +638,12 @@ export const createMainPageState = () => {
     return resolved;
   };
 
+  createEffect(() => {
+    if (resolvePageUid(activePageUid()) !== HIDDEN_INBOX_PAGE_UID) return;
+    if (mode() !== "editor") return;
+    setMode("quick-capture");
+  });
+
   const switchWorkspacePage = async (pageUid: string) => {
     if (resolvePageUid(pageUid) === HIDDEN_INBOX_PAGE_UID) {
       setMode("quick-capture");

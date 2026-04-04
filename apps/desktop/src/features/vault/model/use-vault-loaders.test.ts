@@ -137,4 +137,82 @@ describe("createVaultLoaders", () => {
     expect(setFocusedId).toHaveBeenCalledWith(null);
     expect(markSaved).toHaveBeenCalled();
   });
+
+  it("hydrates hidden inbox blocks into the local snapshot when loading from tauri", async () => {
+    const localPages: Record<string, LocalPageRecord> = {
+      inbox: { uid: "inbox", title: "Inbox", blocks: [] }
+    };
+    const [pages, setPages] = createSignal<PageSummary[]>([]);
+    const [activePageUid, setActivePageUid] = createSignal("inbox");
+    const [activeVault] = createSignal<VaultRecord | null>({
+      id: "vault-1",
+      name: "Vault",
+      path: "/vault"
+    });
+    const saveLocalPageSnapshot = vi.fn();
+    const setBlocks = vi.fn();
+    const setPageTitle = vi.fn();
+    const setRenameTitle = vi.fn();
+    const setActiveId = vi.fn();
+    const setFocusedId = vi.fn();
+    const markSaved = vi.fn();
+
+    const api = createVaultLoaders({
+      isTauri: () => true,
+      invoke: vi.fn(async (command) => {
+        if (command === "load_page_blocks") {
+          return {
+            page_uid: "inbox",
+            title: "Inbox",
+            blocks: [{ uid: "capture-1", text: "Persisted capture", indent: 0 }]
+          };
+        }
+        return null;
+      }),
+      localPages,
+      setPages,
+      activePageUid,
+      setActivePageUid,
+      activeVault,
+      resolvePageUid: (value) => value,
+      snapshotBlocks: (items) => items.map((item) => ({ ...item })),
+      saveLocalPageSnapshot,
+      buildLocalDefaults: () => [],
+      buildEmptyBlocks: () => [],
+      buildDefaultBlocks: () => [],
+      makeLocalId: () => "local",
+      makeRandomId: () => "rand",
+      setBlocks,
+      setPageTitle,
+      setRenameTitle,
+      setActiveId,
+      setFocusedId,
+      markSaved,
+      toPayload: (block: Block) => ({
+        uid: block.id,
+        text: block.text,
+        indent: block.indent
+      }),
+      serializePageToMarkdown: () => "",
+      shadowWriter: { scheduleWrite: vi.fn() },
+      setReviewSummary: vi.fn(),
+      setReviewItems: vi.fn(),
+      setReviewBusy: vi.fn(),
+      defaultPageUid: "home"
+    });
+
+    await api.loadBlocks("inbox");
+
+    expect(saveLocalPageSnapshot).toHaveBeenCalledWith("inbox", "Inbox", [
+      { id: "capture-1", text: "Persisted capture", indent: 0, block_type: "text" }
+    ]);
+    expect(setBlocks).toHaveBeenCalledWith([
+      { id: "capture-1", text: "Persisted capture", indent: 0, block_type: "text" }
+    ]);
+    expect(setPageTitle).toHaveBeenCalledWith("Inbox");
+    expect(setRenameTitle).toHaveBeenCalledWith("Inbox");
+    expect(setActiveId).toHaveBeenCalledWith("capture-1");
+    expect(markSaved).toHaveBeenCalled();
+    expect(untrack(pages)).toEqual([]);
+  });
 });

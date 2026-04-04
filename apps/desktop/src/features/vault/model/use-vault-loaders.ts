@@ -201,6 +201,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
       deps.setRenameTitle(title);
       if (loaded.length === 0) {
         if (resolvedUid === HIDDEN_INBOX_PAGE_UID) {
+          deps.saveLocalPageSnapshot(resolvedUid, title, []);
           deps.setBlocks([]);
           deps.setActiveId(null);
           deps.markSaved();
@@ -227,6 +228,9 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
         deps.setActiveId(seeded[0]?.id ?? null);
         deps.markSaved();
         return;
+      }
+      if (resolvedUid === HIDDEN_INBOX_PAGE_UID) {
+        deps.saveLocalPageSnapshot(resolvedUid, title, loaded);
       }
       deps.setBlocks(loaded);
       deps.setActiveId(loaded[0]?.id ?? null);

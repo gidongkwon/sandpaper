@@ -424,7 +424,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "See [[Inbox]]" }
     });
-    editorInput.blur();
+    fireEvent.keyDown(editorInput, { key: "Escape" });
 
     const inboxLink = await screen.findByRole("button", { name: "Inbox" });
     await user.click(inboxLink);
