@@ -1,4 +1,4 @@
-import { Show, type Accessor, type Setter } from "solid-js";
+import { Show, createSignal, onCleanup, onMount, type Accessor, type Setter } from "solid-js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Mode } from "../../shared/model/mode";
 import { Alert16Icon, Dismiss12Icon, PanelLeft16Icon, Settings16Icon, Square12Icon, Subtract12Icon } from "../../shared/ui/icons";
@@ -22,6 +22,12 @@ type TopbarProps = {
 };
 
 export const Topbar = (props: TopbarProps) => {
+  const [modeSwitchCentered, setModeSwitchCentered] = createSignal(false);
+  let headerRef: HTMLElement | undefined;
+  let leftRef: HTMLDivElement | undefined;
+  let rightRef: HTMLDivElement | undefined;
+  let modeSwitchRef: HTMLElement | undefined;
+
   const switchMode = (nextMode: Mode) => {
     if (props.mode() === nextMode) return;
     const nextState = () => props.setMode(nextMode);
@@ -54,9 +60,46 @@ export const Topbar = (props: TopbarProps) => {
     return "Saving...";
   };
 
+  const updateModeSwitchLayout = () => {
+    if (!headerRef || !leftRef || !rightRef || !modeSwitchRef) {
+      setModeSwitchCentered(false);
+      return;
+    }
+    const headerWidth = headerRef.getBoundingClientRect().width;
+    const leftWidth = leftRef.getBoundingClientRect().width;
+    const rightWidth = rightRef.getBoundingClientRect().width;
+    const modeWidth = modeSwitchRef.getBoundingClientRect().width;
+    const safetyGap = 48;
+    const widestSide = Math.max(leftWidth, rightWidth);
+    setModeSwitchCentered(headerWidth >= modeWidth + widestSide * 2 + safetyGap * 2);
+  };
+
+  onMount(() => {
+    updateModeSwitchLayout();
+    const resizeObserver =
+      typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => updateModeSwitchLayout())
+        : null;
+    if (resizeObserver) {
+      if (headerRef) resizeObserver.observe(headerRef);
+      if (leftRef) resizeObserver.observe(leftRef);
+      if (rightRef) resizeObserver.observe(rightRef);
+      if (modeSwitchRef) resizeObserver.observe(modeSwitchRef);
+    }
+    window.addEventListener("resize", updateModeSwitchLayout);
+    onCleanup(() => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateModeSwitchLayout);
+    });
+  });
+
   return (
-    <header class="topbar" data-tauri-drag-region>
-      <div class="topbar__left">
+    <header
+      ref={headerRef}
+      class={`topbar ${modeSwitchCentered() ? "is-mode-centered" : ""}`}
+      data-tauri-drag-region
+    >
+      <div ref={leftRef} class="topbar__left">
         <button
           class="topbar__sidebar-toggle"
           onClick={() => props.toggleSidebar()}
@@ -66,7 +109,7 @@ export const Topbar = (props: TopbarProps) => {
         </button>
       </div>
 
-      <nav class="mode-switch">
+      <nav ref={modeSwitchRef} class="mode-switch">
         <button
           class={`mode-switch__button ${props.mode() === "quick-capture" ? "is-active" : ""}`}
           onClick={() => switchMode("quick-capture")}
@@ -87,7 +130,7 @@ export const Topbar = (props: TopbarProps) => {
         </button>
       </nav>
 
-      <div class="topbar__right">
+      <div ref={rightRef} class="topbar__right">
         <Show when={props.showStatusSurfaces()}>
           <span
             class={`topbar__autosave topbar__status-chip is-${autosaveState()}`}

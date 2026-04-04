@@ -378,6 +378,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
   padding: 0 var(--space-4);
   background: transparent;
   z-index: 10;
@@ -434,6 +435,12 @@ button:disabled {
   background: var(--bg-secondary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
+}
+
+.topbar.is-mode-centered .mode-switch {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .mode-switch__button {
