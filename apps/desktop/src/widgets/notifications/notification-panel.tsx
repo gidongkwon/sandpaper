@@ -1,8 +1,11 @@
 import { For, Show, type Accessor } from "solid-js";
 import type { NotificationEntry } from "../../entities/notification/model/notification-types";
 import type { AnchorRect } from "../../shared/model/position";
+import { Button } from "../../shared/ui/button";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
+import { IconButton } from "../../shared/ui/icon-button";
+import { Dismiss12Icon } from "../../shared/ui/icons";
 
 type NotificationPanelProps = {
   open: Accessor<boolean>;
@@ -38,33 +41,35 @@ export const NotificationPanel = (props: NotificationPanelProps) => {
               {props.notifications().length}
             </span>
           </div>
-          <button
+          <IconButton
+            variant="panel"
             class="notification-panel__close"
-            type="button"
             aria-label="Close notifications"
             onClick={() => props.onClose()}
           >
-            x
-          </button>
+            <Dismiss12Icon width="12" height="12" />
+          </IconButton>
         </div>
 
         <div class="notification-panel__actions">
-          <button
+          <Button
+            variant="surface"
+            size="sm"
             class="notification-panel__action"
-            type="button"
             onClick={() => props.onMarkAllRead()}
             disabled={props.notifications().length === 0}
           >
             Mark all read
-          </button>
-          <button
-            class="notification-panel__action is-muted"
-            type="button"
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="notification-panel__action notification-panel__action--muted"
             onClick={() => props.onClear()}
             disabled={props.notifications().length === 0}
           >
             Clear
-          </button>
+          </Button>
         </div>
 
         <div class="notification-panel__list">
@@ -95,14 +100,15 @@ export const NotificationPanel = (props: NotificationPanelProps) => {
                   <div class="notification-panel__item-message">
                     {item.message}
                   </div>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     class="notification-panel__dismiss"
-                    type="button"
                     aria-label="Dismiss notification"
                     onClick={() => props.onDismiss(item.id)}
                   >
                     Dismiss
-                  </button>
+                  </Button>
                 </div>
               )}
             </For>

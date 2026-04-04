@@ -1,6 +1,7 @@
 import { For, Show, type Accessor, type Component } from "solid-js";
 import type { Block } from "../../entities/block/model/block-types";
 import type { BacklinkEntry } from "../../entities/page/model/backlink-types";
+import { Button } from "../../shared/ui/button";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { IconButton } from "../../shared/ui/icon-button";
 import { Dismiss12Icon, Link16Icon, Link20Icon } from "../../shared/ui/icons";
@@ -80,15 +81,16 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
                       <div class="backlink-group__header">
                         <div class="backlink-group__title">{group.title}</div>
                         <Show when={props.supportsMultiPane}>
-                          <button
+                          <Button
+                            variant="surface"
+                            size="sm"
                             class="backlink-group__action"
-                            type="button"
                             onClick={() =>
                               void props.openPageBacklinkInPane(group.entries[0])
                             }
                           >
                             Open in pane
-                          </button>
+                          </Button>
                         </Show>
                       </div>
                       <ActionListbox
