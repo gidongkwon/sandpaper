@@ -5,6 +5,7 @@ import type { VaultKeyStatus } from "../../entities/vault/model/vault-types";
 import type { PageId } from "../../shared/model/id-types";
 import { ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
+import { Button } from "../../shared/ui/button";
 
 type SettingsSyncProps = {
   status: Accessor<SyncStatus>;
@@ -132,8 +133,9 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
         onInput={(e) => props.sync.setDeviceIdInput(e.currentTarget.value)}
       />
       <div class="settings-actions">
-        <button
-          class="settings-action is-primary"
+        <Button
+          variant="primary"
+          size="sm"
           disabled={
             !props.isTauri() ||
             props.sync.busy() ||
@@ -143,16 +145,17 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
           onClick={() => void props.sync.connect()}
         >
           {props.sync.busy() ? "Connecting..." : "Connect"}
-        </button>
-        <button
-          class="settings-action"
+        </Button>
+        <Button
+          variant="surface"
+          size="sm"
           disabled={
             !props.isTauri() || props.sync.busy() || !props.sync.connected()
           }
           onClick={() => void props.sync.syncNow()}
         >
           Sync now
-        </button>
+        </Button>
       </div>
       <Show when={props.sync.message()}>
         <div class="settings-message">{props.sync.message()}</div>
@@ -191,13 +194,14 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
       <div class="settings-section">
         <div class="settings-section__header">
           <h3 class="settings-section__title">Activity log</h3>
-          <button
-            class="settings-action"
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => void props.sync.copyLog()}
             disabled={props.sync.log().length === 0}
           >
             Copy log
-          </button>
+          </Button>
         </div>
         <Show
           when={props.sync.log().length > 0}
@@ -263,24 +267,27 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
                     </div>
                   </div>
                   <div class="sync-conflict__actions">
-                    <button
-                      class="settings-action"
+                    <Button
+                      variant="surface"
+                      size="sm"
                       onClick={() => void props.sync.resolveConflict(conflict, "local")}
                     >
                       Use local
-                    </button>
-                    <button
-                      class="settings-action"
+                    </Button>
+                    <Button
+                      variant="surface"
+                      size="sm"
                       onClick={() => void props.sync.resolveConflict(conflict, "remote")}
                     >
                       Use remote
-                    </button>
-                    <button
-                      class="settings-action is-primary"
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
                       onClick={() => props.sync.startMerge(conflict)}
                     >
                       Merge
-                    </button>
+                    </Button>
                   </div>
                   <Show when={props.sync.mergeId() === conflict.op_id}>
                     <div class="sync-conflict__merge">
@@ -296,8 +303,9 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
                         }
                       />
                       <div class="sync-conflict__actions">
-                        <button
-                          class="settings-action is-primary"
+                        <Button
+                          variant="primary"
+                          size="sm"
                           onClick={() =>
                             void props.sync.resolveConflict(
                               conflict,
@@ -307,13 +315,14 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
                           }
                         >
                           Apply merge
-                        </button>
-                        <button
-                          class="settings-action"
+                        </Button>
+                        <Button
+                          variant="surface"
+                          size="sm"
                           onClick={props.sync.cancelMerge}
                         >
                           Cancel
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </Show>

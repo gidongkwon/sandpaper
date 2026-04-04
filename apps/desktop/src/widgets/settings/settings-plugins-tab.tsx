@@ -8,6 +8,8 @@ import type {
   PluginRuntimeError,
   PluginRuntimeStatus
 } from "../../entities/plugin/model/plugin-types";
+import { Button } from "../../shared/ui/button";
+import { Switch } from "../../shared/ui/switch";
 import { PluginSettingsCard } from "./settings-plugin-settings";
 
 type PluginSettingsStatus = {
@@ -110,13 +112,14 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
             <div class="settings-banner__title">Plugin error</div>
             <div class="settings-banner__message">{props.plugins.error()}</div>
           </div>
-          <button
-            class="settings-action"
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => void props.plugins.loadRuntime()}
             disabled={props.plugins.busy()}
           >
             {props.plugins.busy() ? "Reloading..." : "Reload plugins"}
-          </button>
+          </Button>
         </div>
       </Show>
       <Show when={props.plugins.errorDetails()}>
@@ -156,14 +159,13 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
         <p class="settings-section__desc">
           Auto-reload plugins every few seconds while you iterate locally.
         </p>
-        <label class="settings-row settings-row--checkbox">
-          <span class="settings-label">Auto reload plugins</span>
-          <input
-            type="checkbox"
-            checked={props.plugins.devMode()}
-            onChange={(event) => props.plugins.setDevMode(event.currentTarget.checked)}
-          />
-        </label>
+        <Switch
+          class="settings-row settings-row--checkbox"
+          labelClass="settings-label"
+          checked={props.plugins.devMode()}
+          onChange={props.plugins.setDevMode}
+          label="Auto reload plugins"
+        />
       </div>
       <div class="settings-section">
         <h3 class="settings-section__title">Add plugin</h3>
@@ -181,13 +183,13 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
               props.plugins.clearInstallStatus();
             }}
           />
-          <button
-            class="settings-action"
-            type="button"
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => void openPluginFolderPicker()}
           >
             Browse
-          </button>
+          </Button>
         </div>
         <input
           ref={(el) => {
@@ -201,26 +203,26 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
           onChange={handlePluginFolderPick}
         />
         <div class="settings-actions">
-          <button
-            class="settings-action is-primary"
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => void props.plugins.installPlugin()}
             disabled={
               props.plugins.installing() || !props.plugins.installPath().trim()
             }
           >
             {props.plugins.installing() ? "Installing..." : "Install plugin"}
-          </button>
-          <button
-            class="settings-action"
-            type="button"
+          </Button>
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => {
               props.plugins.setInstallPath("");
               props.plugins.clearInstallStatus();
             }}
           >
             Clear
-          </button>
+          </Button>
         </div>
         <Show when={props.plugins.installStatus()}>
           {(status) => (
@@ -254,20 +256,21 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                   <div class="settings-plugin__permissions">
                     <For each={plugin.missing_permissions}>
                       {(perm) => (
-                        <button
-                          class="settings-action"
+                        <Button
+                          variant="surface"
+                          size="sm"
                           onClick={() => props.plugins.requestGrant(plugin, perm)}
                         >
                           Grant {perm}
-                        </button>
+                        </Button>
                       )}
                     </For>
                   </div>
                 </Show>
                 <div class="settings-plugin__actions">
-                  <button
-                    class="settings-action"
-                    type="button"
+                  <Button
+                    variant="surface"
+                    size="sm"
                     onClick={() => void props.plugins.updatePlugin(plugin.id)}
                     disabled={
                       props.plugins.busy() ||
@@ -277,10 +280,10 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                     {props.plugins.manageStatus()[plugin.id]?.state === "working"
                       ? "Updating..."
                       : "Update"}
-                  </button>
-                  <button
-                    class="settings-action is-danger"
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
                     onClick={() => void props.plugins.removePlugin(plugin.id)}
                     disabled={
                       props.plugins.busy() ||
@@ -288,7 +291,7 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                     }
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
                 <Show when={props.plugins.manageStatus()[plugin.id]?.message}>
                   {(message) => (
@@ -307,13 +310,14 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
             )}
           </For>
         </Show>
-        <button
-          class="settings-action is-primary"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => void props.plugins.loadRuntime()}
           disabled={props.plugins.busy()}
         >
           {props.plugins.busy() ? "Loading..." : "Reload plugins"}
-        </button>
+        </Button>
         <Show when={props.plugins.commandStatus()}>
           <div class="settings-message is-success">
             {props.plugins.commandStatus()}
@@ -364,13 +368,14 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                     <div class="settings-label">{command.description}</div>
                   </Show>
                 </div>
-                <button
-                  class="settings-action"
+                <Button
+                  variant="surface"
+                  size="sm"
                   onClick={() => props.plugins.runCommand(command)}
                   disabled={props.plugins.busy()}
                 >
                   Run
-                </button>
+                </Button>
               </div>
             )}
           </For>
@@ -391,13 +396,14 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
                     <div class="settings-label">{panel.location}</div>
                   </Show>
                 </div>
-                <button
-                  class="settings-action"
+                <Button
+                  variant="surface"
+                  size="sm"
                   onClick={() => props.plugins.openPanel(panel)}
                   disabled={props.plugins.busy()}
                 >
                   Open
-                </button>
+                </Button>
               </div>
             )}
           </For>

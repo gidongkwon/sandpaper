@@ -112,16 +112,17 @@ describe("SettingsGeneralTab", () => {
       />
     ));
 
-    const statusToggle = screen.getByRole("checkbox", {
+    const statusToggle = screen.getByRole("switch", {
       name: /show status chips/i
-    }) as HTMLInputElement;
+    });
 
-    expect(statusToggle.checked).toBe(true);
+    expect(statusToggle).toBeChecked();
     expect(
-      screen.queryByRole("checkbox", { name: /show shortcut hints/i })
+      screen.queryByRole("switch", { name: /show shortcut hints/i })
     ).not.toBeInTheDocument();
 
-    statusToggle.click();
+    const user = userEvent.setup();
+    await user.click(statusToggle);
 
     expect(untrack(showStatusSurfaces)).toBe(false);
   });

@@ -2,6 +2,7 @@ import type { Accessor, Setter } from "solid-js";
 import type { VaultRecord } from "../../entities/vault/model/vault-types";
 import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
+import { Switch } from "../../shared/ui/switch";
 
 type SettingsGeneralTabProps = {
   typeScale: {
@@ -98,16 +99,13 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
         <p class="settings-section__desc">
           Control status chips shown in the top bar.
         </p>
-        <label class="settings-row settings-row--checkbox">
-          <span class="settings-label">Show status chips</span>
-          <input
-            type="checkbox"
-            checked={props.statusSurfaces.showStatusSurfaces()}
-            onChange={(event) =>
-              props.statusSurfaces.setShowStatusSurfaces(event.currentTarget.checked)
-            }
-          />
-        </label>
+        <Switch
+          class="settings-row settings-row--checkbox"
+          labelClass="settings-label"
+          checked={props.statusSurfaces.showStatusSurfaces()}
+          onChange={props.statusSurfaces.setShowStatusSurfaces}
+          label="Show status chips"
+        />
       </div>
       <div class="settings-section">
         <h3 class="settings-section__title">Keyboard shortcuts</h3>

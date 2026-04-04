@@ -1,6 +1,7 @@
 import { Show, type Accessor, type Setter } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { Button } from "../../shared/ui/button";
 
 type StatusMessage = {
   state: "success" | "error";
@@ -125,29 +126,31 @@ export const SettingsImportTab = (props: SettingsImportTabProps) => {
           onInput={(e) => props.importExport.setImportText(e.currentTarget.value)}
         />
         <div class="settings-actions">
-          <button
-            class="settings-action"
-            type="button"
+          <Button
+            variant="surface"
+            size="sm"
             onClick={openMarkdownFilePicker}
           >
             Choose file
-          </button>
-          <button
-            class="settings-action is-primary"
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => void props.importExport.importMarkdown()}
             disabled={props.importExport.importing()}
           >
             {props.importExport.importing() ? "Importing..." : "Import"}
-          </button>
-          <button
-            class="settings-action"
+          </Button>
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => {
               props.importExport.setImportText("");
               props.importExport.setImportStatus(null);
             }}
           >
             Clear
-          </button>
+          </Button>
         </div>
         <input
           ref={(el) => {
@@ -176,13 +179,14 @@ export const SettingsImportTab = (props: SettingsImportTabProps) => {
         <p class="settings-section__desc">
           Export all pages as read-only Markdown with stable block IDs.
         </p>
-        <button
-          class="settings-action is-primary"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => void props.importExport.exportMarkdown()}
           disabled={props.importExport.exporting()}
         >
           {props.importExport.exporting() ? "Exporting..." : "Export all pages"}
-        </button>
+        </Button>
         <Show when={props.importExport.exportStatus()}>
           {(status) => (
             <div
@@ -207,15 +211,16 @@ export const SettingsImportTab = (props: SettingsImportTabProps) => {
         <p class="settings-section__desc">
           Export a zip archive with pages and assets for offline restore.
         </p>
-        <button
-          class="settings-action is-primary"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => void props.importExport.exportOfflineArchive()}
           disabled={props.importExport.offlineExporting()}
         >
           {props.importExport.offlineExporting()
             ? "Exporting..."
             : "Export offline archive"}
-        </button>
+        </Button>
         <Show when={props.importExport.offlineExportStatus()}>
           {(status) => (
             <div
@@ -234,22 +239,23 @@ export const SettingsImportTab = (props: SettingsImportTabProps) => {
           Import a zip archive to restore pages and assets.
         </p>
         <div class="settings-actions">
-          <button
-            class="settings-action"
-            type="button"
+          <Button
+            variant="surface"
+            size="sm"
             onClick={openOfflineArchivePicker}
           >
             Choose archive
-          </button>
-          <button
-            class="settings-action is-primary"
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => void props.importExport.importOfflineArchive()}
             disabled={props.importExport.offlineImporting()}
           >
             {props.importExport.offlineImporting()
               ? "Importing..."
               : "Import archive"}
-          </button>
+          </Button>
           <Show when={props.importExport.offlineImportFile()}>
             {(file) => <span class="settings-value">{file().name}</span>}
           </Show>

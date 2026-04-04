@@ -4896,46 +4896,94 @@ button:disabled {
   margin-top: var(--space-1-5);
 }
 
-.settings-action {
-  padding: var(--space-1-5) var(--space-3);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-light);
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1-5);
   border-radius: var(--radius-md);
+  border: 1px solid transparent;
   font-size: var(--text-sm);
   font-weight: 500;
+  line-height: 1;
   color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  text-decoration: none;
+  appearance: none;
+  cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.settings-action:hover {
+.ui-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-button--unstyled {
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.ui-button--surface {
+  background: var(--bg-primary);
+  border-color: var(--border-light);
+}
+
+.ui-button--surface:hover:not(:disabled) {
   border-color: var(--border-medium);
   background: var(--bg-hover);
 }
 
-.settings-action:active {
-  transform: scale(0.98);
-}
-
-.settings-action.is-primary {
+.ui-button--primary {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
 
-.settings-action.is-primary:hover {
+.ui-button--primary:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
-.settings-action.is-danger {
+.ui-button--danger {
   background: var(--error-soft);
   border-color: var(--error);
   color: var(--error);
 }
 
-.settings-action.is-danger:hover {
+.ui-button--danger:hover:not(:disabled) {
   background: var(--error);
   border-color: var(--error);
   color: white;
+}
+
+.ui-button--ghost:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.ui-button--sm {
+  min-height: 32px;
+  padding: var(--space-1-5) var(--space-3);
+}
+
+.ui-button--md {
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.ui-button--icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.ui-button--full-width {
+  width: 100%;
+}
+
+.ui-button:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .settings-message {
@@ -5291,6 +5339,121 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+.ui-switch,
+.ui-checkbox {
+  width: 100%;
+  cursor: pointer;
+}
+
+.ui-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-switch__copy,
+.ui-checkbox__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-0-5);
+}
+
+.ui-switch__label,
+.ui-checkbox__label {
+  color: var(--text-primary);
+}
+
+.ui-switch__description,
+.ui-checkbox__description {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.ui-switch__control {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ui-switch[data-checked] .ui-switch__control,
+.ui-switch__control[data-checked] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.ui-switch__thumb {
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.ui-switch[data-checked] .ui-switch__thumb,
+.ui-switch__thumb[data-checked] {
+  transform: translateX(18px);
+}
+
+.ui-checkbox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ui-checkbox__control {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-light);
+  background: var(--bg-primary);
+  transition: background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.ui-checkbox[data-checked] .ui-checkbox__control,
+.ui-checkbox__control[data-checked] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.ui-checkbox__indicator {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-checkbox__indicator svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ui-switch[data-disabled],
+.ui-checkbox[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .settings-error-context {

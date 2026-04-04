@@ -5,6 +5,9 @@ import type {
   PluginSettingSchema,
   PluginSettingsSchema
 } from "../../entities/plugin/model/plugin-types";
+import { Button } from "../../shared/ui/button";
+import { Checkbox } from "../../shared/ui/checkbox";
+import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
 
 type PluginSettingsStatus = {
   state: "idle" | "saving" | "success" | "error";
@@ -46,36 +49,36 @@ const renderField = (
 
   if (type === "boolean") {
     return (
-      <label class="settings-row settings-row--checkbox">
-        <span class="settings-label">{label}</span>
-        <input
-          type="checkbox"
-          checked={Boolean(value)}
-          onChange={(event) =>
-            onChange(key, coerceSettingValue(field, event.currentTarget.checked))
-          }
-        />
-      </label>
+      <Checkbox
+        class="settings-row settings-row--checkbox"
+        labelClass="settings-label"
+        checked={Boolean(value)}
+        onChange={(checked) => onChange(key, coerceSettingValue(field, checked))}
+        label={label}
+      />
     );
   }
 
   if (enumValues.length > 0) {
+    const options: SelectFieldOption[] = enumValues.map((option) => ({
+      value: String(option),
+      label: String(option)
+    }));
+
     return (
       <label class="settings-row">
         <span class="settings-label">{label}</span>
-        <select
-          class="settings-select"
+        <SelectField
+          label={label}
           value={String(value ?? "")}
-          onChange={(event) =>
-            onChange(key, coerceSettingValue(field, event.currentTarget.value))
-          }
-        >
-          <For each={enumValues}>
-            {(option) => (
-              <option value={String(option)}>{String(option)}</option>
-            )}
-          </For>
-        </select>
+          options={options}
+          onChange={(nextValue) => onChange(key, coerceSettingValue(field, nextValue))}
+          triggerClass="settings-select"
+          contentClass="settings-select__content"
+          listboxClass="settings-select__listbox"
+          itemClass="settings-select__item"
+          itemLabelClass="settings-select__item-label"
+        />
       </label>
     );
   }
@@ -124,22 +127,22 @@ export const PluginSettingsCard = (props: PluginSettingsCardProps) => {
         </For>
       </div>
       <div class="settings-actions">
-        <button
-          class="settings-action is-primary"
-          type="button"
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => props.onSave()}
           disabled={props.busy || !props.dirty || props.status?.state === "saving"}
         >
           {props.status?.state === "saving" ? "Saving..." : "Save"}
-        </button>
-        <button
-          class="settings-action"
-          type="button"
+        </Button>
+        <Button
+          variant="surface"
+          size="sm"
           onClick={() => props.onReset()}
           disabled={props.busy}
         >
           Reset
-        </button>
+        </Button>
       </div>
       <Show when={props.status?.message}>
         {(message) => (

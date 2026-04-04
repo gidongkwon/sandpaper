@@ -2,6 +2,7 @@ import { Show, type Accessor, type Setter } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import type { VaultId } from "../../shared/model/id-types";
+import { Button } from "../../shared/ui/button";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
 
 type SettingsVaultProps = {
@@ -86,12 +87,13 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
           itemClass="settings-select__item"
           itemLabelClass="settings-select__item-label"
         />
-        <button
-          class="settings-action"
+        <Button
+          variant="surface"
+          size="sm"
           onClick={() => props.vault.setFormOpen((prev) => !prev)}
         >
           {props.vault.formOpen() ? "Cancel" : "New vault"}
-        </button>
+        </Button>
         <Show when={props.vault.formOpen()}>
           <div class="settings-form">
             <input
@@ -109,13 +111,13 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
                 value={props.vault.newPath()}
                 onInput={(e) => props.vault.setNewPath(e.currentTarget.value)}
               />
-              <button
-                class="settings-action"
-                type="button"
+              <Button
+                variant="surface"
+                size="sm"
                 onClick={openVaultFolderPicker}
               >
                 Browse
-              </button>
+              </Button>
             </div>
             <input
               ref={(el) => {
@@ -128,12 +130,13 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
               type="file"
               onChange={handleVaultFolderPick}
             />
-            <button
-              class="settings-action is-primary"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void props.vault.create()}
             >
               Create vault
-            </button>
+            </Button>
           </div>
         </Show>
         <div class="settings-row">
@@ -162,21 +165,23 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
           onInput={(e) => props.vault.setPassphrase(e.currentTarget.value)}
         />
         <div class="settings-actions">
-          <button
-            class="settings-action is-primary"
+          <Button
+            variant="primary"
+            size="sm"
             disabled={
               props.vault.keyBusy() || !props.vault.passphrase().trim()
             }
             onClick={() => void props.vault.setKey()}
           >
             {props.vault.keyBusy() ? "Deriving..." : "Set passphrase"}
-          </button>
-          <button
-            class="settings-action"
+          </Button>
+          <Button
+            variant="surface"
+            size="sm"
             onClick={() => props.vault.setPassphrase("")}
           >
             Clear
-          </button>
+          </Button>
         </div>
         <Show when={props.vault.keyMessage()}>
           <div class="settings-message">{props.vault.keyMessage()}</div>

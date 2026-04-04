@@ -1,9 +1,6 @@
-import type { JSX } from "solid-js";
-import { Button } from "./button";
+import { Button, type ButtonProps } from "./button";
 
-type IconButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
-  label?: string;
-};
+type IconButtonProps = ButtonProps;
 
 export const IconButton = (props: IconButtonProps) => {
   return <Button {...props} />;

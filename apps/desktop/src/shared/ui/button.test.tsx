@@ -16,4 +16,17 @@ describe("Button", () => {
     await user.click(button);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("applies cva variants", () => {
+    render(() => (
+      <Button variant="primary" size="sm">
+        Save
+      </Button>
+    ));
+
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button.className).toContain("ui-button");
+    expect(button.className).toContain("ui-button--primary");
+    expect(button.className).toContain("ui-button--sm");
+  });
 });
