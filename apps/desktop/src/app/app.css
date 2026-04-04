@@ -1766,7 +1766,15 @@ button:disabled {
   position: relative;
   display: flex;
   align-items: flex-start;
-  gap: var(--space-2);
+  --block-gap: var(--space-1-5);
+  --block-toggle-size: 16px;
+  --block-marker-hit-size: 16px;
+  --block-marker-size: 6px;
+  --block-marker-center-x: calc(
+    var(--block-toggle-size) + var(--block-gap) + (var(--block-marker-hit-size) / 2)
+  );
+  --block-guide-line-offset: 22px;
+  gap: var(--block-gap);
   padding: 2px 0;
   --block-indent: 0px;
 }
@@ -1774,7 +1782,9 @@ button:disabled {
 .block::before {
   content: "";
   position: absolute;
-  left: calc(27px - var(--block-indent));
+  left: calc(
+    var(--block-marker-center-x) - var(--block-guide-line-offset) - var(--block-indent)
+  );
   top: 0;
   bottom: 0;
   width: var(--block-indent);
@@ -1829,11 +1839,10 @@ button:disabled {
 
 .block__toggle,
 .block__toggle-spacer {
-  width: 16px;
-  height: 16px;
+  width: var(--block-toggle-size);
+  height: var(--block-toggle-size);
   margin-top: 6px;
-  margin-left: -5px;
-  margin-right: 5px;
+  margin-right: 1px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1901,20 +1910,78 @@ button:disabled {
   color: var(--text-secondary);
 }
 
-.block__bullet {
-  width: 6px;
-  height: 6px;
-  margin-top: 9px;
-  border-radius: 50%;
-  background: var(--text-quaternary);
+.block__bullet-handle {
+  width: var(--block-marker-hit-size);
+  height: var(--block-marker-hit-size);
+  margin-top: 4px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  position: relative;
   flex-shrink: 0;
+  color: var(--text-quaternary);
+  cursor: grab;
   transition: all var(--duration-base) var(--ease-spring);
 }
 
+.block__bullet-handle:active {
+  cursor: grabbing;
+}
+
+.block__bullet-handle-dot,
+.block__bullet {
+  width: var(--block-marker-size);
+  height: var(--block-marker-size);
+  border-radius: 50%;
+  background: var(--text-quaternary);
+  transition: all var(--duration-base) var(--ease-spring);
+}
+
+.block__bullet-handle-dots {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 12px;
+  margin-left: -4px;
+  margin-top: -6px;
+  opacity: 0;
+  transform: scale(0.82);
+  transition: all var(--duration-fast) var(--ease-out);
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 4px 4px;
+  background-position: center;
+}
+
+.block__bullet-handle:hover,
+.block__bullet-handle:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.block__bullet-handle:hover .block__bullet-handle-dot,
+.block__bullet-handle:focus-visible .block__bullet-handle-dot,
+.block.is-drag-source .block__bullet-handle .block__bullet-handle-dot {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+.block__bullet-handle:hover .block__bullet-handle-dots,
+.block__bullet-handle:focus-visible .block__bullet-handle-dots,
+.block.is-drag-source .block__bullet-handle .block__bullet-handle-dots {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.block:hover .block__bullet-handle-dot,
 .block:hover .block__bullet {
   background: var(--text-tertiary);
 }
 
+.block.is-active .block__bullet-handle-dot,
 .block.is-active .block__bullet {
   background: var(--accent);
   transform: scale(1.2);
@@ -1973,21 +2040,37 @@ button:disabled {
 }
 
 .block--type-heading1 .block__bullet,
+.block--type-heading1 .block__bullet-handle-dot,
 .block--type-heading2 .block__bullet,
+.block--type-heading2 .block__bullet-handle-dot,
 .block--type-heading3 .block__bullet,
+.block--type-heading3 .block__bullet-handle-dot,
 .block--type-quote .block__bullet,
+.block--type-quote .block__bullet-handle-dot,
 .block--type-callout .block__bullet,
+.block--type-callout .block__bullet-handle-dot,
 .block--type-code .block__bullet,
+.block--type-code .block__bullet-handle-dot,
 .block--type-divider .block__bullet,
+.block--type-divider .block__bullet-handle-dot,
 .block--type-toggle .block__bullet,
+.block--type-toggle .block__bullet-handle-dot,
 .block--type-image .block__bullet,
+.block--type-image .block__bullet-handle-dot,
 .block--type-table .block__bullet,
+.block--type-table .block__bullet-handle-dot,
 .block--type-bookmark .block__bullet,
+.block--type-bookmark .block__bullet-handle-dot,
 .block--type-file .block__bullet,
+.block--type-file .block__bullet-handle-dot,
 .block--type-math .block__bullet,
+.block--type-math .block__bullet-handle-dot,
 .block--type-toc .block__bullet,
+.block--type-toc .block__bullet-handle-dot,
 .block--type-column_layout .block__bullet,
-.block--type-database_view .block__bullet {
+.block--type-column_layout .block__bullet-handle-dot,
+.block--type-database_view .block__bullet,
+.block--type-database_view .block__bullet-handle-dot {
   opacity: 0;
 }
 

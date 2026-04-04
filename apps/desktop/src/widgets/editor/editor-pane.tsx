@@ -3286,6 +3286,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       }
       return renderMarkdownDisplay(displayValue);
     });
+    const usesInlineBulletHandle = () =>
+      blockType() !== "todo" && blockType() !== "ordered_list";
 
     return (
       <div
@@ -3317,27 +3319,29 @@ export const EditorPane = (props: EditorPaneProps) => {
             ? handleColumnRowDrop(event, block.id)
             : handleBlockDrop(event, block.id)
         }
-      >
-        <button
-          class="block__drag-handle"
-          type="button"
-          draggable={true}
-          aria-label="Drag block"
-          onPointerDown={(event) =>
-            startHandlePointerDrag(event, block.id)
-          }
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onDragStart={(event) =>
-            handleBlockHandleDragStart(event, block.id)
-          }
-          onDragEnd={clearBlockDragState}
         >
-          <span class="block__drag-handle-dots" aria-hidden="true" />
-        </button>
+        <Show when={!usesInlineBulletHandle()}>
+          <button
+            class="block__drag-handle"
+            type="button"
+            draggable={true}
+            aria-label="Drag block"
+            onPointerDown={(event) =>
+              startHandlePointerDrag(event, block.id)
+            }
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onDragStart={(event) =>
+              handleBlockHandleDragStart(event, block.id)
+            }
+            onDragEnd={clearBlockDragState}
+          >
+            <span class="block__drag-handle-dots" aria-hidden="true" />
+          </button>
+        </Show>
         <Show
           when={hasChildren() || blockType() === "toggle"}
           fallback={
@@ -3376,7 +3380,32 @@ export const EditorPane = (props: EditorPaneProps) => {
           fallback={
             <Show
               when={blockType() === "ordered_list"}
-              fallback={<span class="block__bullet" aria-hidden="true" />}
+              fallback={
+                <button
+                  class="block__bullet-handle"
+                  type="button"
+                  draggable={true}
+                  aria-label="Drag block"
+                  onPointerDown={(event) =>
+                    startHandlePointerDrag(event, block.id)
+                  }
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onDragStart={(event) =>
+                    handleBlockHandleDragStart(event, block.id)
+                  }
+                  onDragEnd={clearBlockDragState}
+                >
+                  <span class="block__bullet-handle-dot" aria-hidden="true" />
+                  <span
+                    class="block__drag-handle-dots block__bullet-handle-dots"
+                    aria-hidden="true"
+                  />
+                </button>
+              }
             >
               <span class="block__ordered-index" aria-hidden="true">
                 {orderedListIndex()}.
