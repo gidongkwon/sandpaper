@@ -10,18 +10,32 @@ type ReviewQueueDeckProps = {
 };
 
 export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
-  const [promotingThreadId, setPromotingThreadId] = createSignal<string | null>(null);
+  const [promotionState, setPromotionState] = createSignal<{
+    incomingId: string;
+    outgoingId: string;
+    targetIndex: 1 | 2;
+  } | null>(null);
   let promoteTimer: ReturnType<typeof setTimeout> | undefined;
+  const promotionDurationMs = 220;
 
   const queuePromotion = (id: string) => {
-    if (promotingThreadId() === id) return;
+    const currentThreads = orderedThreads();
+    const targetIndex = currentThreads.findIndex((thread) => thread.id === id);
+    if (targetIndex < 1 || targetIndex > 2) return;
+    if (promotionState()?.incomingId === id) return;
     if (promoteTimer) clearTimeout(promoteTimer);
-    setPromotingThreadId(id);
+    const outgoingId = currentThreads[0]?.id;
+    if (!outgoingId) return;
+    setPromotionState({
+      incomingId: id,
+      outgoingId,
+      targetIndex: targetIndex as 1 | 2
+    });
     promoteTimer = setTimeout(() => {
       props.onSelectThread(id);
-      setPromotingThreadId(null);
+      setPromotionState(null);
       promoteTimer = undefined;
-    }, 140);
+    }, promotionDurationMs);
   };
 
   onCleanup(() => {
@@ -46,12 +60,25 @@ export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
         when={orderedThreads().length > 0}
         fallback={<div class="review-queue-deck__empty">No capture threads to review.</div>}
       >
-        <nav class="review-queue-deck__stack" aria-label="Review queue">
+        <nav
+          class="review-queue-deck__stack"
+          aria-label="Review queue"
+          data-transitioning={promotionState() ? "true" : "false"}
+        >
           <For each={visibleThreads()}>
             {(thread, index) => (
               <div
                 class={`review-queue-deck__layer layer-${index()}`}
-                data-promoting={promotingThreadId() === thread.id}
+                data-promotion-role={
+                  promotionState()?.incomingId === thread.id
+                    ? "incoming"
+                    : promotionState()?.outgoingId === thread.id
+                      ? "outgoing"
+                      : promotionState()?.targetIndex === 2 && index() === 1
+                        ? "settling"
+                        : undefined
+                }
+                data-promotion-target={promotionState()?.targetIndex}
               >
                 <ReviewReferenceCard
                   thread={thread}
