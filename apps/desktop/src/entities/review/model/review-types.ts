@@ -57,6 +57,7 @@ export type ReviewSessionState = {
   destination_recommendations: DestinationRecommendation[];
   is_hard_selected: boolean;
   baseline_page_hash: string | null;
+  last_known_page_hash?: string | null;
   invalidated: boolean;
   updated_at: Timestamp;
 };

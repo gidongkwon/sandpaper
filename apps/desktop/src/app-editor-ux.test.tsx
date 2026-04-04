@@ -666,6 +666,48 @@ describe("App editor UX", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps review completion disabled until the destination note changes", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Project Atlas"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const completeButton = await screen.findByRole("button", {
+      name: "Complete review"
+    });
+    expect(completeButton).toBeDisabled();
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Review summary" }
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Complete review" })
+      ).toBeEnabled();
+    });
+  });
+
   it("preserves review queue FIFO order across app restart", async () => {
     const firstRender = render(() => <App />);
     const user = userEvent.setup();
@@ -983,6 +1025,16 @@ describe("App editor UX", () => {
       })
     ).toBeInTheDocument();
 
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Project Atlas summary" }
+    });
+
     await user.click(
       within(destinationPanel).getByRole("button", { name: "Complete review" })
     );
@@ -1023,6 +1075,14 @@ describe("App editor UX", () => {
     await user.click(
       screen.getByRole("button", { name: 'Create "Project Atlas"' })
     );
+    let editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+    fireEvent.input(editorInput, {
+      target: { value: "Alpha summary" }
+    });
     await user.click(screen.getByRole("button", { name: "Complete review" }));
 
     await waitFor(() => {
@@ -1036,7 +1096,37 @@ describe("App editor UX", () => {
     await user.click(
       screen.getByRole("button", { name: 'Create "Research Note"' })
     );
+    editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+    fireEvent.input(editorInput, {
+      target: { value: "Beta summary" }
+    });
     await user.click(screen.getByRole("button", { name: "Complete review" }));
+
+    const archivedStorageKey = Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.key(index)
+    ).find((key): key is string => Boolean(key?.startsWith("sandpaper:review:archived-threads:")));
+    expect(archivedStorageKey).toBeTruthy();
+    if (!archivedStorageKey) return;
+
+    const archivedSnapshots = JSON.parse(
+      window.localStorage.getItem(archivedStorageKey) ?? "[]"
+    ) as Array<{ root_text: string; destination_title?: string }>;
+    expect(archivedSnapshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          root_text: "Alpha thread",
+          destination_title: "Project Atlas"
+        }),
+        expect.objectContaining({
+          root_text: "Beta thread",
+          destination_title: "Research Note"
+        })
+      ])
+    );
 
     await user.click(screen.getByRole("button", { name: "Archived" }));
 

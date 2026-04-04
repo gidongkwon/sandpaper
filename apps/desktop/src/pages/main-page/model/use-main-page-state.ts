@@ -30,7 +30,8 @@ import type {
 } from "../../../entities/plugin/model/plugin-types";
 import type {
   ReviewQueueItem,
-  ReviewQueueSummary
+  ReviewQueueSummary,
+  ReviewSessionState
 } from "../../../entities/review/model/review-types";
 import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
@@ -74,6 +75,7 @@ import {
   readLocalStorage,
   writeLocalStorage
 } from "../../../shared/lib/storage/safe-local-storage";
+import { createReviewPageHash } from "./review-session-hash";
 
 type JumpTarget = {
   id: string;
@@ -83,6 +85,8 @@ type JumpTarget = {
 const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
 const LOCAL_PAGES_KEY = "sandpaper:local:pages";
 const REVIEW_THREAD_ORDER_KEY = "sandpaper:capture:review-thread-order";
+const REVIEW_ARCHIVED_THREADS_KEY_PREFIX = "sandpaper:review:archived-threads";
+const REVIEW_SESSION_KEY_PREFIX = "sandpaper:review:session";
 
 const hasTauriInternals = () =>
   typeof window !== "undefined" &&
@@ -179,6 +183,131 @@ const readStoredReviewThreadOrder = () => {
   }
 };
 
+const createDefaultReviewSessionState = (): ReviewSessionState => ({
+  active_thread_id: null,
+  tab: "to-review",
+  selected_archived_thread_id: null,
+  destination_page_uid: null,
+  destination_recommendations: [],
+  is_hard_selected: false,
+  baseline_page_hash: null,
+  last_known_page_hash: null,
+  invalidated: false,
+  updated_at: 0
+});
+
+const normalizeStoredReviewThread = (value: unknown): ReviewThread | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<ReviewThread>;
+  if (typeof candidate.id !== "string" || typeof candidate.root_text !== "string") {
+    return null;
+  }
+  if (!Array.isArray(candidate.entries)) return null;
+  const entries = candidate.entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const next = entry as Partial<ReviewThread["entries"][number]>;
+    if (
+      typeof next.id !== "string" ||
+      typeof next.text !== "string" ||
+      typeof next.is_root !== "boolean"
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: next.id,
+        text: next.text,
+        is_root: next.is_root
+      }
+    ];
+  });
+  if (entries.length !== candidate.entries.length) return null;
+  return {
+    id: candidate.id,
+    root_text: candidate.root_text,
+    entries,
+    status: candidate.status === "archived" ? "archived" : "to-review",
+    captured_at_start:
+      typeof candidate.captured_at_start === "number" ? candidate.captured_at_start : null,
+    captured_at_end:
+      typeof candidate.captured_at_end === "number" ? candidate.captured_at_end : null,
+    destination_page_uid:
+      typeof candidate.destination_page_uid === "string"
+        ? candidate.destination_page_uid
+        : undefined,
+    destination_title:
+      typeof candidate.destination_title === "string" ? candidate.destination_title : undefined,
+    archived_at: typeof candidate.archived_at === "number" ? candidate.archived_at : undefined
+  };
+};
+
+const readStoredArchivedReviewThreads = (key: string) => {
+  const raw = readLocalStorage(key);
+  if (!raw) return [] as ReviewThread[];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry) => {
+      const normalized = normalizeStoredReviewThread(entry);
+      return normalized ? [normalized] : [];
+    });
+  } catch {
+    return [];
+  }
+};
+
+const readStoredReviewSession = (key: string): ReviewSessionState => {
+  const raw = readLocalStorage(key);
+  if (!raw) return createDefaultReviewSessionState();
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return createDefaultReviewSessionState();
+    }
+    const candidate = parsed as Partial<ReviewSessionState>;
+    return {
+      active_thread_id:
+        typeof candidate.active_thread_id === "string" ? candidate.active_thread_id : null,
+      tab: candidate.tab === "archived" ? "archived" : "to-review",
+      selected_archived_thread_id:
+        typeof candidate.selected_archived_thread_id === "string"
+          ? candidate.selected_archived_thread_id
+          : null,
+      destination_page_uid:
+        typeof candidate.destination_page_uid === "string"
+          ? candidate.destination_page_uid
+          : null,
+      destination_recommendations: Array.isArray(candidate.destination_recommendations)
+        ? candidate.destination_recommendations.filter(
+            (item): item is ReviewSessionState["destination_recommendations"][number] =>
+              Boolean(
+                item &&
+                  typeof item === "object" &&
+                  typeof item.page_uid === "string" &&
+                  typeof item.title === "string" &&
+                  typeof item.score === "number" &&
+                  Array.isArray(item.reasons) &&
+                  (item.provider === "heuristic" || item.provider === "ai")
+              )
+          )
+        : [],
+      is_hard_selected: candidate.is_hard_selected === true,
+      baseline_page_hash:
+        typeof candidate.baseline_page_hash === "string"
+          ? candidate.baseline_page_hash
+          : null,
+      last_known_page_hash:
+        typeof candidate.last_known_page_hash === "string"
+          ? candidate.last_known_page_hash
+          : null,
+      invalidated: candidate.invalidated === true,
+      updated_at: typeof candidate.updated_at === "number" ? candidate.updated_at : 0
+    };
+  } catch {
+    return createDefaultReviewSessionState();
+  }
+};
+
 export const createMainPageState = () => {
   const initialBlocks = resolveInitialBlocks();
   const initialBlockSnapshot = initialBlocks.map((block) => ({ ...block }));
@@ -220,14 +349,17 @@ export const createMainPageState = () => {
   const [reviewThreadOrderHydrated, setReviewThreadOrderHydrated] = createSignal(
     !hasTauriInternals()
   );
-  const [selectedReviewThreadId, setSelectedReviewThreadId] =
-    createSignal<string | null>(null);
   const [archivedReviewThreads, setArchivedReviewThreads] = createSignal<
     ReviewThread[]
   >([]);
-  const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
-  const [reviewDestinationPageUid, setReviewDestinationPageUid] =
+  const [reviewSession, setReviewSession] = createSignal<ReviewSessionState>(
+    createDefaultReviewSessionState()
+  );
+  const [reviewPendingBaselineHash, setReviewPendingBaselineHash] =
     createSignal<string | null>(null);
+  const [reviewSessionNeedsValidation, setReviewSessionNeedsValidation] =
+    createSignal(false);
+  const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
   const [activeVault, setActiveVault] = createSignal<VaultRecord | null>(null);
@@ -391,6 +523,14 @@ export const createMainPageState = () => {
     const vaultId = activeVault()?.id ?? "default";
     return `sandpaper:search-history:${vaultId}`;
   });
+  const reviewArchivedThreadsKey = createMemo(() => {
+    const vaultId = activeVault()?.id ?? "default";
+    return `${REVIEW_ARCHIVED_THREADS_KEY_PREFIX}:${vaultId}`;
+  });
+  const reviewSessionKey = createMemo(() => {
+    const vaultId = activeVault()?.id ?? "default";
+    return `${REVIEW_SESSION_KEY_PREFIX}:${vaultId}`;
+  });
 
   const searchState = createSearchState({
     blocks: () => blocks,
@@ -427,6 +567,14 @@ export const createMainPageState = () => {
 
   const snapshotBlocks = (source: Block[]) =>
     source.map((block) => ({ ...block }));
+
+  const currentReviewPageHash = createMemo(() =>
+    createReviewPageHash({
+      pageUid: resolvePageUid(activePageUid()),
+      title: pageTitle(),
+      blocks: snapshotBlocks(blocks)
+    })
+  );
 
   const saveLocalPageSnapshot = (pageUid: string, title: string, items: Block[]) => {
     setLocalPages(resolvePageUid(pageUid), {
@@ -961,6 +1109,18 @@ export const createMainPageState = () => {
   });
 
   createEffect(() => {
+    const restoredSession = readStoredReviewSession(reviewSessionKey());
+    setArchivedReviewThreads(readStoredArchivedReviewThreads(reviewArchivedThreadsKey()));
+    setReviewSession(restoredSession);
+    setReviewPendingBaselineHash(null);
+    setReviewSessionNeedsValidation(
+      restoredSession.is_hard_selected === true &&
+        typeof restoredSession.destination_page_uid === "string" &&
+        typeof restoredSession.last_known_page_hash === "string"
+    );
+  });
+
+  createEffect(() => {
     if (!canUseStorage()) return;
     window.localStorage.setItem(
       STATUS_SURFACES_KEY,
@@ -1002,6 +1162,16 @@ export const createMainPageState = () => {
       CAPTURE_TIMESTAMPS_KEY,
       JSON.stringify(captureItemTimestamps())
     );
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    writeLocalStorage(reviewArchivedThreadsKey(), JSON.stringify(archivedReviewThreads()));
+  });
+
+  createEffect(() => {
+    if (!canUseStorage()) return;
+    writeLocalStorage(reviewSessionKey(), JSON.stringify(reviewSession()));
   });
 
   createEffect(() => {
@@ -1159,6 +1329,7 @@ export const createMainPageState = () => {
         return {
           id: thread.id,
           root_text: thread.root.block.text,
+          status: "to-review",
           entries: [
             {
               id: thread.root.block.id,
@@ -1180,15 +1351,98 @@ export const createMainPageState = () => {
   createEffect(() => {
     const threads = reviewThreads();
     if (threads.length === 0) {
-      if (selectedReviewThreadId() !== null) {
-        setSelectedReviewThreadId(null);
+      if (reviewSession().active_thread_id !== null) {
+        setReviewSession((current) => ({
+          ...current,
+          active_thread_id: null,
+          updated_at: Date.now()
+        }));
       }
       return;
     }
 
-    if (!threads.some((thread) => thread.id === selectedReviewThreadId())) {
-      setSelectedReviewThreadId(threads[0].id);
+    if (!threads.some((thread) => thread.id === reviewSession().active_thread_id)) {
+      setReviewSession((current) => ({
+        ...current,
+        active_thread_id: threads[0].id,
+        updated_at: Date.now()
+      }));
     }
+  });
+
+  createEffect(() => {
+    const destinationPageUid = reviewSession().destination_page_uid;
+    if (!destinationPageUid) return;
+    if (resolvePageUid(activePageUid()) === resolvePageUid(destinationPageUid)) {
+      if (!reviewSession().is_hard_selected && reviewPendingBaselineHash() === null) {
+        setReviewPendingBaselineHash(currentReviewPageHash());
+      }
+      return;
+    }
+    void switchPage(destinationPageUid);
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    const destinationPageUid = session.destination_page_uid;
+    const pendingBaselineHash = reviewPendingBaselineHash();
+    if (!destinationPageUid || session.is_hard_selected || !pendingBaselineHash) return;
+    if (resolvePageUid(activePageUid()) !== resolvePageUid(destinationPageUid)) return;
+    if (currentReviewPageHash() === pendingBaselineHash) return;
+    setReviewSession((current) => ({
+      ...current,
+      is_hard_selected: true,
+      baseline_page_hash: pendingBaselineHash,
+      last_known_page_hash: currentReviewPageHash(),
+      updated_at: Date.now()
+    }));
+    setReviewPendingBaselineHash(null);
+    setReviewSessionNeedsValidation(false);
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    if (
+      !session.is_hard_selected ||
+      !session.destination_page_uid ||
+      resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid) ||
+      reviewSessionNeedsValidation()
+    ) {
+      return;
+    }
+    const currentHash = currentReviewPageHash();
+    if (currentHash === session.last_known_page_hash) return;
+    setReviewSession((current) => ({
+      ...current,
+      last_known_page_hash: currentHash,
+      updated_at: Date.now()
+    }));
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    if (
+      !reviewSessionNeedsValidation() ||
+      !session.is_hard_selected ||
+      !session.destination_page_uid ||
+      !session.last_known_page_hash ||
+      resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid)
+    ) {
+      return;
+    }
+    const currentHash = currentReviewPageHash();
+    if (currentHash === session.last_known_page_hash) {
+      setReviewSessionNeedsValidation(false);
+      return;
+    }
+    setReviewSession((current) => ({
+      ...current,
+      is_hard_selected: false,
+      baseline_page_hash: null,
+      invalidated: true,
+      updated_at: Date.now()
+    }));
+    setReviewSessionNeedsValidation(false);
   });
 
   const reviewDestinationMatches = createMemo(() => {
@@ -1211,7 +1465,7 @@ export const createMainPageState = () => {
   });
 
   const reviewDestinationSelected = createMemo(
-    () => reviewDestinationPageUid() !== null
+    () => reviewSession().destination_page_uid !== null
   );
 
   const reviewDestinationTitle = createMemo(() =>
@@ -1275,7 +1529,11 @@ export const createMainPageState = () => {
       setCaptureReplyToId(null);
     }
     setReviewThreadOrder((current) => current.filter((threadId) => threadId !== id));
-    setSelectedReviewThreadId((current) => (current === id ? null : current));
+    setReviewSession((current) => ({
+      ...current,
+      active_thread_id: current.active_thread_id === id ? null : current.active_thread_id,
+      updated_at: Date.now()
+    }));
   };
 
   const startCaptureReply = (id: string) => {
@@ -1324,25 +1582,47 @@ export const createMainPageState = () => {
       setReviewThreadOrder((current) =>
         current.includes(block.id) ? current : [...current, block.id]
       );
-      setSelectedReviewThreadId((current) => current ?? block.id);
+      setReviewSession((current) => ({
+        ...current,
+        active_thread_id: current.active_thread_id ?? block.id,
+        updated_at: Date.now()
+      }));
     }
     setCaptureText("");
     setCaptureFocusEpoch((current) => current + 1);
   };
 
   const openReviewDestination = async (pageUid: string) => {
-    await switchPage(pageUid);
-    setReviewDestinationPageUid(resolvePageUid(pageUid));
+    const destinationPageUid = resolvePageUid(pageUid);
+    setReviewSession((current) => ({
+      ...current,
+      destination_page_uid: destinationPageUid,
+      is_hard_selected: false,
+      baseline_page_hash: null,
+      last_known_page_hash: null,
+      invalidated: false,
+      updated_at: Date.now()
+    }));
+    await switchPage(destinationPageUid);
     setReviewDestinationQuery("");
+    setReviewPendingBaselineHash(currentReviewPageHash());
+    setReviewSessionNeedsValidation(false);
   };
 
   const openArchivedReviewThread = async (threadId: string) => {
     const archivedThread =
       archivedReviewThreads().find((thread) => thread.id === threadId) ?? null;
     if (!archivedThread) return;
-    setSelectedReviewThreadId(threadId);
-    if (archivedThread.destination_page_uid) {
-      await openReviewDestination(archivedThread.destination_page_uid);
+    setReviewSession((current) => ({
+      ...current,
+      selected_archived_thread_id: threadId,
+      tab: "archived",
+      updated_at: Date.now()
+    }));
+    const destinationTarget =
+      archivedThread.destination_title ?? archivedThread.destination_page_uid ?? null;
+    if (destinationTarget) {
+      await openReviewDestination(destinationTarget);
     }
   };
 
@@ -1351,13 +1631,26 @@ export const createMainPageState = () => {
     if (!title) return;
     setNewPageTitle(title);
     await createPage();
-    setReviewDestinationPageUid(resolvePageUid(activePageUid()));
+    const createdPageUid =
+      visiblePages().find((page) => resolvePageUid(page.title) === resolvePageUid(title))?.uid ??
+      activePageUid();
+    setReviewSession((current) => ({
+      ...current,
+      destination_page_uid: resolvePageUid(createdPageUid),
+      is_hard_selected: false,
+      baseline_page_hash: null,
+      last_known_page_hash: null,
+      invalidated: false,
+      updated_at: Date.now()
+    }));
     setReviewDestinationQuery("");
+    setReviewPendingBaselineHash(currentReviewPageHash());
+    setReviewSessionNeedsValidation(false);
   };
 
   const completeReview = () => {
     if (!reviewDestinationSelected()) return;
-    const threadId = selectedReviewThreadId();
+    const threadId = reviewSession().active_thread_id;
     if (!threadId) return;
     const completedThread =
       reviewThreads().find((thread) => thread.id === threadId) ?? null;
@@ -1366,18 +1659,37 @@ export const createMainPageState = () => {
         ...current,
         {
           ...completedThread,
-          destination_page_uid: reviewDestinationPageUid() ?? undefined,
+          status: "archived",
+          destination_page_uid: reviewSession().destination_page_uid ?? undefined,
           destination_title: pageTitle(),
           archived_at: Date.now()
         }
       ]);
     }
     deleteCaptureThread(threadId);
+    setReviewSession((current) => ({
+      ...current,
+      destination_page_uid: null,
+      is_hard_selected: false,
+      baseline_page_hash: null,
+      last_known_page_hash: null,
+      invalidated: false,
+      updated_at: Date.now()
+    }));
+    setReviewPendingBaselineHash(null);
+    setReviewSessionNeedsValidation(false);
   };
 
-  const canCompleteReview = createMemo(
-    () => reviewDestinationSelected() && selectedReviewThreadId() !== null
-  );
+  const canCompleteReview = createMemo(() => {
+    const session = reviewSession();
+    if (!session.destination_page_uid || !session.active_thread_id) return false;
+    if (!session.is_hard_selected || !session.baseline_page_hash) return false;
+    if (session.invalidated) return false;
+    if (resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid)) {
+      return false;
+    }
+    return currentReviewPageHash() !== session.baseline_page_hash;
+  });
 
   const editorWorkspace = {
     blocks,
@@ -1516,8 +1828,14 @@ export const createMainPageState = () => {
         onAddCurrent: addReviewItem,
         threads: reviewThreads,
         archivedThreads: archivedReviewThreads,
-        selectedThreadId: selectedReviewThreadId,
-        onSelectThread: setSelectedReviewThreadId,
+        selectedThreadId: () => reviewSession().active_thread_id,
+        onSelectThread: (id) =>
+          setReviewSession((current) => ({
+            ...current,
+            active_thread_id: id,
+            tab: "to-review",
+            updated_at: Date.now()
+          })),
         onOpenArchivedThread: openArchivedReviewThread,
         destinationQuery: reviewDestinationQuery,
         setDestinationQuery: setReviewDestinationQuery,
