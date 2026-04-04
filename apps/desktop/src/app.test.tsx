@@ -520,14 +520,19 @@ describe("App", () => {
     });
     const menuScope = within(menu);
     await userEvent.click(
-      menuScope.getByRole("button", { name: /create page "Project Atlas"/i })
+      menuScope.getByRole("option", { name: /create page "Project Atlas"/i })
     );
     expect(getInput()?.value).toContain("[[Project Atlas]]");
     expect(
       await screen.findByText("Project Atlas", { selector: ".page-item__title" })
     ).toBeInTheDocument();
     (getInput() as HTMLTextAreaElement).blur();
-    const wikilink = await screen.findByRole("button", { name: "Project Atlas" });
+    const wikilinkLabel = await screen.findByText("Project Atlas", {
+      selector: ".wikilink"
+    });
+    const wikilink = wikilinkLabel.closest("button");
+    expect(wikilink).not.toBeNull();
+    if (!wikilink) return;
     await userEvent.click(wikilink);
     expect(
       await screen.findByText("Project Atlas", {

@@ -27,6 +27,7 @@ import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { ActionMenu } from "../../shared/ui/action-menu";
+import { Button } from "../../shared/ui/button";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { SearchableCombobox } from "../../shared/ui/searchable-combobox";
@@ -3738,16 +3739,16 @@ export const EditorPane = (props: EditorPaneProps) => {
                     index() === breadcrumbItems().length - 1;
                   return (
                     <div class="editor-pane__breadcrumb-item">
-                      <button
+                      <Button
                         class={`editor-pane__breadcrumb-button ${
                           isLast() ? "is-current" : ""
                         }`}
-                        type="button"
+                        variant="unstyled"
                         aria-current={isLast() ? "true" : undefined}
                         onClick={() => focusBlock(item.block.id, "end")}
                       >
                         {formatBreadcrumbLabel(item.block.text)}
-                      </button>
+                      </Button>
                       <Show when={!isLast()}>
                         <span class="editor-pane__breadcrumb-sep">/</span>
                       </Show>
@@ -3765,48 +3766,55 @@ export const EditorPane = (props: EditorPaneProps) => {
                 {selectionCount()} selected
               </span>
               <div class="editor-pane__selection-actions">
-                <button
+                <Button
                   class="editor-pane__action"
-                  type="button"
+                  variant="surface"
+                  size="sm"
                   onClick={duplicateSelection}
                 >
                   Duplicate
-                </button>
-                <button
+                </Button>
+                <Button
                   class="editor-pane__action"
-                  type="button"
+                  variant="surface"
+                  size="sm"
                   onClick={() => adjustSelectionIndent(1)}
                 >
                   Indent
-                </button>
-                <button
+                </Button>
+                <Button
                   class="editor-pane__action"
-                  type="button"
+                  variant="surface"
+                  size="sm"
                   onClick={() => adjustSelectionIndent(-1)}
                 >
                   Outdent
-                </button>
-                <button
+                </Button>
+                <Button
                   class="editor-pane__action"
-                  type="button"
+                  variant="surface"
+                  size="sm"
                   onClick={removeSelection}
                 >
                   Delete
-                </button>
+                </Button>
               </div>
             </div>
           </Show>
-          <button
+          <Button
             class="editor-pane__action"
+            variant="surface"
+            size="sm"
             onClick={requestRename}
             disabled={pageBusy()}
           >
             {pageBusy() ? "Renaming..." : "Rename"}
-          </button>
+          </Button>
           <div class="editor-pane__outline">
-            <button
+            <Button
               class="editor-pane__action"
-              type="button"
+              variant="surface"
+              size="sm"
               onClick={(event) => {
                 if (outlineMenuOpen()) {
                   setOutlineMenuOpen(false);
@@ -3823,7 +3831,7 @@ export const EditorPane = (props: EditorPaneProps) => {
               }}
             >
               Outline
-            </button>
+            </Button>
             <FloatingPanelPopover
               open={outlineMenuOpen()}
               anchorRect={outlineMenuAnchorRect()}
@@ -3834,55 +3842,56 @@ export const EditorPane = (props: EditorPaneProps) => {
             >
               <>
                 <div class="editor-outline-menu__section">
-                  <button
+                  <Button
                     class="editor-outline-menu__action"
-                    type="button"
+                    variant="unstyled"
                     onClick={() => {
                       foldToLevel(0);
                       setOutlineMenuOpen(false);
                     }}
                   >
                     Fold all
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     class="editor-outline-menu__action"
-                    type="button"
+                    variant="unstyled"
                     onClick={() => {
                       foldToLevel(1);
                       setOutlineMenuOpen(false);
                     }}
                   >
                     Fold to level 1
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     class="editor-outline-menu__action"
-                    type="button"
+                    variant="unstyled"
                     onClick={() => {
                       foldToLevel(2);
                       setOutlineMenuOpen(false);
                     }}
                   >
                     Fold to level 2
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     class="editor-outline-menu__action"
-                    type="button"
+                    variant="unstyled"
                     onClick={() => {
                       unfoldAll();
                       setOutlineMenuOpen(false);
                     }}
                   >
                     Unfold all
-                  </button>
+                  </Button>
                 </div>
                 <div class="editor-outline-menu__list">
                   <For each={outline().visible}>
                     {(item) => (
-                      <button
+                      <Button
                         class={`editor-outline-menu__item ${
                           activeId() === item.block.id ? "is-active" : ""
                         }`}
-                        type="button"
+                        variant="unstyled"
+                        fullWidth
                         style={{ "padding-left": `${item.indent * 12 + 8}px` }}
                         onClick={() => {
                           focusBlock(item.block.id, "end");
@@ -3890,7 +3899,7 @@ export const EditorPane = (props: EditorPaneProps) => {
                         }}
                       >
                         {formatBreadcrumbLabel(item.block.text)}
-                      </button>
+                      </Button>
                     )}
                   </For>
                 </div>
