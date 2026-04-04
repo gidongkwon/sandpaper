@@ -58,6 +58,7 @@ import { createPageDialog } from "./use-page-dialog";
 import { createPageOps } from "./use-page-ops";
 import { createReviewState } from "./use-review";
 import { createSearchState } from "./use-search";
+import { createThemeMode } from "./use-theme-mode";
 import { createTypeScale } from "./use-type-scale";
 import { createVaultKeyState } from "./use-vault-key";
 import { createVaultState } from "./use-vaults";
@@ -1137,6 +1138,7 @@ export const createMainPageState = () => {
   const { loadVaults, applyActiveVault, createVault } = vaultState;
 
   const typeScale = createTypeScale();
+  const themeMode = createThemeMode();
 
   onMount(() => {
     const perfFlag =
@@ -2247,6 +2249,10 @@ export const createMainPageState = () => {
           max: typeScale.max,
           step: typeScale.step,
           defaultPosition: typeScale.defaultPosition
+        },
+        theme: {
+          mode: themeMode.themeMode,
+          setMode: themeMode.setThemeMode
         },
         statusSurfaces: {
           showStatusSurfaces,

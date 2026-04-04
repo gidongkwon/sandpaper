@@ -1,5 +1,6 @@
 import type { Accessor, Setter } from "solid-js";
 import type { VaultRecord } from "../../entities/vault/model/vault-types";
+import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 
 type SettingsGeneralTabProps = {
   typeScale: {
@@ -9,6 +10,10 @@ type SettingsGeneralTabProps = {
     max: number;
     step: number;
     defaultPosition: string;
+  };
+  theme: {
+    mode: Accessor<ThemeMode>;
+    setMode: Setter<ThemeMode>;
   };
   statusSurfaces: {
     showStatusSurfaces: Accessor<boolean>;
@@ -58,9 +63,24 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
       </div>
       <div class="settings-section">
         <h3 class="settings-section__title">Appearance</h3>
-        <p class="settings-section__desc">
-          Sandpaper follows your system color scheme.
-        </p>
+        <p class="settings-section__desc">Choose how Sandpaper renders color themes.</p>
+        <div class="settings-row">
+          <label class="settings-label" for="settings-theme-mode">
+            Theme
+          </label>
+          <select
+            id="settings-theme-mode"
+            class="settings-select"
+            value={props.theme.mode()}
+            onChange={(event) =>
+              props.theme.setMode(event.currentTarget.value as ThemeMode)
+            }
+          >
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </div>
         <div class="settings-row">
           <label class="settings-label">Current vault</label>
           <span class="settings-value">

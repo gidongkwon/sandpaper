@@ -2742,6 +2742,32 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("{:?}", err))
 }
 
+fn apply_theme_window_effect(window: &tauri::WebviewWindow, mode: Option<&str>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = mode;
+        apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, None, None)
+            .map_err(|err| format!("{:?}", err))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let dark = match mode {
+            Some("light") => Some(false),
+            Some("dark") => Some(true),
+            _ => None,
+        };
+        apply_mica(window, dark).map_err(|err| format!("{:?}", err))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_window_theme_effect(window: tauri::WebviewWindow, mode: String) -> Result<(), String> {
+    apply_theme_window_effect(&window, Some(mode.as_str()))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2750,16 +2776,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
-
-            #[cfg(target_os = "macos")]
-            apply_vibrancy(&window, NSVisualEffectMaterial::Sidebar, None, None)
-                .expect("Failed to apply macOS vibrancy");
-
-            #[cfg(target_os = "windows")]
-            {
-                let _ = apply_mica(&window, None)
-                    .or_else(|_| window_vibrancy::apply_acrylic(&window, Some((0, 0, 0, 0))));
-            }
+            let _ = apply_theme_window_effect(&window, Some("system"));
 
             Ok(())
         })
@@ -2822,7 +2839,8 @@ pub fn run() {
             plugin_block_action,
             get_plugin_settings_command,
             set_plugin_settings_command,
-            read_text_file
+            read_text_file,
+            set_window_theme_effect
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

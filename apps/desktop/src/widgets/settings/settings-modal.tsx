@@ -27,6 +27,7 @@ import { SettingsPermissionsTab } from "./settings-permissions-tab";
 import { SettingsPluginsTab } from "./settings-plugins-tab";
 import { SettingsSyncTab } from "./settings-sync-tab";
 import { SettingsVaultTab } from "./settings-vault-tab";
+import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 
 type SettingsTab = "general" | "vault" | "sync" | "plugins" | "permissions" | "import";
 
@@ -64,6 +65,10 @@ type SettingsModalProps = {
     max: number;
     step: number;
     defaultPosition: string;
+  };
+  theme: {
+    mode: Accessor<ThemeMode>;
+    setMode: Setter<ThemeMode>;
   };
   statusSurfaces: {
     showStatusSurfaces: Accessor<boolean>;
@@ -251,6 +256,7 @@ export const SettingsModal = (props: SettingsModalProps) => {
               <Show when={props.tab() === "general"}>
                 <SettingsGeneralTab
                   typeScale={typeScale}
+                  theme={props.theme}
                   statusSurfaces={props.statusSurfaces}
                   activeVault={vault.active}
                 />

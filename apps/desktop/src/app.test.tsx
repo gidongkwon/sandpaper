@@ -19,16 +19,36 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./app/app";
 
 describe("App", () => {
+  const originalMatchMedia = window.matchMedia;
+
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(openDialog).mockReset();
     vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(null);
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(prefers-color-scheme: dark)",
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      }))
+    });
   });
 
   afterEach(() => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
       .__TAURI_INTERNALS__;
     vi.restoreAllMocks();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: originalMatchMedia
+    });
   });
 
   it("renders the mode switch", () => {
@@ -49,6 +69,35 @@ describe("App", () => {
   it("shows autosave status after load", async () => {
     render(() => <App />);
     expect(await screen.findByText(/saved/i)).toBeInTheDocument();
+  });
+
+  it("applies light, dark, and system themes from settings", async () => {
+    render(() => <App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+
+    const themeSelect = await screen.findByRole("combobox", {
+      name: /theme/i
+    });
+    expect(document.documentElement.dataset.themeMode).toBe("system");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    await userEvent.selectOptions(themeSelect, "light");
+    expect(document.documentElement.dataset.themeMode).toBe("light");
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.style.colorScheme).toBe("light");
+
+    await userEvent.selectOptions(themeSelect, "dark");
+    expect(document.documentElement.dataset.themeMode).toBe("dark");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
+
+    await userEvent.selectOptions(themeSelect, "system");
+    expect(document.documentElement.dataset.themeMode).toBe("system");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.style.colorScheme).toBe("dark");
   });
 
   it("positions the default text size label at the correct scale", async () => {
