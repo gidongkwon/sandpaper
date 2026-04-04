@@ -10,7 +10,10 @@ type FocusPanelProps = {
 
 export const FocusPanel = (props: FocusPanelProps) => {
   return (
-    <section class="focus-panel">
+    <section
+      class={`focus-panel ${props.mode() === "review" ? "is-review" : ""}`}
+      data-focus-mode={props.mode() === "review" ? "review" : "capture"}
+    >
       <props.sectionJump
         id={props.mode() === "quick-capture" ? "capture" : "review"}
         label={props.mode() === "quick-capture" ? "Capture" : "Review"}

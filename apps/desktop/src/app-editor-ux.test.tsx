@@ -632,6 +632,28 @@ describe("App editor UX", () => {
     expect(screen.getByText("Home", { selector: ".editor-pane__title" })).toBeInTheDocument();
   });
 
+  it("uses a full-width split review workspace", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Split workspace thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const reviewSurface = await screen.findByRole("region", { name: "Review surface" });
+    const reviewLayout = reviewSurface.closest(".review-workbench")?.querySelector(
+      ".review-workbench__layout"
+    );
+    const focusPanel = reviewSurface.closest(".focus-panel");
+
+    expect(reviewLayout).toHaveAttribute("data-layout", "split");
+    expect(focusPanel).toHaveAttribute("data-focus-mode", "review");
+  });
+
   it("shows each review thread with a captured time range", async () => {
     vi.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

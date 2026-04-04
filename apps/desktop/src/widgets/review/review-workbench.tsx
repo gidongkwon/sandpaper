@@ -122,7 +122,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
           </EmptyState>
         }
       >
-        <div class="review-workbench__layout">
+        <div class="review-workbench__layout" data-layout="split">
           <section
             class="review-workbench__surface"
             aria-label="Review surface"

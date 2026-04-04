@@ -2957,6 +2957,17 @@ button:disabled {
   box-shadow: var(--shadow-md), var(--shadow-ring);
 }
 
+.focus-panel.is-review {
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  margin: var(--space-3) 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
 /* ============================================
    CAPTURE MODE — Chat Interface
    ============================================ */
@@ -3414,10 +3425,11 @@ button:disabled {
 
 .review-workbench__layout {
   display: grid;
-  grid-template-columns: minmax(320px, 0.88fr) minmax(0, 1.12fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
   min-height: 0;
   align-items: stretch;
+  width: 100%;
 }
 
 .review-workbench__surface,
@@ -5269,6 +5281,11 @@ button:disabled {
     margin: var(--space-3) auto;
     padding: var(--space-3);
     border-radius: var(--radius-lg);
+  }
+
+  .focus-panel.is-review {
+    margin: var(--space-3) 0;
+    padding: 0;
   }
 
   .focus-panel:has(.capture-chat) {
