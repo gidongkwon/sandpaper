@@ -33,11 +33,11 @@ describe("App", () => {
 
   it("renders the mode switch", () => {
     render(() => <App />);
-    expect(
-      screen.getByRole("button", { name: "Capture" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Editor" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
+    const modeSwitch = screen.getByRole("navigation");
+    const labels = within(modeSwitch)
+      .getAllByRole("button")
+      .map((button) => button.textContent?.trim());
+    expect(labels).toEqual(["Capture", "Review", "Editor"]);
     expect(
       screen.queryByRole("button", { name: "Viewer" })
     ).not.toBeInTheDocument();

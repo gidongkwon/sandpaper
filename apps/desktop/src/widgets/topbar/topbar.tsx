@@ -22,6 +22,26 @@ type TopbarProps = {
 };
 
 export const Topbar = (props: TopbarProps) => {
+  const switchMode = (nextMode: Mode) => {
+    if (props.mode() === nextMode) return;
+    const nextState = () => props.setMode(nextMode);
+    const documentWithTransition = document as Document & {
+      startViewTransition?: (
+        callback: () => void
+      ) => {
+        finished?: Promise<void>;
+        ready?: Promise<void>;
+        updateCallbackDone?: Promise<void>;
+        skipTransition?: () => void;
+      };
+    };
+    if (typeof documentWithTransition.startViewTransition === "function") {
+      documentWithTransition.startViewTransition(nextState);
+      return;
+    }
+    nextState();
+  };
+
   const autosaveState = () => {
     if (props.autosaveError()) return "error";
     if (props.autosaved()) return "saved";
@@ -49,21 +69,21 @@ export const Topbar = (props: TopbarProps) => {
       <nav class="mode-switch">
         <button
           class={`mode-switch__button ${props.mode() === "quick-capture" ? "is-active" : ""}`}
-          onClick={() => props.setMode("quick-capture")}
+          onClick={() => switchMode("quick-capture")}
         >
           Capture
         </button>
         <button
-          class={`mode-switch__button ${props.mode() === "editor" ? "is-active" : ""}`}
-          onClick={() => props.setMode("editor")}
-        >
-          Editor
-        </button>
-        <button
           class={`mode-switch__button ${props.mode() === "review" ? "is-active" : ""}`}
-          onClick={() => props.setMode("review")}
+          onClick={() => switchMode("review")}
         >
           Review
+        </button>
+        <button
+          class={`mode-switch__button ${props.mode() === "editor" ? "is-active" : ""}`}
+          onClick={() => switchMode("editor")}
+        >
+          Editor
         </button>
       </nav>
 

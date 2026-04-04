@@ -55,6 +55,65 @@ describe("App modes", () => {
     expect(await screen.findByText("No capture threads to review.")).toBeInTheDocument();
   });
 
+  it("starts a view transition when switching modes from the topbar", async () => {
+    const user = userEvent.setup();
+    const startViewTransition = vi.fn((callback: () => void) => {
+      callback();
+      return {
+        finished: Promise.resolve(),
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+        skipTransition: vi.fn()
+      };
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition
+    });
+
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+    await user.type(captureInput, "Transition thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    expect(startViewTransition).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".focus-panel")).toHaveAttribute(
+      "data-transition-slot",
+      "capture"
+    );
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    const destinationNote = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+
+    expect(startViewTransition).toHaveBeenCalledTimes(2);
+    expect(destinationNote).toHaveAttribute("data-transition-slot", "editor");
+    expect(destinationNote.querySelector(".editor-pane")).toHaveAttribute(
+      "data-transition-slot",
+      "editor"
+    );
+
+    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await waitFor(() => {
+      expect(document.querySelector(".main-pane__editor")).toHaveAttribute(
+        "data-transition-slot",
+        "editor"
+      );
+      expect(document.querySelector(".main-pane__editor .editor-pane")).toHaveAttribute(
+        "data-transition-slot",
+        "editor"
+      );
+    });
+
+    expect(startViewTransition).toHaveBeenCalledTimes(3);
+  });
+
   it("restores focus to the mode input when switching modes", async () => {
     const user = userEvent.setup();
     render(() => <App />);

@@ -822,7 +822,11 @@ describe("App editor UX", () => {
 
     await user.click(screen.getByRole("button", { name: "Review" }));
 
-    expect(await screen.findByText("1 more")).toBeInTheDocument();
+    const footer = (await screen.findByRole("tab", { name: "To Review" })).closest(
+      ".review-workbench__footer"
+    );
+    expect(footer).not.toBeNull();
+    expect(footer).toContainElement(screen.getByText("1 more"));
   });
 
   it("reorders the review deck when selecting a peek card", async () => {
@@ -1177,7 +1181,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Review" }));
 
     expect(
-      await screen.findByText("Restored review became stale. Pick a destination again.")
+      await screen.findByText("Pick a destination again")
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(

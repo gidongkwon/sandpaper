@@ -105,12 +105,13 @@ describe("MainPageWorkspace", () => {
   it("renders the editor workspace in editor mode", () => {
     const { value } = buildContext();
 
-    render(() => (
+    const { container } = render(() => (
       <MainPageProvider value={value}>
         <MainPageWorkspace />
       </MainPageProvider>
     ));
 
+    expect(container.querySelector(".main-page-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("editor-workspace")).toBeInTheDocument();
     expect(screen.queryByTestId("focus-panel")).not.toBeInTheDocument();
   });

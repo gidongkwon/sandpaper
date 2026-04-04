@@ -21,7 +21,6 @@ export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
   });
 
   const visibleThreads = createMemo(() => orderedThreads().slice(0, 3));
-  const moreCount = createMemo(() => Math.max(props.threads.length - visibleThreads().length, 0));
 
   return (
     <div class="review-queue-deck">
@@ -45,9 +44,6 @@ export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
             )}
           </For>
         </nav>
-        <Show when={moreCount() > 0}>
-          <div class="review-queue-deck__more">{`${moreCount()} more`}</div>
-        </Show>
       </Show>
     </div>
   );

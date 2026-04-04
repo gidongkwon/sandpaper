@@ -15,50 +15,55 @@ export const MainPageWorkspace = () => {
   const { workspace } = useMainPageContext();
 
   return (
-    <Show
-      when={workspace.mode() === "editor"}
-      fallback={
-        <FocusPanel
-          mode={workspace.mode}
-          sectionJump={workspace.sectionJump.SectionJumpLink}
-          capture={<CapturePane {...workspace.capture} />}
-          review={<ReviewWorkbench {...workspace.review} />}
-        />
-      }
-    >
-      <EditorWorkspace
-        sidebarOpen={workspace.sidebarOpen}
-        backlinksOpen={workspace.backlinksOpen}
-        sidebar={
-          <SidebarPanel
-            open={workspace.sidebarOpen}
+    <div class="main-page-workspace">
+      <Show
+        when={workspace.mode() === "editor"}
+        fallback={
+          <FocusPanel
+            mode={workspace.mode}
             sectionJump={workspace.sectionJump.SectionJumpLink}
-            footerLabel={workspace.sidebar.footerLabel}
-            connectionState={workspace.sidebar.connectionState}
-            connectionLabel={workspace.sidebar.connectionLabel}
-            connectionDetail={workspace.sidebar.connectionDetail}
-          >
-            <SidebarContent
-              search={workspace.sidebar.search}
-              unlinked={workspace.sidebar.unlinked}
-              pages={workspace.sidebar.pages}
-            />
-          </SidebarPanel>
+            capture={<CapturePane {...workspace.capture} />}
+            review={<ReviewWorkbench {...workspace.review} />}
+          />
         }
-        editor={
-          <div class="main-pane__editor">
-            <workspace.sectionJump.SectionJump id="editor" label="Editor" />
-            <EditorPane {...workspace.editor} />
-          </div>
-        }
-        backlinks={
-          <>
-            <BacklinksToggle {...workspace.backlinksToggle} />
-            <BacklinksPanel {...workspace.backlinks} />
-          </>
-        }
-        pluginPanel={<PluginPanelWidget {...workspace.pluginPanel} />}
-      />
-    </Show>
+      >
+        <EditorWorkspace
+          sidebarOpen={workspace.sidebarOpen}
+          backlinksOpen={workspace.backlinksOpen}
+          sidebar={
+            <SidebarPanel
+              open={workspace.sidebarOpen}
+              sectionJump={workspace.sectionJump.SectionJumpLink}
+              footerLabel={workspace.sidebar.footerLabel}
+              connectionState={workspace.sidebar.connectionState}
+              connectionLabel={workspace.sidebar.connectionLabel}
+              connectionDetail={workspace.sidebar.connectionDetail}
+            >
+              <SidebarContent
+                search={workspace.sidebar.search}
+                unlinked={workspace.sidebar.unlinked}
+                pages={workspace.sidebar.pages}
+              />
+            </SidebarPanel>
+          }
+          editor={
+            <div
+              class="main-pane__editor"
+              data-transition-slot="editor"
+            >
+              <workspace.sectionJump.SectionJump id="editor" label="Editor" />
+              <EditorPane {...workspace.editor} />
+            </div>
+          }
+          backlinks={
+            <>
+              <BacklinksToggle {...workspace.backlinksToggle} />
+              <BacklinksPanel {...workspace.backlinks} />
+            </>
+          }
+          pluginPanel={<PluginPanelWidget {...workspace.pluginPanel} />}
+        />
+      </Show>
+    </div>
   );
 };

@@ -1,4 +1,4 @@
-import { Show, createSignal, type Accessor } from "solid-js";
+import { Show, createMemo, createSignal, type Accessor } from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
   DestinationRecommendation,
@@ -64,6 +64,9 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
   const [pendingAction, setPendingAction] = createSignal<null | (() => void | Promise<void>)>(
     null
   );
+  const remainingDeckCount = createMemo(() =>
+    Math.max(props.threads().length - Math.min(props.threads().length, 3), 0)
+  );
 
   const formatCapturedRange = (thread: ReviewThread) => {
     if (!thread.captured_at_start) return "Captured —";
@@ -127,6 +130,8 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
             class="review-workbench__surface"
             aria-label="Review surface"
             data-review-tab={props.activeTab()}
+            data-transition-slot="capture"
+            style={{ "view-transition-name": "mode-pane-capture" }}
           >
             <div
               class="review-workbench__surface-body"
@@ -153,33 +158,45 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
               </Show>
             </div>
 
-            <div class="review-workbench__tabs" role="tablist" aria-label="Review tabs">
-              <button
-                class={`review-workbench__tab ${
-                  props.activeTab() === "to-review" ? "is-active" : ""
-                }`}
-                type="button"
-                role="tab"
-                aria-selected={props.activeTab() === "to-review"}
-                onClick={() => props.setActiveTab("to-review")}
-              >
-                To Review
-              </button>
-              <button
-                class={`review-workbench__tab ${
-                  props.activeTab() === "archived" ? "is-active" : ""
-                }`}
-                type="button"
-                role="tab"
-                aria-selected={props.activeTab() === "archived"}
-                onClick={() => props.setActiveTab("archived")}
-              >
-                Archived
-              </button>
+            <div class="review-workbench__footer">
+              <div class="review-workbench__footer-spacer" aria-hidden="true" />
+              <div class="review-workbench__tabs" role="tablist" aria-label="Review tabs">
+                <button
+                  class={`review-workbench__tab ${
+                    props.activeTab() === "to-review" ? "is-active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={props.activeTab() === "to-review"}
+                  onClick={() => props.setActiveTab("to-review")}
+                >
+                  To Review
+                </button>
+                <button
+                  class={`review-workbench__tab ${
+                    props.activeTab() === "archived" ? "is-active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={props.activeTab() === "archived"}
+                  onClick={() => props.setActiveTab("archived")}
+                >
+                  Archived
+                </button>
+              </div>
+              <div class="review-workbench__footer-meta">
+                <Show when={props.activeTab() === "to-review" && remainingDeckCount() > 0}>
+                  <span class="review-queue-deck__more">{`${remainingDeckCount()} more`}</span>
+                </Show>
+              </div>
             </div>
           </section>
 
-          <section class="review-workbench__editor" aria-label="Destination note">
+          <section
+            class="review-workbench__editor"
+            aria-label="Destination note"
+            data-transition-slot="editor"
+          >
             <ReviewSessionBar
               activeTab={props.activeTab}
               destinationSelected={props.destinationSelected}

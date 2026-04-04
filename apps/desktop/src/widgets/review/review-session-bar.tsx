@@ -61,29 +61,33 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
     if (props.destinationQuery().trim().length > 0) return [];
     return props.destinationRecommendations();
   });
+  const hasMetaContent = createMemo(
+    () =>
+      Boolean(props.destinationTitle()) ||
+      isRecommended() ||
+      (props.activeTab() === "archived" && props.archivedAt() !== null) ||
+      props.invalidated()
+  );
 
   return (
-    <header class="review-session-bar">
-      <div class="review-session-bar__meta">
-        <span class="review-session-bar__eyebrow">
-          {props.activeTab() === "to-review" ? "Destination note" : "Archived destination"}
-        </span>
-        <div class="review-session-bar__title-row">
-          <strong>{props.destinationTitle() ?? "Select a destination"}</strong>
+    <header class="review-session-bar" data-has-meta={hasMetaContent()}>
+      <div class="review-session-bar__meta" data-has-meta={hasMetaContent()}>
+        <div class="review-session-bar__title-row" data-has-title={Boolean(props.destinationTitle())}>
+          <Show when={props.destinationTitle()}>
+            {(title) => <strong>{title()}</strong>}
+          </Show>
           <Show when={isRecommended()}>
             <span class="review-session-bar__badge">Recommended</span>
           </Show>
+          <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
+            <span class="review-session-bar__hint">
+              {`Archived ${props.formatReviewDate(props.archivedAt())}`}
+            </span>
+          </Show>
+          <Show when={props.invalidated()}>
+            <span class="review-session-bar__warning">Pick a destination again</span>
+          </Show>
         </div>
-        <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
-          <span class="review-session-bar__hint">
-            {`Archived ${props.formatReviewDate(props.archivedAt())}`}
-          </span>
-        </Show>
-        <Show when={props.invalidated()}>
-          <span class="review-session-bar__warning">
-            Restored review became stale. Pick a destination again.
-          </span>
-        </Show>
       </div>
 
       <Show when={props.activeTab() === "to-review"}>

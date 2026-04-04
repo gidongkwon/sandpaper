@@ -13,6 +13,10 @@ export const FocusPanel = (props: FocusPanelProps) => {
     <section
       class={`focus-panel ${props.mode() === "review" ? "is-review" : ""}`}
       data-focus-mode={props.mode() === "review" ? "review" : "capture"}
+      data-transition-slot={props.mode() === "quick-capture" ? "capture" : undefined}
+      style={{
+        "view-transition-name": props.mode() === "quick-capture" ? "mode-pane-capture" : "none"
+      }}
     >
       <props.sectionJump
         id={props.mode() === "quick-capture" ? "capture" : "review"}
