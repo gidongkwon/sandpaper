@@ -866,6 +866,26 @@ export const createMainPageState = () => {
     await switchPage(pageUid);
   };
 
+  const findVisiblePageByTitle = (title: string) => {
+    const normalized = resolvePageUid(title);
+    return (
+      visiblePages().find((page) => resolvePageUid(page.uid) === normalized) ??
+      visiblePages().find((page) => page.title.toLowerCase() === title.toLowerCase()) ??
+      null
+    );
+  };
+
+  const openLinkedPageTarget = async (target: string) => {
+    if (resolvePageUid(target) === HIDDEN_INBOX_PAGE_UID) {
+      setMode("quick-capture");
+      return;
+    }
+    const existing = findVisiblePageByTitle(target);
+    if (!existing) return;
+    setMode("editor");
+    await switchWorkspacePage(existing.uid);
+  };
+
   const reviewState = createReviewState({
     isTauri,
     invoke,
@@ -2165,7 +2185,12 @@ export const createMainPageState = () => {
         onCancelReply: cancelCaptureReply,
         replyingToId: captureReplyToId,
         replyingTo: captureReplyTarget,
-        focusEpoch: captureFocusEpoch
+        focusEpoch: captureFocusEpoch,
+        markdownDisplayHandlers: {
+          onOpenWikilink: (target: string) => {
+            void openLinkedPageTarget(target);
+          }
+        }
       },
       review: {
         summary: reviewSummary,

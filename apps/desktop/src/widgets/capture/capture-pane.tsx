@@ -15,6 +15,7 @@ import {
   ArrowUp16FilledIcon,
   Delete16Icon
 } from "../../shared/ui/icons";
+import type { MarkdownDisplayHandlers } from "../../shared/ui/markdown-display";
 
 export type CaptureItem = {
   block: {
@@ -45,6 +46,7 @@ type CapturePaneProps = {
   replyingToId: Accessor<string | null>;
   replyingTo: Accessor<string | null>;
   focusEpoch: Accessor<number>;
+  markdownDisplayHandlers?: MarkdownDisplayHandlers;
 };
 
 const formatCaptureTime = (timestamp: number | null) => {
@@ -204,6 +206,7 @@ export const CapturePane = (props: CapturePaneProps) => {
                         autoResize
                         maxHeight={120}
                         displayMode="markdown"
+                        markdownDisplayHandlers={props.markdownDisplayHandlers}
                         aria-label={`Captured item ${thread.root.position}`}
                         value={thread.root.block.text}
                         onInput={(event) => {
@@ -258,6 +261,7 @@ export const CapturePane = (props: CapturePaneProps) => {
                             autoResize
                             maxHeight={120}
                             displayMode="markdown"
+                            markdownDisplayHandlers={props.markdownDisplayHandlers}
                             aria-label={`Captured item ${reply.position}`}
                             value={reply.block.text}
                             onInput={(event) => {

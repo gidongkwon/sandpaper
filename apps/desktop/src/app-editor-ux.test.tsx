@@ -455,10 +455,48 @@ describe("App editor UX", () => {
     expect(
       await screen.findByPlaceholderText("Capture a thought, link, or task...")
     ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Inbox thread")).toBeInTheDocument();
+    expect(screen.getByText("Inbox thread")).toBeInTheDocument();
     expect(
       screen.queryByText("Inbox", { selector: ".editor-pane__title" })
     ).not.toBeInTheDocument();
+  });
+
+  it("opens rendered capture wikilinks in the editor workspace", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await screen.findByText(/saved/i);
+
+    await user.click(screen.getByRole("button", { name: /create new page/i }));
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const titleInput = within(dialog).getByRole("textbox");
+    await user.type(titleInput, "Project Atlas");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
+
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+    fireEvent.input(captureInput, {
+      target: { value: "See [[Project Atlas]]" }
+    });
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const captureLinkLabel = await waitFor(() => {
+      const label = document.querySelector(".capture-chat .wikilink");
+      expect(label).not.toBeNull();
+      return label as HTMLElement;
+    });
+    expect(captureLinkLabel).toHaveTextContent("Project Atlas");
+    const captureLink = captureLinkLabel.closest("button");
+    expect(captureLink).not.toBeNull();
+    if (!captureLink) return;
+    await user.click(captureLink);
+
+    expect(getModeControl("Editor")).toBeChecked();
+    expect(
+      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
   });
 
   it("reuses the shared composer for replies and keeps reply mode active", async () => {
