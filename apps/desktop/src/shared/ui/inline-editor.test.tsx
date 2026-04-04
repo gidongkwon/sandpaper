@@ -131,5 +131,10 @@ describe("InlineEditor", () => {
     fireEvent.select(textarea);
     fireEvent.keyDown(textarea, { key: "`", ctrlKey: true, shiftKey: true });
     expect(textarea.value).toBe("Hello ***`world`***");
+
+    textarea.setSelectionRange(9, 16);
+    fireEvent.select(textarea);
+    fireEvent.keyDown(textarea, { key: "k", ctrlKey: true, shiftKey: true });
+    expect(textarea.value).toBe("Hello ***[[`world`]]***");
   });
 });

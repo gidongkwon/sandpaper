@@ -277,6 +277,11 @@ export const InlineEditor = (props: InlineEditorProps) => {
             applyMarkdownWrap("*");
             return;
           }
+          if (event.key.toLowerCase() === "k" && event.shiftKey && !event.altKey) {
+            event.preventDefault();
+            applyMarkdownWrap("[[", "]]");
+            return;
+          }
           if (event.shiftKey && event.key === "`") {
             event.preventDefault();
             applyMarkdownWrap("`");
