@@ -822,6 +822,7 @@ describe("App editor UX", () => {
       ).toBeEnabled();
     });
 
+    await user.click(screen.getByRole("button", { name: "Change destination" }));
     const destinationSearch = await screen.findByPlaceholderText(
       "Search or create a page..."
     );
@@ -930,6 +931,132 @@ describe("App editor UX", () => {
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
     expect(queueCards[1]).toHaveTextContent("Second thread");
+  });
+
+  it("restores the active review session across app restart when safe", async () => {
+    const firstRender = render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Project Atlas"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Draft summary" }
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Complete review" })
+      ).toBeEnabled();
+    });
+
+    firstRender.unmount();
+
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Restored review became stale. Pick a destination again.")).not.toBeInTheDocument();
+    expect(screen.getByText("Draft summary")).toBeInTheDocument();
+  });
+
+  it("invalidates a restored review session when the destination changed outside the session", async () => {
+    const firstRender = render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Project Atlas"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Draft summary" }
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Complete review" })
+      ).toBeEnabled();
+    });
+
+    firstRender.unmount();
+
+    const storedPages = JSON.parse(
+      window.localStorage.getItem("sandpaper:local:pages") ?? "{}"
+    ) as Record<
+      string,
+      {
+        uid: string;
+        title: string;
+        blocks: Array<{ id: string; text: string; indent: number; block_type?: string }>;
+      }
+    >;
+    storedPages["project-atlas"] = {
+      ...storedPages["project-atlas"],
+      blocks: [
+        {
+          id: "external-edit",
+          text: "Externally changed summary",
+          indent: 0,
+          block_type: "text"
+        }
+      ]
+    };
+    window.localStorage.setItem("sandpaper:local:pages", JSON.stringify(storedPages));
+
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(
+      await screen.findByText("Restored review became stale. Pick a destination again.")
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText("Search or create a page...")
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Change destination" })
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Complete review" })).toBeDisabled();
   });
 
   it("persists review queue FIFO order through the tauri page store", async () => {

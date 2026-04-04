@@ -398,6 +398,11 @@ export const createMainPageState = () => {
     createSignal(false);
   const [reviewDestinationTransitioning, setReviewDestinationTransitioning] =
     createSignal(false);
+  const [reviewConfiguredThreadId, setReviewConfiguredThreadId] =
+    createSignal<string | null>(null);
+  const [reviewRestoreReady, setReviewRestoreReady] = createSignal(false);
+  const [reviewRestorePendingValidation, setReviewRestorePendingValidation] =
+    createSignal(false);
   const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
   const [jumpTarget, setJumpTarget] = createSignal<JumpTarget | null>(null);
   const [vaults, setVaults] = createSignal<VaultRecord[]>([]);
@@ -1143,7 +1148,9 @@ export const createMainPageState = () => {
     }
 
     setShowStatusSurfaces(readStoredToggle(STATUS_SURFACES_KEY, true));
-    void loadVaults();
+    void loadVaults().finally(() => {
+      setReviewRestoreReady(true);
+    });
 
     onCleanup(() => {
       scrollMeter.dispose();
@@ -1161,16 +1168,18 @@ export const createMainPageState = () => {
     const restoredSession = readStoredReviewSession(reviewSessionKey());
     setArchivedReviewThreads(readStoredArchivedReviewThreads(reviewArchivedThreadsKey()));
     setReviewSession(restoredSession);
+    setReviewConfiguredThreadId(restoredSession.active_thread_id);
     setReviewSessionBaselineSnapshot(
       readStoredReviewSessionBaseline(reviewSessionBaselineKey())
     );
     setReviewPendingBaselineHash(null);
     setReviewPendingBaselineSnapshot(null);
-    setReviewSessionNeedsValidation(
+    setReviewRestorePendingValidation(
       restoredSession.is_hard_selected === true &&
         typeof restoredSession.destination_page_uid === "string" &&
         typeof restoredSession.last_known_page_hash === "string"
     );
+    setReviewSessionNeedsValidation(false);
   });
 
   createEffect(() => {
@@ -1250,6 +1259,27 @@ export const createMainPageState = () => {
   const visiblePages = createMemo(() =>
     pages().filter((page) => resolvePageUid(page.uid) !== HIDDEN_INBOX_PAGE_UID)
   );
+
+  const isLoadedPageForUid = (pageUid: string) => {
+    const resolvedPageUid = resolvePageUid(pageUid);
+    const knownTitle =
+      pages().find((page) => resolvePageUid(page.uid) === resolvedPageUid)?.title ??
+      localPages[resolvedPageUid]?.title ??
+      null;
+    if (!knownTitle) return true;
+    return pageTitle() === knownTitle;
+  };
+
+  const storedReviewPageHashForUid = (pageUid: string) => {
+    const resolvedPageUid = resolvePageUid(pageUid);
+    const localPage = localPages[resolvedPageUid];
+    if (!localPage) return null;
+    return createReviewPageHash({
+      pageUid: resolvedPageUid,
+      title: localPage.title,
+      blocks: snapshotBlocks(localPage.blocks)
+    });
+  };
 
   const captureInboxBlocks = createMemo(
     () => localPages[HIDDEN_INBOX_PAGE_UID]?.blocks ?? []
@@ -1458,10 +1488,11 @@ export const createMainPageState = () => {
     }
   });
 
-  createEffect((configuredThreadId: string | null) => {
-    if (reviewSession().tab !== "to-review") return configuredThreadId ?? null;
+  createEffect(() => {
+    if (reviewSession().tab !== "to-review") return;
     const thread = activeReviewThread();
     const threadId = thread?.id ?? null;
+    const configuredThreadId = reviewConfiguredThreadId();
 
     if (!threadId) {
       if (
@@ -1480,10 +1511,11 @@ export const createMainPageState = () => {
           updated_at: Date.now()
         }));
       }
-      return null;
+      setReviewConfiguredThreadId(null);
+      return;
     }
 
-    if (configuredThreadId === threadId) return configuredThreadId;
+    if (configuredThreadId === threadId) return;
 
     const recommendations = getReviewDestinationRecommendations({
       thread,
@@ -1505,8 +1537,8 @@ export const createMainPageState = () => {
     }));
     setReviewDestinationQuery("");
     clearReviewBaselineState();
-    return threadId;
-  }, null);
+    setReviewConfiguredThreadId(threadId);
+  });
 
   createEffect(() => {
     if (reviewDestinationTransitioning()) return;
@@ -1518,7 +1550,26 @@ export const createMainPageState = () => {
       }
       return;
     }
-    void switchPage(destinationPageUid);
+    setReviewDestinationTransitioning(true);
+    void switchPage(destinationPageUid).finally(() => {
+      setReviewDestinationTransitioning(false);
+    });
+  });
+
+  createEffect(() => {
+    const session = reviewSession();
+    if (
+      !reviewRestorePendingValidation() ||
+      !reviewRestoreReady() ||
+      !session.is_hard_selected ||
+      !session.destination_page_uid ||
+      !session.last_known_page_hash ||
+      resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid) ||
+      !isLoadedPageForUid(session.destination_page_uid)
+    ) {
+      return;
+    }
+    setReviewSessionNeedsValidation(true);
   });
 
   createEffect(() => {
@@ -1527,6 +1578,7 @@ export const createMainPageState = () => {
     const pendingBaselineHash = reviewPendingBaselineHash();
     if (!destinationPageUid || session.is_hard_selected || !pendingBaselineHash) return;
     if (resolvePageUid(activePageUid()) !== resolvePageUid(destinationPageUid)) return;
+    if (!isLoadedPageForUid(destinationPageUid)) return;
     if (currentReviewPageHash() === pendingBaselineHash) return;
     setReviewSession((current) => ({
       ...current,
@@ -1535,9 +1587,11 @@ export const createMainPageState = () => {
       last_known_page_hash: currentReviewPageHash(),
       updated_at: Date.now()
     }));
+    saveLocalPageSnapshot(resolvePageUid(destinationPageUid), pageTitle(), blocks);
     setReviewSessionBaselineSnapshot(reviewPendingBaselineSnapshot());
     setReviewPendingBaselineHash(null);
     setReviewPendingBaselineSnapshot(null);
+    setReviewRestorePendingValidation(false);
     setReviewSessionNeedsValidation(false);
   });
 
@@ -1547,12 +1601,16 @@ export const createMainPageState = () => {
       !session.is_hard_selected ||
       !session.destination_page_uid ||
       resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid) ||
-      reviewSessionNeedsValidation()
+      reviewSessionNeedsValidation() ||
+      !reviewRestoreReady() ||
+      !isLoadedPageForUid(session.destination_page_uid) ||
+      reviewDestinationTransitioning()
     ) {
       return;
     }
     const currentHash = currentReviewPageHash();
     if (currentHash === session.last_known_page_hash) return;
+    saveLocalPageSnapshot(resolvePageUid(session.destination_page_uid), pageTitle(), blocks);
     setReviewSession((current) => ({
       ...current,
       last_known_page_hash: currentHash,
@@ -1567,12 +1625,24 @@ export const createMainPageState = () => {
       !session.is_hard_selected ||
       !session.destination_page_uid ||
       !session.last_known_page_hash ||
-      resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid)
+      resolvePageUid(activePageUid()) !== resolvePageUid(session.destination_page_uid) ||
+      !reviewRestoreReady() ||
+      !isLoadedPageForUid(session.destination_page_uid) ||
+      reviewDestinationTransitioning()
     ) {
       return;
     }
     const currentHash = currentReviewPageHash();
+    const storedPageHash = storedReviewPageHashForUid(session.destination_page_uid);
+    if (
+      storedPageHash !== null &&
+      storedPageHash === session.last_known_page_hash &&
+      currentHash !== storedPageHash
+    ) {
+      return;
+    }
     if (currentHash === session.last_known_page_hash) {
+      setReviewRestorePendingValidation(false);
       setReviewSessionNeedsValidation(false);
       return;
     }
@@ -1585,6 +1655,7 @@ export const createMainPageState = () => {
       updated_at: Date.now()
     }));
     setReviewSessionBaselineSnapshot(null);
+    setReviewRestorePendingValidation(false);
     setReviewSessionNeedsValidation(false);
   });
 
@@ -1624,6 +1695,7 @@ export const createMainPageState = () => {
     setReviewPendingBaselineHash(null);
     setReviewPendingBaselineSnapshot(null);
     setReviewSessionBaselineSnapshot(null);
+    setReviewRestorePendingValidation(false);
     setReviewSessionNeedsValidation(false);
   };
 
@@ -1791,6 +1863,7 @@ export const createMainPageState = () => {
     const destinationPageUid = resolvePageUid(pageUid);
     setReviewDestinationTransitioning(true);
     try {
+      clearReviewBaselineState();
       setReviewSession((current) => ({
         ...current,
         destination_page_uid: destinationPageUid,
@@ -1803,8 +1876,6 @@ export const createMainPageState = () => {
       await switchPage(destinationPageUid);
       setReviewDestinationQuery("");
       setReviewPendingBaselineFromCurrentPage();
-      setReviewSessionBaselineSnapshot(null);
-      setReviewSessionNeedsValidation(false);
     } finally {
       setReviewDestinationTransitioning(false);
     }
@@ -1832,6 +1903,7 @@ export const createMainPageState = () => {
     if (!title) return;
     setReviewDestinationTransitioning(true);
     try {
+      clearReviewBaselineState();
       setNewPageTitle(title);
       await createPage();
       const createdPageUid =
@@ -1848,8 +1920,6 @@ export const createMainPageState = () => {
       }));
       setReviewDestinationQuery("");
       setReviewPendingBaselineFromCurrentPage();
-      setReviewSessionBaselineSnapshot(null);
-      setReviewSessionNeedsValidation(false);
     } finally {
       setReviewDestinationTransitioning(false);
     }
@@ -1883,6 +1953,7 @@ export const createMainPageState = () => {
       invalidated: false,
       updated_at: Date.now()
     }));
+    setReviewRestorePendingValidation(false);
     clearReviewBaselineState();
   };
 

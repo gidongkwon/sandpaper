@@ -28,15 +28,24 @@ type ReviewSessionBarProps = {
 export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   const [searchOpen, setSearchOpen] = createSignal(true);
 
-  createEffect(() => {
+  createEffect((wasHardSelected: boolean) => {
     if (props.activeTab() === "archived") {
       setSearchOpen(false);
-      return;
+      return props.destinationIsHardSelected();
+    }
+    if (props.invalidated()) {
+      setSearchOpen(true);
+      return props.destinationIsHardSelected();
     }
     if (!props.destinationIsHardSelected()) {
       setSearchOpen(true);
+      return false;
     }
-  });
+    if (!wasHardSelected) {
+      setSearchOpen(false);
+    }
+    return true;
+  }, false);
 
   const isRecommended = createMemo(() => {
     if (props.activeTab() !== "to-review") return false;
