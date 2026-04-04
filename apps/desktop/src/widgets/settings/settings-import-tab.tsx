@@ -2,6 +2,7 @@ import { Show, type Accessor, type Setter } from "solid-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../shared/ui/button";
+import { TextareaField } from "../../shared/ui/textarea-field";
 
 type StatusMessage = {
   state: "success" | "error";
@@ -118,8 +119,8 @@ export const SettingsImportTab = (props: SettingsImportTabProps) => {
         <p class="settings-section__desc">
           Paste shadow Markdown to create or update a page.
         </p>
-        <textarea
-          class="settings-textarea"
+        <TextareaField
+          font="mono"
           rows={5}
           placeholder="Paste markdown here..."
           value={props.importExport.importText()}

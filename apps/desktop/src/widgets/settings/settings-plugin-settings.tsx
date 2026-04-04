@@ -8,6 +8,7 @@ import type {
 import { Button } from "../../shared/ui/button";
 import { Checkbox } from "../../shared/ui/checkbox";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
+import { TextField } from "../../shared/ui/text-field";
 
 type PluginSettingsStatus = {
   state: "idle" | "saving" | "success" | "error";
@@ -88,8 +89,7 @@ const renderField = (
   return (
     <label class="settings-row">
       <span class="settings-label">{label}</span>
-      <input
-        class="settings-input"
+      <TextField
         type={inputType}
         value={String(value ?? "")}
         onInput={(event) =>

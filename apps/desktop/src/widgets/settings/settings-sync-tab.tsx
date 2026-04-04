@@ -6,6 +6,8 @@ import type { PageId } from "../../shared/model/id-types";
 import { ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
 import { Button } from "../../shared/ui/button";
+import { TextField } from "../../shared/ui/text-field";
+import { TextareaField } from "../../shared/ui/textarea-field";
 
 type SettingsSyncProps = {
   status: Accessor<SyncStatus>;
@@ -111,22 +113,19 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
         <span class="settings-status__label">{props.sync.stateLabel()}</span>
       </div>
       <p class="settings-section__desc">{props.sync.stateDetail()}</p>
-      <input
-        class="settings-input"
+      <TextField
         type="text"
         placeholder="Sync server URL"
         value={props.sync.serverUrl()}
         onInput={(e) => props.sync.setServerUrl(e.currentTarget.value)}
       />
-      <input
-        class="settings-input"
+      <TextField
         type="text"
         placeholder="Vault ID (optional)"
         value={props.sync.vaultIdInput()}
         onInput={(e) => props.sync.setVaultIdInput(e.currentTarget.value)}
       />
-      <input
-        class="settings-input"
+      <TextField
         type="text"
         placeholder="Device ID (optional)"
         value={props.sync.deviceIdInput()}
@@ -292,8 +291,9 @@ export const SettingsSyncTab = (props: SettingsSyncTabProps) => (
                   <Show when={props.sync.mergeId() === conflict.op_id}>
                     <div class="sync-conflict__merge">
                       <label class="sync-conflict__label">Merged</label>
-                      <textarea
+                      <TextareaField
                         class="sync-conflict__textarea"
+                        font="mono"
                         value={props.sync.mergeDrafts[conflict.op_id] ?? ""}
                         onInput={(event) =>
                           props.sync.setMergeDrafts(

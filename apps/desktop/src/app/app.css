@@ -4776,7 +4776,7 @@ button:disabled {
 }
 
 .settings-select,
-.settings-input {
+.ui-input {
   width: 100%;
   height: 34px;
   padding: 0 var(--space-2-5);
@@ -4796,15 +4796,24 @@ button:disabled {
 }
 
 .settings-select:hover,
-.settings-input:hover {
+.ui-input:hover {
   border-color: var(--border-medium);
 }
 
 .settings-select:focus,
-.settings-input:focus {
+.ui-input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.ui-input {
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.ui-input--mono {
+  font-family: var(--font-mono);
 }
 
 .settings-select__content {
@@ -4842,7 +4851,7 @@ button:disabled {
   background: var(--bg-hover);
 }
 
-.settings-textarea {
+.ui-textarea {
   width: 100%;
   padding: var(--space-2-5);
   background: var(--bg-primary);
@@ -4856,11 +4865,20 @@ button:disabled {
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.settings-textarea:hover {
+.ui-textarea {
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.ui-textarea--mono {
+  font-family: var(--font-mono);
+}
+
+.ui-textarea:hover {
   border-color: var(--border-medium);
 }
 
-.settings-textarea:focus {
+.ui-textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
@@ -4882,7 +4900,7 @@ button:disabled {
   align-items: center;
 }
 
-.settings-file-row .settings-input {
+.settings-file-row .ui-input {
   margin-bottom: 0;
 }
 

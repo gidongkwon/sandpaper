@@ -10,6 +10,7 @@ import type {
 } from "../../entities/plugin/model/plugin-types";
 import { Button } from "../../shared/ui/button";
 import { Switch } from "../../shared/ui/switch";
+import { TextField } from "../../shared/ui/text-field";
 import { PluginSettingsCard } from "./settings-plugin-settings";
 
 type PluginSettingsStatus = {
@@ -173,8 +174,7 @@ export const SettingsPluginsTab = (props: SettingsPluginsTabProps) => {
           Install a plugin from a folder that contains a plugin.json manifest.
         </p>
         <div class="settings-file-row">
-          <input
-            class="settings-input"
+          <TextField
             type="text"
             placeholder="Plugin folder path"
             value={props.plugins.installPath()}

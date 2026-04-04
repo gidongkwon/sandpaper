@@ -4,6 +4,7 @@ import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vau
 import type { VaultId } from "../../shared/model/id-types";
 import { Button } from "../../shared/ui/button";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
+import { TextField } from "../../shared/ui/text-field";
 
 type SettingsVaultProps = {
   active: Accessor<VaultRecord | null>;
@@ -96,16 +97,14 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
         </Button>
         <Show when={props.vault.formOpen()}>
           <div class="settings-form">
-            <input
-              class="settings-input"
+            <TextField
               type="text"
               placeholder="Vault name"
               value={props.vault.newName()}
               onInput={(e) => props.vault.setNewName(e.currentTarget.value)}
             />
             <div class="settings-file-row">
-              <input
-                class="settings-input"
+              <TextField
                 type="text"
                 placeholder="Vault path"
                 value={props.vault.newPath()}
@@ -157,8 +156,7 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
             ? `Configured (${props.vault.keyStatus().kdf ?? "pbkdf2-sha256"})`
             : "Set a passphrase to enable E2E encryption."}
         </p>
-        <input
-          class="settings-input"
+        <TextField
           type="password"
           placeholder="Passphrase"
           value={props.vault.passphrase()}
