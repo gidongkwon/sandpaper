@@ -18,6 +18,12 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 import App from "./app/app";
 import { formatReviewDate } from "./pages/main-page/model/review-utils";
 
+const getModeControl = (name: "Capture" | "Review" | "Editor") =>
+  screen.getByRole("radio", { name });
+
+const getReviewTabControl = (name: "To Review" | "Archived") =>
+  screen.getByRole("radio", { name });
+
 describe("App editor UX", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -316,7 +322,7 @@ describe("App editor UX", () => {
   it("keeps quick capture open and refocuses composer after sending", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = screen.getByPlaceholderText(
       "Capture a thought, link, or task..."
     ) as HTMLTextAreaElement;
@@ -327,9 +333,7 @@ describe("App editor UX", () => {
       expect(captureInput.value).toBe("");
       expect(document.activeElement).toBe(captureInput);
     });
-    expect(screen.getByRole("button", { name: "Capture" })).toHaveClass(
-      "is-active"
-    );
+    expect(getModeControl("Capture")).toBeChecked();
     expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
   });
 
@@ -337,7 +341,7 @@ describe("App editor UX", () => {
     render(() => <App />);
     const user = userEvent.setup();
     await screen.findByText(/saved/i);
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = screen.getByPlaceholderText(
       "Capture a thought, link, or task..."
     );
@@ -355,13 +359,13 @@ describe("App editor UX", () => {
       target: { value: "Quick note updated" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(getModeControl("Editor"));
     expect(
       await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
     expect(screen.queryByDisplayValue("Quick note updated")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     expect(
       await screen.findByRole("textbox", { name: "Captured item 1" })
     ).toHaveValue("Quick note updated");
@@ -381,7 +385,7 @@ describe("App editor UX", () => {
 
     expect(screen.queryByRole("button", { name: "Open Inbox" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -389,7 +393,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(getModeControl("Editor"));
 
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
@@ -402,14 +406,14 @@ describe("App editor UX", () => {
     const user = userEvent.setup();
     await screen.findByText(/saved/i);
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
     await user.type(captureInput, "Inbox thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(getModeControl("Editor"));
     expect(
       await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
@@ -434,7 +438,7 @@ describe("App editor UX", () => {
     if (!inboxLink) return;
     await user.click(inboxLink);
 
-    expect(screen.getByRole("button", { name: "Capture" })).toHaveClass("is-active");
+    expect(getModeControl("Capture")).toBeChecked();
     expect(
       await screen.findByPlaceholderText("Capture a thought, link, or task...")
     ).toBeInTheDocument();
@@ -447,7 +451,7 @@ describe("App editor UX", () => {
   it("reuses the shared composer for replies and keeps reply mode active", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -481,7 +485,7 @@ describe("App editor UX", () => {
   it("moves an active thread to the bottom when it receives a new reply", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -509,7 +513,7 @@ describe("App editor UX", () => {
   it("confirms before deleting a reply", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -545,7 +549,7 @@ describe("App editor UX", () => {
   it("confirms before deleting a thread root and removes the whole thread", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -580,7 +584,7 @@ describe("App editor UX", () => {
   it("shows capture threads in the review workbench FIFO even after capture reordering", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -599,7 +603,7 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Older reply");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const queue = await screen.findByRole("navigation", { name: "Review queue" });
     const queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -615,20 +619,20 @@ describe("App editor UX", () => {
   it("shows review tabs and keeps the destination editor visible", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     expect(
-      await screen.findByRole("tab", { name: "To Review" })
+      await screen.findByRole("radio", { name: "To Review" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("tab", { name: "Archived" })
+      getReviewTabControl("Archived")
     ).toBeInTheDocument();
     expect(
       screen.getByText("Thread root")
@@ -639,14 +643,14 @@ describe("App editor UX", () => {
   it("uses a full-width split review workspace", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Split workspace thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const reviewSurface = await screen.findByRole("region", { name: "Review surface" });
     const reviewLayout = reviewSurface.closest(".review-workbench")?.querySelector(
@@ -662,7 +666,7 @@ describe("App editor UX", () => {
     vi.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(() => <App />);
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -680,7 +684,7 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Thread reply");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     expect(
       await screen.findByText(
@@ -692,14 +696,14 @@ describe("App editor UX", () => {
   it("preloads a recommended destination inside the review workbench", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Home follow up");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const destinationPanel = await screen.findByRole("region", {
       name: "Destination note"
@@ -713,24 +717,21 @@ describe("App editor UX", () => {
     expect(
       within(destinationPanel).getByPlaceholderText("Search or create a page...")
     ).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "To Review" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
+    expect(getReviewTabControl("To Review")).toBeChecked();
+    expect(getReviewTabControl("Archived")).toBeInTheDocument();
   });
 
   it("turns a recommended destination into a hard-selected destination after editing", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Home follow up");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const destinationPanel = await screen.findByRole("region", {
       name: "Destination note"
@@ -764,14 +765,14 @@ describe("App editor UX", () => {
   it("enables review completion even when editing immediately after opening review", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Home follow up");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const editorInput = await waitFor(() => {
       const input = document.querySelector(
@@ -794,14 +795,14 @@ describe("App editor UX", () => {
   it("treats the visible page as the destination after editing when no recommendation exists", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Hello");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     expect(screen.getByPlaceholderText("Search or create a page...")).toBeInTheDocument();
 
@@ -827,14 +828,14 @@ describe("App editor UX", () => {
   it("switches the review surface into flattened archived state", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Archived thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const reviewSurface = screen.getByRole("region", { name: "Review surface" });
     expect(reviewSurface).toHaveAttribute("data-review-tab", "to-review");
@@ -860,7 +861,7 @@ describe("App editor UX", () => {
       target: { value: "Archived summary" }
     });
     await user.click(screen.getByRole("button", { name: "Complete review" }));
-    await user.click(screen.getByRole("tab", { name: "Archived" }));
+    await user.click(getReviewTabControl("Archived"));
 
     await waitFor(() => {
       expect(reviewSurface).toHaveAttribute("data-review-tab", "archived");
@@ -876,7 +877,7 @@ describe("App editor UX", () => {
   it("shows how many review cards remain beyond the visible deck", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -887,9 +888,9 @@ describe("App editor UX", () => {
       await user.click(screen.getByRole("button", { name: "Send capture" }));
     }
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
-    const footer = (await screen.findByRole("tab", { name: "To Review" })).closest(
+    const footer = (await screen.findByRole("radio", { name: "To Review" })).closest(
       ".review-workbench__footer"
     );
     expect(footer).not.toBeNull();
@@ -899,7 +900,7 @@ describe("App editor UX", () => {
   it("reorders the review deck when selecting a peek card", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -908,7 +909,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.type(captureInput, "Second thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const queue = await screen.findByRole("navigation", { name: "Review queue" });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -927,7 +928,7 @@ describe("App editor UX", () => {
   it("confirms before switching review cards with a draft", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -936,7 +937,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.type(captureInput, "Second thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await user.type(
       await screen.findByPlaceholderText("Search or create a page..."),
@@ -992,14 +993,14 @@ describe("App editor UX", () => {
   it("confirms before changing destination with a draft", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await user.type(
       await screen.findByPlaceholderText("Search or create a page..."),
@@ -1066,14 +1067,14 @@ describe("App editor UX", () => {
   it("keeps review completion disabled until the destination note changes", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await user.type(
       await screen.findByPlaceholderText("Search or create a page..."),
@@ -1108,7 +1109,7 @@ describe("App editor UX", () => {
   it("preserves review queue FIFO order across app restart", async () => {
     const firstRender = render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -1118,7 +1119,7 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Second thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
     let queue = await screen.findByRole("navigation", { name: "Review queue" });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
@@ -1127,7 +1128,7 @@ describe("App editor UX", () => {
     firstRender.unmount();
 
     render(() => <App />);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     queue = await screen.findByRole("navigation", { name: "Review queue" });
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -1138,14 +1139,14 @@ describe("App editor UX", () => {
   it("restores the active review session across app restart when safe", async () => {
     const firstRender = render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await user.type(
       await screen.findByPlaceholderText("Search or create a page..."),
@@ -1173,7 +1174,7 @@ describe("App editor UX", () => {
     firstRender.unmount();
 
     render(() => <App />);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await waitFor(() => {
       expect(
@@ -1187,14 +1188,14 @@ describe("App editor UX", () => {
   it("invalidates a restored review session when the destination changed outside the session", async () => {
     const firstRender = render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     await user.type(
       await screen.findByPlaceholderText("Search or create a page..."),
@@ -1245,7 +1246,7 @@ describe("App editor UX", () => {
     window.localStorage.setItem("sandpaper:local:pages", JSON.stringify(storedPages));
 
     render(() => <App />);
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     expect(
       await screen.findByText("Pick a destination again")
@@ -1387,7 +1388,7 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Older reply");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
     let queue = await screen.findByRole("navigation", { name: "Review queue" });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("Older thread");
@@ -1398,7 +1399,7 @@ describe("App editor UX", () => {
     firstRender.unmount();
 
     render(() => <App />);
-    await user.click(await screen.findByRole("button", { name: "Review" }));
+    await user.click(await screen.findByRole("radio", { name: "Review" }));
 
     queue = await screen.findByRole("navigation", { name: "Review queue" });
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -1481,7 +1482,7 @@ describe("App editor UX", () => {
 
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -1522,14 +1523,14 @@ describe("App editor UX", () => {
   it("archives a completed review thread and reopens its destination note from archived", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const destinationSearch = await screen.findByPlaceholderText(
       "Search or create a page..."
@@ -1568,7 +1569,7 @@ describe("App editor UX", () => {
       ).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("tab", { name: "Archived" }));
+    await user.click(getReviewTabControl("Archived"));
     expect(
       await screen.findByRole("button", { name: /thread root/i })
     ).toBeInTheDocument();
@@ -1580,7 +1581,7 @@ describe("App editor UX", () => {
   it("reopens each archived thread in its own destination note", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -1589,7 +1590,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.type(captureInput, "Beta thread");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const destinationSearch = await screen.findByPlaceholderText(
       "Search or create a page..."
@@ -1651,7 +1652,7 @@ describe("App editor UX", () => {
       ])
     );
 
-    await user.click(screen.getByRole("tab", { name: "Archived" }));
+    await user.click(getReviewTabControl("Archived"));
 
     await user.click(await screen.findByRole("button", { name: /alpha thread/i }));
     await waitFor(() => {
@@ -1671,14 +1672,14 @@ describe("App editor UX", () => {
   it("opens an existing destination page from review search", async () => {
     render(() => <App />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
 
     await user.type(captureInput, "Thread root");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
 
     const destinationSearch = await screen.findByPlaceholderText(
       "Search or create a page..."
@@ -1697,3 +1698,4 @@ describe("App editor UX", () => {
   });
 
 });
+

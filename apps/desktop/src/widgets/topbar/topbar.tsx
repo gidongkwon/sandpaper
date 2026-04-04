@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Mode } from "../../shared/model/mode";
 import { Alert16Icon, Dismiss12Icon, PanelLeft16Icon, Settings16Icon, Square12Icon, Subtract12Icon } from "../../shared/ui/icons";
 import { IconButton } from "../../shared/ui/icon-button";
+import { SegmentedTabs } from "../../shared/ui/segmented-tabs";
 
 const isMac = () => document.documentElement.dataset.platform === "macos";
 
@@ -109,26 +110,21 @@ export const Topbar = (props: TopbarProps) => {
         </button>
       </div>
 
-      <nav ref={modeSwitchRef} class="mode-switch">
-        <button
-          class={`mode-switch__button ${props.mode() === "quick-capture" ? "is-active" : ""}`}
-          onClick={() => switchMode("quick-capture")}
-        >
-          Capture
-        </button>
-        <button
-          class={`mode-switch__button ${props.mode() === "review" ? "is-active" : ""}`}
-          onClick={() => switchMode("review")}
-        >
-          Review
-        </button>
-        <button
-          class={`mode-switch__button ${props.mode() === "editor" ? "is-active" : ""}`}
-          onClick={() => switchMode("editor")}
-        >
-          Editor
-        </button>
-      </nav>
+      <SegmentedTabs
+        ref={(el) => {
+          modeSwitchRef = el;
+        }}
+        value={props.mode()}
+        onChange={switchMode}
+        items={[
+          { value: "quick-capture", label: "Capture" },
+          { value: "review", label: "Review" },
+          { value: "editor", label: "Editor" }
+        ]}
+        aria-label="App modes"
+        class="mode-switch"
+        triggerClass="mode-switch__button"
+      />
 
       <div ref={rightRef} class="topbar__right">
         <Show when={props.showStatusSurfaces()}>

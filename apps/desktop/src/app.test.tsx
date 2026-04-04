@@ -18,6 +18,9 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./app/app";
 
+const getModeControl = (name: "Capture" | "Review" | "Editor") =>
+  screen.getByRole("radio", { name });
+
 describe("App", () => {
   const originalMatchMedia = window.matchMedia;
 
@@ -53,11 +56,10 @@ describe("App", () => {
 
   it("renders the mode switch", () => {
     render(() => <App />);
-    const modeSwitch = screen.getByRole("navigation");
-    const labels = within(modeSwitch)
-      .getAllByRole("button")
-      .map((button) => button.textContent?.trim());
-    expect(labels).toEqual(["Capture", "Review", "Editor"]);
+    const modeSwitch = screen.getByRole("radiogroup", { name: "App modes" });
+    expect(within(modeSwitch).getByRole("radio", { name: "Capture" })).toBeInTheDocument();
+    expect(within(modeSwitch).getByRole("radio", { name: "Review" })).toBeInTheDocument();
+    expect(within(modeSwitch).getByRole("radio", { name: "Editor" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Viewer" })
     ).not.toBeInTheDocument();
@@ -224,7 +226,7 @@ describe("App", () => {
 
   it("renders the review mode panel", async () => {
     render(() => <App />);
-    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    await userEvent.click(getModeControl("Review"));
     expect(
       await screen.findByText("Capture a thread first, then refine it here.")
     ).toBeInTheDocument();
@@ -232,7 +234,7 @@ describe("App", () => {
 
   it("renders the review empty state in review mode", async () => {
     render(() => <App />);
-    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    await userEvent.click(getModeControl("Review"));
     expect(
       await screen.findByText("No capture threads to review.")
     ).toBeInTheDocument();
@@ -240,14 +242,14 @@ describe("App", () => {
 
   it("renders the review destination shell in review mode", async () => {
     render(() => <App />);
-    await userEvent.click(screen.getByRole("button", { name: "Capture" }));
+    await userEvent.click(getModeControl("Capture"));
     const captureInput = await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     );
     await userEvent.type(captureInput, "Thread root");
     await userEvent.click(screen.getByRole("button", { name: "Send capture" }));
 
-    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    await userEvent.click(getModeControl("Review"));
     expect(
       await screen.findByRole("region", { name: "Destination note" })
     ).toBeInTheDocument();
@@ -332,7 +334,7 @@ describe("App", () => {
     render(() => <App />);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Capture" })).toHaveClass("is-active");
+      expect(getModeControl("Capture")).toBeChecked();
     });
     expect(
       await screen.findByPlaceholderText("Capture a thought, link, or task...")
@@ -374,7 +376,7 @@ describe("App", () => {
 
   it("shows backlinks for referenced blocks", async () => {
     render(() => <App />);
-    await screen.findByRole("button", { name: "Editor" });
+    await screen.findByRole("radio", { name: "Editor" });
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     const firstInput = inputs[0];
     const secondInput = inputs[1];

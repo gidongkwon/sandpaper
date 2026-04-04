@@ -13,6 +13,7 @@ type SegmentedTabsProps<T extends string> = {
   "aria-label": string;
   class?: string;
   triggerClass?: string;
+  ref?: HTMLElement | ((el: HTMLElement) => void);
 };
 
 export const SegmentedTabs = <T extends string>(props: SegmentedTabsProps<T>) => {
@@ -24,6 +25,7 @@ export const SegmentedTabs = <T extends string>(props: SegmentedTabsProps<T>) =>
       }}
       class={`segmented-tabs ${props.class ?? ""}`.trim()}
       aria-label={props["aria-label"]}
+      ref={props.ref}
     >
       <For each={props.items}>
         {(item) => (
@@ -32,7 +34,7 @@ export const SegmentedTabs = <T extends string>(props: SegmentedTabsProps<T>) =>
             value={item.value}
           >
             <SegmentedControl.ItemInput />
-            <SegmentedControl.ItemLabel>
+            <SegmentedControl.ItemLabel class="segmented-tabs__label">
               {item.label}
             </SegmentedControl.ItemLabel>
           </SegmentedControl.Item>

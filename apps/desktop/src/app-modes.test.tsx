@@ -16,6 +16,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import App from "./app/app";
 
+const getModeControl = (name: "Capture" | "Review" | "Editor") =>
+  screen.getByRole("radio", { name });
+
 const clearStorage = () => {
   const storage = window.localStorage;
   if (typeof storage?.clear === "function") {
@@ -48,10 +51,10 @@ describe("App modes", () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     expect(await screen.findByPlaceholderText("Capture a thought, link, or task...")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
     expect(await screen.findByText("No capture threads to review.")).toBeInTheDocument();
   });
 
@@ -74,7 +77,7 @@ describe("App modes", () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -87,7 +90,7 @@ describe("App modes", () => {
       "capture"
     );
 
-    await user.click(screen.getByRole("button", { name: "Review" }));
+    await user.click(getModeControl("Review"));
     const destinationNote = await screen.findByRole("region", {
       name: "Destination note"
     });
@@ -101,7 +104,7 @@ describe("App modes", () => {
     );
     expect(reviewSurfaceBody).toHaveAttribute("data-transition-slot", "capture");
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(getModeControl("Editor"));
     await waitFor(() => {
       expect(document.querySelector(".main-pane__editor")).toHaveAttribute(
         "data-transition-slot",
@@ -121,7 +124,7 @@ describe("App modes", () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
@@ -130,7 +133,7 @@ describe("App modes", () => {
       expect(document.activeElement).toBe(captureInput);
     });
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(getModeControl("Editor"));
     await waitFor(() => {
       const editorInputs = screen.getAllByPlaceholderText("Write something...");
       expect(
@@ -144,7 +147,7 @@ describe("App modes", () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
 
-    await user.click(screen.getByRole("button", { name: "Capture" }));
+    await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(
       "Capture a thought, link, or task..."
     )) as HTMLTextAreaElement;
