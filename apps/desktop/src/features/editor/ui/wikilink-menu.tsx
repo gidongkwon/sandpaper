@@ -1,6 +1,7 @@
-import { For, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import type { PageSummary } from "../../../entities/page/model/page-types";
 import type { CaretPosition } from "../../../shared/model/position";
+import { ActionListbox, type ActionListboxOption } from "../../../shared/ui/action-listbox";
 import { SuggestionPopover } from "../../../shared/ui/suggestion-popover";
 
 type WikilinkMenuProps = {
@@ -16,50 +17,79 @@ type WikilinkMenuProps = {
 };
 
 export const WikilinkMenu = (props: WikilinkMenuProps) => {
+  const options = createMemo<
+    ActionListboxOption<
+      | { kind: "page"; title: string; isCurrent: boolean }
+      | { kind: "create"; query: string }
+    >[]
+  >(() => {
+    const pageOptions = props.matches.map((page) => {
+      const label = page.title || "Untitled";
+      const insertTitle = page.title || page.uid;
+      return {
+        value: `page:${page.uid}`,
+        label,
+        data: {
+          kind: "page" as const,
+          title: insertTitle,
+          isCurrent:
+            props.resolvePageUid(page.uid) === props.resolvePageUid(props.activePageUid)
+        }
+      };
+    });
+    if (!props.createLabel) return pageOptions;
+    return [
+      ...pageOptions,
+      {
+        value: `create:${props.query}`,
+        label: props.createLabel,
+        data: {
+          kind: "create" as const,
+          query: props.query
+        }
+      }
+    ];
+  });
+
   return (
     <SuggestionPopover
       open={props.open}
       position={props.position}
       title="Link suggestions"
-      listLabel="Wikilink suggestions"
       class="wikilink-menu"
       listClass="wikilink-menu__list"
     >
-      <For each={props.matches}>
-        {(page) => {
-          const label = page.title || "Untitled";
-          const insertTitle = page.title || page.uid;
-          return (
-            <button
-              class="wikilink-menu__item"
-              type="button"
-              aria-label={label}
-              onClick={() => props.onSelect(insertTitle)}
-            >
-              <span class="wikilink-menu__label">{label}</span>
-              <Show
-                when={
-                  props.resolvePageUid(page.uid) ===
-                  props.resolvePageUid(props.activePageUid)
-                }
-              >
+      <ActionListbox
+        ariaLabel="Wikilink suggestions"
+        variant="command"
+        class="wikilink-menu__options"
+        itemClass={(option) =>
+          option.data.kind === "create"
+            ? "wikilink-menu__item wikilink-menu__item--create"
+            : "wikilink-menu__item"
+        }
+        options={options()}
+        onSelect={(option) => {
+          if (option.data.kind === "create") {
+            props.onCreate(option.data.query);
+            return;
+          }
+          props.onSelect(option.data.title);
+        }}
+        renderLabel={(option) => (
+          <Show
+            when={option.data.kind === "page"}
+            fallback={<span class="wikilink-menu__label">{option.label}</span>}
+          >
+            <span class="wikilink-menu__item-row">
+              <span class="wikilink-menu__label">{option.label}</span>
+              <Show when={option.data.kind === "page" && option.data.isCurrent}>
                 <span class="wikilink-menu__meta">Current</span>
               </Show>
-            </button>
-          );
-        }}
-      </For>
-      <Show when={props.createLabel}>
-        {(label) => (
-          <button
-            class="wikilink-menu__item wikilink-menu__item--create"
-            type="button"
-            onClick={() => props.onCreate(props.query)}
-          >
-            {label()}
-          </button>
+            </span>
+          </Show>
         )}
-      </Show>
+      />
     </SuggestionPopover>
   );
 };

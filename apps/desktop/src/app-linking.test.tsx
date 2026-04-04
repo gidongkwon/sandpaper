@@ -79,11 +79,11 @@ describe("App linking UX", () => {
       name: /wikilink suggestions/i
     });
     const menuScope = within(menu);
-    expect(menuScope.queryByRole("button", { name: "Inbox" })).not.toBeInTheDocument();
+    expect(menuScope.queryByRole("option", { name: "Inbox" })).not.toBeInTheDocument();
     expect(
-      menuScope.queryByRole("button", { name: /create page "Inbox"/i })
+      menuScope.queryByRole("option", { name: /create page "Inbox"/i })
     ).not.toBeInTheDocument();
-    await user.click(menuScope.getByRole("button", { name: "Home" }));
+    await user.click(menuScope.getByRole("option", { name: /home/i }));
     await waitFor(() => {
       expect(getInput()?.value).toContain("[[Home]]");
     });
@@ -121,7 +121,7 @@ describe("App linking UX", () => {
     });
     const menuScope = within(menu);
     await user.click(
-      menuScope.getByRole("button", { name: /create page "Project Orbit"/i })
+      menuScope.getByRole("option", { name: /create page "Project Orbit"/i })
     );
 
     await waitFor(() => {

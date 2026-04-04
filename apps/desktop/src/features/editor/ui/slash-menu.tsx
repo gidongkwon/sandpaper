@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { ActionListbox } from "../../../shared/ui/action-listbox";
 import { SLASH_COMMANDS } from "../model/slash-commands";
 import type { CaretPosition } from "../../../shared/model/position";
 import { SuggestionPopover } from "../../../shared/ui/suggestion-popover";
@@ -15,21 +15,21 @@ export const SlashMenu = (props: SlashMenuProps) => {
       open={props.open}
       position={props.position}
       title="Commands"
-      listLabel="Slash commands"
       class="slash-menu"
       listClass="slash-menu__list"
     >
-      <For each={SLASH_COMMANDS}>
-        {(command) => (
-          <button
-            class="slash-menu__item"
-            onClick={() => props.onSelect(command.id)}
-            type="button"
-          >
-            {command.label}
-          </button>
-        )}
-      </For>
+      <ActionListbox
+        ariaLabel="Slash commands"
+        variant="command"
+        class="slash-menu__options"
+        itemClass="slash-menu__item"
+        options={SLASH_COMMANDS.map((command) => ({
+          value: command.id,
+          label: command.label,
+          data: command.id
+        }))}
+        onSelect={(option) => props.onSelect(option.data)}
+      />
     </SuggestionPopover>
   );
 };

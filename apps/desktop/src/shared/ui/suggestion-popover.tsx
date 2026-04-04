@@ -6,7 +6,6 @@ type SuggestionPopoverProps = {
   open: boolean;
   position: CaretPosition | null;
   title?: string;
-  listLabel: string;
   class?: string;
   listClass?: string;
   onClose?: () => void;
@@ -47,11 +46,7 @@ export const SuggestionPopover = (props: SuggestionPopoverProps) => {
                   </Popover.Title>
                 )}
               </Show>
-              <div
-                class={`suggestion-popover__list ${props.listClass ?? ""}`.trim()}
-                role="listbox"
-                aria-label={props.listLabel}
-              >
+              <div class={`suggestion-popover__list ${props.listClass ?? ""}`.trim()}>
                 {props.children}
               </div>
             </Popover.Content>

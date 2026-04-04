@@ -231,7 +231,7 @@ describe("App editor UX", () => {
     expect(getInput()?.value).toContain("/");
     const menu = await screen.findByText("Commands");
     const menuScope = within(menu.closest(".slash-menu") as HTMLElement);
-    await user.click(menuScope.getByRole("button", { name: "Link to page" }));
+    await user.click(menuScope.getByRole("option", { name: "Link to page" }));
     await waitFor(() => {
       expect(getInput()?.value).toContain("[[Page]]");
     });
@@ -241,7 +241,7 @@ describe("App editor UX", () => {
     });
     const menuAgain = await screen.findByText("Commands");
     const menuAgainScope = within(menuAgain.closest(".slash-menu") as HTMLElement);
-    await user.click(menuAgainScope.getByRole("button", { name: "Insert date" }));
+    await user.click(menuAgainScope.getByRole("option", { name: "Insert date" }));
     await waitFor(() => {
       expect(getInput()?.value).toMatch(/\d{4}-\d{2}-\d{2}/);
     });
@@ -249,7 +249,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuHeading = await screen.findByText("Commands");
     const menuHeadingScope = within(menuHeading.closest(".slash-menu") as HTMLElement);
-    await user.click(menuHeadingScope.getByRole("button", { name: "Heading 1" }));
+    await user.click(menuHeadingScope.getByRole("option", { name: "Heading 1" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("# ")).toBe(true);
     });
@@ -258,7 +258,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "Follow up/" } });
     const menuTask = await screen.findByText("Commands");
     const menuTaskScope = within(menuTask.closest(".slash-menu") as HTMLElement);
-    await user.click(menuTaskScope.getByRole("button", { name: "To-do" }));
+    await user.click(menuTaskScope.getByRole("option", { name: "To-do" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("- [ ] ")).toBe(true);
     });
@@ -266,7 +266,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuCode = await screen.findByText("Commands");
     const menuCodeScope = within(menuCode.closest(".slash-menu") as HTMLElement);
-    await user.click(menuCodeScope.getByRole("button", { name: "Code block" }));
+    await user.click(menuCodeScope.getByRole("option", { name: "Code block" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("```")).toBe(true);
     });
@@ -274,7 +274,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuTable = await screen.findByText("Commands");
     const menuTableScope = within(menuTable.closest(".slash-menu") as HTMLElement);
-    await user.click(menuTableScope.getByRole("button", { name: "Table" }));
+    await user.click(menuTableScope.getByRole("option", { name: "Table" }));
     await waitFor(() => {
       expect(getInput()?.value).toContain("| --- | --- |");
     });
@@ -282,7 +282,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuOrdered = await screen.findByText("Commands");
     const menuOrderedScope = within(menuOrdered.closest(".slash-menu") as HTMLElement);
-    await user.click(menuOrderedScope.getByRole("button", { name: "Numbered list" }));
+    await user.click(menuOrderedScope.getByRole("option", { name: "Numbered list" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("1. ")).toBe(true);
     });
@@ -290,7 +290,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuBookmark = await screen.findByText("Commands");
     const menuBookmarkScope = within(menuBookmark.closest(".slash-menu") as HTMLElement);
-    await user.click(menuBookmarkScope.getByRole("button", { name: "Bookmark" }));
+    await user.click(menuBookmarkScope.getByRole("option", { name: "Bookmark" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("https://")).toBe(true);
     });
@@ -298,7 +298,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuMath = await screen.findByText("Commands");
     const menuMathScope = within(menuMath.closest(".slash-menu") as HTMLElement);
-    await user.click(menuMathScope.getByRole("button", { name: "Math" }));
+    await user.click(menuMathScope.getByRole("option", { name: "Math" }));
     await waitFor(() => {
       expect(getInput()?.value).toContain("$$");
     });
@@ -306,7 +306,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuToc = await screen.findByText("Commands");
     const menuTocScope = within(menuToc.closest(".slash-menu") as HTMLElement);
-    await user.click(menuTocScope.getByRole("button", { name: "Table of contents" }));
+    await user.click(menuTocScope.getByRole("option", { name: "Table of contents" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").trim()).toBe("[TOC]");
     });
@@ -314,7 +314,7 @@ describe("App editor UX", () => {
     fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "/" } });
     const menuDatabase = await screen.findByText("Commands");
     const menuDatabaseScope = within(menuDatabase.closest(".slash-menu") as HTMLElement);
-    await user.click(menuDatabaseScope.getByRole("button", { name: "Database view" }));
+    await user.click(menuDatabaseScope.getByRole("option", { name: "Database view" }));
     await waitFor(() => {
       expect((getInput()?.value ?? "").startsWith("```database")).toBe(true);
     });
