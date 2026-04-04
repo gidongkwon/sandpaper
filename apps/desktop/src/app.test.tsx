@@ -83,24 +83,27 @@ describe("App", () => {
       screen.getByRole("button", { name: /open settings/i })
     );
 
-    const themeSelect = await screen.findByRole("combobox", {
+    const themeSelect = await screen.findByRole("button", {
       name: /theme/i
     });
     expect(document.documentElement.dataset.themeMode).toBe("system");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");
 
-    await userEvent.selectOptions(themeSelect, "light");
+    await userEvent.click(themeSelect);
+    await userEvent.click(await screen.findByRole("option", { name: "Light" }));
     expect(document.documentElement.dataset.themeMode).toBe("light");
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.documentElement.style.colorScheme).toBe("light");
 
-    await userEvent.selectOptions(themeSelect, "dark");
+    await userEvent.click(screen.getByRole("button", { name: /theme/i }));
+    await userEvent.click(await screen.findByRole("option", { name: "Dark" }));
     expect(document.documentElement.dataset.themeMode).toBe("dark");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");
 
-    await userEvent.selectOptions(themeSelect, "system");
+    await userEvent.click(screen.getByRole("button", { name: /theme/i }));
+    await userEvent.click(await screen.findByRole("option", { name: "System" }));
     expect(document.documentElement.dataset.themeMode).toBe("system");
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");

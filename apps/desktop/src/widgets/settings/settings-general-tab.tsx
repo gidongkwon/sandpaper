@@ -1,6 +1,7 @@
 import type { Accessor, Setter } from "solid-js";
 import type { VaultRecord } from "../../entities/vault/model/vault-types";
 import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
+import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
 
 type SettingsGeneralTabProps = {
   typeScale: {
@@ -23,6 +24,11 @@ type SettingsGeneralTabProps = {
 };
 
 export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
+  const themeOptions: SelectFieldOption[] = [
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+    { value: "system", label: "System" }
+  ];
   const isMac =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -68,18 +74,17 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
           <label class="settings-label" for="settings-theme-mode">
             Theme
           </label>
-          <select
-            id="settings-theme-mode"
-            class="settings-select"
+          <SelectField
+            label="Theme"
             value={props.theme.mode()}
-            onChange={(event) =>
-              props.theme.setMode(event.currentTarget.value as ThemeMode)
-            }
-          >
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-            <option value="system">System</option>
-          </select>
+            options={themeOptions}
+            onChange={(value) => props.theme.setMode(value as ThemeMode)}
+            triggerClass="settings-select"
+            contentClass="settings-select__content"
+            listboxClass="settings-select__listbox"
+            itemClass="settings-select__item"
+            itemLabelClass="settings-select__item-label"
+          />
         </div>
         <div class="settings-row">
           <label class="settings-label">Current vault</label>

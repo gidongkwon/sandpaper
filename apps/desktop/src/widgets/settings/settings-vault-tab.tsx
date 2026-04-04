@@ -1,7 +1,8 @@
-import { For, Show, type Accessor, type Setter } from "solid-js";
+import { Show, type Accessor, type Setter } from "solid-js";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { VaultKeyStatus, VaultRecord } from "../../entities/vault/model/vault-types";
 import type { VaultId } from "../../shared/model/id-types";
+import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
 
 type SettingsVaultProps = {
   active: Accessor<VaultRecord | null>;
@@ -30,6 +31,11 @@ type SettingsVaultTabProps = {
 
 export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
   let vaultFolderPickerRef: HTMLInputElement | undefined;
+  const vaultOptions = (): SelectFieldOption[] =>
+    props.vault.list().map((entry) => ({
+      value: entry.id,
+      label: entry.name
+    }));
 
   const getFolderFromFile = (file: File) => {
     const withPath = file as File & { path?: string; webkitRelativePath?: string };
@@ -69,15 +75,17 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
     <>
       <div class="settings-section">
         <h3 class="settings-section__title">Active Vault</h3>
-        <select
-          class="settings-select"
+        <SelectField
+          label="Active Vault"
           value={props.vault.active()?.id ?? ""}
-          onChange={(e) => props.vault.applyActiveVault(e.currentTarget.value)}
-        >
-          <For each={props.vault.list()}>
-            {(entry) => <option value={entry.id}>{entry.name}</option>}
-          </For>
-        </select>
+          options={vaultOptions()}
+          onChange={(value) => props.vault.applyActiveVault(value)}
+          triggerClass="settings-select"
+          contentClass="settings-select__content"
+          listboxClass="settings-select__listbox"
+          itemClass="settings-select__item"
+          itemLabelClass="settings-select__item-label"
+        />
         <button
           class="settings-action"
           onClick={() => props.vault.setFormOpen((prev) => !prev)}

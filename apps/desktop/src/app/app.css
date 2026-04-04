@@ -4776,6 +4776,13 @@ button:disabled {
   transition: all var(--duration-fast) var(--ease-out);
 }
 
+.settings-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+
 .settings-select:hover,
 .settings-input:hover {
   border-color: var(--border-medium);
@@ -4786,6 +4793,41 @@ button:disabled {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.settings-select__content {
+  z-index: 50;
+  min-width: var(--kb-select-trigger-width, 180px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+}
+
+.settings-select__listbox {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+}
+
+.settings-select__item {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.settings-select__item:hover,
+.settings-select__item[data-highlighted],
+.settings-select__item[data-selected] {
+  background: var(--bg-hover);
 }
 
 .settings-textarea {

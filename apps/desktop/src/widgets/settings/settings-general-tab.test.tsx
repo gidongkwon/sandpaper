@@ -1,9 +1,10 @@
 import { render, screen, within } from "@solidjs/testing-library";
+import userEvent from "@testing-library/user-event";
 import { createSignal, untrack } from "solid-js";
 import { SettingsGeneralTab } from "./settings-general-tab";
 
 describe("SettingsGeneralTab", () => {
-  it("renders a theme selector with light, dark, and system options", () => {
+  it("renders a theme selector with light, dark, and system options", async () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
     const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">("system");
@@ -30,11 +31,14 @@ describe("SettingsGeneralTab", () => {
       />
     ));
 
-    const themeSelect = screen.getByRole("combobox", { name: /theme/i }) as HTMLSelectElement;
-    expect(themeSelect.value).toBe("system");
-    expect(within(themeSelect).getByRole("option", { name: "Light" })).toBeInTheDocument();
-    expect(within(themeSelect).getByRole("option", { name: "Dark" })).toBeInTheDocument();
-    expect(within(themeSelect).getByRole("option", { name: "System" })).toBeInTheDocument();
+    const user = userEvent.setup();
+    const themeSelect = screen.getByRole("button", { name: /theme/i });
+    expect(themeSelect).toHaveTextContent("System");
+    await user.click(themeSelect);
+    const listbox = await screen.findByRole("listbox");
+    expect(within(listbox).getByRole("option", { name: "Light" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "Dark" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "System" })).toBeInTheDocument();
     expect(
       screen.queryByText("Sandpaper follows your system color scheme.")
     ).not.toBeInTheDocument();

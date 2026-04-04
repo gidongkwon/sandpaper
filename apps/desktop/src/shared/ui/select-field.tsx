@@ -1,0 +1,61 @@
+import * as Select from "@kobalte/core/select";
+import { createMemo } from "solid-js";
+
+export type SelectFieldOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+};
+
+type SelectFieldProps = {
+  label: string;
+  value: string;
+  options: readonly SelectFieldOption[];
+  onChange: (value: string) => void;
+  triggerClass?: string;
+  contentClass?: string;
+  listboxClass?: string;
+  itemClass?: string;
+  itemLabelClass?: string;
+};
+
+export const SelectField = (props: SelectFieldProps) => {
+  const selectedOption = createMemo(
+    () => props.options.find((option) => option.value === props.value) ?? null
+  );
+
+  return (
+    <Select.Root<SelectFieldOption>
+      options={[...props.options]}
+      value={selectedOption() ?? undefined}
+      onChange={(option) => {
+        if (option) props.onChange(option.value);
+      }}
+      optionValue="value"
+      optionTextValue="label"
+      optionDisabled="disabled"
+      itemComponent={(itemProps) => (
+        <Select.Item item={itemProps.item} class={props.itemClass}>
+          <Select.ItemLabel class={props.itemLabelClass}>
+            {itemProps.item.rawValue.label}
+          </Select.ItemLabel>
+        </Select.Item>
+      )}
+    >
+      <Select.HiddenSelect />
+      <Select.Trigger class={props.triggerClass} aria-label={props.label}>
+        <Select.Value<SelectFieldOption>>
+          {(state) => state.selectedOption()?.label ?? ""}
+        </Select.Value>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content class={props.contentClass}>
+          <Select.Listbox
+            aria-label={`${props.label} options`}
+            class={props.listboxClass}
+          />
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
+  );
+};
