@@ -288,34 +288,36 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
         <Combobox.Icon class={props.iconClass} aria-hidden="true" />
       </Combobox.Control>
 
-      <Combobox.Content
-        class={cx(
-          searchableComboboxContentVariants({ variant: variant() }),
-          props.contentClass
-        )}
-      >
-        <Show
-          when={filteredOptions().length > 0}
-          fallback={
-            <div
-              class={cx(
-                searchableComboboxEmptyVariants({ variant: variant() }),
-                props.emptyClass
-              )}
-            >
-              {props.noResultsLabel ?? "No matches"}
-            </div>
-          }
+      <Combobox.Portal>
+        <Combobox.Content
+          class={cx(
+            searchableComboboxContentVariants({ variant: variant() }),
+            props.contentClass
+          )}
         >
-          <Combobox.Listbox
-            aria-label={props.listboxLabel ?? `${props.ariaLabel} options`}
-            class={cx(
-              searchableComboboxListboxVariants({ variant: variant() }),
-              props.listboxClass
-            )}
-          />
-        </Show>
-      </Combobox.Content>
+          <Show
+            when={filteredOptions().length > 0}
+            fallback={
+              <div
+                class={cx(
+                  searchableComboboxEmptyVariants({ variant: variant() }),
+                  props.emptyClass
+                )}
+              >
+                {props.noResultsLabel ?? "No matches"}
+              </div>
+            }
+          >
+            <Combobox.Listbox
+              aria-label={props.listboxLabel ?? `${props.ariaLabel} options`}
+              class={cx(
+                searchableComboboxListboxVariants({ variant: variant() }),
+                props.listboxClass
+              )}
+            />
+          </Show>
+        </Combobox.Content>
+      </Combobox.Portal>
     </Combobox.Root>
   );
 };

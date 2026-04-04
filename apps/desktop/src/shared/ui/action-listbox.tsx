@@ -15,7 +15,7 @@ type ActionListboxProps<TData> = {
   options: readonly ActionListboxOption<TData>[];
   onSelect: (option: ActionListboxOption<TData>) => void;
   ariaLabel: string;
-  variant?: "default" | "search-history" | "search-results" | "command";
+  variant?: "default" | "search-history" | "search-results" | "command" | "page-nav";
   class?: string;
   selectedValue?: string | null;
   itemClass?: string | ((option: ActionListboxOption<TData>) => string);
@@ -34,7 +34,8 @@ export const actionListboxVariants = cva("action-listbox", {
       default: "action-listbox--default",
       "search-history": "action-listbox--search-history",
       "search-results": "action-listbox--search-results",
-      command: "action-listbox--command"
+      command: "action-listbox--command",
+      "page-nav": "action-listbox--page-nav"
     }
   },
   defaultVariants: {
@@ -48,7 +49,8 @@ export const actionListboxItemVariants = cva("action-listbox__item", {
       default: "action-listbox__item--default",
       "search-history": "action-listbox__item--search-history",
       "search-results": "action-listbox__item--search-results",
-      command: "action-listbox__item--command"
+      command: "action-listbox__item--command",
+      "page-nav": "action-listbox__item--page-nav"
     }
   },
   defaultVariants: {
@@ -62,7 +64,8 @@ export const actionListboxItemLabelVariants = cva("action-listbox__label", {
       default: "action-listbox__label--default",
       "search-history": "action-listbox__label--search-history",
       "search-results": "action-listbox__label--search-results",
-      command: "action-listbox__label--command"
+      command: "action-listbox__label--command",
+      "page-nav": "action-listbox__label--page-nav"
     }
   },
   defaultVariants: {
@@ -78,7 +81,8 @@ export const actionListboxItemDescriptionVariants = cva(
         default: "action-listbox__description--default",
         "search-history": "action-listbox__description--search-history",
         "search-results": "action-listbox__description--search-results",
-        command: "action-listbox__description--command"
+        command: "action-listbox__description--command",
+        "page-nav": "action-listbox__description--page-nav"
       }
     },
     defaultVariants: {

@@ -45,6 +45,7 @@ export const PagesPane = (props: PagesPaneProps) => {
         selectedValue={activePageUid()}
         onSelect={(option) => void props.onSwitch(option.data.uid)}
         ariaLabel="Pages"
+        variant="page-nav"
         class="page-list"
         itemClass="page-item"
         itemLabelClass="page-item__label"

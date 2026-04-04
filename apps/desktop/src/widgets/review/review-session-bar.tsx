@@ -110,21 +110,23 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
 
   return (
     <header class="review-session-bar" data-has-meta={hasMetaContent()}>
-      <div class="review-session-bar__meta" data-has-meta={hasMetaContent()}>
-        <div class="review-session-bar__title-row" data-has-title="false">
-          <Show when={isRecommended()}>
-            <span class="review-session-bar__badge">Recommended</span>
-          </Show>
-          <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
-            <span class="review-session-bar__hint">
-              {`Archived ${props.formatReviewDate(props.archivedAt())}`}
-            </span>
-          </Show>
-          <Show when={props.invalidated()}>
-            <span class="review-session-bar__warning">Pick a destination again</span>
-          </Show>
+      <Show when={hasMetaContent()}>
+        <div class="review-session-bar__meta">
+          <div class="review-session-bar__title-row">
+            <Show when={isRecommended()}>
+              <span class="review-session-bar__badge">Recommended</span>
+            </Show>
+            <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
+              <span class="review-session-bar__hint">
+                {`Archived ${props.formatReviewDate(props.archivedAt())}`}
+              </span>
+            </Show>
+            <Show when={props.invalidated()}>
+              <span class="review-session-bar__warning">Pick a destination again</span>
+            </Show>
+          </div>
         </div>
-      </div>
+      </Show>
 
       <Show when={props.activeTab() === "to-review"}>
         <div class="review-session-bar__actions">
@@ -154,6 +156,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
               noResultsLabel="No matches"
               variant="review"
               class="review-session-bar__search"
+              iconClass="review-session-bar__search-icon"
             />
           </Show>
           <Button

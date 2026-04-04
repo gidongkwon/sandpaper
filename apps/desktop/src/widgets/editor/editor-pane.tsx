@@ -29,6 +29,7 @@ import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { ActionMenu } from "../../shared/ui/action-menu";
 import { Button } from "../../shared/ui/button";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
+import { IconButton } from "../../shared/ui/icon-button";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { SearchableCombobox } from "../../shared/ui/searchable-combobox";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
@@ -52,7 +53,7 @@ import { highlightCodeWithShiki } from "../../shared/lib/markdown/shiki-highligh
 import { normalizePageUid } from "../../shared/lib/page/normalize-page-uid";
 import { getSafeLocalStorage } from "../../shared/lib/storage/safe-local-storage";
 import { getCaretPosition } from "../../shared/lib/textarea/get-caret-position";
-import { Document16Icon } from "../../shared/ui/icons";
+import { Document16Icon, Edit16Icon } from "../../shared/ui/icons";
 import { getVirtualRange } from "../../shared/lib/virtual-list/virtual-list";
 import {
   cleanTextForBlockType,
@@ -886,7 +887,7 @@ export const EditorPane = (props: EditorPaneProps) => {
       chain.push(item);
       current = item.parentIndex;
     }
-    return chain.reverse();
+    return chain.reverse().slice(0, -1);
   });
 
   onMount(() => {
@@ -3729,10 +3730,21 @@ export const EditorPane = (props: EditorPaneProps) => {
         <div class="editor-pane__title-group">
           <div class="editor-pane__title-row">
             <div class="editor-pane__title">{pageTitle()}</div>
-            <div class="editor-pane__count">{blocks.length} blocks</div>
+            <IconButton
+              class="editor-pane__rename-button"
+              variant="toolbar"
+              label={pageBusy() ? "Renaming page" : "Rename page"}
+              onClick={requestRename}
+              disabled={pageBusy()}
+            >
+              <Edit16Icon width={14} height={14} />
+            </IconButton>
           </div>
-          <Show when={breadcrumbItems().length > 1}>
-            <div class="editor-pane__breadcrumb" aria-label="Block breadcrumb">
+          <div class="editor-pane__breadcrumb" aria-label="Block breadcrumb">
+            <Show
+              when={breadcrumbItems().length > 0}
+              fallback={<span class="editor-pane__breadcrumb-placeholder">Top level</span>}
+            >
               <For each={breadcrumbItems()}>
                 {(item, index) => {
                   const isLast = () =>
@@ -3740,11 +3752,8 @@ export const EditorPane = (props: EditorPaneProps) => {
                   return (
                     <div class="editor-pane__breadcrumb-item">
                       <Button
-                        class={`editor-pane__breadcrumb-button ${
-                          isLast() ? "is-current" : ""
-                        }`}
+                        class="editor-pane__breadcrumb-button"
                         variant="unstyled"
-                        aria-current={isLast() ? "true" : undefined}
                         onClick={() => focusBlock(item.block.id, "end")}
                       >
                         {formatBreadcrumbLabel(item.block.text)}
@@ -3756,8 +3765,8 @@ export const EditorPane = (props: EditorPaneProps) => {
                   );
                 }}
               </For>
-            </div>
-          </Show>
+            </Show>
+          </div>
         </div>
         <div class="editor-pane__actions">
           <Show when={selectionRange()}>
@@ -3801,15 +3810,6 @@ export const EditorPane = (props: EditorPaneProps) => {
               </div>
             </div>
           </Show>
-          <Button
-            class="editor-pane__action"
-            variant="surface"
-            size="sm"
-            onClick={requestRename}
-            disabled={pageBusy()}
-          >
-            {pageBusy() ? "Renaming..." : "Rename"}
-          </Button>
           <div class="editor-pane__outline">
             <Button
               class="editor-pane__action"
