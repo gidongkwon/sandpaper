@@ -1,3 +1,5 @@
+import { normalizePageUid } from "../../../shared/lib/page/normalize-page-uid";
+
 export type PageDialogMode = "new" | "rename" | null;
 
 export type PageDialogAction = {
@@ -18,6 +20,7 @@ export const isPageDialogDisabled = (
 ) => {
   const trimmed = value.trim();
   if (!trimmed) return true;
+  if (normalizePageUid(trimmed) === "inbox") return true;
   if (mode === "rename") {
     return trimmed === currentTitle.trim();
   }
@@ -32,6 +35,7 @@ export const resolvePageDialogAction = (
   if (!mode) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (normalizePageUid(trimmed) === "inbox") return null;
   if (mode === "rename") {
     if (trimmed === currentTitle.trim()) return null;
     return { type: "rename", value: trimmed };

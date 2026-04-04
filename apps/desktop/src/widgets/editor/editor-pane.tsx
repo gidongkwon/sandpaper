@@ -2229,6 +2229,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   const dialogDisabled = createMemo(() => {
     const value = dialogValue().trim();
     if (!value) return true;
+    if (normalizePageUid(value) === "inbox") return true;
     if (dialogMode() === "rename") {
       const currentTitle = renameTitle().trim() || pageTitle();
       return value === currentTitle;
@@ -2245,7 +2246,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     }
     if (mode === "rename") {
       const currentTitle = renameTitle().trim() || pageTitle();
-      if (!value || value === currentTitle) {
+      if (!value || normalizePageUid(value) === "inbox" || value === currentTitle) {
         closeDialog();
         return;
       }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@solidjs/testing-library";
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -504,6 +504,17 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not allow creating a normal page named Inbox", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    await userEvent.click(screen.getByRole("button", { name: /create new page/i }));
+    const dialog = await screen.findByRole("dialog", { name: "New page title" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.type(input, "Inbox");
+
+    expect(within(dialog).getByRole("button", { name: "Create" })).toBeDisabled();
+  });
+
   it("renames the active page", async () => {
     render(() => <App />);
     const renameButton = await screen.findByRole("button", { name: "Rename" });
@@ -519,6 +530,21 @@ describe("App", () => {
     expect(
       await screen.findByText("Inbox Zero", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
+  });
+
+  it("does not allow renaming a normal page to Inbox", async () => {
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const renameButton = await screen.findByRole("button", { name: "Rename" });
+    await userEvent.click(renameButton);
+    const dialog = await screen.findByRole("dialog", { name: "Rename page" });
+    const input = within(dialog).getByRole("textbox");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Inbox");
+
+    await waitFor(() => {
+      expect(within(dialog).getByRole("button", { name: "Rename" })).toBeDisabled();
+    });
   });
 
   it("opens a plugin panel from the list", async () => {

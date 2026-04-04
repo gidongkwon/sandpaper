@@ -16,14 +16,18 @@ describe("page dialog utils", () => {
 
   it("disables dialog when the value is invalid", () => {
     expect(isPageDialogDisabled("new", "", "Inbox")).toBe(true);
+    expect(isPageDialogDisabled("new", "Inbox", "Home")).toBe(true);
     expect(isPageDialogDisabled("rename", "Inbox", "Inbox")).toBe(true);
+    expect(isPageDialogDisabled("rename", "Inbox", "Home")).toBe(true);
     expect(isPageDialogDisabled("rename", "New Title", "Inbox")).toBe(false);
   });
 
   it("resolves dialog actions", () => {
     expect(resolvePageDialogAction(null, "", "Inbox")).toBeNull();
     expect(resolvePageDialogAction("new", "", "Inbox")).toBeNull();
+    expect(resolvePageDialogAction("new", "Inbox", "Home")).toBeNull();
     expect(resolvePageDialogAction("rename", "Inbox", "Inbox")).toBeNull();
+    expect(resolvePageDialogAction("rename", "Inbox", "Home")).toBeNull();
     expect(resolvePageDialogAction("new", "New Page", "Inbox")).toEqual({
       type: "create",
       value: "New Page"

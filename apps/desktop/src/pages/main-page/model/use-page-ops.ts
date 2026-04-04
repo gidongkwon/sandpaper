@@ -147,6 +147,10 @@ export const createPageOps = (deps: PageOpsDeps) => {
       setPageMessage("Enter a page title first.");
       return;
     }
+    if (deps.resolvePageUid(title) === "inbox") {
+      setPageMessage("Inbox is reserved for capture.");
+      return;
+    }
     setPageBusy(true);
     setPageMessage(null);
     try {
@@ -343,6 +347,10 @@ export const createPageOps = (deps: PageOpsDeps) => {
     const title = renameTitle().trim();
     if (!title) {
       setPageMessage("Enter a page title first.");
+      return;
+    }
+    if (deps.resolvePageUid(title) === "inbox") {
+      setPageMessage("Inbox is reserved for capture.");
       return;
     }
     setPageBusy(true);
