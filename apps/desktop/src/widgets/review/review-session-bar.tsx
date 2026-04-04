@@ -4,6 +4,7 @@ import type {
   DestinationRecommendation,
   ReviewTab
 } from "../../entities/review/model/review-types";
+import { Button } from "../../shared/ui/button";
 import { SearchableCombobox, type SearchableComboboxOption } from "../../shared/ui/searchable-combobox";
 
 type ReviewSessionBarProps = {
@@ -74,18 +75,21 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   const destinationOptions = createMemo<SearchableComboboxOption[]>(() => {
     const query = props.destinationQuery().trim();
     if (query.length > 0) {
-      const pageOptions = props.destinationMatches().map((page) => ({
-        value: `open:${page.uid}`,
-        label: `Open ${page.title}`,
-        inputLabel: page.title,
-        description: null
-      }));
+      const pageOptions: SearchableComboboxOption[] = props
+        .destinationMatches()
+        .map((page) => ({
+          value: `open:${page.uid}`,
+          label: `Open ${page.title}`,
+          inputLabel: page.title,
+          description: null
+        }));
       if (!props.destinationHasExactMatch()) {
         pageOptions.push({
           value: `create:${query}`,
           label: `Create "${query}"`,
           inputLabel: query,
-          description: null
+          description: null,
+          tone: "accent"
         });
       }
       return pageOptions;
@@ -127,13 +131,14 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
           <Show
             when={!props.destinationIsHardSelected() || searchOpen()}
             fallback={
-              <button
-                class="review__button is-secondary"
-                type="button"
+              <Button
+                variant="surface"
+                size="md"
+                class="review__button review__button--secondary"
                 onClick={() => setSearchOpen(true)}
               >
                 Change destination
-              </button>
+              </Button>
             }
           >
             <SearchableCombobox
@@ -147,28 +152,19 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
               listboxLabel="Destination page options"
               placeholder="Search or create a page..."
               noResultsLabel="No matches"
+              variant="review"
               class="review-session-bar__search"
-              controlClass="review-session-bar__search-control"
-              inputClass="review-session-bar__search-input"
-              contentClass="review-session-bar__results"
-              listboxClass="review-session-bar__results-listbox"
-              itemClass={(option) =>
-                `review-session-bar__result ${
-                  option.value.startsWith("create:") ? "is-primary" : ""
-                }`.trim()
-              }
-              itemLabelClass="review-session-bar__result-label"
-              itemDescriptionClass="review-session-bar__result-description"
             />
           </Show>
-          <button
-            class="review__button is-primary"
-            type="button"
+          <Button
+            variant="primary"
+            size="md"
+            class="review__button review__button--primary"
             disabled={!props.canCompleteReview()}
             onClick={() => props.onCompleteReview()}
           >
             Complete review
-          </button>
+          </Button>
         </div>
       </Show>
     </header>

@@ -4013,10 +4013,6 @@ button:disabled {
   width: clamp(240px, 28vw, 360px);
 }
 
-.review-session-bar__search-control {
-  position: relative;
-}
-
 .review-session-bar[data-has-meta="false"] .review-session-bar__actions {
   margin-left: 0;
 }
@@ -4026,7 +4022,11 @@ button:disabled {
   max-width: none;
 }
 
-.review-session-bar__search-input {
+.searchable-combobox__control--review {
+  position: relative;
+}
+
+.searchable-combobox__input--review {
   width: 100%;
   min-height: 40px;
   padding: 0 var(--space-3);
@@ -4036,13 +4036,13 @@ button:disabled {
   box-shadow: var(--shadow-xs);
 }
 
-.review-session-bar__search-input:focus {
+.searchable-combobox__input--review:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.review-session-bar__results {
+.searchable-combobox__content--review {
   padding: var(--space-2);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-light);
@@ -4051,7 +4051,7 @@ button:disabled {
   z-index: 5;
 }
 
-.review-session-bar__results-listbox {
+.searchable-combobox__listbox--review {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -4060,7 +4060,7 @@ button:disabled {
   list-style: none;
 }
 
-.review-session-bar__result {
+.searchable-combobox__item--review {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -4071,25 +4071,25 @@ button:disabled {
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.review-session-bar__result[data-highlighted] {
+.searchable-combobox__item--review[data-highlighted] {
   background: var(--bg-hover);
 }
 
-.review-session-bar__result[data-selected] {
+.searchable-combobox__item--review[data-selected] {
   background: var(--accent-soft);
 }
 
-.review-session-bar__result.is-primary {
+.searchable-combobox__item--review.searchable-combobox__item--tone-accent {
   background: var(--accent);
   color: var(--text-inverse);
 }
 
-.review-session-bar__result-description {
+.searchable-combobox__item-description--review {
   font-size: 10px;
   color: var(--text-tertiary);
 }
 
-.review-session-bar__result.is-primary .review-session-bar__result-description {
+.searchable-combobox__item-description--review.searchable-combobox__item-description--tone-accent {
   color: rgba(255, 255, 255, 0.82);
 }
 
@@ -4102,40 +4102,15 @@ button:disabled {
 }
 
 .review__button {
-  padding: var(--space-2) var(--space-4);
-  background: var(--accent);
-  color: white;
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
-  font-weight: 600;
   white-space: nowrap;
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
 }
 
-.review__button:hover {
-  background: var(--accent-hover);
-}
-
-.review__button:active {
-  transform: scale(0.98);
-}
-
-.review__button.is-secondary {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-light);
-}
-
-.review__button.is-secondary:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-medium);
-}
-
-.review__button.is-primary {
+.review__button--primary {
   min-width: fit-content;
+}
+
+.review__button--secondary {
+  background: var(--bg-secondary);
 }
 
 /* ============================================
