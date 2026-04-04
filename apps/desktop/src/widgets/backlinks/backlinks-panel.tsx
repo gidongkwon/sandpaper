@@ -4,6 +4,7 @@ import type { BacklinkEntry } from "../../entities/page/model/backlink-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { IconButton } from "../../shared/ui/icon-button";
 import { Dismiss12Icon, Link16Icon, Link20Icon } from "../../shared/ui/icons";
+import { ActionListbox, type ActionListboxOption } from "../../shared/ui/action-listbox";
 
 type BacklinksPanelProps = {
   open: Accessor<boolean>;
@@ -22,6 +23,13 @@ type BacklinksPanelProps = {
 };
 
 export const BacklinksPanel = (props: BacklinksPanelProps) => {
+  const toBacklinkOptions = (entries: BacklinkEntry[]): ActionListboxOption<BacklinkEntry>[] =>
+    entries.map((entry) => ({
+      value: entry.id,
+      label: props.formatBacklinkSnippet(entry.text || "Untitled"),
+      data: entry
+    }));
+
   return (
     <aside class={`backlinks-panel ${props.open() ? "is-open" : ""}`}>
       <Show when={props.open()}>
@@ -82,20 +90,14 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
                           </button>
                         </Show>
                       </div>
-                      <div class="backlink-group__list">
-                        <For each={group.entries}>
-                          {(entry) => (
-                            <button
-                              class="backlink-item"
-                              onClick={() => void props.openPageBacklink(entry)}
-                            >
-                              <div class="backlink-item__text">
-                                {props.formatBacklinkSnippet(entry.text || "Untitled")}
-                              </div>
-                            </button>
-                          )}
-                        </For>
-                      </div>
+                      <ActionListbox
+                        options={toBacklinkOptions(group.entries)}
+                        onSelect={(option) => void props.openPageBacklink(option.data)}
+                        ariaLabel={`${group.title} backlinks`}
+                        class="backlink-group__list"
+                        itemClass="backlink-item"
+                        itemLabelClass="backlink-item__text"
+                      />
                     </div>
                   )}
                 </For>
@@ -110,20 +112,14 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
                   <div class="backlinks-panel__context">
                     Linked to <strong>{block().text.slice(0, 40) || "this block"}{block().text.length > 40 ? "..." : ""}</strong>
                   </div>
-                  <div class="backlinks-panel__list">
-                    <For each={props.activeBacklinks()}>
-                      {(entry) => (
-                        <button
-                          class="backlink-item"
-                          onClick={() => props.onBlockBacklinkSelect(entry)}
-                        >
-                          <div class="backlink-item__text">
-                            {props.formatBacklinkSnippet(entry.text || "Untitled")}
-                          </div>
-                        </button>
-                      )}
-                    </For>
-                  </div>
+                  <ActionListbox
+                    options={toBacklinkOptions(props.activeBacklinks())}
+                    onSelect={(option) => props.onBlockBacklinkSelect(option.data)}
+                    ariaLabel="Block backlinks"
+                    class="backlinks-panel__list"
+                    itemClass="backlink-item"
+                    itemLabelClass="backlink-item__text"
+                  />
                 </div>
               </Show>
             )}
