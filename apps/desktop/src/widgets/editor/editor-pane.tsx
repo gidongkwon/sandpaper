@@ -29,6 +29,7 @@ import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { ActionMenu } from "../../shared/ui/action-menu";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
+import { SearchableCombobox } from "../../shared/ui/searchable-combobox";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
@@ -2538,11 +2539,7 @@ export const EditorPane = (props: EditorPaneProps) => {
   }) => {
     const currentBlockId = () => props.blockId;
     const [highlightedHtml, setHighlightedHtml] = createSignal<string | null>(null);
-    const [languageOpen, setLanguageOpen] = createSignal(false);
-    const [languageQuery, setLanguageQuery] = createSignal("");
-    const [activeLanguageIndex, setActiveLanguageIndex] = createSignal(0);
     let renderToken = 0;
-    const languageListboxId = () => `code-language-options-${currentBlockId()}`;
 
     createEffect(() => {
       const lang = normalizeCodeLanguage(props.code.lang);
@@ -2558,51 +2555,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     const selectedLanguage = createMemo(() =>
       normalizeCodeLanguage(props.code.lang)
     );
-    const selectedLanguageOption = createMemo(
-      () =>
-        CODE_LANGUAGE_OPTIONS.find(
-          (option) => option.value === selectedLanguage()
-        ) ?? CODE_LANGUAGE_OPTIONS[0]
-    );
-    const filteredLanguageOptions = createMemo(() => {
-      if (!languageOpen()) return CODE_LANGUAGE_OPTIONS;
-      const query = languageQuery().trim().toLowerCase();
-      if (!query) return CODE_LANGUAGE_OPTIONS;
-      return CODE_LANGUAGE_OPTIONS.filter((option) => {
-        return (
-          option.label.toLowerCase().includes(query) ||
-          option.value.includes(query)
-        );
-      });
-    });
-    const activeLanguageId = createMemo(() => {
-      if (!languageOpen()) return undefined;
-      const options = filteredLanguageOptions();
-      const index = activeLanguageIndex();
-      if (index < 0 || index >= options.length) return undefined;
-      return `${languageListboxId()}-${options[index]?.value}`;
-    });
-
-    createEffect(() => {
-      if (languageOpen()) return;
-      setLanguageQuery(selectedLanguageOption().label);
-    });
-
-    createEffect(() => {
-      if (!languageOpen()) return;
-      const options = filteredLanguageOptions();
-      if (options.length === 0) {
-        setActiveLanguageIndex(-1);
-        return;
-      }
-      setActiveLanguageIndex((current) => {
-        if (current < 0 || current >= options.length) {
-          return 0;
-        }
-        return current;
-      });
-    });
-
     const stopPreviewEvent = (event: Event) => {
       event.stopPropagation();
     };
@@ -2635,81 +2587,8 @@ export const EditorPane = (props: EditorPaneProps) => {
       toRenderableCodeLines(highlightedHtml(), props.code.content)
     );
 
-    const openLanguageMenu = () => {
-      if (languageOpen()) return;
-      setLanguageOpen(true);
-      setLanguageQuery(selectedLanguageOption().label);
-      const selectedIndex = CODE_LANGUAGE_OPTIONS.findIndex(
-        (option) => option.value === selectedLanguage()
-      );
-      setActiveLanguageIndex(selectedIndex >= 0 ? selectedIndex : 0);
-    };
-
-    const closeLanguageMenu = () => {
-      setLanguageOpen(false);
-    };
-
     const applyLanguage = (nextLanguage: string) => {
       props.onChangeLanguage(currentBlockId(), nextLanguage);
-      closeLanguageMenu();
-    };
-
-    const handleLanguageInput = (event: Event) => {
-      event.stopPropagation();
-      const target = event.currentTarget;
-      if (!(target instanceof HTMLInputElement)) return;
-      if (!languageOpen()) {
-        setLanguageOpen(true);
-      }
-      setLanguageQuery(target.value);
-      setActiveLanguageIndex(0);
-    };
-
-    const handleLanguageKeyDown = (event: KeyboardEvent) => {
-      event.stopPropagation();
-      const options = filteredLanguageOptions();
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        if (!languageOpen()) {
-          openLanguageMenu();
-          return;
-        }
-        if (options.length === 0) return;
-        setActiveLanguageIndex((current) =>
-          current >= options.length - 1 ? 0 : current + 1
-        );
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        if (!languageOpen()) {
-          openLanguageMenu();
-          return;
-        }
-        if (options.length === 0) return;
-        setActiveLanguageIndex((current) =>
-          current <= 0 ? options.length - 1 : current - 1
-        );
-        return;
-      }
-      if (event.key === "Enter") {
-        if (!languageOpen()) {
-          openLanguageMenu();
-          return;
-        }
-        const index = activeLanguageIndex();
-        if (index < 0 || index >= options.length) return;
-        event.preventDefault();
-        applyLanguage(options[index]?.value ?? selectedLanguage());
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeLanguageMenu();
-      }
-      if (event.key === "Tab") {
-        closeLanguageMenu();
-      }
     };
 
     return (
@@ -2719,103 +2598,36 @@ export const EditorPane = (props: EditorPaneProps) => {
             <div
               class="block-renderer__meta"
               data-code-edit="true"
-                data-code-language-menu={currentBlockId()}
+              data-code-language-menu={currentBlockId()}
+              onPointerDown={stopPreviewEvent}
+              onMouseDown={stopPreviewEvent}
+              onPointerUp={stopPreviewEvent}
+              onMouseUp={stopPreviewEvent}
+              onClick={stopPreviewEvent}
             >
-              <div class="block-renderer__lang-combobox">
-                <input
-                  class="block-renderer__lang-input"
-                  type="text"
-                  role="combobox"
-                  aria-label="Code language"
-                  aria-expanded={languageOpen()}
-                  aria-controls={languageListboxId()}
-                  aria-autocomplete="list"
-                  aria-activedescendant={activeLanguageId()}
-                  value={languageOpen() ? languageQuery() : selectedLanguageOption().label}
-                  placeholder={selectedLanguageOption().label}
-                  data-code-edit="true"
-                  onFocus={(event) => {
-                    openLanguageMenu();
-                    event.currentTarget.select();
-                  }}
-                  onBlur={(event) => {
-                    const current = event.currentTarget;
-                    const blockId = currentBlockId();
-                    window.setTimeout(() => {
-                      if (document.activeElement === current) return;
-                      const active = document.activeElement;
-                      if (
-                        active instanceof Element &&
-                        active.closest(
-                          `[data-code-language-menu="${blockId}"]`
-                        )
-                      ) {
-                        return;
-                      }
-                      closeLanguageMenu();
-                    }, 0);
-                  }}
-                  onPointerDown={stopPreviewEvent}
-                  onMouseDown={stopPreviewEvent}
-                  onPointerUp={stopPreviewEvent}
-                  onMouseUp={stopPreviewEvent}
-                  onClick={stopPreviewEvent}
-                  onInput={handleLanguageInput}
-                  onKeyDown={handleLanguageKeyDown}
-                />
-                <span class="block-renderer__lang-caret" aria-hidden="true" />
-                <Show when={languageOpen()}>
-                  <div
-                      id={languageListboxId()}
-                    class="block-renderer__lang-options"
-                    role="listbox"
-                    aria-label="Code language options"
-                    onPointerDown={stopPreviewEvent}
-                    onMouseDown={stopPreviewEvent}
-                    onPointerUp={stopPreviewEvent}
-                    onMouseUp={stopPreviewEvent}
-                    onClick={stopPreviewEvent}
-                  >
-                    <Show
-                      when={filteredLanguageOptions().length > 0}
-                      fallback={
-                        <div class="block-renderer__lang-empty">No matches</div>
-                      }
-                    >
-                      <For each={filteredLanguageOptions()}>
-                        {(option, index) => {
-                           const optionId = `${languageListboxId()}-${option.value}`;
-                          const isActive = () => index() === activeLanguageIndex();
-                          const isSelected = () =>
-                            option.value === selectedLanguage();
-                          return (
-                            <button
-                              id={optionId}
-                              type="button"
-                              role="option"
-                              class={`block-renderer__lang-option ${
-                                isActive() ? "is-active" : ""
-                              } ${isSelected() ? "is-selected" : ""}`}
-                              aria-selected={isSelected()}
-                              data-code-edit="true"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                applyLanguage(option.value);
-                              }}
-                            >
-                              <span>{option.label}</span>
-                              <span class="block-renderer__lang-option-value">
-                                {option.value}
-                              </span>
-                            </button>
-                          );
-                        }}
-                      </For>
-                    </Show>
-                  </div>
-                </Show>
-              </div>
+              <SearchableCombobox
+                options={CODE_LANGUAGE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  description: option.value
+                }))}
+                value={selectedLanguage()}
+                onChange={applyLanguage}
+                ariaLabel="Code language"
+                listboxLabel="Code language options"
+                noResultsLabel="No matches"
+                class="block-renderer__lang-combobox"
+                controlClass="block-renderer__lang-control"
+                inputClass="block-renderer__lang-input"
+                iconClass="block-renderer__lang-caret"
+                contentClass="block-renderer__lang-options"
+                listboxClass="block-renderer__lang-listbox"
+                itemClass="block-renderer__lang-option"
+                itemLabelClass="block-renderer__lang-option-label"
+                itemDescriptionClass="block-renderer__lang-option-value"
+                emptyClass="block-renderer__lang-empty"
+                selectOnFocus
+              />
             </div>
           </div>
           <div class="block-renderer__actions">
