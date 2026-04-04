@@ -598,16 +598,13 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Review" }));
 
     const queue = await screen.findByRole("navigation", { name: "Review queue" });
-    const queueButtons = within(queue).getAllByRole("button");
-    expect(queueButtons[0]).toHaveTextContent("Older thread");
-    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+    const queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("Older thread");
+    expect(queueCards[1]).toHaveTextContent("Newer thread");
 
-    expect(
-      screen.getByRole("heading", { name: "Capture thread" })
-    ).toBeInTheDocument();
     expect(screen.getByText("Older reply")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Destination note" })
+      screen.getByRole("region", { name: "Destination note" })
     ).toBeInTheDocument();
   });
 
@@ -624,13 +621,13 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Review" }));
 
     expect(
-      await screen.findByRole("button", { name: "To Review" })
+      await screen.findByRole("tab", { name: "To Review" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Archived" })
+      screen.getByRole("tab", { name: "Archived" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /thread root/i })
+      screen.getByText("Thread root")
     ).toBeInTheDocument();
     expect(screen.getByText("Home", { selector: ".editor-pane__title" })).toBeInTheDocument();
   });
@@ -664,6 +661,37 @@ describe("App editor UX", () => {
         `Captured ${formatReviewDate(capturedStart.getTime())} - ${formatReviewDate(capturedEnd.getTime())}`
       )
     ).toBeInTheDocument();
+  });
+
+  it("preloads a recommended destination inside the review workbench", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Home follow up");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    expect(
+      within(destinationPanel).getByText("Home", {
+        selector: ".editor-pane__title"
+      })
+    ).toBeInTheDocument();
+    expect(within(destinationPanel).getByText("Recommended")).toBeInTheDocument();
+    expect(
+      within(destinationPanel).getByPlaceholderText("Search or create a page...")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "To Review" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
+    expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
   });
 
   it("keeps review completion disabled until the destination note changes", async () => {
@@ -723,9 +751,9 @@ describe("App editor UX", () => {
 
     await user.click(screen.getByRole("button", { name: "Review" }));
     let queue = await screen.findByRole("navigation", { name: "Review queue" });
-    let queueButtons = within(queue).getAllByRole("button");
-    expect(queueButtons[0]).toHaveTextContent("First thread");
-    expect(queueButtons[1]).toHaveTextContent("Second thread");
+    let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("First thread");
+    expect(queueCards[1]).toHaveTextContent("Second thread");
 
     firstRender.unmount();
 
@@ -733,9 +761,9 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Review" }));
 
     queue = await screen.findByRole("navigation", { name: "Review queue" });
-    queueButtons = within(queue).getAllByRole("button");
-    expect(queueButtons[0]).toHaveTextContent("First thread");
-    expect(queueButtons[1]).toHaveTextContent("Second thread");
+    queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("First thread");
+    expect(queueCards[1]).toHaveTextContent("Second thread");
   });
 
   it("persists review queue FIFO order through the tauri page store", async () => {
@@ -866,9 +894,9 @@ describe("App editor UX", () => {
 
     await user.click(screen.getByRole("button", { name: "Review" }));
     let queue = await screen.findByRole("navigation", { name: "Review queue" });
-    let queueButtons = within(queue).getAllByRole("button");
-    expect(queueButtons[0]).toHaveTextContent("Older thread");
-    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+    let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("Older thread");
+    expect(queueCards[1]).toHaveTextContent("Newer thread");
     expect(storedReviewThreadOrder).toHaveLength(2);
 
     localStorage.clear();
@@ -878,9 +906,9 @@ describe("App editor UX", () => {
     await user.click(await screen.findByRole("button", { name: "Review" }));
 
     queue = await screen.findByRole("navigation", { name: "Review queue" });
-    queueButtons = within(queue).getAllByRole("button");
-    expect(queueButtons[0]).toHaveTextContent("Older thread");
-    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+    queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("Older thread");
+    expect(queueCards[1]).toHaveTextContent("Newer thread");
   });
 
   it("persists hidden inbox thread changes through the tauri page store", async () => {
@@ -1045,7 +1073,7 @@ describe("App editor UX", () => {
       ).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Archived" }));
+    await user.click(screen.getByRole("tab", { name: "Archived" }));
     expect(
       await screen.findByRole("button", { name: /thread root/i })
     ).toBeInTheDocument();
@@ -1087,7 +1115,7 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: /beta thread/i })
+        screen.getByText("Beta thread")
       ).toBeInTheDocument();
     });
 
@@ -1128,7 +1156,7 @@ describe("App editor UX", () => {
       ])
     );
 
-    await user.click(screen.getByRole("button", { name: "Archived" }));
+    await user.click(screen.getByRole("tab", { name: "Archived" }));
 
     await user.click(await screen.findByRole("button", { name: /alpha thread/i }));
     await waitFor(() => {

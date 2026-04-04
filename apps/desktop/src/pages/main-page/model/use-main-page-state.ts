@@ -76,6 +76,7 @@ import {
   writeLocalStorage
 } from "../../../shared/lib/storage/safe-local-storage";
 import { createReviewPageHash } from "./review-session-hash";
+import { getReviewDestinationRecommendations } from "./review-destination-recommender";
 
 type JumpTarget = {
   id: string;
@@ -1348,7 +1349,32 @@ export const createMainPageState = () => {
       });
   });
 
+  const activeReviewThread = createMemo(
+    () =>
+      reviewThreads().find((thread) => thread.id === reviewSession().active_thread_id) ?? null
+  );
+
+  const selectedArchivedReviewThread = createMemo(
+    () =>
+      archivedReviewThreads().find(
+        (thread) => thread.id === reviewSession().selected_archived_thread_id
+      ) ?? null
+  );
+
+  const reviewRecentDestinationPageUids = createMemo(() => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const thread of [...archivedReviewThreads()].reverse()) {
+      const destination = thread.destination_page_uid;
+      if (!destination || seen.has(destination)) continue;
+      seen.add(destination);
+      ordered.push(destination);
+    }
+    return ordered;
+  });
+
   createEffect(() => {
+    if (!reviewThreadOrderHydrated()) return;
     const threads = reviewThreads();
     if (threads.length === 0) {
       if (reviewSession().active_thread_id !== null) {
@@ -1369,6 +1395,57 @@ export const createMainPageState = () => {
       }));
     }
   });
+
+  createEffect((configuredThreadId: string | null) => {
+    if (reviewSession().tab !== "to-review") return configuredThreadId ?? null;
+    const thread = activeReviewThread();
+    const threadId = thread?.id ?? null;
+
+    if (!threadId) {
+      if (
+        configuredThreadId !== null ||
+        reviewSession().destination_page_uid !== null ||
+        reviewSession().destination_recommendations.length > 0
+      ) {
+        setReviewSession((current) => ({
+          ...current,
+          destination_page_uid: null,
+          destination_recommendations: [],
+          is_hard_selected: false,
+          baseline_page_hash: null,
+          last_known_page_hash: null,
+          invalidated: false,
+          updated_at: Date.now()
+        }));
+      }
+      return null;
+    }
+
+    if (configuredThreadId === threadId) return configuredThreadId;
+
+    const recommendations = getReviewDestinationRecommendations({
+      thread,
+      pages: visiblePages(),
+      recentDestinationPageUids: reviewRecentDestinationPageUids()
+    });
+
+    setReviewSession((current) => ({
+      ...current,
+      active_thread_id: threadId,
+      selected_archived_thread_id: null,
+      destination_page_uid: recommendations[0]?.page_uid ?? null,
+      destination_recommendations: recommendations,
+      is_hard_selected: false,
+      baseline_page_hash: null,
+      last_known_page_hash: null,
+      invalidated: false,
+      updated_at: Date.now()
+    }));
+    setReviewDestinationQuery("");
+    setReviewPendingBaselineHash(null);
+    setReviewSessionNeedsValidation(false);
+    return threadId;
+  }, null);
 
   createEffect(() => {
     const destinationPageUid = reviewSession().destination_page_uid;
@@ -1827,21 +1904,40 @@ export const createMainPageState = () => {
         activeId,
         onAddCurrent: addReviewItem,
         threads: reviewThreads,
+        activeThread: activeReviewThread,
         archivedThreads: archivedReviewThreads,
+        selectedArchivedThread: selectedArchivedReviewThread,
+        activeTab: () => reviewSession().tab,
+        setActiveTab: (tab) =>
+          setReviewSession((current) => ({
+            ...current,
+            tab,
+            updated_at: Date.now()
+          })),
         selectedThreadId: () => reviewSession().active_thread_id,
-        onSelectThread: (id) =>
+        onSelectThread: (id) => {
+          setReviewThreadOrder((current) => {
+            if (current[0] === id) return current;
+            const remaining = current.filter((threadId) => threadId !== id);
+            return [id, ...remaining];
+          });
           setReviewSession((current) => ({
             ...current,
             active_thread_id: id,
             tab: "to-review",
             updated_at: Date.now()
-          })),
+          }));
+        },
         onOpenArchivedThread: openArchivedReviewThread,
         destinationQuery: reviewDestinationQuery,
         setDestinationQuery: setReviewDestinationQuery,
         destinationMatches: reviewDestinationMatches,
         destinationHasExactMatch: reviewDestinationHasExactMatch,
         destinationTitle: reviewDestinationTitle,
+        destinationPageUid: () => reviewSession().destination_page_uid,
+        destinationRecommendations: () => reviewSession().destination_recommendations,
+        destinationIsHardSelected: () => reviewSession().is_hard_selected,
+        invalidated: () => reviewSession().invalidated,
         destinationSelected: reviewDestinationSelected,
         onOpenDestination: openReviewDestination,
         onCreateDestination: createReviewDestination,

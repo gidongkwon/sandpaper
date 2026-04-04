@@ -15,7 +15,7 @@ import { CommandPalette } from "../../../features/command-palette/ui/command-pal
 import { EditorPane } from "../../../widgets/editor/editor-pane";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { PluginPanelWidget } from "../../../widgets/plugins/plugin-panel";
-import { ReviewPane } from "../../../widgets/review/review-pane";
+import { ReviewWorkbench } from "../../../widgets/review/review-workbench";
 import { NotificationPanel } from "../../../widgets/notifications/notification-panel";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
 import { SidebarContent } from "../../../widgets/sidebar/sidebar-content";
@@ -59,7 +59,7 @@ export type MainPageWorkspaceState = {
   backlinks: PropsOf<typeof BacklinksPanel>;
   pluginPanel: PropsOf<typeof PluginPanelWidget>;
   capture: PropsOf<typeof CapturePane>;
-  review: PropsOf<typeof ReviewPane>;
+  review: PropsOf<typeof ReviewWorkbench>;
 };
 
 export type MainPageOverlaysState = {

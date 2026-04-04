@@ -52,7 +52,7 @@ describe("App modes", () => {
     expect(await screen.findByPlaceholderText("Capture a thought, link, or task...")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Review" }));
-    expect(await screen.findByText("Review mode")).toBeInTheDocument();
+    expect(await screen.findByText("No capture threads to review.")).toBeInTheDocument();
   });
 
   it("restores focus to the mode input when switching modes", async () => {
