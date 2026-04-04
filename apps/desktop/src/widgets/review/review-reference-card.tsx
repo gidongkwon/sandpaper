@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import type { ReviewThread } from "../../entities/review/model/review-types";
 import { Button } from "../../shared/ui/button";
+import { ArrowRight16Icon } from "../../shared/ui/icons";
 
 type ReviewReferenceCardProps = {
   thread: ReviewThread;
@@ -30,7 +31,18 @@ export const ReviewReferenceCard = (props: ReviewReferenceCardProps) => {
       </div>
       <Show when={props.destinationLabel}>
         {(destinationLabel) => (
-          <div class="review-reference-card__destination">{destinationLabel()}</div>
+          <div class="review-reference-card__destination">
+            <span class="review-reference-card__destination-label">
+              <ArrowRight16Icon
+                class="review-reference-card__destination-icon"
+                width="12"
+                height="12"
+              />
+              <span class="review-reference-card__destination-text">
+                {destinationLabel()}
+              </span>
+            </span>
+          </div>
         )}
       </Show>
     </>

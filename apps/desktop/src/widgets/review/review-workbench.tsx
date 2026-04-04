@@ -184,6 +184,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
             class="review-workbench__editor"
             aria-label="Destination note"
             data-transition-slot="editor"
+            style={{ "view-transition-name": "mode-pane-editor" }}
           >
             <ReviewSessionBar
               activeTab={props.activeTab}

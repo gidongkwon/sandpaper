@@ -3617,7 +3617,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     <section
       class="editor-pane"
       data-transition-slot="editor"
-      style={{ "view-transition-name": "mode-pane-editor" }}
+      style={{ "view-transition-name": "none" }}
     >
       <div class="editor-pane__header">
         <div class="editor-pane__title-group">

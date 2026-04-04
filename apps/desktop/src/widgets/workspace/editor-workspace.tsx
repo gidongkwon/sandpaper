@@ -13,7 +13,12 @@ export const EditorWorkspace = (props: EditorWorkspaceProps) => {
   return (
     <div class={`workspace ${props.sidebarOpen() ? "" : "sidebar-collapsed"}`}>
       {props.sidebar}
-      <main class={`main-pane ${props.backlinksOpen() ? "has-panel" : ""}`} role="main">
+      <main
+        class={`main-pane ${props.backlinksOpen() ? "has-panel" : ""}`}
+        role="main"
+        data-transition-slot="editor"
+        style={{ "view-transition-name": "mode-pane-editor" }}
+      >
         {props.editor}
         {props.backlinks}
         {props.pluginPanel}
