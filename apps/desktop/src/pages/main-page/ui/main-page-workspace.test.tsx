@@ -30,8 +30,8 @@ vi.mock("../../../widgets/plugins/plugin-panel", () => ({
 vi.mock("../../../widgets/capture/capture-pane", () => ({
   CapturePane: () => <div data-testid="capture-pane" />
 }));
-vi.mock("../../../widgets/review/review-pane", () => ({
-  ReviewPane: () => <div data-testid="review-pane" />
+vi.mock("../../../widgets/review/review-workbench", () => ({
+  ReviewWorkbench: () => <div data-testid="review-workbench" />
 }));
 vi.mock("../../../widgets/focus-panel/focus-panel", () => ({
   FocusPanel: (props: { capture: JSX.Element; review: JSX.Element }) => (
@@ -128,5 +128,6 @@ describe("MainPageWorkspace", () => {
 
     expect(await screen.findByTestId("focus-panel")).toBeInTheDocument();
     expect(screen.getByTestId("capture-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
   });
 });

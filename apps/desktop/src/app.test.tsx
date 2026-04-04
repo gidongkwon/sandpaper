@@ -176,8 +176,9 @@ describe("App", () => {
   it("renders the review mode panel", async () => {
     render(() => <App />);
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
-    expect(await screen.findByText("Review workbench")).toBeInTheDocument();
-    expect(await screen.findByText(/review mode/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Capture a thread first, then refine it here.")
+    ).toBeInTheDocument();
   });
 
   it("renders the review empty state in review mode", async () => {
@@ -199,7 +200,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(
-      await screen.findByRole("heading", { name: "Destination note" })
+      await screen.findByRole("region", { name: "Destination note" })
     ).toBeInTheDocument();
   });
 
