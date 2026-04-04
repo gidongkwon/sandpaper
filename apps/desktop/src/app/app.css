@@ -230,15 +230,6 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
-:root[data-theme="dark"] .capture-chat__bubble {
-  background: var(--bg-secondary);
-  box-shadow: var(--shadow-xs);
-}
-
-:root[data-theme="dark"] .capture-chat__bubble:hover {
-  box-shadow: var(--shadow-sm);
-}
-
 /* Reset */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -1694,7 +1685,7 @@ button:disabled {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4);
   position: relative;
 }
 
@@ -1720,8 +1711,8 @@ button:disabled {
 
 .block-selection-box {
   position: absolute;
-  left: var(--space-5);
-  right: var(--space-5);
+  left: var(--space-4);
+  right: var(--space-4);
   border: 1px dashed var(--accent);
   background: var(--accent-soft);
   border-radius: var(--radius-sm);
@@ -1777,14 +1768,13 @@ button:disabled {
   align-items: flex-start;
   gap: var(--space-2);
   padding: 2px 0;
-  padding-left: 24px;
   --block-indent: 0px;
 }
 
 .block::before {
   content: "";
   position: absolute;
-  left: calc(-1 * var(--block-indent));
+  left: calc(27px - var(--block-indent));
   top: 0;
   bottom: 0;
   width: var(--block-indent);
@@ -1792,16 +1782,16 @@ button:disabled {
     to right,
     transparent,
     transparent 23px,
-    var(--border-light) 23px,
-    var(--border-light) 24px
+    var(--border-strong) 23px,
+    var(--border-strong) 24px
   );
-  opacity: 0.35;
+  opacity: 0.5;
   pointer-events: none;
 }
 
 .block:hover::before,
 .block.is-active::before {
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .block__actions {
@@ -1842,6 +1832,8 @@ button:disabled {
   width: 16px;
   height: 16px;
   margin-top: 6px;
+  margin-left: -5px;
+  margin-right: 5px;
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -3315,8 +3307,8 @@ button:disabled {
 .capture-chat__bubble-row {
   position: relative;
   display: grid;
-  grid-template-columns: 16px 48px minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
   column-gap: var(--space-2);
   width: 100%;
   padding-left: var(--capture-content-inline-padding);
@@ -3332,14 +3324,13 @@ button:disabled {
 .capture-chat__bubble-row--root::before {
   content: "";
   position: absolute;
-  left: calc(var(--capture-content-inline-padding) + 4px);
-  top: 0.5rem;
-  width: 8px;
-  height: 8px;
+  left: calc(var(--capture-content-inline-padding) + 5px);
+  top: 0.625rem;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  border: 1px solid var(--text-quaternary);
-  background: var(--bg-primary);
-  opacity: 0.9;
+  background: var(--text-quaternary);
+  opacity: 1;
   pointer-events: none;
   z-index: 2;
 }
@@ -3359,15 +3350,23 @@ button:disabled {
   z-index: 2;
 }
 
-.capture-chat__item-time {
+.capture-chat__content {
   grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.capture-chat__item-time {
   width: auto;
   padding-top: 0;
   color: var(--text-quaternary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   line-height: 1.45;
-  text-align: right;
+  text-align: left;
 }
 
 .capture-chat__thread {
@@ -3392,8 +3391,8 @@ button:disabled {
   content: "";
   position: absolute;
   left: calc(var(--capture-content-inline-padding) + 7px);
-  top: 1.05rem;
-  height: calc(var(--thread-line-end) - 1.05rem + 2px);
+  top: calc(0.625rem + 10px);
+  height: calc(var(--thread-line-end) - (0.625rem + 10px) + 2px);
   width: 1px;
   border-radius: var(--radius-full);
   background: var(--text-quaternary);
@@ -3410,18 +3409,26 @@ button:disabled {
 
 /* --- Chat bubbles --- */
 .capture-chat__bubble {
-  grid-column: 3;
   flex: 1;
+  width: 100%;
   max-width: none;
   min-width: 0;
   padding: 0;
   background: transparent;
   color: var(--text-primary);
-  border: none;
-  border-radius: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
   word-wrap: break-word;
   overflow-wrap: break-word;
   box-shadow: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.capture-chat__bubble:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .capture-chat__actions {
@@ -3464,6 +3471,10 @@ button:disabled {
 }
 
 .capture-chat__bubble-text:focus {
+  outline: none;
+}
+
+.capture-chat__bubble-text:focus-visible {
   outline: none;
 }
 

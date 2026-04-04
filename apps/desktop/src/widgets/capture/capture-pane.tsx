@@ -134,7 +134,7 @@ export const CapturePane = (props: CapturePaneProps) => {
         threadEl.style.removeProperty("--thread-line-end");
         return;
       }
-      const end = Math.max(lastReplyEl.offsetTop - 6, 18);
+      const end = Math.max(lastReplyEl.offsetTop - 4, 18);
       threadEl.style.setProperty("--thread-line-end", `${end}px`);
     });
   };
@@ -196,50 +196,52 @@ export const CapturePane = (props: CapturePaneProps) => {
                     }}
                   >
                     <div class="capture-chat__bubble-row capture-chat__bubble-row--root">
-                    <time class="capture-chat__item-time">
-                      {formatCaptureTime(thread.root.capturedAt)}
-                    </time>
-                    <div class="capture-chat__bubble">
-                      <InlineEditor
-                        class="capture-chat__bubble-text"
-                        rows={1}
-                        autoResize
-                        maxHeight={120}
-                        displayMode="markdown"
-                        markdownDisplayHandlers={props.markdownDisplayHandlers}
-                        aria-label={`Captured item ${thread.root.position}`}
-                        value={thread.root.block.text}
-                        onInput={(event) => {
-                          props.onEditItem(thread.root.block.id, event.currentTarget.value);
-                          syncThreadLine(threadRef, lastReplyRef);
-                        }}
-                      />
+                      <div class="capture-chat__content">
+                        <time class="capture-chat__item-time">
+                          {formatCaptureTime(thread.root.capturedAt)}
+                        </time>
+                        <div class="capture-chat__bubble">
+                          <InlineEditor
+                            class="capture-chat__bubble-text"
+                            rows={1}
+                            autoResize
+                            maxHeight={120}
+                            displayMode="markdown"
+                            markdownDisplayHandlers={props.markdownDisplayHandlers}
+                            aria-label={`Captured item ${thread.root.position}`}
+                            value={thread.root.block.text}
+                            onInput={(event) => {
+                              props.onEditItem(thread.root.block.id, event.currentTarget.value);
+                              syncThreadLine(threadRef, lastReplyRef);
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div class="capture-chat__actions">
+                        <IconButton
+                          variant="inline"
+                          class="capture-chat__icon-button"
+                          aria-label={`Reply to ${thread.root.block.text}`}
+                          onClick={() => props.onReplyTo(thread.root.block.id)}
+                        >
+                          <ArrowReply16Icon width="16" height="16" />
+                        </IconButton>
+                        <IconButton
+                          variant="inline"
+                          class="capture-chat__icon-button"
+                          aria-label={`Delete ${thread.root.block.text}`}
+                          onClick={() =>
+                            setPendingThreadDelete({
+                              id: thread.root.block.id,
+                              text: thread.root.block.text,
+                              replyCount: thread.replies.length
+                            })
+                          }
+                        >
+                          <Delete16Icon width="16" height="16" />
+                        </IconButton>
+                      </div>
                     </div>
-                    <div class="capture-chat__actions">
-                      <IconButton
-                        variant="inline"
-                        class="capture-chat__icon-button"
-                        aria-label={`Reply to ${thread.root.block.text}`}
-                        onClick={() => props.onReplyTo(thread.root.block.id)}
-                      >
-                        <ArrowReply16Icon width="16" height="16" />
-                      </IconButton>
-                      <IconButton
-                        variant="inline"
-                        class="capture-chat__icon-button"
-                        aria-label={`Delete ${thread.root.block.text}`}
-                        onClick={() =>
-                          setPendingThreadDelete({
-                            id: thread.root.block.id,
-                            text: thread.root.block.text,
-                            replyCount: thread.replies.length
-                          })
-                        }
-                      >
-                        <Delete16Icon width="16" height="16" />
-                      </IconButton>
-                    </div>
-                  </div>
                   <For each={thread.replies}>
                     {(reply, index) => (
                       <div
@@ -251,24 +253,26 @@ export const CapturePane = (props: CapturePaneProps) => {
                           }
                         }}
                       >
-                        <time class="capture-chat__item-time">
-                          {formatCaptureTime(reply.capturedAt)}
-                        </time>
-                        <div class="capture-chat__bubble">
-                          <InlineEditor
-                            class="capture-chat__bubble-text"
-                            rows={1}
-                            autoResize
-                            maxHeight={120}
-                            displayMode="markdown"
-                            markdownDisplayHandlers={props.markdownDisplayHandlers}
-                            aria-label={`Captured item ${reply.position}`}
-                            value={reply.block.text}
-                            onInput={(event) => {
-                              props.onEditItem(reply.block.id, event.currentTarget.value);
-                              syncThreadLine(threadRef, lastReplyRef);
-                            }}
-                          />
+                        <div class="capture-chat__content">
+                          <time class="capture-chat__item-time">
+                            {formatCaptureTime(reply.capturedAt)}
+                          </time>
+                          <div class="capture-chat__bubble">
+                            <InlineEditor
+                              class="capture-chat__bubble-text"
+                              rows={1}
+                              autoResize
+                              maxHeight={120}
+                              displayMode="markdown"
+                              markdownDisplayHandlers={props.markdownDisplayHandlers}
+                              aria-label={`Captured item ${reply.position}`}
+                              value={reply.block.text}
+                              onInput={(event) => {
+                                props.onEditItem(reply.block.id, event.currentTarget.value);
+                                syncThreadLine(threadRef, lastReplyRef);
+                              }}
+                            />
+                          </div>
                         </div>
                         <div class="capture-chat__actions">
                           <IconButton
