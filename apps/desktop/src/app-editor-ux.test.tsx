@@ -396,6 +396,49 @@ describe("App editor UX", () => {
     expect(screen.queryByDisplayValue("Quick note")).not.toBeInTheDocument();
   });
 
+  it("routes hidden inbox wikilinks to capture mode instead of opening inbox in editor", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await screen.findByText(/saved/i);
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+    await user.type(captureInput, "Inbox thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: "Editor" }));
+    expect(
+      await screen.findByText("Home", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+
+    const editorInput = (document.querySelector(
+      ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
+    ) ?? document.querySelector(".editor-pane textarea[data-block-id]")) as
+      | HTMLTextAreaElement
+      | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "See [[Inbox]]" }
+    });
+    editorInput.blur();
+
+    const inboxLink = await screen.findByRole("button", { name: "Inbox" });
+    await user.click(inboxLink);
+
+    expect(screen.getByRole("button", { name: "Capture" })).toHaveClass("is-active");
+    expect(
+      await screen.findByPlaceholderText("Capture a thought, link, or task...")
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Inbox thread")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Inbox", { selector: ".editor-pane__title" })
+    ).not.toBeInTheDocument();
+  });
+
   it("reuses the shared composer for replies and keeps reply mode active", async () => {
     render(() => <App />);
     const user = userEvent.setup();

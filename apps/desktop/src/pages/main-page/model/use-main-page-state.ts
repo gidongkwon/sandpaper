@@ -638,6 +638,14 @@ export const createMainPageState = () => {
     return resolved;
   };
 
+  const switchWorkspacePage = async (pageUid: string) => {
+    if (resolvePageUid(pageUid) === HIDDEN_INBOX_PAGE_UID) {
+      setMode("quick-capture");
+      return;
+    }
+    await switchPage(pageUid);
+  };
+
   const reviewState = createReviewState({
     isTauri,
     invoke,
@@ -798,7 +806,7 @@ export const createMainPageState = () => {
     scheduleSave,
     setActiveId,
     setJumpTarget,
-    switchPage,
+    switchPage: switchWorkspacePage,
     defaultPageUid: DEFAULT_PAGE_UID
   });
   const {
@@ -1319,7 +1327,7 @@ export const createMainPageState = () => {
     resolvePageUid,
     setNewPageTitle,
     createPage,
-    switchPage,
+    switchPage: switchWorkspacePage,
     createPageFromLink,
     isTauri,
     localPages,
@@ -1368,7 +1376,7 @@ export const createMainPageState = () => {
           pages: visiblePages,
           activePageUid,
           resolvePageUid,
-          onSwitch: switchPage,
+          onSwitch: switchWorkspacePage,
           pageMessage,
           onCreate: () => {
             openNewPageDialog();
