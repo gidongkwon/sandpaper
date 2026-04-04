@@ -1708,7 +1708,7 @@ describe("EditorPane", () => {
     });
     fireEvent.click(outlineButton);
 
-    const menu = container.querySelector<HTMLElement>(".editor-outline-menu");
+    const menu = document.body.querySelector<HTMLElement>(".editor-outline-menu");
     expect(menu).not.toBeNull();
     if (!menu) return;
 
@@ -1719,7 +1719,8 @@ describe("EditorPane", () => {
     expect(container.querySelector('[data-block-id="b2"]')).not.toBeNull();
 
     fireEvent.click(outlineButton);
-    const menuAgain = container.querySelector<HTMLElement>(".editor-outline-menu");
+    const menuAgain =
+      document.body.querySelector<HTMLElement>(".editor-outline-menu");
     expect(menuAgain).not.toBeNull();
     if (!menuAgain) return;
 

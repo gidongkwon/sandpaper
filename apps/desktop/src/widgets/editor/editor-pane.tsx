@@ -22,11 +22,12 @@ import type {
 import type { PageId } from "../../shared/model/id-types";
 import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import type { CodeFence } from "../../shared/model/markdown-types";
-import type { CaretPosition } from "../../shared/model/position";
+import type { AnchorRect, CaretPosition } from "../../shared/model/position";
 import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { ActionMenu } from "../../shared/ui/action-menu";
+import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
@@ -274,6 +275,8 @@ export const EditorPane = (props: EditorPaneProps) => {
     new Set<string>()
   );
   const [outlineMenuOpen, setOutlineMenuOpen] = createSignal(false);
+  const [outlineMenuAnchorRect, setOutlineMenuAnchorRect] =
+    createSignal<AnchorRect | null>(null);
   const [dialogOpen, setDialogOpen] = createSignal(false);
   const [dialogMode, setDialogMode] = createSignal<"link" | "rename" | null>(
     null
@@ -730,15 +733,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (contextMenu()) {
       setContextMenu(null);
     }
-    if (outlineMenuOpen()) {
-      const target = event.target as HTMLElement | null;
-      if (
-        !target?.closest(".editor-outline-menu") &&
-        !target?.closest(".editor-pane__outline")
-      ) {
-        setOutlineMenuOpen(false);
-      }
-    }
     if (!selectionRange()) return;
     if (event.shiftKey) return;
     const target = event.target as HTMLElement | null;
@@ -1103,6 +1097,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     activePageUid();
     clearSelection();
     setOutlineMenuOpen(false);
+    setOutlineMenuAnchorRect(null);
   });
 
   const insertBlockAfter = (index: number, indent: number) => {
@@ -4000,16 +3995,32 @@ export const EditorPane = (props: EditorPaneProps) => {
             <button
               class="editor-pane__action"
               type="button"
-              onClick={() => setOutlineMenuOpen((prev) => !prev)}
+              onClick={(event) => {
+                if (outlineMenuOpen()) {
+                  setOutlineMenuOpen(false);
+                  return;
+                }
+                const rect = event.currentTarget.getBoundingClientRect();
+                setOutlineMenuAnchorRect({
+                  x: rect.left,
+                  y: rect.top,
+                  width: rect.width,
+                  height: rect.height
+                });
+                setOutlineMenuOpen(true);
+              }}
             >
               Outline
             </button>
-            <Show when={outlineMenuOpen()}>
-              <div
-                class="editor-outline-menu"
-                onMouseDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
+            <FloatingPanelPopover
+              open={outlineMenuOpen()}
+              anchorRect={outlineMenuAnchorRect()}
+              title="Outline"
+              class="editor-outline-menu"
+              placement="bottom-end"
+              onClose={() => setOutlineMenuOpen(false)}
+            >
+              <>
                 <div class="editor-outline-menu__section">
                   <button
                     class="editor-outline-menu__action"
@@ -4071,8 +4082,8 @@ export const EditorPane = (props: EditorPaneProps) => {
                     )}
                   </For>
                 </div>
-              </div>
-            </Show>
+              </>
+            </FloatingPanelPopover>
           </div>
         </div>
       </div>

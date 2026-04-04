@@ -1505,19 +1505,15 @@ button:disabled {
 }
 
 .editor-pane__outline {
-  position: relative;
+  display: flex;
 }
 
 .editor-outline-menu {
-  position: absolute;
-  top: calc(100% + var(--space-1));
-  right: 0;
   width: 240px;
   background: var(--bg-primary);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: 6;
   overflow: hidden;
 }
 
