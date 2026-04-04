@@ -29,10 +29,43 @@ export type ReviewThreadEntry = {
   is_root: boolean;
 };
 
+export type ReviewTab = "to-review" | "archived";
+
+export type ReviewThreadStatus = "to-review" | "archived";
+
+export type DestinationRecommendation = {
+  page_uid: PageId;
+  title: string;
+  score: number;
+  reasons: string[];
+  provider: "heuristic" | "ai";
+};
+
+export type ReviewThreadArchiveRecord = {
+  thread_id: string;
+  destination_page_uid: PageId;
+  archived_at: Timestamp;
+  captured_at_start: Timestamp | null;
+  captured_at_end: Timestamp | null;
+};
+
+export type ReviewSessionState = {
+  active_thread_id: string | null;
+  tab: ReviewTab;
+  selected_archived_thread_id: string | null;
+  destination_page_uid: PageId | null;
+  destination_recommendations: DestinationRecommendation[];
+  is_hard_selected: boolean;
+  baseline_page_hash: string | null;
+  invalidated: boolean;
+  updated_at: Timestamp;
+};
+
 export type ReviewThread = {
   id: string;
   root_text: string;
   entries: ReviewThreadEntry[];
+  status?: ReviewThreadStatus;
   captured_at_start?: Timestamp | null;
   captured_at_end?: Timestamp | null;
   destination_page_uid?: PageId;
