@@ -7,6 +7,7 @@ import {
   type Setter
 } from "solid-js";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
+import { IconButton } from "../../shared/ui/icon-button";
 import {
   ArrowReply16Icon,
   ArrowUp16FilledIcon,
@@ -217,17 +218,17 @@ export const CapturePane = (props: CapturePaneProps) => {
                       />
                     </div>
                     <div class="capture-chat__actions">
-                      <button
+                      <IconButton
+                        variant="inline"
                         class="capture-chat__icon-button"
-                        type="button"
                         aria-label={`Reply to ${thread.root.block.text}`}
                         onClick={() => props.onReplyTo(thread.root.block.id)}
                       >
                         <ArrowReply16Icon width="16" height="16" />
-                      </button>
-                      <button
+                      </IconButton>
+                      <IconButton
+                        variant="inline"
                         class="capture-chat__icon-button"
-                        type="button"
                         aria-label={`Delete ${thread.root.block.text}`}
                         onClick={() =>
                           setPendingThreadDelete({
@@ -238,7 +239,7 @@ export const CapturePane = (props: CapturePaneProps) => {
                         }
                       >
                         <Delete16Icon width="16" height="16" />
-                      </button>
+                      </IconButton>
                     </div>
                   </div>
                   <For each={thread.replies}>
@@ -273,9 +274,9 @@ export const CapturePane = (props: CapturePaneProps) => {
                           />
                         </div>
                         <div class="capture-chat__actions">
-                          <button
+                          <IconButton
+                            variant="inline"
                             class="capture-chat__icon-button"
-                            type="button"
                             aria-label={`Delete ${reply.block.text}`}
                             onClick={() =>
                               setPendingReplyDelete({
@@ -285,7 +286,7 @@ export const CapturePane = (props: CapturePaneProps) => {
                             }
                           >
                             <Delete16Icon width="16" height="16" />
-                          </button>
+                          </IconButton>
                         </div>
                       </div>
                     )}

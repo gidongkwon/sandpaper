@@ -136,6 +136,7 @@ export const Topbar = (props: TopbarProps) => {
           </span>
         </Show>
         <IconButton
+          variant="toolbar"
           class="topbar__notifications"
           label="Open notifications"
           aria-haspopup="dialog"
@@ -150,6 +151,7 @@ export const Topbar = (props: TopbarProps) => {
           </Show>
         </IconButton>
         <IconButton
+          variant="toolbar"
           class="topbar__settings"
           label="Open settings"
           onClick={() => props.onOpenSettings()}

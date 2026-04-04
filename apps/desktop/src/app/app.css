@@ -651,26 +651,80 @@ button:disabled {
   border-color: var(--error);
 }
 
-.topbar__settings,
-.topbar__notifications {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-sm);
+.ui-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   color: var(--text-tertiary);
-  transition: all var(--duration-fast) var(--ease-out);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
-.topbar__settings:hover,
-.topbar__notifications:hover {
+.ui-icon-button--toolbar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+}
+
+.ui-icon-button--toolbar:hover {
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
 
-.topbar__settings:active,
-.topbar__notifications:active {
+.ui-icon-button--toolbar:active {
   background: var(--bg-active);
+}
+
+.ui-icon-button--sidebar,
+.ui-icon-button--panel {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+}
+
+.ui-icon-button--sidebar:hover,
+.ui-icon-button--panel:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ui-icon-button--sidebar:active,
+.ui-icon-button--panel:active {
+  background: var(--bg-active);
+}
+
+.ui-icon-button--block {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.ui-icon-button--block:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.ui-icon-button--block:active {
+  transform: scale(0.96);
+}
+
+.ui-icon-button--inline {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+}
+
+.ui-icon-button--inline:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.ui-icon-button--inline:active {
+  transform: translateY(1px);
 }
 
 .topbar__notifications {
@@ -873,25 +927,6 @@ button:disabled {
   padding: 1px 5px;
   border-radius: var(--radius-xs);
   font-weight: 500;
-}
-
-.sidebar__section-action {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  color: var(--text-tertiary);
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.sidebar__section-action:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.sidebar__section-action:active {
-  background: var(--bg-active);
 }
 
 .sidebar__empty {
@@ -1310,21 +1345,6 @@ button:disabled {
   color: var(--accent);
   width: 13px;
   height: 13px;
-}
-
-.backlinks-panel__close {
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-xs);
-  color: var(--text-tertiary);
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.backlinks-panel__close:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
 }
 
 .backlinks-panel__body {
@@ -1803,23 +1823,7 @@ button:disabled {
 }
 
 .block__action {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.block__action:hover {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.block__action:active {
-  transform: scale(0.96);
+  color: inherit;
 }
 
 .block__action-float:hover {
@@ -3417,27 +3421,7 @@ button:disabled {
 }
 
 .capture-chat__icon-button {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
   color: var(--text-tertiary);
-  border-radius: var(--radius-full);
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
-}
-
-.capture-chat__icon-button:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.capture-chat__icon-button:active {
-  transform: translateY(1px);
 }
 
 /* --- Bubble editable text --- */

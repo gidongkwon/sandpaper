@@ -17,6 +17,7 @@ export const BlockActions = (props: BlockActionsProps) => {
   return (
     <div class="block__actions">
       <IconButton
+        variant="block"
         class="block__action"
         label="Insert block below"
         title="Insert block below"
@@ -25,6 +26,7 @@ export const BlockActions = (props: BlockActionsProps) => {
         <AddSquareMultiple16Icon width="12" height="12" />
       </IconButton>
       <IconButton
+        variant="block"
         class="block__action"
         label="Add to review"
         title="Add to review"
@@ -33,6 +35,7 @@ export const BlockActions = (props: BlockActionsProps) => {
         <Add16Icon width="12" height="12" />
       </IconButton>
       <IconButton
+        variant="block"
         class="block__action"
         label="Link to page"
         title="Link to page"
@@ -41,6 +44,7 @@ export const BlockActions = (props: BlockActionsProps) => {
         <Link16Icon width="12" height="12" />
       </IconButton>
       <IconButton
+        variant="block"
         class="block__action"
         label="Duplicate block"
         title="Duplicate block"

@@ -41,6 +41,7 @@ export const BacklinksPanel = (props: BacklinksPanelProps) => {
           Backlinks
         </div>
         <IconButton
+          variant="panel"
           class="backlinks-panel__close"
           label="Close backlinks"
           onClick={() => props.onClose()}

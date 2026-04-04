@@ -29,6 +29,7 @@ export const PagesPane = (props: PagesPaneProps) => {
       <div class="sidebar__section-header">
         <span class="sidebar__section-title">Pages</span>
         <IconButton
+          variant="sidebar"
           class="sidebar__section-action"
           label="Create new page"
           onClick={props.onCreate}
