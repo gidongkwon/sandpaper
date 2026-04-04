@@ -17,6 +17,7 @@ type VaultDeps = {
   loadSyncConfig: () => Promise<void>;
   loadReviewSummary: () => Promise<void>;
   loadReviewQueue: () => Promise<void>;
+  loadCaptureReviewThreadOrder: () => Promise<void>;
   markSaved: () => void;
   clearExportStatus: () => void;
   clearActivePanel: () => void;
@@ -75,6 +76,7 @@ export const createVaultState = (deps: VaultDeps) => {
       await deps.loadPlugins();
       await deps.loadVaultKeyStatus();
       await deps.loadSyncConfig();
+      await deps.loadCaptureReviewThreadOrder();
       await deps.loadReviewSummary();
       await deps.loadReviewQueue();
       return;
@@ -96,6 +98,7 @@ export const createVaultState = (deps: VaultDeps) => {
       await deps.loadPlugins();
       await deps.loadVaultKeyStatus();
       await deps.loadSyncConfig();
+      await deps.loadCaptureReviewThreadOrder();
       await deps.loadReviewSummary();
       await deps.loadReviewQueue();
     } catch (error) {
@@ -121,6 +124,7 @@ export const createVaultState = (deps: VaultDeps) => {
     await deps.loadPlugins();
     await deps.loadVaultKeyStatus();
     await deps.loadSyncConfig();
+    await deps.loadCaptureReviewThreadOrder();
     await deps.loadReviewSummary();
     await deps.loadReviewQueue();
   };

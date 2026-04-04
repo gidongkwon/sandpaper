@@ -14,7 +14,7 @@ use sandpaper_core::vaults::{VaultConfig, VaultRecord, VaultStore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
@@ -1838,6 +1838,43 @@ fn set_active_page(page_uid: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_capture_review_thread_order() -> Result<Vec<String>, String> {
+    let db = open_active_database()?;
+    let Some(raw) = db
+        .get_kv("capture.review_thread_order")
+        .map_err(|err| format!("{:?}", err))?
+    else {
+        return Ok(Vec::new());
+    };
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let parsed: Vec<String> = serde_json::from_str(&raw).map_err(|err| format!("{:?}", err))?;
+    let mut seen = HashSet::new();
+    Ok(parsed
+        .into_iter()
+        .map(|entry| sanitize_kebab(&entry))
+        .filter(|entry| !entry.is_empty())
+        .filter(|entry| seen.insert(entry.clone()))
+        .collect())
+}
+
+#[tauri::command]
+fn set_capture_review_thread_order(order: Vec<String>) -> Result<(), String> {
+    let db = open_active_database()?;
+    let mut seen = HashSet::new();
+    let normalized: Vec<String> = order
+        .into_iter()
+        .map(|entry| sanitize_kebab(&entry))
+        .filter(|entry| !entry.is_empty())
+        .filter(|entry| seen.insert(entry.clone()))
+        .collect();
+    let payload = serde_json::to_string(&normalized).map_err(|err| format!("{:?}", err))?;
+    db.set_kv("capture.review_thread_order", &payload)
+        .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
 fn create_page(payload: CreatePagePayload) -> Result<PageSummary, String> {
     let title = payload.title.trim();
     if title.is_empty() {
@@ -2740,6 +2777,8 @@ pub fn run() {
             set_active_vault,
             get_active_page,
             set_active_page,
+            get_capture_review_thread_order,
+            set_capture_review_thread_order,
             create_page,
             rename_page,
             list_pages,

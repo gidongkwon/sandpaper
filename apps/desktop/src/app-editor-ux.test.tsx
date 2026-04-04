@@ -640,6 +640,151 @@ describe("App editor UX", () => {
     expect(queueButtons[1]).toHaveTextContent("Second thread");
   });
 
+  it("persists review queue FIFO order through the tauri page store", async () => {
+    let storedBlocks: Array<{ uid: string; text: string; indent: number }> = [];
+    let storedReviewThreadOrder: string[] = [];
+
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "list_vaults") {
+        return Promise.resolve({
+          active_id: "vault-1",
+          vaults: [{ id: "vault-1", name: "Vault", path: "/vault" }]
+        });
+      }
+      if (command === "get_active_page") return Promise.resolve("inbox");
+      if (command === "list_pages") {
+        return Promise.resolve([{ uid: "inbox", title: "Inbox" }]);
+      }
+      if (command === "load_page_blocks") {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          "pageUid" in payload &&
+          payload.pageUid === "inbox"
+        ) {
+          return Promise.resolve({
+            page_uid: "inbox",
+            title: "Inbox",
+            blocks: storedBlocks
+          });
+        }
+        return Promise.resolve({
+          page_uid: "home",
+          title: "Home",
+          blocks: [{ uid: "home-1", text: "Home block", indent: 0 }]
+        });
+      }
+      if (command === "save_page_blocks") {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          "pageUid" in payload &&
+          payload.pageUid === "inbox" &&
+          "blocks" in payload &&
+          Array.isArray(payload.blocks)
+        ) {
+          storedBlocks = payload.blocks.map((block) => ({
+            uid: String(block.uid),
+            text: String(block.text),
+            indent: Number(block.indent)
+          }));
+        }
+        return Promise.resolve(null);
+      }
+      if (command === "get_capture_review_thread_order") {
+        return Promise.resolve(storedReviewThreadOrder);
+      }
+      if (command === "set_capture_review_thread_order") {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          "order" in payload &&
+          Array.isArray(payload.order)
+        ) {
+          storedReviewThreadOrder = payload.order.map((entry) => String(entry));
+        }
+        return Promise.resolve(null);
+      }
+      if (command === "list_page_wikilink_backlinks") return Promise.resolve([]);
+      if (command === "list_plugins_command") return Promise.resolve([]);
+      if (command === "load_plugins_command") {
+        return Promise.resolve({
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        });
+      }
+      if (command === "vault_key_status") {
+        return Promise.resolve({
+          configured: false,
+          kdf: null,
+          iterations: null,
+          salt_b64: null
+        });
+      }
+      if (command === "get_sync_config") {
+        return Promise.resolve({
+          server_url: null,
+          vault_id: null,
+          device_id: null,
+          key_fingerprint: null,
+          last_push_cursor: 0,
+          last_pull_cursor: 0
+        });
+      }
+      if (command === "review_queue_summary") {
+        return Promise.resolve({ due_count: 0, next_due_at: null });
+      }
+      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "write_shadow_markdown") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+
+    const firstRender = render(() => <App />);
+    const user = userEvent.setup();
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Older thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Newer thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const olderThread = await screen.findByRole("group", {
+      name: "Thread Older thread"
+    });
+    await user.click(
+      within(olderThread).getByRole("button", { name: "Reply to Older thread" })
+    );
+    await user.type(captureInput, "Older reply");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    let queue = await screen.findByRole("navigation", { name: "Review queue" });
+    let queueButtons = within(queue).getAllByRole("button");
+    expect(queueButtons[0]).toHaveTextContent("Older thread");
+    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+    expect(storedReviewThreadOrder).toHaveLength(2);
+
+    localStorage.clear();
+    firstRender.unmount();
+
+    render(() => <App />);
+    await user.click(await screen.findByRole("button", { name: "Review" }));
+
+    queue = await screen.findByRole("navigation", { name: "Review queue" });
+    queueButtons = within(queue).getAllByRole("button");
+    expect(queueButtons[0]).toHaveTextContent("Older thread");
+    expect(queueButtons[1]).toHaveTextContent("Newer thread");
+  });
+
   it("persists hidden inbox thread changes through the tauri page store", async () => {
     vi.mocked(invoke).mockImplementation((command, payload) => {
       if (command === "list_vaults") {

@@ -84,6 +84,10 @@ const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
 const LOCAL_PAGES_KEY = "sandpaper:local:pages";
 const REVIEW_THREAD_ORDER_KEY = "sandpaper:capture:review-thread-order";
 
+const hasTauriInternals = () =>
+  typeof window !== "undefined" &&
+  Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+
 const readStoredCaptureTimestamps = () => {
   if (
     typeof window === "undefined" ||
@@ -211,7 +215,10 @@ export const createMainPageState = () => {
     Record<string, number>
   >(readStoredCaptureTimestamps());
   const [reviewThreadOrder, setReviewThreadOrder] = createSignal<string[]>(
-    readStoredReviewThreadOrder()
+    hasTauriInternals() ? [] : readStoredReviewThreadOrder()
+  );
+  const [reviewThreadOrderHydrated, setReviewThreadOrderHydrated] = createSignal(
+    !hasTauriInternals()
   );
   const [selectedReviewThreadId, setSelectedReviewThreadId] =
     createSignal<string | null>(null);
@@ -271,9 +278,7 @@ export const createMainPageState = () => {
     return fallback;
   };
 
-  const isTauri = () =>
-    typeof window !== "undefined" &&
-    Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+  const isTauri = () => hasTauriInternals();
 
   const notificationsApi = createNotifications();
   const {
@@ -903,6 +908,7 @@ export const createMainPageState = () => {
     loadPlugins,
     loadVaultKeyStatus,
     loadSyncConfig,
+    loadCaptureReviewThreadOrder,
     loadReviewSummary,
     loadReviewQueue,
     markSaved,
@@ -1101,12 +1107,41 @@ export const createMainPageState = () => {
   });
 
   createEffect(() => {
+    if (!reviewThreadOrderHydrated()) return;
+    if (isTauri()) {
+      void invoke("set_capture_review_thread_order", {
+        order: reviewThreadOrder()
+      }).catch((error) => {
+        console.error("Failed to persist capture review order", error);
+      });
+      return;
+    }
     if (!canUseStorage()) return;
-    window.localStorage.setItem(
-      REVIEW_THREAD_ORDER_KEY,
-      JSON.stringify(reviewThreadOrder())
-    );
+    window.localStorage.setItem(REVIEW_THREAD_ORDER_KEY, JSON.stringify(reviewThreadOrder()));
   });
+
+  async function loadCaptureReviewThreadOrder() {
+    if (!isTauri()) {
+      setReviewThreadOrder(readStoredReviewThreadOrder());
+      setReviewThreadOrderHydrated(true);
+      return;
+    }
+    try {
+      const stored = (await invoke("get_capture_review_thread_order")) as unknown;
+      if (Array.isArray(stored)) {
+        setReviewThreadOrder(
+          stored.filter((entry): entry is string => typeof entry === "string")
+        );
+      } else {
+        setReviewThreadOrder([]);
+      }
+    } catch (error) {
+      console.error("Failed to load capture review order", error);
+      setReviewThreadOrder(readStoredReviewThreadOrder());
+    } finally {
+      setReviewThreadOrderHydrated(true);
+    }
+  }
 
   const reviewThreads = createMemo<ReviewThread[]>(() => {
     const byId = new Map(captureItems().map((thread) => [thread.id, thread]));
