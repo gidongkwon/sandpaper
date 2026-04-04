@@ -41,6 +41,7 @@ describe("Topbar", () => {
         toggleSidebar={vi.fn()}
         mode={mode}
         setMode={setMode}
+        reducedMotion={() => false}
         showStatusSurfaces={() => true}
         autosaveError={() => null}
         autosaved={() => true}

@@ -1,5 +1,6 @@
 import type { Accessor, Setter } from "solid-js";
 import type { VaultRecord } from "../../entities/vault/model/vault-types";
+import type { MotionMode } from "../../pages/main-page/model/use-motion-mode";
 import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
 import { Switch } from "../../shared/ui/switch";
@@ -17,6 +18,10 @@ type SettingsGeneralTabProps = {
     mode: Accessor<ThemeMode>;
     setMode: Setter<ThemeMode>;
   };
+  motion: {
+    mode: Accessor<MotionMode>;
+    setMode: Setter<MotionMode>;
+  };
   statusSurfaces: {
     showStatusSurfaces: Accessor<boolean>;
     setShowStatusSurfaces: Setter<boolean>;
@@ -28,6 +33,11 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
   const themeOptions: SelectFieldOption[] = [
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
+    { value: "system", label: "System" }
+  ];
+  const motionOptions: SelectFieldOption[] = [
+    { value: "full", label: "Full" },
+    { value: "reduced", label: "Reduced" },
     { value: "system", label: "System" }
   ];
   const isMac =
@@ -80,6 +90,22 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
             value={props.theme.mode()}
             options={themeOptions}
             onChange={(value) => props.theme.setMode(value as ThemeMode)}
+            triggerClass="settings-select"
+            contentClass="settings-select__content"
+            listboxClass="settings-select__listbox"
+            itemClass="settings-select__item"
+            itemLabelClass="settings-select__item-label"
+          />
+        </div>
+        <div class="settings-row">
+          <label class="settings-label" for="settings-motion-mode">
+            Motion
+          </label>
+          <SelectField
+            label="Motion"
+            value={props.motion.mode()}
+            options={motionOptions}
+            onChange={(value) => props.motion.setMode(value as MotionMode)}
             triggerClass="settings-select"
             contentClass="settings-select__content"
             listboxClass="settings-select__listbox"

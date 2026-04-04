@@ -59,6 +59,7 @@ import { createPageDialog } from "./use-page-dialog";
 import { createPageOps } from "./use-page-ops";
 import { createReviewState } from "./use-review";
 import { createSearchState } from "./use-search";
+import { createMotionMode } from "./use-motion-mode";
 import { createThemeMode } from "./use-theme-mode";
 import { createTypeScale } from "./use-type-scale";
 import { createVaultKeyState } from "./use-vault-key";
@@ -1162,6 +1163,7 @@ export const createMainPageState = () => {
 
   const typeScale = createTypeScale();
   const themeMode = createThemeMode();
+  const motionMode = createMotionMode();
 
   onMount(() => {
     const perfFlag =
@@ -2282,6 +2284,10 @@ export const createMainPageState = () => {
           mode: themeMode.themeMode,
           setMode: themeMode.setThemeMode
         },
+        motion: {
+          mode: motionMode.motionMode,
+          setMode: motionMode.setMotionMode
+        },
         statusSurfaces: {
           showStatusSurfaces,
           setShowStatusSurfaces
@@ -2441,6 +2447,7 @@ export const createMainPageState = () => {
       toggleSidebar,
       mode,
       setMode,
+      reducedMotion: motionMode.reducedMotion,
       showStatusSurfaces,
       autosaveError,
       autosaved,

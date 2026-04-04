@@ -18,6 +18,7 @@ function MainPage() {
           toggleSidebar={topbar.toggleSidebar}
           mode={topbar.mode}
           setMode={topbar.setMode}
+          reducedMotion={topbar.reducedMotion}
           showStatusSurfaces={topbar.showStatusSurfaces}
           autosaveError={topbar.autosaveError}
           autosaved={topbar.autosaved}

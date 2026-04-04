@@ -119,6 +119,34 @@ describe("App modes", () => {
     expect(startViewTransition).toHaveBeenCalledTimes(3);
   });
 
+  it("skips view transitions when reduced motion is active", async () => {
+    localStorage.setItem("sandpaper:motion-mode", "reduced");
+    const user = userEvent.setup();
+    const startViewTransition = vi.fn((callback: () => void) => {
+      callback();
+      return {
+        finished: Promise.resolve(),
+        ready: Promise.resolve(),
+        updateCallbackDone: Promise.resolve(),
+        skipTransition: vi.fn()
+      };
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition
+    });
+
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    await waitFor(() => {
+      expect(document.documentElement.dataset.motion).toBe("reduced");
+    });
+
+    await user.click(getModeControl("Capture"));
+    expect(await screen.findByPlaceholderText("Capture a thought, link, or task...")).toBeInTheDocument();
+    expect(startViewTransition).not.toHaveBeenCalled();
+  });
+
   it("restores focus to the mode input when switching modes", async () => {
     const user = userEvent.setup();
     render(() => <App />);

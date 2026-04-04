@@ -19,6 +19,9 @@ describe("SettingsModal", () => {
     const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">(
       "system"
     );
+    const [motionMode, setMotionMode] = createSignal<"full" | "reduced" | "system">(
+      "system"
+    );
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
     const [formOpen, setFormOpen] = createSignal(false);
     const [newName, setNewName] = createSignal("");
@@ -72,6 +75,10 @@ describe("SettingsModal", () => {
         theme={{
           mode: themeMode,
           setMode: setThemeMode
+        }}
+        motion={{
+          mode: motionMode,
+          setMode: setMotionMode
         }}
         statusSurfaces={{
           showStatusSurfaces,

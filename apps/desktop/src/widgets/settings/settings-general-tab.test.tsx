@@ -1,6 +1,7 @@
 import { render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal, untrack } from "solid-js";
+import type { MotionMode } from "../../pages/main-page/model/use-motion-mode";
 import { SettingsGeneralTab } from "./settings-general-tab";
 
 describe("SettingsGeneralTab", () => {
@@ -8,6 +9,7 @@ describe("SettingsGeneralTab", () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
     const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">("system");
+    const [motionMode, setMotionMode] = createSignal<MotionMode>("system");
 
     render(() => (
       <SettingsGeneralTab
@@ -22,6 +24,10 @@ describe("SettingsGeneralTab", () => {
         theme={{
           mode: themeMode,
           setMode: setThemeMode
+        }}
+        motion={{
+          mode: motionMode,
+          setMode: setMotionMode
         }}
         statusSurfaces={{
           showStatusSurfaces,
@@ -48,6 +54,7 @@ describe("SettingsGeneralTab", () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
     const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">("system");
+    const [motionMode, setMotionMode] = createSignal<MotionMode>("system");
 
     render(() => (
       <SettingsGeneralTab
@@ -62,6 +69,10 @@ describe("SettingsGeneralTab", () => {
         theme={{
           mode: themeMode,
           setMode: setThemeMode
+        }}
+        motion={{
+          mode: motionMode,
+          setMode: setMotionMode
         }}
         statusSurfaces={{
           showStatusSurfaces,
@@ -89,6 +100,7 @@ describe("SettingsGeneralTab", () => {
     const [value, setValue] = createSignal(1);
     const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
     const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">("system");
+    const [motionMode, setMotionMode] = createSignal<MotionMode>("system");
 
     render(() => (
       <SettingsGeneralTab
@@ -103,6 +115,10 @@ describe("SettingsGeneralTab", () => {
         theme={{
           mode: themeMode,
           setMode: setThemeMode
+        }}
+        motion={{
+          mode: motionMode,
+          setMode: setMotionMode
         }}
         statusSurfaces={{
           showStatusSurfaces,
@@ -125,5 +141,47 @@ describe("SettingsGeneralTab", () => {
     await user.click(statusToggle);
 
     expect(untrack(showStatusSurfaces)).toBe(false);
+  });
+
+  it("renders a motion selector with full, reduced, and system options", async () => {
+    const [value, setValue] = createSignal(1);
+    const [showStatusSurfaces, setShowStatusSurfaces] = createSignal(true);
+    const [themeMode, setThemeMode] = createSignal<"light" | "dark" | "system">("system");
+    const [motionMode, setMotionMode] = createSignal<MotionMode>("system");
+
+    render(() => (
+      <SettingsGeneralTab
+        typeScale={{
+          value,
+          set: setValue,
+          min: 0.8,
+          max: 1.2,
+          step: 0.05,
+          defaultPosition: "50%"
+        }}
+        theme={{
+          mode: themeMode,
+          setMode: setThemeMode
+        }}
+        motion={{
+          mode: motionMode,
+          setMode: setMotionMode
+        }}
+        statusSurfaces={{
+          showStatusSurfaces,
+          setShowStatusSurfaces
+        }}
+        activeVault={() => null}
+      />
+    ));
+
+    const user = userEvent.setup();
+    const motionSelect = screen.getByRole("button", { name: /motion/i });
+    expect(motionSelect).toHaveTextContent("System");
+    await user.click(motionSelect);
+    const listbox = await screen.findByRole("listbox");
+    expect(within(listbox).getByRole("option", { name: "Full" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "Reduced" })).toBeInTheDocument();
+    expect(within(listbox).getByRole("option", { name: "System" })).toBeInTheDocument();
   });
 });

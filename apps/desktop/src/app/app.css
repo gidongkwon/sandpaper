@@ -594,6 +594,16 @@ button:disabled {
     animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
     mix-blend-mode: normal;
   }
+
+  :root[data-motion="reduced"] ::view-transition-group(mode-pane-capture),
+  :root[data-motion="reduced"] ::view-transition-group(mode-pane-editor),
+  :root[data-motion="reduced"] ::view-transition-old(mode-pane-capture),
+  :root[data-motion="reduced"] ::view-transition-new(mode-pane-capture),
+  :root[data-motion="reduced"] ::view-transition-old(mode-pane-editor),
+  :root[data-motion="reduced"] ::view-transition-new(mode-pane-editor) {
+    animation: none !important;
+    animation-duration: 0.01ms !important;
+  }
 }
 
 /* Right side - Status indicators */
@@ -5825,6 +5835,19 @@ button:disabled {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+:root[data-motion="reduced"] [data-transition-slot] {
+  view-transition-name: none !important;
 }
 
 @media (max-width: 900px) {

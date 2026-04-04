@@ -109,6 +109,32 @@ describe("App", () => {
     expect(document.documentElement.style.colorScheme).toBe("dark");
   });
 
+  it("applies full, reduced, and system motion modes from settings", async () => {
+    render(() => <App />);
+    await userEvent.click(screen.getByRole("button", { name: /open settings/i }));
+
+    const motionSelect = await screen.findByRole("button", {
+      name: /motion/i
+    });
+    expect(document.documentElement.dataset.motionMode).toBe("system");
+    expect(document.documentElement.dataset.motion).toBe("full");
+
+    await userEvent.click(motionSelect);
+    await userEvent.click(await screen.findByRole("option", { name: "Reduced" }));
+    expect(document.documentElement.dataset.motionMode).toBe("reduced");
+    expect(document.documentElement.dataset.motion).toBe("reduced");
+
+    await userEvent.click(screen.getByRole("button", { name: /motion/i }));
+    await userEvent.click(await screen.findByRole("option", { name: "Full" }));
+    expect(document.documentElement.dataset.motionMode).toBe("full");
+    expect(document.documentElement.dataset.motion).toBe("full");
+
+    await userEvent.click(screen.getByRole("button", { name: /motion/i }));
+    await userEvent.click(await screen.findByRole("option", { name: "System" }));
+    expect(document.documentElement.dataset.motionMode).toBe("system");
+    expect(document.documentElement.dataset.motion).toBe("full");
+  });
+
   it("positions the default text size label at the correct scale", async () => {
     render(() => <App />);
     await userEvent.click(

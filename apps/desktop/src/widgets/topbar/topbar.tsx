@@ -12,6 +12,7 @@ type TopbarProps = {
   toggleSidebar: () => void;
   mode: Accessor<Mode>;
   setMode: Setter<Mode>;
+  reducedMotion: Accessor<boolean>;
   showStatusSurfaces: Accessor<boolean>;
   autosaveError: Accessor<string | null>;
   autosaved: Accessor<boolean>;
@@ -42,7 +43,7 @@ export const Topbar = (props: TopbarProps) => {
         skipTransition?: () => void;
       };
     };
-    if (typeof documentWithTransition.startViewTransition === "function") {
+    if (!props.reducedMotion() && typeof documentWithTransition.startViewTransition === "function") {
       documentWithTransition.startViewTransition(nextState);
       return;
     }
