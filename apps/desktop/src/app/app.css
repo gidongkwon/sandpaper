@@ -3323,10 +3323,8 @@ button:disabled {
    ============================================ */
 
 .capture-chat {
-  --capture-panel-inline-padding: var(--space-5);
-  --capture-content-inline-padding: calc(
-    var(--capture-panel-inline-padding) + var(--space-3)
-  );
+  --capture-panel-inline-padding: var(--space-3);
+  --capture-content-inline-padding: var(--capture-panel-inline-padding);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -3566,7 +3564,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--capture-content-inline-padding) 0;
+  padding: var(--capture-content-inline-padding);
   margin: 0;
   background: transparent;
   border-top: 1px solid var(--border-subtle);
@@ -3763,7 +3761,7 @@ button:disabled {
   --capture-panel-inline-padding: var(--space-5);
   max-width: 600px;
   width: 100%;
-  padding: 0 var(--space-5) var(--space-5);
+  padding: 0 var(--space-5);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -6130,7 +6128,7 @@ button:disabled {
 
   .focus-panel {
     margin: var(--space-3) auto;
-    padding: 0 var(--space-3) var(--space-3);
+    padding: 0 var(--space-3);
     border-radius: var(--radius-lg);
   }
 
