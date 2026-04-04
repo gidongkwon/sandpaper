@@ -1,12 +1,14 @@
 import * as Popover from "@kobalte/core/popover";
 import { Show, type JSX } from "solid-js";
-import type { CaretPosition } from "../model/position";
+import type { AnchorRect, CaretPosition } from "../model/position";
 
 type FloatingPanelPopoverProps = {
   open: boolean;
-  position: CaretPosition | null;
+  position?: CaretPosition | null;
+  anchorRect?: AnchorRect | null;
   title: string;
   class?: string;
+  placement?: "bottom-start" | "bottom-end";
   onClose?: () => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -14,14 +16,27 @@ type FloatingPanelPopoverProps = {
 };
 
 export const FloatingPanelPopover = (props: FloatingPanelPopoverProps) => {
+  const anchorRect = () => {
+    if (props.anchorRect) return props.anchorRect;
+    if (props.position) {
+      return {
+        x: props.position.x,
+        y: props.position.y,
+        width: 0,
+        height: 0
+      } satisfies AnchorRect;
+    }
+    return null;
+  };
+
   return (
-    <Show when={props.open && props.position}>
-      {(position) => (
+    <Show when={props.open && anchorRect()}>
+      {(rect) => (
         <Popover.Root
           open={true}
           modal={false}
           preventScroll={false}
-          placement="bottom-start"
+          placement={props.placement ?? "bottom-start"}
           gutter={8}
           onOpenChange={(open) => {
             if (!open) props.onClose?.();
@@ -32,8 +47,10 @@ export const FloatingPanelPopover = (props: FloatingPanelPopoverProps) => {
               class="floating-panel-popover__anchor"
               aria-hidden="true"
               style={{
-                left: `${position().x}px`,
-                top: `${position().y}px`
+                left: `${rect().x}px`,
+                top: `${rect().y}px`,
+                width: `${rect().width}px`,
+                height: `${rect().height}px`
               }}
             />
             <Popover.Content

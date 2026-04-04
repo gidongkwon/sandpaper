@@ -17,7 +17,7 @@ type TopbarProps = {
   autosaveStamp: Accessor<string | null>;
   notificationsOpen: Accessor<boolean>;
   notificationCount: Accessor<number>;
-  onOpenNotifications: () => void;
+  onOpenNotifications: (anchor?: HTMLElement) => void;
   onOpenSettings: () => void;
 };
 
@@ -144,7 +144,7 @@ export const Topbar = (props: TopbarProps) => {
           label="Open notifications"
           aria-haspopup="dialog"
           aria-expanded={props.notificationsOpen()}
-          onClick={() => props.onOpenNotifications()}
+          onClick={(event) => props.onOpenNotifications(event.currentTarget)}
         >
           <Alert16Icon width="16" height="16" />
           <Show when={props.notificationCount() > 0}>

@@ -35,6 +35,7 @@ import type {
 } from "../../../entities/review/model/review-types";
 import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
+import type { AnchorRect } from "../../../shared/model/position";
 import type { Mode } from "../../../shared/model/mode";
 import {
   buildAllBlockTypeShowcaseBlocks,
@@ -425,6 +426,8 @@ export const createMainPageState = () => {
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [notificationsOpen, setNotificationsOpen] = createSignal(false);
+  const [notificationsAnchorRect, setNotificationsAnchorRect] =
+    createSignal<AnchorRect | null>(null);
   const [settingsTab, setSettingsTab] = createSignal<
     "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
   >("general");
@@ -2367,6 +2370,7 @@ export const createMainPageState = () => {
       },
       notifications: {
         open: notificationsOpen,
+        anchorRect: notificationsAnchorRect,
         onClose: () => setNotificationsOpen(false),
         notifications,
         onMarkAllRead: markAllNotificationsRead,
@@ -2383,8 +2387,22 @@ export const createMainPageState = () => {
 
   const toggleSidebar = () => setSidebarOpen((prev) => !prev);
   const openSettings = () => setSettingsOpen(true);
-  const toggleNotifications = () =>
-    setNotificationsOpen((prev) => !prev);
+  const toggleNotifications = (anchor?: HTMLElement) => {
+    if (notificationsOpen()) {
+      setNotificationsOpen(false);
+      return;
+    }
+    if (anchor) {
+      const rect = anchor.getBoundingClientRect();
+      setNotificationsAnchorRect({
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height
+      });
+    }
+    setNotificationsOpen(true);
+  };
 
   return {
     context: mainPageContext,
