@@ -135,26 +135,26 @@ Goal: make the data model explicit before replacing UI.
 
 Checklist:
 
-- [ ] Open `apps/desktop/src/entities/review/model/review-types.ts`.
-- [ ] Add a `ReviewTab` type with values:
+- [x] Open `apps/desktop/src/entities/review/model/review-types.ts`.
+- [x] Add a `ReviewTab` type with values:
   - `to-review`
   - `archived`
-- [ ] Add a `DestinationRecommendation` type with fields:
+- [x] Add a `DestinationRecommendation` type with fields:
   - `page_uid`
   - `title`
   - `score`
   - `reasons`
   - `provider`
-- [ ] Add a `ReviewThreadStatus` type with values:
+- [x] Add a `ReviewThreadStatus` type with values:
   - `to-review`
   - `archived`
-- [ ] Add a `ReviewThreadArchiveRecord` type with fields:
+- [x] Add a `ReviewThreadArchiveRecord` type with fields:
   - `thread_id`
   - `destination_page_uid`
   - `archived_at`
   - `captured_at_start`
   - `captured_at_end`
-- [ ] Add a `ReviewSessionState` type with fields:
+- [x] Add a `ReviewSessionState` type with fields:
   - `active_thread_id`
   - `tab`
   - `selected_archived_thread_id`
@@ -164,13 +164,13 @@ Checklist:
   - `baseline_page_hash`
   - `invalidated`
   - `updated_at`
-- [ ] Keep naming kebab-case for files and existing TypeScript style.
-- [ ] Do not remove existing review types yet unless they are clearly unused by the new flow.
+- [x] Keep naming kebab-case for files and existing TypeScript style.
+- [x] Do not remove existing review types yet unless they are clearly unused by the new flow.
 
 Acceptance criteria:
 
-- [ ] Types compile.
-- [ ] A reader can understand session state without searching other files.
+- [x] Types compile.
+- [x] A reader can understand session state without searching other files.
 
 ### Phase 2: Add State For Archived Threads And Review Session
 
@@ -178,43 +178,43 @@ Goal: teach `use-main-page-state.ts` about archived threads and session persiste
 
 Checklist:
 
-- [ ] Open `apps/desktop/src/pages/main-page/model/use-main-page-state.ts`.
-- [ ] Find current capture-thread logic around `captureInboxBlocks`, `captureItems`, `reviewThreads`, and `reviewThreadOrder`.
-- [ ] Add local state for archived thread metadata.
-- [ ] Add local state for the current review session.
-- [ ] Add local-storage keys for:
+- [x] Open `apps/desktop/src/pages/main-page/model/use-main-page-state.ts`.
+- [x] Find current capture-thread logic around `captureInboxBlocks`, `captureItems`, `reviewThreads`, and `reviewThreadOrder`.
+- [x] Add local state for archived thread metadata.
+- [x] Add local state for the current review session.
+- [x] Add local-storage keys for:
   - active review tab
   - archived thread metadata
   - active review session
   - selected archived thread
-- [ ] Keep existing hidden inbox page as the source of active review threads for now.
-- [ ] Do not store archived threads in the same active queue list.
-- [ ] When a thread is archived:
+- [x] Keep existing hidden inbox page as the source of active review threads for now.
+- [x] Do not store archived threads in the same active queue list.
+- [x] When a thread is archived:
   - remove it from the active review queue
   - store archive metadata
   - keep the source thread data accessible for the archive UI
-- [ ] Decide how archived source data is stored for v1.
-- [ ] Recommended v1 approach:
+- [x] Decide how archived source data is stored for v1.
+- [x] Recommended v1 approach:
   - keep archived thread snapshots in persisted local state
   - do not try to rebuild them only from the inbox after archive
-- [ ] Add helper selectors:
+- [x] Add helper selectors:
   - `toReviewThreads`
   - `archivedThreads`
   - `activeReviewThread`
   - `selectedArchivedThread`
-- [ ] Add helper methods:
+- [x] Add helper methods:
   - `startReviewSession`
   - `hardSelectDestination`
   - `invalidateReviewSession`
   - `archiveReviewThread`
   - `discardReviewSessionChanges`
-- [ ] Keep function names plain and specific.
+- [x] Keep function names plain and specific.
 
 Acceptance criteria:
 
-- [ ] Review state exists even before the new UI is built.
-- [ ] Archiving no longer depends on deleting source data permanently.
-- [ ] Session state can be serialized and restored.
+- [x] Review state exists even before the new UI is built.
+- [x] Archiving no longer depends on deleting source data permanently.
+- [x] Session state can be serialized and restored.
 
 ### Phase 3: Add Page Hash Utilities
 
@@ -222,35 +222,35 @@ Goal: implement safe diff detection and stale-session invalidation.
 
 Checklist:
 
-- [ ] Create a small helper module if needed, for example:
+- [x] Create a small helper module if needed, for example:
   - `apps/desktop/src/pages/main-page/model/review-session-hash.ts`
-- [ ] Add a function that computes a stable page hash from:
+- [x] Add a function that computes a stable page hash from:
   - page uid
   - page title
   - block ids
   - block text
   - block indent
   - block type
-- [ ] Use a deterministic representation such as JSON stringification of a normalized object.
-- [ ] Keep the helper synchronous.
-- [ ] Do not use a cryptographic hash unless already present in the repo and convenient.
-- [ ] Add tests for the hash helper:
+- [x] Use a deterministic representation such as JSON stringification of a normalized object.
+- [x] Keep the helper synchronous.
+- [x] Do not use a cryptographic hash unless already present in the repo and convenient.
+- [x] Add tests for the hash helper:
   - same input -> same hash
   - changed block text -> different hash
   - changed indent -> different hash
   - changed title -> different hash
-- [ ] At hard-selection time, compute and store the baseline hash.
-- [ ] At completion time, compare current hash with baseline hash.
-- [ ] On app restore, compare restored baseline with current page hash.
-- [ ] If the destination page has changed in a way that invalidates the session:
+- [x] At hard-selection time, compute and store the baseline hash.
+- [x] At completion time, compare current hash with baseline hash.
+- [x] On app restore, compare restored baseline with current page hash.
+- [x] If the destination page has changed in a way that invalidates the session:
   - mark the session as invalidated
   - stop offering revert-based switching for that session
   - require the session to restart from soft-selected state
 
 Acceptance criteria:
 
-- [ ] Completion can be blocked on real page changes.
-- [ ] A stale restored session is detected reliably.
+- [x] Completion can be blocked on real page changes.
+- [x] A stale restored session is detected reliably.
 
 ### Phase 4: Add Destination Recommendation Provider Interface
 
@@ -258,28 +258,28 @@ Goal: keep v1 heuristic-based, but make AI upgrade possible later.
 
 Checklist:
 
-- [ ] Create a recommendation provider module, for example:
+- [x] Create a recommendation provider module, for example:
   - `apps/desktop/src/pages/main-page/model/review-destination-recommender.ts`
-- [ ] Define a provider interface or plain function contract that accepts:
+- [x] Define a provider interface or plain function contract that accepts:
   - the active thread
   - available pages
   - optional recent review history
-- [ ] Return `DestinationRecommendation[]`.
-- [ ] Implement a heuristic v1 provider.
-- [ ] Use explainable scoring rules only.
-- [ ] Start with these signals:
+- [x] Return `DestinationRecommendation[]`.
+- [x] Implement a heuristic v1 provider.
+- [x] Use explainable scoring rules only.
+- [x] Start with these signals:
   - existing wikilinks inside thread entries
   - page-title overlap with thread entry text
   - recent destination history as a small tie-breaker
-- [ ] Limit results to 5 recommendations.
-- [ ] The first recommendation becomes the default soft-selected destination.
-- [ ] Keep the provider field in the result so AI can be plugged in later.
-- [ ] Add tests for recommendation ranking.
+- [x] Limit results to 5 recommendations.
+- [x] The first recommendation becomes the default soft-selected destination.
+- [x] Keep the provider field in the result so AI can be plugged in later.
+- [x] Add tests for recommendation ranking.
 
 Acceptance criteria:
 
-- [ ] Recommendation logic is isolated from UI rendering.
-- [ ] The UI does not care whether recommendations come from heuristics or AI.
+- [x] Recommendation logic is isolated from UI rendering.
+- [x] The UI does not care whether recommendations come from heuristics or AI.
 
 ### Phase 5: Replace Review UI Container
 
@@ -287,34 +287,34 @@ Goal: remove the old queue panel layout and install the new two-pane workbench.
 
 Checklist:
 
-- [ ] Replace usage of the current `ReviewPane` in `apps/desktop/src/pages/main-page/ui/main-page-workspace.tsx`.
-- [ ] Create a new component:
+- [x] Replace usage of the current `ReviewPane` in `apps/desktop/src/pages/main-page/ui/main-page-workspace.tsx`.
+- [x] Create a new component:
   - `apps/desktop/src/widgets/review/review-workbench.tsx`
-- [ ] `ReviewWorkbench` must render:
+- [x] `ReviewWorkbench` must render:
   - left review surface
   - right editor surface
-- [ ] The right side must continue to use the existing `EditorPane`.
-- [ ] Add a new top bar above the editor:
+- [x] The right side must continue to use the existing `EditorPane`.
+- [x] Add a new top bar above the editor:
   - `apps/desktop/src/widgets/review/review-session-bar.tsx`
-- [ ] In soft-selected state:
+- [x] In soft-selected state:
   - show `Recommended`
   - show destination search UI
   - do not auto-focus the editor
-- [ ] In hard-selected state:
+- [x] In hard-selected state:
   - hide the recommendation badge
   - collapse destination search
   - show `Change destination`
   - keep `Complete review` visible
-- [ ] Do not keep the old `Review mode / Review workbench / Threads / Current` header if it no longer matches the new UI.
-- [ ] Keep the new UI accessible:
+- [x] Do not keep the old `Review mode / Review workbench / Threads / Current` header if it no longer matches the new UI.
+- [x] Keep the new UI accessible:
   - buttons need labels
   - tab switch controls need ARIA semantics
   - disabled complete button needs understandable labeling
 
 Acceptance criteria:
 
-- [ ] Review mode uses the new two-pane structure.
-- [ ] The right pane is always the real editor.
+- [x] Review mode uses the new two-pane structure.
+- [x] The right pane is always the real editor.
 
 ### Phase 6: Build `To Review` Deck
 
@@ -322,35 +322,35 @@ Goal: create the stacked-card experience for active review threads.
 
 Checklist:
 
-- [ ] Create `apps/desktop/src/widgets/review/review-queue-deck.tsx`.
-- [ ] Create `apps/desktop/src/widgets/review/review-reference-card.tsx`.
-- [ ] A thread card must render:
+- [x] Create `apps/desktop/src/widgets/review/review-queue-deck.tsx`.
+- [x] Create `apps/desktop/src/widgets/review/review-reference-card.tsx`.
+- [x] A thread card must render:
   - thread entries in capture order
   - no thread title
   - no entry count
   - card-level time range label
-- [ ] Do not render a composer.
-- [ ] Do not render reply buttons.
-- [ ] Do not render delete buttons.
-- [ ] Allow text selection in the card.
-- [ ] Do not add explicit copy buttons.
-- [ ] The deck must show:
+- [x] Do not render a composer.
+- [x] Do not render reply buttons.
+- [x] Do not render delete buttons.
+- [x] Allow text selection in the card.
+- [x] Do not add explicit copy buttons.
+- [x] The deck must show:
   - one active card
   - two peek cards behind it
   - `n more` for the remaining unseen queue count
-- [ ] Clicking a peek card must move that card to the front.
-- [ ] Reordering must update the actual persisted review thread order.
-- [ ] If the current review session has a diff, card switching must first show a confirmation step.
-- [ ] Keep the visual style moderate.
-- [ ] Do not make the 3D effect so strong that it hurts readability.
-- [ ] Keep the active card height fixed.
-- [ ] If the active card content overflows, scroll inside the card only.
+- [x] Clicking a peek card must move that card to the front.
+- [x] Reordering must update the actual persisted review thread order.
+- [x] If the current review session has a diff, card switching must first show a confirmation step.
+- [x] Keep the visual style moderate.
+- [x] Do not make the 3D effect so strong that it hurts readability.
+- [x] Keep the active card height fixed.
+- [x] If the active card content overflows, scroll inside the card only.
 
 Acceptance criteria:
 
-- [ ] The deck works with mouse interaction.
-- [ ] The active review thread is clear.
-- [ ] Switching cards updates the underlying queue order.
+- [x] The deck works with mouse interaction.
+- [x] The active review thread is clear.
+- [x] Switching cards updates the underlying queue order.
 
 ### Phase 7: Build `Archived` List
 
@@ -358,29 +358,29 @@ Goal: support browsing previously reviewed threads without breaking the two-pane
 
 Checklist:
 
-- [ ] Create `apps/desktop/src/widgets/review/review-archive-list.tsx`.
-- [ ] Archived view must use a bottom tab control inside the left review surface.
-- [ ] Tab values:
+- [x] Create `apps/desktop/src/widgets/review/review-archive-list.tsx`.
+- [x] Archived view must use a bottom tab control inside the left review surface.
+- [x] Tab values:
   - `To Review`
   - `Archived`
-- [ ] In `Archived`:
+- [x] In `Archived`:
   - flatten the deck into a planar list
   - use a scrollable container
   - show compressed cards
-- [ ] Archived card content should include:
+- [x] Archived card content should include:
   - source preview
   - `captured A - B`
   - `archived at`
   - destination note label
-- [ ] Clicking an archived card must open its destination note on the right.
-- [ ] Archived items must always have a destination note.
-- [ ] Do not add restore or permanent-delete actions in v1.
-- [ ] Keep the right editor editable even in archived view.
+- [x] Clicking an archived card must open its destination note on the right.
+- [x] Archived items must always have a destination note.
+- [x] Do not add restore or permanent-delete actions in v1.
+- [x] Keep the right editor editable even in archived view.
 
 Acceptance criteria:
 
-- [ ] Archived can be browsed without leaving Review mode.
-- [ ] Clicking an archived item opens the destination note.
+- [x] Archived can be browsed without leaving Review mode.
+- [x] Clicking an archived item opens the destination note.
 
 ### Phase 8: Add Destination Search And Switching Flow
 
@@ -388,36 +388,36 @@ Goal: make destination selection explicit and safe.
 
 Checklist:
 
-- [ ] Add inline destination-search UI inside `ReviewSessionBar`.
-- [ ] In soft-selected state:
+- [x] Add inline destination-search UI inside `ReviewSessionBar`.
+- [x] In soft-selected state:
   - show recommendations
   - allow search
   - allow create-new-page
-- [ ] The top recommendation should preload in the editor as a soft-selected page.
-- [ ] Do not auto-focus the editor in soft-selected state.
-- [ ] When the user starts editing:
+- [x] The top recommendation should preload in the editor as a soft-selected page.
+- [x] Do not auto-focus the editor in soft-selected state.
+- [x] When the user starts editing:
   - mark the destination as hard-selected
   - compute and store the baseline hash
-- [ ] In hard-selected state:
+- [x] In hard-selected state:
   - hide the search UI
   - show `Change destination`
-- [ ] Clicking `Change destination` should expand the inline search UI again.
-- [ ] If the session has diff and the user tries to switch destination:
+- [x] Clicking `Change destination` should expand the inline search UI again.
+- [x] If the session has diff and the user tries to switch destination:
   - show a confirmation modal
   - offer:
     - continue writing
     - discard and switch
-- [ ] If the user discards and switches:
+- [x] If the user discards and switches:
   - revert to the baseline snapshot or otherwise reset the session safely
   - select the new destination
-- [ ] If the restored session is invalidated:
+- [x] If the restored session is invalidated:
   - clearly reset back to recommendation mode
   - do not try unsafe revert behavior
 
 Acceptance criteria:
 
-- [ ] Destination changes are safe.
-- [ ] Hard-selection begins only when the user really starts writing.
+- [x] Destination changes are safe.
+- [x] Hard-selection begins only when the user really starts writing.
 
 ### Phase 9: Replace Delete-On-Complete With Archive-On-Complete
 
@@ -425,26 +425,26 @@ Goal: complete the actual review lifecycle.
 
 Checklist:
 
-- [ ] Find the current complete-review path in `use-main-page-state.ts`.
-- [ ] Stop using `deleteCaptureThread` as the completion action.
-- [ ] Replace completion with archive behavior.
-- [ ] Archive behavior must:
+- [x] Find the current complete-review path in `use-main-page-state.ts`.
+- [x] Stop using `deleteCaptureThread` as the completion action.
+- [x] Replace completion with archive behavior.
+- [x] Archive behavior must:
   - remove the thread from active `To Review`
   - add an archived record
   - store destination page uid
   - store archived timestamp
-- [ ] Keep enough source snapshot data so the archived card can still render.
-- [ ] After completion:
+- [x] Keep enough source snapshot data so the archived card can still render.
+- [x] After completion:
   - the next thread should become active automatically
   - recommendations for the next thread should load
-- [ ] If no threads remain:
+- [x] If no threads remain:
   - show an empty review state
-- [ ] Completion button must remain disabled until there is a real diff.
+- [x] Completion button must remain disabled until there is a real diff.
 
 Acceptance criteria:
 
-- [ ] Completing a review no longer destroys the source data.
-- [ ] Archived threads are visible in the archive list.
+- [x] Completing a review no longer destroys the source data.
+- [x] Archived threads are visible in the archive list.
 
 ### Phase 10: Persist And Restore Review Session
 
@@ -452,8 +452,8 @@ Goal: keep the workbench useful across restart.
 
 Checklist:
 
-- [ ] Persist the current review session state whenever important fields change.
-- [ ] Persist:
+- [x] Persist the current review session state whenever important fields change.
+- [x] Persist:
   - current tab
   - active thread id
   - selected archived thread id
@@ -462,21 +462,21 @@ Checklist:
   - hard-selected flag
   - baseline page hash
   - invalidated flag
-- [ ] On app startup or vault load:
+- [x] On app startup or vault load:
   - restore session state
   - restore tab state
   - reopen the destination page if still valid
-- [ ] If baseline hash no longer matches current page state:
+- [x] If baseline hash no longer matches current page state:
   - mark session invalidated
   - do not keep hard-selected behavior active
   - reset user into a safe selection flow
-- [ ] Add a visible message for invalidated sessions.
-- [ ] Keep the message actionable and short.
+- [x] Add a visible message for invalidated sessions.
+- [x] Keep the message actionable and short.
 
 Acceptance criteria:
 
-- [ ] Restarting the app returns the user to the same review context when safe.
-- [ ] Unsafe stale sessions are downgraded safely.
+- [x] Restarting the app returns the user to the same review context when safe.
+- [x] Unsafe stale sessions are downgraded safely.
 
 ### Phase 11: Add Motion And Interaction Polish
 
@@ -484,27 +484,27 @@ Goal: make the deck and archive transition feel intentional without becoming dis
 
 Checklist:
 
-- [ ] Update `apps/desktop/src/app/app.css` or split styles if needed.
-- [ ] Add styles for:
+- [x] Update `apps/desktop/src/app/app.css` or split styles if needed.
+- [x] Add styles for:
   - deck depth
   - peek cards
   - flattened archived list
   - bottom tab control
   - review session bar
   - invalidated state
-- [ ] Keep motion at moderate intensity.
-- [ ] Target roughly 180ms to 260ms transitions.
-- [ ] Add flattening animation when switching:
+- [x] Keep motion at moderate intensity.
+- [x] Target roughly 180ms to 260ms transitions.
+- [x] Add flattening animation when switching:
   - `To Review` -> `Archived`
-- [ ] Add inverse animation when switching:
+- [x] Add inverse animation when switching:
   - `Archived` -> `To Review`
-- [ ] Ensure the deck remains readable on smaller widths.
-- [ ] Avoid extreme transforms that blur text or cause layout jitter.
+- [x] Ensure the deck remains readable on smaller widths.
+- [x] Avoid extreme transforms that blur text or cause layout jitter.
 
 Acceptance criteria:
 
-- [ ] The deck feels distinct from a plain list.
-- [ ] The archive transition communicates a real state change.
+- [x] The deck feels distinct from a plain list.
+- [x] The archive transition communicates a real state change.
 
 ### Phase 12: Add Tests
 
@@ -512,26 +512,26 @@ Goal: lock the workflow before polishing further.
 
 Checklist:
 
-- [ ] Add tests near existing app-level review and editor UX tests.
-- [ ] Add a test for soft-selected recommendation behavior.
-- [ ] Add a test that editing turns soft-selected into hard-selected.
-- [ ] Add a test that complete is disabled before any diff exists.
-- [ ] Add a test that complete becomes enabled after a real diff.
-- [ ] Add a test that complete archives instead of deleting.
-- [ ] Add a test that archived items open destination notes.
-- [ ] Add a test that card switching reorders queue order.
-- [ ] Add a test that switching cards with unsaved session diff asks for confirmation.
-- [ ] Add a test that destination switching with diff asks for confirmation.
-- [ ] Add a test that session state restores after app restart.
-- [ ] Add a test that stale restored sessions become invalidated.
-- [ ] Add a test that archived view uses a flattened list state.
-- [ ] Add a test for `n more` count logic.
-- [ ] Add unit tests for recommendation ranking.
-- [ ] Add unit tests for baseline hash logic.
+- [x] Add tests near existing app-level review and editor UX tests.
+- [x] Add a test for soft-selected recommendation behavior.
+- [x] Add a test that editing turns soft-selected into hard-selected.
+- [x] Add a test that complete is disabled before any diff exists.
+- [x] Add a test that complete becomes enabled after a real diff.
+- [x] Add a test that complete archives instead of deleting.
+- [x] Add a test that archived items open destination notes.
+- [x] Add a test that card switching reorders queue order.
+- [x] Add a test that switching cards with unsaved session diff asks for confirmation.
+- [x] Add a test that destination switching with diff asks for confirmation.
+- [x] Add a test that session state restores after app restart.
+- [x] Add a test that stale restored sessions become invalidated.
+- [x] Add a test that archived view uses a flattened list state.
+- [x] Add a test for `n more` count logic.
+- [x] Add unit tests for recommendation ranking.
+- [x] Add unit tests for baseline hash logic.
 
 Acceptance criteria:
 
-- [ ] The new review flow is covered at both unit and integration level.
+- [x] The new review flow is covered at both unit and integration level.
 
 ## Suggested File-Level Work Breakdown
 
@@ -561,15 +561,15 @@ Use this order when implementing:
 
 ## Final Verification Checklist
 
-- [ ] `pnpm lint` passes
-- [ ] `pnpm typecheck` passes
-- [ ] `pnpm test` passes
-- [ ] Review mode can complete one full thread-to-archive workflow
-- [ ] Review session survives restart when safe
-- [ ] Invalidated sessions fail safely
-- [ ] Archived items always have destination pages
-- [ ] No explicit copy buttons were added to the reference pane
-- [ ] No delete-on-complete behavior remains in the new review flow
+- [x] `pnpm lint` passes
+- [x] `pnpm typecheck` passes
+- [x] `pnpm test` passes
+- [x] Review mode can complete one full thread-to-archive workflow
+- [x] Review session survives restart when safe
+- [x] Invalidated sessions fail safely
+- [x] Archived items always have destination pages
+- [x] No explicit copy buttons were added to the reference pane
+- [x] No delete-on-complete behavior remains in the new review flow
 
 ## Definition Of Done
 
@@ -583,3 +583,4 @@ This task is done only when all of the following are true:
 - Review sessions restore across restart when safe.
 - Stale sessions invalidate safely.
 - The implementation is covered by tests and passes lint, typecheck, and test commands.
+
