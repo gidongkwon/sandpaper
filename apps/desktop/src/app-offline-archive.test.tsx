@@ -77,6 +77,51 @@ describe("App offline archive", () => {
     clickSpy.mockRestore();
   });
 
+  it("excludes the hidden inbox from offline archive exports", async () => {
+    const user = userEvent.setup();
+    let capturedBlob: Blob | null = null;
+    const createSpy = vi
+      .spyOn(URL, "createObjectURL")
+      .mockImplementation((blob) => {
+        capturedBlob = blob as Blob;
+        return "blob:hidden-inbox";
+      });
+    const revokeSpy = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+    await user.type(captureInput, "Temporary capture");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: /open settings/i }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    await user.click(
+      await screen.findByRole("button", { name: /export offline archive/i })
+    );
+
+    expect(
+      await screen.findByText(/offline export ready/i)
+    ).toBeInTheDocument();
+    expect(capturedBlob).not.toBeNull();
+
+    const archiveBytes = new Uint8Array(await readBlobAsArrayBuffer(capturedBlob!));
+    const archiveIndex = new TextDecoder("latin1").decode(archiveBytes);
+    expect(archiveIndex).toContain("pages/home.md");
+    expect(archiveIndex).not.toContain("pages/inbox.md");
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
+
   it("imports pages from an offline archive", async () => {
     const user = userEvent.setup();
     const markdown = "# Travel Log ^travel\n- First stop ^t1\n";
@@ -123,5 +168,53 @@ describe("App offline archive", () => {
         selector: ".page-item__title"
       })
     ).toBeInTheDocument();
+  });
+
+  it("ignores reserved Inbox pages when importing an offline archive", async () => {
+    const user = userEvent.setup();
+    const manifest = JSON.stringify({
+      version: 1,
+      exported_at: "2026-01-31T00:00:00Z",
+      page_count: 2,
+      asset_count: 0,
+      pages: [
+        { uid: "inbox", title: "Inbox", file: "pages/inbox.md" },
+        { uid: "travel-log", title: "Travel Log", file: "pages/travel-log.md" }
+      ]
+    });
+    const archive = zipSync({
+      "manifest.json": strToU8(manifest, true),
+      "pages/inbox.md": strToU8("# Inbox\n- Temporary capture\n", true),
+      "pages/travel-log.md": strToU8("# Travel Log\n- First stop\n", true)
+    });
+
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: /open settings/i }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    const picker = screen.getByTestId(
+      "offline-archive-picker"
+    ) as HTMLInputElement;
+    const archiveBuffer = archive.buffer.slice(
+      archive.byteOffset,
+      archive.byteOffset + archive.byteLength
+    );
+    const file = new File([archiveBuffer], "backup.zip", {
+      type: "application/zip"
+    });
+    await user.upload(picker, file);
+    await user.click(screen.getByRole("button", { name: /import archive/i }));
+
+    expect(
+      await screen.findByText("Travel Log", {
+        selector: ".page-item__title"
+      })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    expect(
+      await screen.findByPlaceholderText("Capture a thought, link, or task...")
+    ).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Temporary capture")).not.toBeInTheDocument();
   });
 });

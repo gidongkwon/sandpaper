@@ -16,6 +16,7 @@ import type { MarkdownExportStatus } from "../../../shared/model/markdown-export
 import { makeBlock } from "../../../entities/block/model/make-block";
 import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
 import { buildOfflineExportManifest } from "./offline-archive-utils";
+import { HIDDEN_INBOX_PAGE_UID } from "./main-page-defaults";
 
 type InvokeFn = typeof import("@tauri-apps/api/core").invoke;
 
@@ -239,6 +240,7 @@ export const createImportExportState = (deps: ImportExportDeps) => {
     const result = new Map<string, LocalPageRecord>();
     const upsert = (page: LocalPageRecord) => {
       const uid = deps.resolvePageUid(page.uid);
+      if (uid === HIDDEN_INBOX_PAGE_UID) return;
       if (!result.has(uid)) {
         result.set(uid, {
           uid,
@@ -438,6 +440,12 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         if (parsed.page.blocks.length === 0) continue;
         const uid = deps.resolvePageUid(parsed.page.id);
         const title = parsed.page.title.trim() || "Untitled";
+        if (
+          uid === HIDDEN_INBOX_PAGE_UID ||
+          deps.resolvePageUid(title) === HIDDEN_INBOX_PAGE_UID
+        ) {
+          continue;
+        }
         const snapshot = parsed.page.blocks.map((block) => ({
           id: block.id,
           text: block.text,
