@@ -41,8 +41,11 @@ describe("App search & discovery", () => {
     render(() => <App />);
     const input = screen.getByPlaceholderText("Search...");
     await userEvent.type(input, "Draft line 2{enter}");
-    const historyItem = await screen.findByRole("button", {
-      name: "Recent search Draft line 2"
+    const historyListbox = await screen.findByRole("listbox", {
+      name: "Recent searches"
+    });
+    const historyItem = within(historyListbox).getByRole("option", {
+      name: "Draft line 2"
     });
     await userEvent.clear(input);
     await userEvent.click(historyItem);

@@ -904,16 +904,23 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .result {
+  list-style: none;
+  cursor: pointer;
   padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
   text-align: left;
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.result:hover {
+.result:hover,
+.result[data-highlighted],
+.result[data-selected] {
   background: var(--bg-hover);
 }
 
@@ -940,9 +947,14 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .search-history__item {
+  list-style: none;
+  cursor: pointer;
   text-align: left;
   padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
@@ -951,7 +963,9 @@ button:disabled {
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.search-history__item:hover {
+.search-history__item:hover,
+.search-history__item[data-highlighted],
+.search-history__item[data-selected] {
   background: var(--bg-hover);
   color: var(--text-primary);
 }

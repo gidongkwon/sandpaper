@@ -1,7 +1,8 @@
-import { For, Show, type Accessor, type JSX, type Setter } from "solid-js";
+import { Show, createMemo, type Accessor, type JSX, type Setter } from "solid-js";
 import type { SearchResult } from "../../entities/search/model/search-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { Search16Icon } from "../../shared/ui/icons";
+import { ActionListbox, type ActionListboxOption } from "../../shared/ui/action-listbox";
 
 type SearchPaneProps = {
   searchInputRef?: (el: HTMLInputElement) => void;
@@ -17,6 +18,21 @@ type SearchPaneProps = {
 };
 
 export const SearchPane = (props: SearchPaneProps) => {
+  const historyOptions = createMemo<ActionListboxOption<string>[]>(() =>
+    props.history().map((term) => ({
+      value: term,
+      label: term,
+      data: term
+    }))
+  );
+  const resultOptions = createMemo<ActionListboxOption<SearchResult>[]>(() =>
+    props.results().map((result) => ({
+      value: result.id,
+      label: result.text || "Untitled",
+      data: result
+    }))
+  );
+
   return (
     <>
       <div class="sidebar__header">
@@ -26,6 +42,7 @@ export const SearchPane = (props: SearchPaneProps) => {
             ref={(el) => props.searchInputRef?.(el)}
             class="sidebar__input"
             type="search"
+            aria-label="Search"
             placeholder="Search..."
             value={props.query()}
             onInput={(event) => props.setQuery(event.currentTarget.value)}
@@ -45,19 +62,14 @@ export const SearchPane = (props: SearchPaneProps) => {
               <span class="sidebar__section-title">Recent searches</span>
               <span class="sidebar__section-count">{props.history().length}</span>
             </div>
-            <div class="search-history">
-              <For each={props.history()}>
-                {(term) => (
-                  <button
-                    class="search-history__item"
-                    aria-label={`Recent search ${term}`}
-                    onClick={() => props.applyTerm(term)}
-                  >
-                    {term}
-                  </button>
-                )}
-              </For>
-            </div>
+            <ActionListbox
+              options={historyOptions()}
+              onSelect={(option) => props.applyTerm(option.data)}
+              ariaLabel="Recent searches"
+              class="search-history"
+              itemClass="search-history__item"
+              itemLabelClass="search-history__label"
+            />
           </div>
         </Show>
         <Show when={props.query().trim().length > 0}>
@@ -66,27 +78,18 @@ export const SearchPane = (props: SearchPaneProps) => {
               <span class="sidebar__section-title">Results</span>
               <span class="sidebar__section-count">{props.results().length}</span>
             </div>
-            <div class="sidebar__results">
-              <Show
-                when={props.results().length > 0}
-                fallback={
-                  <EmptyState class="sidebar__empty" message="No matches found" />
-                }
-              >
-                <For each={props.results()}>
-                  {(block) => (
-                    <button
-                      class="result"
-                      onClick={() => props.onResultSelect(block)}
-                    >
-                      <div class="result__text">
-                        {props.renderHighlight(block.text || "Untitled")}
-                      </div>
-                    </button>
-                  )}
-                </For>
-              </Show>
-            </div>
+            <ActionListbox
+              options={resultOptions()}
+              onSelect={(option) => props.onResultSelect(option.data)}
+              ariaLabel="Search results"
+              class="sidebar__results"
+              itemClass="result"
+              itemLabelClass="result__text"
+              renderLabel={(option) => props.renderHighlight(option.data.text || "Untitled")}
+              emptyState={
+                <EmptyState class="sidebar__empty" message="No matches found" />
+              }
+            />
           </div>
         </Show>
         {props.children}
