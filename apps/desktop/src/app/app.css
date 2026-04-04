@@ -2064,9 +2064,24 @@ button:disabled {
   pointer-events: none;
 }
 
+.floating-panel-popover__anchor {
+  position: fixed;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
 .suggestion-popover {
   z-index: 40;
   padding: var(--space-2);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.floating-panel-popover {
+  z-index: 40;
   background: var(--bg-elevated);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
@@ -2079,6 +2094,18 @@ button:disabled {
   letter-spacing: 0.08em;
   color: var(--text-tertiary);
   margin-bottom: var(--space-1);
+}
+
+.floating-panel-popover__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .suggestion-popover__list {
@@ -2264,13 +2291,7 @@ button:disabled {
 }
 
 .wikilink-preview {
-  position: fixed;
-  z-index: 40;
   width: 240px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 
