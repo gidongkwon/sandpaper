@@ -1,4 +1,4 @@
-import { For, Show, type Accessor, type Setter } from "solid-js";
+import { For, Show, createSignal, type Accessor, type Setter } from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
   ReviewQueueItem,
@@ -26,8 +26,10 @@ type ReviewPaneProps = {
   activeId: Accessor<string | null>;
   onAddCurrent: (id: string) => void | Promise<void>;
   threads: Accessor<ReviewThread[]>;
+  archivedThreads: Accessor<ReviewThread[]>;
   selectedThreadId: Accessor<string | null>;
   onSelectThread: (id: string) => void;
+  onOpenArchivedThread: (id: string) => void | Promise<void>;
   destinationQuery: Accessor<string>;
   setDestinationQuery: Setter<string>;
   destinationMatches: Accessor<PageSummary[]>;
@@ -42,8 +44,22 @@ type ReviewPaneProps = {
 };
 
 export const ReviewPane = (props: ReviewPaneProps) => {
+  const [activeTab, setActiveTab] = createSignal<"to-review" | "archived">(
+    "to-review"
+  );
+  const formatCapturedRange = (thread: ReviewThread) => {
+    if (!thread.captured_at_start) return "Captured —";
+    const start = props.formatReviewDate(thread.captured_at_start);
+    if (!thread.captured_at_end || thread.captured_at_end === thread.captured_at_start) {
+      return `Captured ${start}`;
+    }
+    return `Captured ${start} - ${props.formatReviewDate(thread.captured_at_end)}`;
+  };
   const selectedThread = () =>
-    props.threads().find((thread) => thread.id === props.selectedThreadId()) ?? null;
+    visibleThreads().find((thread) => thread.id === props.selectedThreadId()) ?? null;
+  const visibleThreads = () =>
+    activeTab() === "to-review" ? props.threads() : props.archivedThreads();
+  const hasVisibleThreads = () => visibleThreads().length > 0;
 
   return (
     <div class="review">
@@ -66,7 +82,7 @@ export const ReviewPane = (props: ReviewPaneProps) => {
       </div>
 
       <Show
-        when={props.threads().length > 0}
+        when={props.threads().length > 0 || props.archivedThreads().length > 0}
         fallback={
           <EmptyState class="review__empty">
             <div>No capture threads to review.</div>
@@ -75,29 +91,78 @@ export const ReviewPane = (props: ReviewPaneProps) => {
         }
       >
         <div class="review__workspace">
-          <nav class="review__queue" aria-label="Review queue">
-            <div class="review__queue-header">
-              <div class="review__eyebrow">Queue</div>
-              <div class="review__subtitle">Oldest threads first</div>
-            </div>
-            <div class="review__queue-list">
-              <For each={props.threads()}>
-                {(thread) => (
-                  <button
-                    class={`review-thread-item ${
-                      props.selectedThreadId() === thread.id ? "is-active" : ""
-                    }`}
-                    onClick={() => props.onSelectThread(thread.id)}
-                  >
-                    <div class="review-thread-item__title">{thread.root_text}</div>
-                    <div class="review-thread-item__meta">
-                      {thread.entries.length} entries
+          <div class="review__queue">
+            <nav class="review__queue-tabs" aria-label="Review tabs">
+              <button
+                class={`review__queue-tab ${
+                  activeTab() === "to-review" ? "is-active" : ""
+                }`}
+                type="button"
+                onClick={() => setActiveTab("to-review")}
+              >
+                To Review
+              </button>
+              <button
+                class={`review__queue-tab ${
+                  activeTab() === "archived" ? "is-active" : ""
+                }`}
+                type="button"
+                onClick={() => setActiveTab("archived")}
+              >
+                Archived
+              </button>
+            </nav>
+
+            <Show
+              when={activeTab() === "to-review"}
+              fallback={
+                <Show
+                  when={hasVisibleThreads()}
+                  fallback={
+                    <div class="review__queue-empty">
+                      Archived items will appear here.
                     </div>
-                  </button>
-                )}
-              </For>
-            </div>
-          </nav>
+                  }
+                >
+                  <nav class="review__queue-list" aria-label="Archived review queue">
+                    <For each={visibleThreads()}>
+                      {(thread) => (
+                        <button
+                          class="review-thread-item"
+                          onClick={() => void props.onOpenArchivedThread(thread.id)}
+                        >
+                          <div class="review-thread-item__title">{thread.root_text}</div>
+                          <div class="review-thread-item__meta">{formatCapturedRange(thread)}</div>
+                        </button>
+                      )}
+                    </For>
+                  </nav>
+                </Show>
+              }
+            >
+              <nav class="review__queue-body" aria-label="Review queue">
+                <div class="review__queue-header">
+                  <div class="review__eyebrow">Queue</div>
+                  <div class="review__subtitle">Oldest threads first</div>
+                </div>
+                <div class="review__queue-list">
+                  <For each={props.threads()}>
+                    {(thread) => (
+                      <button
+                        class={`review-thread-item ${
+                          props.selectedThreadId() === thread.id ? "is-active" : ""
+                        }`}
+                        onClick={() => props.onSelectThread(thread.id)}
+                      >
+                        <div class="review-thread-item__title">{thread.root_text}</div>
+                        <div class="review-thread-item__meta">{formatCapturedRange(thread)}</div>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </nav>
+            </Show>
+          </div>
 
           <section class="review__thread-panel" aria-labelledby="review-thread-heading">
             <h3 id="review-thread-heading">Capture thread</h3>
@@ -158,7 +223,10 @@ export const ReviewPane = (props: ReviewPaneProps) => {
             <Show
               when={props.destinationSelected()}
               fallback={
-                <p>Select or create a destination page to start writing.</p>
+                <div class="review__destination-active">
+                  <p>Select or create a destination page to start writing.</p>
+                  <EditorPane {...props.editor} />
+                </div>
               }
             >
               <div class="review__destination-active">

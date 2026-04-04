@@ -33,4 +33,9 @@ export type ReviewThread = {
   id: string;
   root_text: string;
   entries: ReviewThreadEntry[];
+  captured_at_start?: Timestamp | null;
+  captured_at_end?: Timestamp | null;
+  destination_page_uid?: PageId;
+  destination_title?: string;
+  archived_at?: Timestamp;
 };

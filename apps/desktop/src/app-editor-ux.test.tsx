@@ -16,6 +16,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 });
 
 import App from "./app/app";
+import { formatReviewDate } from "./pages/main-page/model/review-utils";
 
 describe("App editor UX", () => {
   beforeEach(() => {
@@ -610,6 +611,61 @@ describe("App editor UX", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows review tabs and keeps the destination editor visible", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(
+      await screen.findByRole("button", { name: "To Review" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Archived" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /thread root/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText("Home", { selector: ".editor-pane__title" })).toBeInTheDocument();
+  });
+
+  it("shows each review thread with a captured time range", async () => {
+    vi.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(() => <App />);
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    const capturedStart = new Date("2026-04-04T10:00:00Z");
+    vi.setSystemTime(capturedStart);
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    const thread = await screen.findByRole("group", { name: "Thread Thread root" });
+    await user.click(within(thread).getByRole("button", { name: "Reply to Thread root" }));
+
+    const capturedEnd = new Date("2026-04-04T10:05:00Z");
+    vi.setSystemTime(capturedEnd);
+    await user.type(captureInput, "Thread reply");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(
+      await screen.findByText(
+        `Captured ${formatReviewDate(capturedStart.getTime())} - ${formatReviewDate(capturedEnd.getTime())}`
+      )
+    ).toBeInTheDocument();
+  });
+
   it("preserves review queue FIFO order across app restart", async () => {
     const firstRender = render(() => <App />);
     const user = userEvent.setup();
@@ -898,7 +954,7 @@ describe("App editor UX", () => {
     });
   });
 
-  it("creates a destination page from review and completes the thread", async () => {
+  it("archives a completed review thread and reopens its destination note from archived", async () => {
     render(() => <App />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Capture" }));
@@ -932,13 +988,71 @@ describe("App editor UX", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("No capture threads to review.")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /thread root/i })
+      ).not.toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Editor" }));
+    await user.click(screen.getByRole("button", { name: "Archived" }));
     expect(
-      await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
+      await screen.findByRole("button", { name: /thread root/i })
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+  });
+
+  it("reopens each archived thread in its own destination note", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Alpha thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Beta thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const destinationSearch = await screen.findByPlaceholderText(
+      "Search or create a page..."
+    );
+    await user.type(destinationSearch, "Project Atlas");
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+    await user.click(screen.getByRole("button", { name: "Complete review" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /beta thread/i })
+      ).toBeInTheDocument();
+    });
+
+    await user.clear(screen.getByPlaceholderText("Search or create a page..."));
+    await user.type(screen.getByPlaceholderText("Search or create a page..."), "Research Note");
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Research Note"' })
+    );
+    await user.click(screen.getByRole("button", { name: "Complete review" }));
+
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+
+    await user.click(await screen.findByRole("button", { name: /alpha thread/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /beta thread/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Research Note", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
   });
 
   it("opens an existing destination page from review search", async () => {

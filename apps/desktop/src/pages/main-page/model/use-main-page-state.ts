@@ -222,6 +222,9 @@ export const createMainPageState = () => {
   );
   const [selectedReviewThreadId, setSelectedReviewThreadId] =
     createSignal<string | null>(null);
+  const [archivedReviewThreads, setArchivedReviewThreads] = createSignal<
+    ReviewThread[]
+  >([]);
   const [reviewDestinationQuery, setReviewDestinationQuery] = createSignal("");
   const [reviewDestinationPageUid, setReviewDestinationPageUid] =
     createSignal<string | null>(null);
@@ -1148,22 +1151,30 @@ export const createMainPageState = () => {
     return reviewThreadOrder()
       .map((id) => byId.get(id))
       .filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
-      .map((thread) => ({
-        id: thread.id,
-        root_text: thread.root.block.text,
-        entries: [
-          {
-            id: thread.root.block.id,
-            text: thread.root.block.text,
-            is_root: true
-          },
-          ...thread.replies.map((reply) => ({
-            id: reply.block.id,
-            text: reply.block.text,
-            is_root: false
-          }))
-        ]
-      }));
+      .map((thread) => {
+        const timestamps = [
+          captureItemTimestamps()[thread.root.block.id] ?? null,
+          ...thread.replies.map((reply) => captureItemTimestamps()[reply.block.id] ?? null)
+        ].filter((value): value is number => typeof value === "number");
+        return {
+          id: thread.id,
+          root_text: thread.root.block.text,
+          entries: [
+            {
+              id: thread.root.block.id,
+              text: thread.root.block.text,
+              is_root: true
+            },
+            ...thread.replies.map((reply) => ({
+              id: reply.block.id,
+              text: reply.block.text,
+              is_root: false
+            }))
+          ],
+          captured_at_start: timestamps[0] ?? null,
+          captured_at_end: timestamps[timestamps.length - 1] ?? null
+        };
+      });
   });
 
   createEffect(() => {
@@ -1325,6 +1336,16 @@ export const createMainPageState = () => {
     setReviewDestinationQuery("");
   };
 
+  const openArchivedReviewThread = async (threadId: string) => {
+    const archivedThread =
+      archivedReviewThreads().find((thread) => thread.id === threadId) ?? null;
+    if (!archivedThread) return;
+    setSelectedReviewThreadId(threadId);
+    if (archivedThread.destination_page_uid) {
+      await openReviewDestination(archivedThread.destination_page_uid);
+    }
+  };
+
   const createReviewDestination = async () => {
     const title = reviewDestinationQuery().trim();
     if (!title) return;
@@ -1338,6 +1359,19 @@ export const createMainPageState = () => {
     if (!reviewDestinationSelected()) return;
     const threadId = selectedReviewThreadId();
     if (!threadId) return;
+    const completedThread =
+      reviewThreads().find((thread) => thread.id === threadId) ?? null;
+    if (completedThread) {
+      setArchivedReviewThreads((current) => [
+        ...current,
+        {
+          ...completedThread,
+          destination_page_uid: reviewDestinationPageUid() ?? undefined,
+          destination_title: pageTitle(),
+          archived_at: Date.now()
+        }
+      ]);
+    }
     deleteCaptureThread(threadId);
   };
 
@@ -1481,8 +1515,10 @@ export const createMainPageState = () => {
         activeId,
         onAddCurrent: addReviewItem,
         threads: reviewThreads,
+        archivedThreads: archivedReviewThreads,
         selectedThreadId: selectedReviewThreadId,
         onSelectThread: setSelectedReviewThreadId,
+        onOpenArchivedThread: openArchivedReviewThread,
         destinationQuery: reviewDestinationQuery,
         setDestinationQuery: setReviewDestinationQuery,
         destinationMatches: reviewDestinationMatches,
