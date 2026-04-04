@@ -1494,7 +1494,7 @@ describe("EditorPane", () => {
     ).toBeNull();
   });
 
-  it("opens a context menu for selected blocks", () => {
+  it("opens a context menu for selected blocks", async () => {
     const baseBlocks = makeBlocks(4);
     const [blocks, setBlocks] = createStore<Block[]>(baseBlocks);
     const [activeId, setActiveId] = createSignal<string | null>(null);
@@ -1554,14 +1554,13 @@ describe("EditorPane", () => {
     fireEvent.click(displays[2], { shiftKey: true });
     fireEvent.contextMenu(displays[1], { clientX: 80, clientY: 120 });
 
-    const menu = container.querySelector<HTMLElement>(".block-selection-menu");
-    expect(menu).not.toBeNull();
-    if (!menu) return;
-
+    const menu = within(document.body).getByRole("menu");
     const menuApi = within(menu);
-    fireEvent.click(menuApi.getByRole("button", { name: "Delete" }));
-    expect(untrack(() => blocks.length)).toBe(2);
-    expect(container.querySelector(".block-selection-menu")).toBeNull();
+    fireEvent.mouseDown(menuApi.getByRole("menuitem", { name: "Delete" }));
+    await waitFor(() => {
+      expect(untrack(() => blocks.length)).toBe(2);
+      expect(container.querySelector(".block-selection-menu")).toBeNull();
+    });
   });
 
   it("toggles block folding and hides descendants", () => {

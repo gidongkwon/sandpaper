@@ -26,6 +26,7 @@ import type { CaretPosition } from "../../shared/model/position";
 import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
+import { ActionMenu } from "../../shared/ui/action-menu";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
 import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
@@ -4094,75 +4095,40 @@ export const EditorPane = (props: EditorPaneProps) => {
             />
           )}
         </Show>
-        <Show when={contextMenu()}>
-          {(menu) => (
-            <div
-              class="block-selection-menu"
-              style={{
-                top: `${menu().y}px`,
-                left: `${menu().x}px`
-              }}
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                class="block-selection-menu__item"
-                data-action="duplicate"
-                type="button"
-                onClick={() => {
-                  duplicateSelection();
-                  setContextMenu(null);
-                }}
-              >
-                Duplicate
-              </button>
-              <button
-                class="block-selection-menu__item"
-                data-action="indent"
-                type="button"
-                onClick={() => {
-                  adjustSelectionIndent(1);
-                  setContextMenu(null);
-                }}
-              >
-                Indent
-              </button>
-              <button
-                class="block-selection-menu__item"
-                data-action="outdent"
-                type="button"
-                onClick={() => {
-                  adjustSelectionIndent(-1);
-                  setContextMenu(null);
-                }}
-              >
-                Outdent
-              </button>
-              <button
-                class="block-selection-menu__item"
-                data-action="delete"
-                type="button"
-                onClick={() => {
-                  removeSelection();
-                  setContextMenu(null);
-                }}
-              >
-                Delete
-              </button>
-              <button
-                class="block-selection-menu__item"
-                data-action="clear"
-                type="button"
-                onClick={() => {
-                  clearSelection();
-                  setContextMenu(null);
-                }}
-              >
-                Clear selection
-              </button>
-            </div>
-          )}
-        </Show>
+        <ActionMenu
+          open={contextMenu() !== null}
+          position={contextMenu()}
+          onClose={() => setContextMenu(null)}
+          class="block-selection-menu"
+          itemClass="block-selection-menu__item"
+          items={[
+            {
+              key: "duplicate",
+              label: "Duplicate",
+              onSelect: duplicateSelection
+            },
+            {
+              key: "indent",
+              label: "Indent",
+              onSelect: () => adjustSelectionIndent(1)
+            },
+            {
+              key: "outdent",
+              label: "Outdent",
+              onSelect: () => adjustSelectionIndent(-1)
+            },
+            {
+              key: "delete",
+              label: "Delete",
+              onSelect: removeSelection
+            },
+            {
+              key: "clear",
+              label: "Clear selection",
+              onSelect: clearSelection
+            }
+          ]}
+        />
         <div class="virtual-space" style={{ height: `${range().totalHeight}px` }}>
           <div
             class="virtual-list"
