@@ -1,4 +1,4 @@
-import { Show, createMemo, createSignal, type Accessor } from "solid-js";
+import { Show, createMemo, createSignal, onCleanup, type Accessor } from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
   DestinationRecommendation,
@@ -65,9 +65,81 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
   const [pendingAction, setPendingAction] = createSignal<null | (() => void | Promise<void>)>(
     null
   );
+  const [leftPanePercent, setLeftPanePercent] = createSignal(50);
+  const [isResizing, setIsResizing] = createSignal(false);
+  let layoutRef: HTMLDivElement | undefined;
   const remainingDeckCount = createMemo(() =>
     Math.max(props.threads().length - Math.min(props.threads().length, 3), 0)
   );
+  const defaultPanePercent = 50;
+  const resizeStep = 5;
+  const minPaneWidth = 320;
+
+  const clampPanePercent = (nextPercent: number) => {
+    const width = layoutRef?.getBoundingClientRect().width ?? 0;
+    if (width <= 0) {
+      return Math.min(70, Math.max(30, nextPercent));
+    }
+    const minPercent = Math.min(45, Math.max(20, (minPaneWidth / width) * 100));
+    return Math.min(100 - minPercent, Math.max(minPercent, nextPercent));
+  };
+
+  const updatePanePercent = (nextPercent: number) => {
+    setLeftPanePercent(clampPanePercent(nextPercent));
+  };
+
+  const resetPanePercent = () => {
+    setLeftPanePercent(defaultPanePercent);
+  };
+
+  const updatePaneFromClientX = (clientX: number) => {
+    const rect = layoutRef?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return;
+    updatePanePercent(((clientX - rect.left) / rect.width) * 100);
+  };
+
+  const stopResizing = () => {
+    setIsResizing(false);
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+  };
+
+  const handlePointerMove = (event: PointerEvent) => {
+    updatePaneFromClientX(event.clientX);
+  };
+
+  const handlePointerUp = () => {
+    stopResizing();
+  };
+
+  const startResizing = (event: PointerEvent) => {
+    event.preventDefault();
+    updatePaneFromClientX(event.clientX);
+    setIsResizing(true);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
+  const handleDividerKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      updatePanePercent(leftPanePercent() - resizeStep);
+      return;
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      updatePanePercent(leftPanePercent() + resizeStep);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      resetPanePercent();
+    }
+  };
+
+  onCleanup(() => {
+    stopResizing();
+  });
 
   const formatCapturedRange = (thread: ReviewThread) => {
     if (!thread.captured_at_start) return "Captured —";
@@ -126,7 +198,13 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
           </EmptyState>
         }
       >
-        <div class="review-workbench__layout" data-layout="split">
+        <div
+          ref={layoutRef}
+          class="review-workbench__layout"
+          data-layout="split"
+          data-resizing={isResizing() ? "true" : "false"}
+          style={{ "--review-left-pane": `${leftPanePercent()}%` }}
+        >
           <section
             class="review-workbench__surface"
             aria-label="Review surface"
@@ -179,6 +257,22 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
               </div>
             </div>
           </section>
+
+          <div
+            class="review-workbench__divider"
+            role="separator"
+            aria-label="Resize review panes"
+            aria-orientation="vertical"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(leftPanePercent())}
+            tabIndex={0}
+            onPointerDown={(event) => startResizing(event)}
+            onKeyDown={(event) => handleDividerKeyDown(event)}
+            onDblClick={resetPanePercent}
+          >
+            <span class="review-workbench__divider-grip" aria-hidden="true" />
+          </div>
 
           <section
             class="review-workbench__editor"

@@ -713,6 +713,55 @@ describe("App editor UX", () => {
     expect(focusPanel).toHaveAttribute("data-focus-mode", "review");
   });
 
+  it("lets the review divider resize the split panes", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Resizable workspace thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(getModeControl("Review"));
+
+    const reviewSurface = await screen.findByRole("region", { name: "Review surface" });
+    const reviewLayout = reviewSurface.closest(".review-workbench")?.querySelector(
+      ".review-workbench__layout"
+    ) as HTMLDivElement | null;
+    expect(reviewLayout).not.toBeNull();
+    if (!reviewLayout) return;
+
+    Object.defineProperty(reviewLayout, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 1000,
+        bottom: 600,
+        width: 1000,
+        height: 600,
+        toJSON: () => ({})
+      })
+    });
+
+    const divider = screen.getByRole("separator", { name: "Resize review panes" });
+
+    expect(reviewLayout.style.getPropertyValue("--review-left-pane")).toBe("50%");
+
+    fireEvent.pointerDown(divider, { clientX: 500 });
+    fireEvent.pointerMove(window, { clientX: 650 });
+    fireEvent.pointerUp(window, { clientX: 650 });
+
+    expect(reviewLayout.style.getPropertyValue("--review-left-pane")).toBe("65%");
+
+    fireEvent.doubleClick(divider);
+
+    expect(reviewLayout.style.getPropertyValue("--review-left-pane")).toBe("50%");
+  });
+
   it("shows each review thread with a captured time range", async () => {
     vi.useFakeTimers();
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
