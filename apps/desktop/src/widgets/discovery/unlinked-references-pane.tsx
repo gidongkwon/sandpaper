@@ -1,5 +1,6 @@
-import { For, Show, type Accessor } from "solid-js";
+import { Show, createMemo, type Accessor } from "solid-js";
 import type { UnlinkedReference } from "../../entities/page/model/backlink-types";
+import { ActionListbox, type ActionListboxOption } from "../../shared/ui/action-listbox";
 
 type UnlinkedReferencesPaneProps = {
   query: Accessor<string>;
@@ -8,6 +9,15 @@ type UnlinkedReferencesPaneProps = {
 };
 
 export const UnlinkedReferencesPane = (props: UnlinkedReferencesPaneProps) => {
+  const referenceOptions = createMemo<ActionListboxOption<UnlinkedReference>[]>(() =>
+    props.references().map((ref) => ({
+      value: `${ref.pageUid}:${ref.blockId}`,
+      label: ref.pageTitle,
+      description: ref.snippet,
+      data: ref
+    }))
+  );
+
   return (
     <Show
       when={props.query().trim().length === 0 && props.references().length > 0}
@@ -19,23 +29,15 @@ export const UnlinkedReferencesPane = (props: UnlinkedReferencesPaneProps) => {
             {props.references().length}
           </span>
         </div>
-        <div class="unlinked-list">
-          <For each={props.references()}>
-            {(ref) => (
-              <div class="unlinked-item">
-                <div class="unlinked-item__title">{ref.pageTitle}</div>
-                <div class="unlinked-item__snippet">{ref.snippet}</div>
-                <button
-                  class="unlinked-item__action"
-                  type="button"
-                  onClick={() => props.onLink(ref)}
-                >
-                  Link it
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
+        <ActionListbox
+          options={referenceOptions()}
+          onSelect={(option) => props.onLink(option.data)}
+          ariaLabel="Unlinked references"
+          class="unlinked-list"
+          itemClass="unlinked-item"
+          itemLabelClass="unlinked-item__title"
+          itemDescriptionClass="unlinked-item__snippet"
+        />
       </div>
     </Show>
   );

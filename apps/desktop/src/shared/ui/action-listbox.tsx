@@ -21,6 +21,7 @@ type ActionListboxProps<TData> = {
   itemDescriptionClass?: string;
   emptyState?: JSX.Element;
   renderLabel?: (option: ActionListboxOption<TData>) => JSX.Element;
+  renderDescription?: (option: ActionListboxOption<TData>) => JSX.Element;
 };
 
 const EMPTY_SELECTION: string[] = [];
@@ -65,7 +66,9 @@ export const ActionListbox = <TData,>(props: ActionListboxProps<TData>) => {
             </Listbox.ItemLabel>
             <Show when={item.rawValue.description}>
               <Listbox.ItemDescription class={props.itemDescriptionClass}>
-                {item.rawValue.description}
+                {props.renderDescription
+                  ? props.renderDescription(item.rawValue)
+                  : item.rawValue.description}
               </Listbox.ItemDescription>
             </Show>
           </Listbox.Item>

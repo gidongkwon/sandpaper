@@ -1,4 +1,4 @@
-import { render, screen } from "@solidjs/testing-library";
+import { render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { vi } from "vitest";
@@ -22,9 +22,10 @@ describe("SidebarContent", () => {
       }
     ]);
     const [pages] = createSignal<PageSummary[]>([
+      { uid: "home", title: "Home" },
       { uid: "page-1", title: "Project" }
     ]);
-    const [activePageUid] = createSignal("page-1");
+    const [activePageUid] = createSignal("home");
     const [pageMessage] = createSignal<string | null>(null);
     const onLink = vi.fn();
     const onSwitch = vi.fn();
@@ -64,10 +65,18 @@ describe("SidebarContent", () => {
     await user.click(screen.getByRole("button", { name: /create new page/i }));
     expect(onCreate).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole("button", { name: /open project/i }));
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
+        name: "Project"
+      })
+    );
     expect(onSwitch).toHaveBeenCalledWith("page-1");
 
-    await user.click(screen.getByRole("button", { name: /link it/i }));
+    await user.click(
+      within(
+        screen.getByRole("listbox", { name: "Unlinked references" })
+      ).getByRole("option", { name: "Project" })
+    );
     expect(onLink).toHaveBeenCalledTimes(1);
   });
 });

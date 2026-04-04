@@ -74,8 +74,12 @@ describe("App search & discovery", () => {
       target: { value: "Project Atlas meeting notes." }
     });
 
-    const linkButton = await screen.findByRole("button", { name: "Link it" });
-    await userEvent.click(linkButton);
+    const unlinkedListbox = await screen.findByRole("listbox", {
+      name: "Unlinked references"
+    });
+    await userEvent.click(
+      within(unlinkedListbox).getByRole("option", { name: "Project Atlas" })
+    );
 
     const inputsAfter = await screen.findAllByPlaceholderText("Write something...");
     await waitFor(() => {
