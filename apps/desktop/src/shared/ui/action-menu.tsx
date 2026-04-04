@@ -44,23 +44,22 @@ export const ActionMenu = (props: ActionMenuProps) => {
             >
               <For each={props.items}>
                 {(item) => (
-                  <button
+                  <DropdownMenu.Item
                     class={`action-menu__item ${props.itemClass ?? ""}`.trim()}
-                    type="button"
-                    role="menuitem"
-                    onMouseDown={(event: MouseEvent) => {
+                    onPointerDown={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
+                    }}
+                    onSelect={() => {
                       item.onSelect();
                       props.onClose();
                     }}
-                    onClick={(event: MouseEvent) => {
-                      event.preventDefault();
+                    onClick={(event) => {
                       event.stopPropagation();
                     }}
                   >
                     {item.label}
-                  </button>
+                  </DropdownMenu.Item>
                 )}
               </For>
             </DropdownMenu.Content>

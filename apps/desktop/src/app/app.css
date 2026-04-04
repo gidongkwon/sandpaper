@@ -1727,6 +1727,7 @@ button:disabled {
 }
 
 .action-menu__item {
+  cursor: pointer;
   text-align: left;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
@@ -2395,16 +2396,6 @@ button:disabled {
 
 .wikilink-preview__open {
   font-size: var(--text-xs);
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  transition: all var(--duration-fast) var(--ease-out);
-}
-
-.wikilink-preview__open:hover {
-  background: var(--accent);
-  color: white;
 }
 
 .wikilink-preview__body {

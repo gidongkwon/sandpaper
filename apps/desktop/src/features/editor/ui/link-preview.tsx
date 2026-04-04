@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import type { CaretPosition } from "../../../shared/model/position";
 import { EmptyState } from "../../../shared/ui/empty-state";
+import { Button } from "../../../shared/ui/button";
 import { FloatingPanelPopover } from "../../../shared/ui/floating-panel-popover";
 
 type LinkPreviewProps = {
@@ -29,13 +30,14 @@ export const LinkPreview = (props: LinkPreviewProps) => {
           <div class="wikilink-preview__title">
             {props.title || "Untitled"}
           </div>
-          <button
+          <Button
             class="wikilink-preview__open"
-            type="button"
+            variant="surface"
+            size="sm"
             onClick={() => props.onOpen()}
           >
             Open
-          </button>
+          </Button>
         </div>
         <div class="wikilink-preview__body">
           <Show
