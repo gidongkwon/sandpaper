@@ -7,6 +7,7 @@ import {
 } from "../../../shared/lib/storage/safe-local-storage";
 
 export type ThemeMode = "light" | "dark" | "system";
+type EffectiveTheme = "light" | "dark";
 
 const STORAGE_KEY = "sandpaper:theme-mode";
 const DARK_MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -28,7 +29,8 @@ export const createThemeMode = () => {
   createEffect(() => {
     if (typeof document === "undefined") return;
     const mode = themeMode();
-    const effectiveTheme = mode === "system" ? (systemPrefersDark() ? "dark" : "light") : mode;
+    const effectiveTheme: EffectiveTheme =
+      mode === "system" ? (systemPrefersDark() ? "dark" : "light") : mode;
     document.documentElement.dataset.themeMode = mode;
     document.documentElement.dataset.theme = effectiveTheme;
     document.documentElement.style.colorScheme = effectiveTheme;
@@ -36,7 +38,7 @@ export const createThemeMode = () => {
     void setAppTheme(mode === "system" ? null : mode).catch(() => {
       // Ignore in browser tests and non-Tauri environments.
     });
-    void invoke("set_window_theme_effect", { mode }).catch(() => {
+    void invoke("set_window_theme_effect", { mode, effectiveTheme }).catch(() => {
       // Ignore in browser tests and non-Tauri environments.
     });
   });

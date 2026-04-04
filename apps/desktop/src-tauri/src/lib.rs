@@ -2742,17 +2742,22 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("{:?}", err))
 }
 
-fn apply_theme_window_effect(window: &tauri::WebviewWindow, mode: Option<&str>) -> Result<(), String> {
+fn apply_theme_window_effect(
+    window: &tauri::WebviewWindow,
+    mode: Option<&str>,
+    effective_theme: Option<&str>,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let _ = mode;
+        let _ = effective_theme;
         apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, None, None)
             .map_err(|err| format!("{:?}", err))?;
     }
 
     #[cfg(target_os = "windows")]
     {
-        let dark = match mode {
+        let dark = match effective_theme.or(mode) {
             Some("light") => Some(false),
             Some("dark") => Some(true),
             _ => None,
@@ -2764,8 +2769,16 @@ fn apply_theme_window_effect(window: &tauri::WebviewWindow, mode: Option<&str>) 
 }
 
 #[tauri::command]
-fn set_window_theme_effect(window: tauri::WebviewWindow, mode: String) -> Result<(), String> {
-    apply_theme_window_effect(&window, Some(mode.as_str()))
+fn set_window_theme_effect(
+    window: tauri::WebviewWindow,
+    mode: String,
+    effective_theme: Option<String>,
+) -> Result<(), String> {
+    apply_theme_window_effect(
+        &window,
+        Some(mode.as_str()),
+        effective_theme.as_deref(),
+    )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2776,7 +2789,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
-            let _ = apply_theme_window_effect(&window, Some("system"));
+            let _ = apply_theme_window_effect(&window, Some("system"), None);
 
             Ok(())
         })

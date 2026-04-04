@@ -55,12 +55,12 @@
      Alternatives:
      --review-card-bg: #f1eadf; warm paper
      --review-card-bg: #f6f2e8; cool ivory */
-  --review-card-bg: #efe7d8;
-  --review-card-bg-accent: rgba(124, 94, 57, 0.06);
-  --review-card-border: rgba(99, 73, 41, 0.14);
-  --review-card-shadow: 0 18px 36px rgba(68, 47, 24, 0.1), 0 2px 6px rgba(68, 47, 24, 0.05);
+  --review-card-bg: #f4ead1;
+  --review-card-bg-accent: rgba(183, 141, 55, 0.08);
+  --review-card-border: rgba(173, 129, 41, 0.18);
+  --review-card-shadow: 0 16px 30px rgba(86, 60, 18, 0.08), 0 2px 6px rgba(86, 60, 18, 0.04);
   --review-card-text: #241b14;
-  --review-card-meta: #6a5644;
+  --review-card-meta: #7b6236;
 
   /* Typography - Readable, refined */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -175,18 +175,19 @@
 
 /* Vibrancy-aware dark mode overrides */
 :root[data-theme="dark"] .mode-switch {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 :root[data-theme="dark"] .mode-switch__button.is-active {
-  background: rgba(255, 255, 255, 0.18);
-  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
 }
 
 :root[data-theme="dark"] .mode-switch__button:hover:not(.is-active) {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
 }
 
 :root[data-theme="dark"] .sidebar__input {
@@ -3638,19 +3639,19 @@ button:disabled {
   justify-self: center;
   width: fit-content;
   flex-shrink: 0;
-  gap: var(--space-1);
-  padding: var(--space-0-5);
+  gap: 2px;
+  padding: 3px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-light);
   background: var(--bg-secondary);
 }
 
 .review-workbench__tab {
   min-height: 32px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-md);
+  border-radius: calc(var(--radius-lg) - 2px);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-secondary);
   transition:
     background var(--duration-base) var(--ease-out),
@@ -3660,13 +3661,29 @@ button:disabled {
 
 .review-workbench__tab:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .review-workbench__tab.is-active {
   background: var(--bg-primary);
   color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), var(--shadow-ring);
+}
+
+:root[data-theme="dark"] .review-workbench__tabs {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+:root[data-theme="dark"] .review-workbench__tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+}
+
+:root[data-theme="dark"] .review-workbench__tab.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
 }
 
 .review-queue-deck {

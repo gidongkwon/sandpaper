@@ -67,25 +67,29 @@ describe("createThemeMode", () => {
     const themeSelect = screen.getByRole("combobox", { name: /theme/i });
     expect(vi.mocked(setTheme)).toHaveBeenLastCalledWith(null);
     expect(vi.mocked(invoke)).toHaveBeenLastCalledWith("set_window_theme_effect", {
-      mode: "system"
+      mode: "system",
+      effectiveTheme: "dark"
     });
 
     await userEvent.selectOptions(themeSelect, "light");
     expect(vi.mocked(setTheme)).toHaveBeenLastCalledWith("light");
     expect(vi.mocked(invoke)).toHaveBeenLastCalledWith("set_window_theme_effect", {
-      mode: "light"
+      mode: "light",
+      effectiveTheme: "light"
     });
 
     await userEvent.selectOptions(themeSelect, "dark");
     expect(vi.mocked(setTheme)).toHaveBeenLastCalledWith("dark");
     expect(vi.mocked(invoke)).toHaveBeenLastCalledWith("set_window_theme_effect", {
-      mode: "dark"
+      mode: "dark",
+      effectiveTheme: "dark"
     });
 
     await userEvent.selectOptions(themeSelect, "system");
     expect(vi.mocked(setTheme)).toHaveBeenLastCalledWith(null);
     expect(vi.mocked(invoke)).toHaveBeenLastCalledWith("set_window_theme_effect", {
-      mode: "system"
+      mode: "system",
+      effectiveTheme: "dark"
     });
   });
 });
