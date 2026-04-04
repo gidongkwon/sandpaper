@@ -45,7 +45,7 @@ describe("App linking UX", () => {
     vi.restoreAllMocks();
   });
 
-  it("suggests pages on [[ and inserts the selected link", async () => {
+  it("hides the hidden inbox from wikilink suggestions and inserts visible pages", async () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
@@ -74,9 +74,13 @@ describe("App linking UX", () => {
       name: /wikilink suggestions/i
     });
     const menuScope = within(menu);
-    await user.click(menuScope.getByRole("button", { name: "Inbox" }));
+    expect(menuScope.queryByRole("button", { name: "Inbox" })).not.toBeInTheDocument();
+    expect(
+      menuScope.queryByRole("button", { name: /create page "Inbox"/i })
+    ).not.toBeInTheDocument();
+    await user.click(menuScope.getByRole("button", { name: "Home" }));
     await waitFor(() => {
-      expect(getInput()?.value).toContain("[[Inbox]]");
+      expect(getInput()?.value).toContain("[[Home]]");
     });
   });
 

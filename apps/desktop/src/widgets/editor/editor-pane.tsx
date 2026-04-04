@@ -2132,6 +2132,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     const query = wikilinkQuery();
     if (!query) return null;
     const normalized = normalizePageUid(query);
+    if (normalized === "inbox") return null;
     const existing = pages().some(
       (page) => normalizePageUid(page.uid || page.title) === normalized
     );
@@ -2190,6 +2191,10 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const openPageByTitle = async (title: string) => {
+    if (normalizePageUid(title) === "inbox") {
+      await switchPage(title);
+      return;
+    }
     const existing = findPageByTitle(title);
     if (existing) {
       await switchPage(existing.uid);

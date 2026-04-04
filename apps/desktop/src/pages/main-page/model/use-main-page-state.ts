@@ -1322,7 +1322,7 @@ export const createMainPageState = () => {
     renameTitle,
     setRenameTitle,
     renamePage,
-    pages,
+    pages: visiblePages,
     activePageUid,
     resolvePageUid,
     setNewPageTitle,
