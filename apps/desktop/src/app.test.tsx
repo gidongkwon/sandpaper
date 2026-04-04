@@ -20,6 +20,10 @@ import App from "./app/app";
 
 const getModeControl = (name: "Capture" | "Review" | "Editor") =>
   screen.getByRole("radio", { name });
+const getPageOption = (name: string) =>
+  within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
+    name
+  });
 
 describe("App", () => {
   const originalMatchMedia = window.matchMedia;
@@ -430,7 +434,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     fireEvent.input(inputs[0], { target: { value: "See [[Home]]" } });
-    await userEvent.click(screen.getByRole("button", { name: "Open Home" }));
+    await userEvent.click(getPageOption("Home"));
     expect(
       await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
@@ -460,7 +464,7 @@ describe("App", () => {
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Open Home" }));
+    await userEvent.click(getPageOption("Home"));
     expect(
       await screen.findByText("Home", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
@@ -575,7 +579,7 @@ describe("App", () => {
     expect(
       await screen.findByText("Import", { selector: ".page-item__title" })
     ).toBeInTheDocument();
-    const pageButton = screen.getByRole("button", { name: "Open Import" });
+    const pageButton = getPageOption("Import");
     await userEvent.click(pageButton);
     expect(
       await screen.findByText("Import", { selector: ".editor-pane__title" })

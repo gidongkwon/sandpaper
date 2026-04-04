@@ -17,6 +17,11 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 import App from "./app/app";
 
 describe("App search & discovery", () => {
+  const getPageOption = (name: string) =>
+    within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
+      name
+    });
+
   beforeEach(() => {
     localStorage.clear();
   });
@@ -63,7 +68,7 @@ describe("App search & discovery", () => {
     await userEvent.type(input, "Project Atlas");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
-    await userEvent.click(screen.getByRole("button", { name: "Open Home" }));
+    await userEvent.click(getPageOption("Home"));
     const inputs = await screen.findAllByPlaceholderText("Write something...");
     fireEvent.input(inputs[0] as HTMLTextAreaElement, {
       target: { value: "Project Atlas meeting notes." }

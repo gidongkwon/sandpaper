@@ -1,6 +1,7 @@
-import { For, Show, type Accessor } from "solid-js";
+import { Show, createMemo, type Accessor } from "solid-js";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
+import { ActionListbox, type ActionListboxOption } from "../../shared/ui/action-listbox";
 import { IconButton } from "../../shared/ui/icon-button";
 import { Add12Icon, Document16Icon } from "../../shared/ui/icons";
 
@@ -14,6 +15,15 @@ type PagesPaneProps = {
 };
 
 export const PagesPane = (props: PagesPaneProps) => {
+  const pageOptions = createMemo<ActionListboxOption<PageSummary>[]>(() =>
+    props.pages().map((page) => ({
+      value: page.uid,
+      label: page.title || "Untitled",
+      data: page
+    }))
+  );
+  const activePageUid = createMemo(() => props.resolvePageUid(props.activePageUid()));
+
   return (
     <div class="sidebar__section">
       <div class="sidebar__section-header">
@@ -29,31 +39,24 @@ export const PagesPane = (props: PagesPaneProps) => {
       <Show when={props.pageMessage()}>
         {(message) => <div class="page-message">{message()}</div>}
       </Show>
-      <div class="page-list">
-        <Show
-          when={props.pages().length > 0}
-          fallback={<EmptyState class="page-list__empty" message="No pages yet" />}
-        >
-          <For each={props.pages()}>
-            {(page) => (
-              <button
-                class={`page-item ${
-                  page.uid === props.resolvePageUid(props.activePageUid())
-                    ? "is-active"
-                    : ""
-                }`}
-                onClick={() => props.onSwitch(page.uid)}
-                aria-label={`Open ${page.title || "Untitled"}`}
-              >
-                <Document16Icon class="page-item__icon" width="14" height="14" />
-                <div class="page-item__content">
-                  <div class="page-item__title">{page.title || "Untitled"}</div>
-                </div>
-              </button>
-            )}
-          </For>
-        </Show>
-      </div>
+      <ActionListbox
+        options={pageOptions()}
+        selectedValue={activePageUid()}
+        onSelect={(option) => void props.onSwitch(option.data.uid)}
+        ariaLabel="Pages"
+        class="page-list"
+        itemClass="page-item"
+        itemLabelClass="page-item__label"
+        renderLabel={(option) => (
+          <>
+            <Document16Icon class="page-item__icon" width="14" height="14" />
+            <div class="page-item__content">
+              <div class="page-item__title">{option.data.title || "Untitled"}</div>
+            </div>
+          </>
+        )}
+        emptyState={<EmptyState class="page-list__empty" message="No pages yet" />}
+      />
     </div>
   );
 };

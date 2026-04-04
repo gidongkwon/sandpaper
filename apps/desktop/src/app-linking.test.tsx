@@ -17,6 +17,11 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 import App from "./app/app";
 
 describe("App linking UX", () => {
+  const getPageOption = (name: string) =>
+    within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
+      name
+    });
+
   const getActiveEditorInput = () =>
     document.querySelector(
       ".editor-pane textarea[data-block-id][aria-hidden=\"false\"]"
@@ -122,9 +127,7 @@ describe("App linking UX", () => {
     await waitFor(() => {
       expect(getInput()?.value).toContain("[[Project Orbit]]");
     });
-    expect(
-      screen.getByRole("button", { name: "Open Project Orbit" })
-    ).toBeInTheDocument();
+    expect(getPageOption("Project Orbit")).toBeInTheDocument();
   });
 
   it("updates wikilinks when renaming a page", async () => {
@@ -153,7 +156,7 @@ describe("App linking UX", () => {
       target: { value: "Beta" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await user.click(getPageOption("Home"));
     await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     fireEvent.input(getActiveEditorInput() as HTMLTextAreaElement, {
@@ -162,7 +165,7 @@ describe("App linking UX", () => {
       }
     });
 
-    await user.click(screen.getByRole("button", { name: "Open Project Atlas" }));
+    await user.click(getPageOption("Project Atlas"));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
     await user.click(screen.getByRole("button", { name: "Rename" }));
     const renameDialog = await screen.findByRole("dialog", {
@@ -176,7 +179,7 @@ describe("App linking UX", () => {
     );
     await screen.findByText("Project Nova", { selector: ".editor-pane__title" });
 
-    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await user.click(getPageOption("Home"));
     await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     await waitFor(() => {
@@ -211,7 +214,7 @@ describe("App linking UX", () => {
       target: { value: "Second block" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Open Home" }));
+    await user.click(getPageOption("Home"));
     await screen.findByText("Home", { selector: ".editor-pane__title" });
     await focusFirstEditorBlock(user);
     const activeInput = getActiveEditorInput() as HTMLTextAreaElement;

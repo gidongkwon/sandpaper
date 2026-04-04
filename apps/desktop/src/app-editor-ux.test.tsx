@@ -393,7 +393,7 @@ describe("App editor UX", () => {
     await user.click(within(dialog).getByRole("button", { name: "Create" }));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
 
-    expect(screen.queryByRole("button", { name: "Open Inbox" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Inbox" })).not.toBeInTheDocument();
 
     await user.click(getModeControl("Capture"));
     const captureInput = (await screen.findByPlaceholderText(

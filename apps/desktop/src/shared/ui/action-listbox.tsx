@@ -4,6 +4,7 @@ import { Show, type JSX } from "solid-js";
 export type ActionListboxOption<TData = string> = {
   value: string;
   label: string;
+  ariaLabel?: string;
   description?: string | null;
   disabled?: boolean;
   data: TData;
@@ -14,6 +15,7 @@ type ActionListboxProps<TData> = {
   onSelect: (option: ActionListboxOption<TData>) => void;
   ariaLabel: string;
   class?: string;
+  selectedValue?: string | null;
   itemClass?: string | ((option: ActionListboxOption<TData>) => string);
   itemLabelClass?: string;
   itemDescriptionClass?: string;
@@ -41,11 +43,13 @@ export const ActionListbox = <TData,>(props: ActionListboxProps<TData>) => {
     <Show when={props.options.length > 0} fallback={props.emptyState}>
       <Listbox.Root<ActionListboxOption<TData>>
         options={[...props.options]}
-        value={EMPTY_SELECTION}
+        value={props.selectedValue ? [props.selectedValue] : EMPTY_SELECTION}
         selectionMode="single"
         allowDuplicateSelectionEvents
         optionValue="value"
-        optionTextValue={(option) => `${option.label} ${option.description ?? ""}`.trim()}
+        optionTextValue={(option) =>
+          `${option.ariaLabel ?? option.label} ${option.description ?? ""}`.trim()
+        }
         optionDisabled="disabled"
         onChange={handleChange}
         aria-label={props.ariaLabel}
@@ -53,6 +57,7 @@ export const ActionListbox = <TData,>(props: ActionListboxProps<TData>) => {
         renderItem={(item) => (
           <Listbox.Item
             item={item}
+            aria-label={item.rawValue.ariaLabel}
             class={resolveItemClass(item.rawValue)}
           >
             <Listbox.ItemLabel class={props.itemLabelClass}>
