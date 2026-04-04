@@ -694,6 +694,172 @@ describe("App editor UX", () => {
     expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
   });
 
+  it("reorders the review deck when selecting a peek card", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "First thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Second thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("First thread");
+    expect(queueCards[1]).toHaveTextContent("Second thread");
+
+    await user.click(within(queue).getByRole("button", { name: /second thread/i }));
+
+    await waitFor(() => {
+      queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+      expect(queueCards[0]).toHaveTextContent("Second thread");
+      expect(queueCards[1]).toHaveTextContent("First thread");
+    });
+  });
+
+  it("confirms before switching review cards with a draft", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "First thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Second thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Project Atlas"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Draft summary" }
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Complete review" })
+      ).toBeEnabled();
+    });
+
+    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    await user.click(within(queue).getByRole("button", { name: /second thread/i }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Discard current draft?" })
+    ).toBeInTheDocument();
+
+    let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("First thread");
+
+    await user.click(screen.getByRole("button", { name: "Continue writing" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Discard current draft?" })
+      ).not.toBeInTheDocument();
+    });
+    queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+    expect(queueCards[0]).toHaveTextContent("First thread");
+
+    await user.click(within(queue).getByRole("button", { name: /second thread/i }));
+    await user.click(screen.getByRole("button", { name: "Discard and switch" }));
+
+    await waitFor(() => {
+      queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
+      expect(queueCards[0]).toHaveTextContent("Second thread");
+    });
+  });
+
+  it("confirms before changing destination with a draft", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Project Atlas"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Project Atlas"' })
+    );
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Draft summary" }
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Complete review" })
+      ).toBeEnabled();
+    });
+
+    const destinationSearch = await screen.findByPlaceholderText(
+      "Search or create a page..."
+    );
+    await user.type(destinationSearch, "Research Note");
+    await user.click(screen.getByRole("button", { name: 'Create "Research Note"' }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Discard current draft?" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Continue writing" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Discard current draft?" })
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+    ).toBeInTheDocument();
+
+    await user.clear(await screen.findByPlaceholderText("Search or create a page..."));
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Research Note"
+    );
+    await user.click(screen.getByRole("button", { name: 'Create "Research Note"' }));
+    await user.click(screen.getByRole("button", { name: "Discard and switch" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Research Note", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
+  });
+
   it("keeps review completion disabled until the destination note changes", async () => {
     render(() => <App />);
     const user = userEvent.setup();

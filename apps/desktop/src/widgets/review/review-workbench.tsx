@@ -1,4 +1,4 @@
-import { Show, type Accessor } from "solid-js";
+import { Show, createSignal, type Accessor } from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
   DestinationRecommendation,
@@ -10,6 +10,7 @@ import type {
 } from "../../entities/review/model/review-types";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
+import { ConfirmDialog } from "../../shared/ui/confirm-dialog";
 import { ReviewArchiveList } from "./review-archive-list";
 import { ReviewQueueDeck } from "./review-queue-deck";
 import { ReviewSessionBar } from "./review-session-bar";
@@ -49,14 +50,21 @@ type ReviewWorkbenchProps = {
   destinationRecommendations: Accessor<DestinationRecommendation[]>;
   destinationIsHardSelected: Accessor<boolean>;
   invalidated: Accessor<boolean>;
+  hasDiscardableChanges: Accessor<boolean>;
   onOpenDestination: (pageUid: string) => void | Promise<void>;
   onCreateDestination: () => void | Promise<void>;
+  onDiscardReviewChanges: () => void | Promise<void>;
   onCompleteReview: () => void;
   canCompleteReview: Accessor<boolean>;
   editor: PropsOf<typeof EditorPane>;
 };
 
 export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
+  const [confirmOpen, setConfirmOpen] = createSignal(false);
+  const [pendingAction, setPendingAction] = createSignal<null | (() => void | Promise<void>)>(
+    null
+  );
+
   const formatCapturedRange = (thread: ReviewThread) => {
     if (!thread.captured_at_start) return "Captured —";
     const start = props.formatReviewDate(thread.captured_at_start);
@@ -64,6 +72,43 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
       return `Captured ${start}`;
     }
     return `Captured ${start} - ${props.formatReviewDate(thread.captured_at_end)}`;
+  };
+
+  const requestTransition = (action: () => void | Promise<void>) => {
+    if (!props.hasDiscardableChanges()) {
+      void action();
+      return;
+    }
+    setPendingAction(() => action);
+    setConfirmOpen(true);
+  };
+
+  const closeConfirm = () => {
+    setConfirmOpen(false);
+    setPendingAction(null);
+  };
+
+  const confirmDiscard = async () => {
+    await props.onDiscardReviewChanges();
+    await pendingAction()?.();
+    closeConfirm();
+  };
+
+  const handleSelectThread = (id: string) => {
+    if (id === props.selectedThreadId()) return;
+    const selectThread = props.onSelectThread;
+    requestTransition(() => selectThread(id));
+  };
+
+  const handleOpenDestination = (pageUid: string) => {
+    if (pageUid === props.destinationPageUid()) return;
+    const openDestination = props.onOpenDestination;
+    requestTransition(() => openDestination(pageUid));
+  };
+
+  const handleCreateDestination = () => {
+    const createDestination = props.onCreateDestination;
+    requestTransition(() => createDestination());
   };
 
   return (
@@ -95,7 +140,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                 <ReviewQueueDeck
                   threads={props.threads()}
                   activeThreadId={props.selectedThreadId()}
-                  onSelectThread={props.onSelectThread}
+                  onSelectThread={handleSelectThread}
                   formatCapturedRange={formatCapturedRange}
                 />
               </Show>
@@ -140,8 +185,8 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
               destinationMatches={props.destinationMatches}
               destinationHasExactMatch={props.destinationHasExactMatch}
               invalidated={props.invalidated}
-              onOpenDestination={props.onOpenDestination}
-              onCreateDestination={props.onCreateDestination}
+              onOpenDestination={handleOpenDestination}
+              onCreateDestination={handleCreateDestination}
               onCompleteReview={props.onCompleteReview}
               canCompleteReview={props.canCompleteReview}
               archivedAt={() => props.selectedArchivedThread()?.archived_at ?? null}
@@ -151,6 +196,16 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
           </section>
         </div>
       </Show>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Discard current draft?"
+        description="This review already changed the destination note. Continue writing to keep the draft, or discard it before switching."
+        confirmLabel="Discard and switch"
+        cancelLabel="Continue writing"
+        onConfirm={() => void confirmDiscard()}
+        onCancel={closeConfirm}
+      />
 
       <Show when={props.message()}>
         {(message) => <div class="review__message">{message()}</div>}
