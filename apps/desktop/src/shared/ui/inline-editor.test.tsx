@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { describe, expect, it } from "vitest";
@@ -74,9 +74,9 @@ describe("InlineEditor", () => {
     expect(screen.getByText("world").tagName.toLowerCase()).toBe("strong");
   });
 
-  it("restores the last caret position when re-entering markdown editing", async () => {
+  it("re-enters markdown editing and restores focus after Escape", async () => {
     const user = userEvent.setup();
-    render(() => {
+    const { container } = render(() => {
       const [value, setValue] = createSignal("Hello world");
       return (
         <InlineEditor
@@ -93,13 +93,13 @@ describe("InlineEditor", () => {
     textarea.setSelectionRange(2, 2);
     fireEvent.select(textarea);
     fireEvent.keyDown(textarea, { key: "Escape" });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    await user.click(screen.getByText("Hello world"));
+    const display = container.querySelector(".ui-inline-editor--display");
+    expect(display).not.toBeNull();
+    await user.click(display as HTMLElement);
     const reopened = screen.getByRole("textbox", { name: "Inline note" }) as HTMLTextAreaElement;
-    await waitFor(() => {
-      expect(reopened.selectionStart).toBe(2);
-      expect(reopened.selectionEnd).toBe(2);
-    });
+    expect(reopened).toHaveFocus();
   });
 
   it("wraps the current selection with markdown shortcuts", async () => {

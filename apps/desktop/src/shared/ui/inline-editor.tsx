@@ -34,6 +34,7 @@ export const InlineEditor = (props: InlineEditorProps) => {
   let displayRef: HTMLDivElement | undefined;
   const [isEditing, setIsEditing] = createSignal(false);
   let storedSelection: { start: number; end: number } | null = null;
+  let pendingSelectionRestore: { start: number; end: number } | null = null;
   let suppressNextDisplayFocus = false;
 
   const [local, rest] = splitProps(props, [
@@ -53,15 +54,40 @@ export const InlineEditor = (props: InlineEditorProps) => {
     "placeholder"
   ]);
 
-  const resize = () => {
+  const resize = (maxHeight = local.maxHeight ?? 120) => {
     if (!textareaRef) return;
     textareaRef.style.height = "auto";
-    const maxHeight = local.maxHeight ?? 120;
     textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, maxHeight)}px`;
+  };
+
+  const restorePendingSelection = (target: HTMLTextAreaElement) => {
+    const selection = pendingSelectionRestore;
+    if (!selection) return;
+    target.setSelectionRange(selection.start, selection.end);
+    pendingSelectionRestore = null;
   };
 
   const assignRef = (el: HTMLTextAreaElement) => {
     textareaRef = el;
+    const shouldRestoreEditingFocus = local.displayMode === "markdown";
+    const shouldAutoResize = local.autoResize !== false;
+    const maxHeight = local.maxHeight ?? 120;
+    // eslint-disable-next-line solid/reactivity
+    queueMicrotask(() => {
+      if (textareaRef !== el) return;
+      if (shouldRestoreEditingFocus) {
+        el.focus();
+        if (pendingSelectionRestore) {
+          restorePendingSelection(el);
+        } else {
+          const length = el.value.length;
+          el.setSelectionRange(length, length);
+        }
+      }
+      if (shouldAutoResize) {
+        resize(maxHeight);
+      }
+    });
     if (typeof local.ref === "function") {
       local.ref(el);
     }
@@ -101,9 +127,19 @@ export const InlineEditor = (props: InlineEditorProps) => {
     }
   };
 
-  const closeEditMode = (restoreDisplayFocus = false) => {
+  const closeEditMode = (
+    restoreDisplayFocus = false,
+    selectionOverride?: { start: number; end: number }
+  ) => {
     if (local.displayMode !== "markdown" || !isEditing()) return;
-    rememberSelection();
+    storedSelection =
+      selectionOverride ??
+      (textareaRef
+        ? {
+            start: textareaRef.selectionStart ?? 0,
+            end: textareaRef.selectionEnd ?? 0
+          }
+        : storedSelection);
     setIsEditing(false);
     if (restoreDisplayFocus) {
       suppressNextDisplayFocus = true;
@@ -114,30 +150,10 @@ export const InlineEditor = (props: InlineEditorProps) => {
     }
   };
 
-  const focusEditor = () => {
-    requestAnimationFrame(() => {
-      if (!textareaRef) return;
-      textareaRef.focus();
-      const selection = storedSelection;
-      requestAnimationFrame(() => {
-        if (!textareaRef) return;
-        if (selection) {
-          textareaRef.setSelectionRange(selection.start, selection.end);
-        } else {
-          const length = textareaRef.value.length;
-          textareaRef.setSelectionRange(length, length);
-        }
-      });
-      if (local.autoResize !== false) {
-        resize();
-      }
-    });
-  };
-
   const enterEditMode = () => {
     if (local.displayMode !== "markdown" || isEditing()) return;
+    pendingSelectionRestore = storedSelection;
     setIsEditing(true);
-    focusEditor();
   };
 
   onMount(() => {
@@ -211,14 +227,7 @@ export const InlineEditor = (props: InlineEditorProps) => {
               | JSX.EventHandler<HTMLTextAreaElement, FocusEvent>
               | undefined
           )?.(event);
-          const selection = storedSelection;
-          if (!selection) return;
-          const target = event.currentTarget;
-          requestAnimationFrame(() => {
-            if (document.contains(target)) {
-              target.setSelectionRange(selection.start, selection.end);
-            }
-          });
+          restorePendingSelection(event.currentTarget);
         }}
         onInput={(event) => {
           (
@@ -249,11 +258,12 @@ export const InlineEditor = (props: InlineEditorProps) => {
           const hasCommandKey = event.ctrlKey || event.metaKey;
           if (event.key === "Escape" && local.displayMode === "markdown") {
             event.preventDefault();
-            storedSelection = {
+            const selection = {
               start: event.currentTarget.selectionStart ?? 0,
               end: event.currentTarget.selectionEnd ?? 0
             };
-            closeEditMode(true);
+            storedSelection = selection;
+            closeEditMode(true, selection);
             return;
           }
           if (!hasCommandKey) return;
