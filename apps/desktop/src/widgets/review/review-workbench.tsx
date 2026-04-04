@@ -130,12 +130,12 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
             class="review-workbench__surface"
             aria-label="Review surface"
             data-review-tab={props.activeTab()}
-            data-transition-slot="capture"
-            style={{ "view-transition-name": "mode-pane-capture" }}
           >
             <div
               class="review-workbench__surface-body"
               data-review-tab={props.activeTab()}
+              data-transition-slot="capture"
+              style={{ "view-transition-name": "mode-pane-capture" }}
             >
               <Show
                 when={props.activeTab() === "to-review"}

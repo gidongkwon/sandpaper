@@ -63,7 +63,6 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   });
   const hasMetaContent = createMemo(
     () =>
-      Boolean(props.destinationTitle()) ||
       isRecommended() ||
       (props.activeTab() === "archived" && props.archivedAt() !== null) ||
       props.invalidated()
@@ -72,10 +71,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   return (
     <header class="review-session-bar" data-has-meta={hasMetaContent()}>
       <div class="review-session-bar__meta" data-has-meta={hasMetaContent()}>
-        <div class="review-session-bar__title-row" data-has-title={Boolean(props.destinationTitle())}>
-          <Show when={props.destinationTitle()}>
-            {(title) => <strong>{title()}</strong>}
-          </Show>
+        <div class="review-session-bar__title-row" data-has-title="false">
           <Show when={isRecommended()}>
             <span class="review-session-bar__badge">Recommended</span>
           </Show>

@@ -91,6 +91,7 @@ describe("App modes", () => {
     const destinationNote = await screen.findByRole("region", {
       name: "Destination note"
     });
+    const reviewSurfaceBody = document.querySelector(".review-workbench__surface-body");
 
     expect(startViewTransition).toHaveBeenCalledTimes(2);
     expect(destinationNote).toHaveAttribute("data-transition-slot", "editor");
@@ -98,6 +99,7 @@ describe("App modes", () => {
       "data-transition-slot",
       "editor"
     );
+    expect(reviewSurfaceBody).toHaveAttribute("data-transition-slot", "capture");
 
     await user.click(screen.getByRole("button", { name: "Editor" }));
     await waitFor(() => {

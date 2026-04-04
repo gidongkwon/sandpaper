@@ -51,6 +51,17 @@
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
   --shadow-ring: 0 0 0 1px rgba(0, 0, 0, 0.03);
 
+  /* Review cards
+     Alternatives:
+     --review-card-bg: #f1eadf; warm paper
+     --review-card-bg: #f6f2e8; cool ivory */
+  --review-card-bg: #efe7d8;
+  --review-card-bg-accent: rgba(124, 94, 57, 0.06);
+  --review-card-border: rgba(99, 73, 41, 0.14);
+  --review-card-shadow: 0 18px 36px rgba(68, 47, 24, 0.1), 0 2px 6px rgba(68, 47, 24, 0.05);
+  --review-card-text: #241b14;
+  --review-card-meta: #6a5644;
+
   /* Typography - Readable, refined */
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-serif: "Source Serif 4", "Georgia", "Times New Roman", serif;
@@ -155,6 +166,13 @@
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
     --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
     --shadow-ring: 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    --review-card-bg: #dbd1bf;
+    --review-card-bg-accent: rgba(94, 67, 36, 0.08);
+    --review-card-border: rgba(75, 52, 25, 0.18);
+    --review-card-shadow: 0 20px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(67, 46, 22, 0.12);
+    --review-card-text: #211811;
+    --review-card-meta: #64503e;
   }
 
   /* Vibrancy-aware dark mode overrides */
@@ -317,7 +335,8 @@ button:disabled {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  margin: 0 var(--space-3) var(--space-3);
+  margin: 0 var(--space-3);
+  padding-bottom: var(--space-3);
 }
 
 .main-page-workspace > * {
@@ -639,7 +658,7 @@ button:disabled {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 0 var(--space-2) var(--space-2) 0;
+  padding: 0 var(--space-2) 0 0;
   transition: grid-template-columns var(--duration-slow) var(--ease-out);
 }
 
@@ -3043,7 +3062,7 @@ button:disabled {
   max-height: 100%;
   min-height: 0;
   margin: 0 auto;
-  padding: var(--space-5);
+  padding: 0 var(--space-5) var(--space-5);
   background: var(--bg-primary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-subtle);
@@ -3060,7 +3079,7 @@ button:disabled {
   max-height: 100%;
   min-height: 0;
   margin: 0;
-  padding: var(--space-3);
+  padding: 0 var(--space-3) 0;
   background: transparent;
   border: none;
   box-shadow: none;
@@ -3499,8 +3518,8 @@ button:disabled {
   --capture-panel-inline-padding: var(--space-5);
   max-width: 600px;
   width: 100%;
-  padding: var(--space-5);
-  margin: var(--space-3) auto;
+  padding: 0 var(--space-5) var(--space-5);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3714,9 +3733,13 @@ button:disabled {
   gap: var(--space-3);
   padding: var(--space-4);
   border-radius: calc(var(--radius-xl) + 2px);
-  border: 1px solid var(--border-light);
-  background: var(--bg-primary);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--review-card-border);
+  background:
+    radial-gradient(circle at top left, var(--review-card-bg-accent), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 18%),
+    var(--review-card-bg);
+  box-shadow: var(--review-card-shadow);
+  color: var(--review-card-text);
   text-align: left;
 }
 
@@ -3759,19 +3782,19 @@ button:disabled {
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: var(--text-tertiary);
+  color: var(--review-card-meta);
 }
 
 .review-reference-card__entries {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .review-reference-card__entry {
   font-size: var(--text-md);
   line-height: 1.65;
-  color: var(--text-primary);
+  color: var(--review-card-text);
   white-space: pre-wrap;
 }
 
@@ -3844,16 +3867,6 @@ button:disabled {
   gap: var(--space-2);
   min-width: 0;
   flex-wrap: nowrap;
-}
-
-.review-session-bar__title-row strong {
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--text-primary);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .review-session-bar__title-row[data-has-title="false"] {
@@ -5439,17 +5452,18 @@ button:disabled {
 
   .focus-panel {
     margin: var(--space-3) auto;
-    padding: var(--space-3);
+    padding: 0 var(--space-3) var(--space-3);
     border-radius: var(--radius-lg);
   }
 
   .focus-panel.is-review {
     margin: 0;
-    padding: var(--space-2);
+    padding: 0 var(--space-2) 0;
   }
 
   .focus-panel:has(.capture-chat) {
     --capture-panel-inline-padding: var(--space-3);
+    margin: 0 auto;
   }
 
   .capture-chat__messages {
