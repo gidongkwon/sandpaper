@@ -694,6 +694,55 @@ describe("App editor UX", () => {
     expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
   });
 
+  it("switches the review surface into flattened archived state", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Archived thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const reviewSurface = screen.getByRole("region", { name: "Review surface" });
+    expect(reviewSurface).toHaveAttribute("data-review-tab", "to-review");
+    expect(
+      within(reviewSurface).getByRole("navigation", { name: "Review queue" })
+    ).toBeInTheDocument();
+
+    await user.type(
+      await screen.findByPlaceholderText("Search or create a page..."),
+      "Archive Target"
+    );
+    await user.click(
+      screen.getByRole("button", { name: 'Create "Archive Target"' })
+    );
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Archived summary" }
+    });
+    await user.click(screen.getByRole("button", { name: "Complete review" }));
+    await user.click(screen.getByRole("tab", { name: "Archived" }));
+
+    await waitFor(() => {
+      expect(reviewSurface).toHaveAttribute("data-review-tab", "archived");
+    });
+    expect(
+      within(reviewSurface).getByRole("navigation", { name: "Archived review queue" })
+    ).toBeInTheDocument();
+    expect(
+      within(reviewSurface).queryByRole("navigation", { name: "Review queue" })
+    ).not.toBeInTheDocument();
+  });
+
   it("reorders the review deck when selecting a peek card", async () => {
     render(() => <App />);
     const user = userEvent.setup();

@@ -123,8 +123,15 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
         }
       >
         <div class="review-workbench__layout">
-          <section class="review-workbench__surface" aria-label="Review surface">
-            <div class="review-workbench__surface-body">
+          <section
+            class="review-workbench__surface"
+            aria-label="Review surface"
+            data-review-tab={props.activeTab()}
+          >
+            <div
+              class="review-workbench__surface-body"
+              data-review-tab={props.activeTab()}
+            >
               <Show
                 when={props.activeTab() === "to-review"}
                 fallback={

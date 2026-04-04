@@ -3443,6 +3443,20 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  transition:
+    transform var(--duration-slow) var(--ease-out),
+    opacity var(--duration-slow) var(--ease-out),
+    filter var(--duration-slow) var(--ease-out);
+}
+
+.review-workbench__surface[data-review-tab="to-review"] .review-workbench__surface-body {
+  transform: translateY(0) scale(1);
+  filter: saturate(1);
+}
+
+.review-workbench__surface[data-review-tab="archived"] .review-workbench__surface-body {
+  transform: translateY(4px) scale(0.992);
+  filter: saturate(0.94);
 }
 
 .review-workbench__tabs {
@@ -3627,6 +3641,11 @@ button:disabled {
   gap: var(--space-2);
   overflow: auto;
   padding-right: var(--space-1);
+  opacity: 0;
+  transform: translateY(12px) scale(0.985);
+  transition:
+    transform var(--duration-slow) var(--ease-out),
+    opacity var(--duration-slow) var(--ease-out);
 }
 
 .review-archive-list__item.is-selected .review-reference-card {
@@ -3634,6 +3653,15 @@ button:disabled {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.85) inset,
     0 20px 30px rgba(37, 99, 235, 0.12);
+}
+
+.review-workbench__surface[data-review-tab="archived"] .review-archive-list {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.review-workbench__surface[data-review-tab="archived"] .review-queue-deck__stack {
+  transform: translateY(8px) scale(0.985);
 }
 
 .review-workbench__editor {
