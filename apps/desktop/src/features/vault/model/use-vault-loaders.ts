@@ -255,11 +255,35 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     }
   };
 
+  const loadHiddenInboxSnapshot = async () => {
+    if (!deps.isTauri()) return;
+    try {
+      const response = (await deps.invoke("load_page_blocks", {
+        pageUid: HIDDEN_INBOX_PAGE_UID,
+        page_uid: HIDDEN_INBOX_PAGE_UID
+      })) as PageBlocksResponse;
+      const loaded = response.blocks.map((block) => ({
+        id: block.uid,
+        text: block.text,
+        indent: block.indent,
+        block_type: resolveBlockType({ text: block.text, block_type: block.block_type })
+      }));
+      deps.saveLocalPageSnapshot(
+        HIDDEN_INBOX_PAGE_UID,
+        response.title || HIDDEN_INBOX_PAGE_TITLE,
+        loaded
+      );
+    } catch (error) {
+      console.error("Failed to preload hidden inbox", error);
+    }
+  };
+
   return {
     loadPages,
     loadActivePage,
     loadReviewSummary,
     loadReviewQueue,
-    loadBlocks
+    loadBlocks,
+    loadHiddenInboxSnapshot
   };
 };

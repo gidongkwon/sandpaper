@@ -372,10 +372,90 @@ describe("App", () => {
     expect(
       await screen.findByPlaceholderText("Capture a thought, link, or task...")
     ).toBeInTheDocument();
-    expect(await screen.findByDisplayValue("Persisted capture")).toBeInTheDocument();
+    expect(await screen.findByText("Persisted capture")).toBeInTheDocument();
     expect(
       screen.queryByText("Inbox", { selector: ".editor-pane__title" })
     ).not.toBeInTheDocument();
+  });
+
+  it("loads hidden inbox captures even when starting on a visible page", async () => {
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "list_vaults") {
+        return Promise.resolve({
+          active_id: "vault-1",
+          vaults: [{ id: "vault-1", name: "Vault", path: "/vault" }]
+        });
+      }
+      if (command === "get_active_page") return Promise.resolve("home");
+      if (command === "list_pages") {
+        return Promise.resolve([{ uid: "home", title: "Home" }]);
+      }
+      if (command === "load_page_blocks") {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          "pageUid" in payload &&
+          payload.pageUid === "inbox"
+        ) {
+          return Promise.resolve({
+            page_uid: "inbox",
+            title: "Inbox",
+            blocks: [{ uid: "inbox-1", text: "Persisted capture", indent: 0 }]
+          });
+        }
+        return Promise.resolve({
+          page_uid: "home",
+          title: "Home",
+          blocks: [{ uid: "home-1", text: "Home block", indent: 0 }]
+        });
+      }
+      if (command === "list_page_wikilink_backlinks") return Promise.resolve([]);
+      if (command === "list_plugins_command") return Promise.resolve([]);
+      if (command === "load_plugins_command") {
+        return Promise.resolve({
+          loaded: [],
+          blocked: [],
+          commands: [],
+          panels: [],
+          toolbar_actions: [],
+          renderers: []
+        });
+      }
+      if (command === "vault_key_status") {
+        return Promise.resolve({
+          configured: false,
+          kdf: null,
+          iterations: null,
+          salt_b64: null
+        });
+      }
+      if (command === "get_sync_config") {
+        return Promise.resolve({
+          server_url: null,
+          vault_id: null,
+          device_id: null,
+          key_fingerprint: null,
+          last_push_cursor: 0,
+          last_pull_cursor: 0
+        });
+      }
+      if (command === "review_queue_summary") {
+        return Promise.resolve({ due_count: 0, next_due_at: null });
+      }
+      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "write_shadow_markdown") return Promise.resolve(null);
+      if (command === "save_page_blocks") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+
+    render(() => <App />);
+
+    expect(await screen.findByText("Home", { selector: ".editor-pane__title" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: "Capture" }));
+    expect(await screen.findByText("Persisted capture")).toBeInTheDocument();
   });
 
   it("renders a code preview for fenced blocks", async () => {

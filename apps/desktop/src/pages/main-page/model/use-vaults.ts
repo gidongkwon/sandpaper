@@ -18,6 +18,7 @@ type VaultDeps = {
   loadReviewSummary: () => Promise<void>;
   loadReviewQueue: () => Promise<void>;
   loadCaptureReviewThreadOrder: () => Promise<void>;
+  loadHiddenInboxSnapshot: () => Promise<void>;
   markSaved: () => void;
   clearExportStatus: () => void;
   clearActivePanel: () => void;
@@ -71,6 +72,7 @@ export const createVaultState = (deps: VaultDeps) => {
       setActiveVault(fallback);
       await deps.loadActivePage();
       await deps.loadBlocks(deps.activePageUid());
+      await deps.loadHiddenInboxSnapshot();
       await deps.loadPages();
       await deps.ensureDailyNote();
       await deps.loadPlugins();
@@ -93,6 +95,7 @@ export const createVaultState = (deps: VaultDeps) => {
       setActiveVault(active);
       await deps.loadActivePage();
       await deps.loadBlocks(deps.activePageUid());
+      await deps.loadHiddenInboxSnapshot();
       await deps.loadPages();
       await deps.ensureDailyNote();
       await deps.loadPlugins();
@@ -119,6 +122,7 @@ export const createVaultState = (deps: VaultDeps) => {
     deps.clearCommandStatus();
     await deps.loadActivePage();
     await deps.loadBlocks(deps.activePageUid());
+    await deps.loadHiddenInboxSnapshot();
     await deps.loadPages();
     await deps.ensureDailyNote();
     await deps.loadPlugins();

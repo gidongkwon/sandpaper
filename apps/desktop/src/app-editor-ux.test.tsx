@@ -404,14 +404,14 @@ describe("App editor UX", () => {
     )) as HTMLTextAreaElement;
     await user.type(captureInput, "Quick note");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
-    expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
+    expect(await screen.findByText("Quick note")).toBeInTheDocument();
 
     await user.click(getModeControl("Editor"));
 
     expect(
       await screen.findByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
-    expect(screen.queryByDisplayValue("Quick note")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quick note")).not.toBeInTheDocument();
   });
 
   it("routes hidden inbox wikilinks to capture mode instead of opening inbox in editor", async () => {
@@ -1565,7 +1565,11 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Persisted reply");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
-    const rootInput = screen.getByDisplayValue("Persisted root");
+    const persistedThread = await screen.findByRole("group", {
+      name: "Thread Persisted root"
+    });
+    await user.click(within(persistedThread).getByText("Persisted root"));
+    const rootInput = await screen.findByRole("textbox", { name: "Captured item 1" });
     fireEvent.input(rootInput, {
       target: { value: "Edited root" }
     });

@@ -215,4 +215,88 @@ describe("createVaultLoaders", () => {
     expect(markSaved).toHaveBeenCalled();
     expect(untrack(pages)).toEqual([]);
   });
+
+  it("preloads the hidden inbox without replacing the active page state", async () => {
+    const localPages: Record<string, LocalPageRecord> = {
+      home: { uid: "home", title: "Home", blocks: [] },
+      inbox: { uid: "inbox", title: "Inbox", blocks: [] }
+    };
+    const [pages, setPages] = createSignal<PageSummary[]>([]);
+    const [activePageUid, setActivePageUid] = createSignal("home");
+    const [activeVault] = createSignal<VaultRecord | null>({
+      id: "vault-1",
+      name: "Vault",
+      path: "/vault"
+    });
+    const saveLocalPageSnapshot = vi.fn();
+    const setBlocks = vi.fn();
+    const setPageTitle = vi.fn();
+    const setRenameTitle = vi.fn();
+    const setActiveId = vi.fn();
+    const setFocusedId = vi.fn();
+    const markSaved = vi.fn();
+
+    const api = createVaultLoaders({
+      isTauri: () => true,
+      invoke: vi.fn(async (command, payload) => {
+        if (
+          command === "load_page_blocks" &&
+          payload &&
+          typeof payload === "object" &&
+          "pageUid" in payload &&
+          payload.pageUid === "inbox"
+        ) {
+          return {
+            page_uid: "inbox",
+            title: "Inbox",
+            blocks: [{ uid: "capture-1", text: "Persisted capture", indent: 0 }]
+          };
+        }
+        throw new Error("unexpected command");
+      }),
+      localPages,
+      setPages,
+      activePageUid,
+      setActivePageUid,
+      activeVault,
+      resolvePageUid: (value) => value,
+      snapshotBlocks: (items) => items.map((item) => ({ ...item })),
+      saveLocalPageSnapshot,
+      buildLocalDefaults: () => [],
+      buildEmptyBlocks: () => [],
+      buildDefaultBlocks: () => [],
+      makeLocalId: () => "local",
+      makeRandomId: () => "rand",
+      setBlocks,
+      setPageTitle,
+      setRenameTitle,
+      setActiveId,
+      setFocusedId,
+      markSaved,
+      toPayload: (block: Block) => ({
+        uid: block.id,
+        text: block.text,
+        indent: block.indent
+      }),
+      serializePageToMarkdown: () => "",
+      shadowWriter: { scheduleWrite: vi.fn() },
+      setReviewSummary: vi.fn(),
+      setReviewItems: vi.fn(),
+      setReviewBusy: vi.fn(),
+      defaultPageUid: "home"
+    });
+
+    await api.loadHiddenInboxSnapshot();
+
+    expect(saveLocalPageSnapshot).toHaveBeenCalledWith("inbox", "Inbox", [
+      { id: "capture-1", text: "Persisted capture", indent: 0, block_type: "text" }
+    ]);
+    expect(untrack(activePageUid)).toBe("home");
+    expect(setBlocks).not.toHaveBeenCalled();
+    expect(setPageTitle).not.toHaveBeenCalled();
+    expect(setRenameTitle).not.toHaveBeenCalled();
+    expect(setActiveId).not.toHaveBeenCalled();
+    expect(markSaved).not.toHaveBeenCalled();
+    expect(untrack(pages)).toEqual([]);
+  });
 });

@@ -746,7 +746,8 @@ export const createMainPageState = () => {
     loadActivePage,
     loadReviewSummary,
     loadReviewQueue,
-    loadBlocks
+    loadBlocks,
+    loadHiddenInboxSnapshot
   } = vaultLoaders;
 
   const pageOps = createPageOps({
@@ -1141,6 +1142,7 @@ export const createMainPageState = () => {
     loadCaptureReviewThreadOrder,
     loadReviewSummary,
     loadReviewQueue,
+    loadHiddenInboxSnapshot,
     markSaved,
     clearExportStatus: () => setExportStatus(null),
     clearActivePanel: () => setActivePanel(null),
