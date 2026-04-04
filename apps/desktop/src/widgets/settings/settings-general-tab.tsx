@@ -3,6 +3,7 @@ import type { VaultRecord } from "../../entities/vault/model/vault-types";
 import type { MotionMode } from "../../pages/main-page/model/use-motion-mode";
 import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 import { SelectField, type SelectFieldOption } from "../../shared/ui/select-field";
+import { SliderField } from "../../shared/ui/slider-field";
 import { Switch } from "../../shared/ui/switch";
 
 type SettingsGeneralTabProps = {
@@ -59,14 +60,15 @@ export const SettingsGeneralTab = (props: SettingsGeneralTabProps) => {
               {Math.round(props.typeScale.value() * 100)}%
             </span>
           </div>
-          <input
-            type="range"
+          <SliderField
+            id="settings-text-size"
+            label="Text size"
             class="settings-slider__input"
-            min={props.typeScale.min}
-            max={props.typeScale.max}
+            minValue={props.typeScale.min}
+            maxValue={props.typeScale.max}
             step={props.typeScale.step}
             value={props.typeScale.value()}
-            onInput={(e) => props.typeScale.set(parseFloat(e.currentTarget.value))}
+            onChange={props.typeScale.set}
           />
           <div
             class="settings-slider__labels"

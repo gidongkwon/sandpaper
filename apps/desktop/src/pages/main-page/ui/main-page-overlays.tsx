@@ -1,5 +1,6 @@
 import { CommandPalette } from "../../../features/command-palette/ui/command-palette";
 import { ModalDialog } from "../../../shared/ui/modal-dialog";
+import { TextField } from "../../../shared/ui/text-field";
 import { NotificationPanel } from "../../../widgets/notifications/notification-panel";
 import { PermissionPromptModal } from "../../../widgets/permissions/permission-prompt-modal";
 import { SettingsModal } from "../../../widgets/settings/settings-modal";
@@ -21,7 +22,7 @@ export const MainPageOverlays = () => {
         onCancel={overlays.pageDialog.onCancel}
         confirmDisabled={overlays.pageDialog.confirmDisabled}
       >
-        <input
+        <TextField
           class="modal__input"
           type="text"
           placeholder={

@@ -2558,10 +2558,11 @@ export const EditorPane = (props: EditorPaneProps) => {
             </div>
           </div>
           <div class="block-renderer__actions">
-            <button
+            <Button
               class="block-renderer__edit"
+              variant="unstyled"
               type="button"
-              aria-label="Edit code"
+              label="Edit code"
               data-code-edit="true"
               onClick={(event) => {
                 event.preventDefault();
@@ -2571,12 +2572,13 @@ export const EditorPane = (props: EditorPaneProps) => {
             >
               <Document16Icon width={14} height={14} />
               <span>Edit</span>
-            </button>
+            </Button>
           </div>
-          <button
+          <Button
             class="block-renderer__copy"
+            variant="unstyled"
             type="button"
-            aria-label="Copy code"
+            label="Copy code"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -2591,7 +2593,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             }}
           >
             {copiedBlockId() === props.blockId ? "Copied" : "Copy"}
-          </button>
+          </Button>
         </div>
         <div class="block-renderer__code-body">
           <For each={renderedCodeLines()}>
@@ -2930,8 +2932,9 @@ export const EditorPane = (props: EditorPaneProps) => {
     return (
       <div class="block-renderer block-renderer--columns">
         <div class="block-renderer__header">
-          <button
+          <Button
             class="block-renderer__copy"
+            variant="unstyled"
             type="button"
             onClick={(event) => {
               event.preventDefault();
@@ -2940,7 +2943,7 @@ export const EditorPane = (props: EditorPaneProps) => {
             }}
           >
             Add column
-          </button>
+          </Button>
         </div>
         <div class="column-layout-preview">
           <For each={columns()}>
@@ -3023,13 +3026,14 @@ export const EditorPane = (props: EditorPaneProps) => {
                 {(page) => (
                   <tr>
                     <td>
-                      <button
+                      <Button
                         class="database-preview__page"
+                        variant="unstyled"
                         type="button"
                         onClick={() => void switchPage(page.uid)}
                       >
                         {page.title || page.uid}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 )}
