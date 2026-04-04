@@ -4060,13 +4060,19 @@ button:disabled {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-5);
   z-index: 100;
+  pointer-events: none;
+}
+
+.modal-backdrop__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   animation: fadeIn var(--duration-fast) var(--ease-out);
 }
 
@@ -4325,6 +4331,9 @@ button:disabled {
   flex-direction: column;
   overflow: hidden;
   animation: modalIn var(--duration-base) var(--ease-out);
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 @keyframes modalIn {

@@ -231,69 +231,71 @@ export const SettingsModal = (props: SettingsModalProps) => {
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay class="modal-backdrop" />
-        <Dialog.Content class="settings-modal">
-          <div class="settings-modal__header">
-            <Dialog.Title id="settings-title">Settings</Dialog.Title>
-            <IconButton
-              class="settings-modal__close"
-              label="Close settings"
-              onClick={() => props.onClose()}
+        <div class="modal-backdrop">
+          <Dialog.Overlay class="modal-backdrop__overlay" />
+          <Dialog.Content class="settings-modal">
+            <div class="settings-modal__header">
+              <Dialog.Title id="settings-title">Settings</Dialog.Title>
+              <IconButton
+                class="settings-modal__close"
+                label="Close settings"
+                onClick={() => props.onClose()}
+              >
+                <Dismiss12Icon width="14" height="14" />
+              </IconButton>
+            </div>
+            <Tabs.Root
+              class="settings-modal__body"
+              value={props.tab()}
+              onChange={props.setTab}
+              orientation="vertical"
             >
-              <Dismiss12Icon width="14" height="14" />
-            </IconButton>
-          </div>
-          <Tabs.Root
-            class="settings-modal__body"
-            value={props.tab()}
-            onChange={props.setTab}
-            orientation="vertical"
-          >
-            <Tabs.List class="settings-nav" aria-label="Settings sections">
-              <For each={tabs}>
-                {(tab) => (
-                <Tabs.Trigger class="settings-nav__item" value={tab.value}>
-                  {tab.icon()}
-                  {tab.label}
-                </Tabs.Trigger>
-                )}
-              </For>
-            </Tabs.List>
-            <Tabs.Content class="settings-content" value="general">
-              <SettingsGeneralTab
-                typeScale={typeScale}
-                theme={props.theme}
-                statusSurfaces={props.statusSurfaces}
-                activeVault={vault.active}
-              />
-            </Tabs.Content>
-            <Tabs.Content class="settings-content" value="vault">
-              <SettingsVaultTab isTauri={props.isTauri} vault={vault} />
-            </Tabs.Content>
-            <Tabs.Content class="settings-content" value="sync">
-              <SettingsSyncTab
-                isTauri={props.isTauri}
-                vaultKeyStatus={vault.keyStatus}
-                sync={sync}
-              />
-            </Tabs.Content>
-            <Tabs.Content class="settings-content" value="plugins">
-              <SettingsPluginsTab
-                isTauri={props.isTauri}
-                plugins={plugins}
-              />
-            </Tabs.Content>
-            <Tabs.Content class="settings-content" value="permissions">
-              <SettingsPermissionsTab plugins={plugins} />
-            </Tabs.Content>
-            <Tabs.Content class="settings-content" value="import">
-              <SettingsImportTab
-                isTauri={props.isTauri}
-                importExport={importExport}
-              />
-            </Tabs.Content>
-          </Tabs.Root>
-        </Dialog.Content>
+              <Tabs.List class="settings-nav" aria-label="Settings sections">
+                <For each={tabs}>
+                  {(tab) => (
+                    <Tabs.Trigger class="settings-nav__item" value={tab.value}>
+                      {tab.icon()}
+                      {tab.label}
+                    </Tabs.Trigger>
+                  )}
+                </For>
+              </Tabs.List>
+              <Tabs.Content class="settings-content" value="general">
+                <SettingsGeneralTab
+                  typeScale={typeScale}
+                  theme={props.theme}
+                  statusSurfaces={props.statusSurfaces}
+                  activeVault={vault.active}
+                />
+              </Tabs.Content>
+              <Tabs.Content class="settings-content" value="vault">
+                <SettingsVaultTab isTauri={props.isTauri} vault={vault} />
+              </Tabs.Content>
+              <Tabs.Content class="settings-content" value="sync">
+                <SettingsSyncTab
+                  isTauri={props.isTauri}
+                  vaultKeyStatus={vault.keyStatus}
+                  sync={sync}
+                />
+              </Tabs.Content>
+              <Tabs.Content class="settings-content" value="plugins">
+                <SettingsPluginsTab
+                  isTauri={props.isTauri}
+                  plugins={plugins}
+                />
+              </Tabs.Content>
+              <Tabs.Content class="settings-content" value="permissions">
+                <SettingsPermissionsTab plugins={plugins} />
+              </Tabs.Content>
+              <Tabs.Content class="settings-content" value="import">
+                <SettingsImportTab
+                  isTauri={props.isTauri}
+                  importExport={importExport}
+                />
+              </Tabs.Content>
+            </Tabs.Root>
+          </Dialog.Content>
+        </div>
       </Dialog.Portal>
     </Dialog.Root>
   );
