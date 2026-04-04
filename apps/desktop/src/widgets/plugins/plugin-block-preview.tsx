@@ -15,6 +15,8 @@ import type {
   PluginRenderer
 } from "../../entities/plugin/model/plugin-types";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
+import { Button } from "../../shared/ui/button";
+import { SelectField } from "../../shared/ui/select-field";
 
 type PluginBlockPreviewProps = {
   block: Block;
@@ -146,41 +148,44 @@ const renderControl = (
 ) => {
   if (control.type === "button") {
     return (
-      <button
+      <Button
         class="plugin-block__control"
-        type="button"
+        variant="surface"
+        size="sm"
         onClick={() => onAction(control.id)}
       >
         {control.label}
-      </button>
+      </Button>
     );
   }
   if (control.type === "select") {
     return (
-      <label class="plugin-block__control plugin-block__control--select">
+      <label class="plugin-block__control-group plugin-block__control-group--select">
         <span>{control.label}</span>
-        <select
+        <SelectField
+          label={control.label}
           value={control.value ?? ""}
-          onChange={(event) => onAction(control.id, event.currentTarget.value)}
-        >
-          <For each={control.options}>
-            {(option) => (
-              <option value={option.value}>{option.label}</option>
-            )}
-          </For>
-        </select>
+          options={control.options}
+          onChange={(value) => onAction(control.id, value)}
+          triggerClass="plugin-block__select-trigger"
+          contentClass="plugin-block__select-content"
+          listboxClass="plugin-block__select-listbox"
+          itemClass="plugin-block__select-item"
+          itemLabelClass="plugin-block__select-item-label"
+        />
       </label>
     );
   }
   if (control.type === "clipboard") {
     return (
-      <button
+      <Button
         class="plugin-block__control"
-        type="button"
+        variant="surface"
+        size="sm"
         onClick={() => void copyToClipboard(control.text)}
       >
         {control.label}
-      </button>
+      </Button>
     );
   }
   return null;

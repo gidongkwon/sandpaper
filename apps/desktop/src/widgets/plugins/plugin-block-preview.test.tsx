@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@solidjs/testing-library";
+import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { vi } from "vitest";
 
@@ -335,6 +336,103 @@ describe("PluginBlockPreview", () => {
 
     await waitFor(() =>
       expect(onUpdateText).toHaveBeenCalledWith("b2", "```hn-top count=5 :: Updated 2")
+    );
+  });
+
+  it("runs plugin actions from shared button and select controls", async () => {
+    const user = userEvent.setup();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        plugin_id: "hn-top",
+        renderer_id: "hn-top.block",
+        block_uid: "b1",
+        body: {
+          kind: "text",
+          text: "Ready"
+        },
+        controls: [
+          {
+            id: "refresh",
+            type: "button",
+            label: "Refresh"
+          },
+          {
+            id: "period",
+            type: "select",
+            label: "Period",
+            value: "day",
+            options: [
+              { value: "day", label: "Today" },
+              { value: "week", label: "This week" }
+            ]
+          }
+        ]
+      })
+      .mockResolvedValue({
+        plugin_id: "hn-top",
+        renderer_id: "hn-top.block",
+        block_uid: "b1",
+        body: {
+          kind: "text",
+          text: "Updated"
+        },
+        controls: [
+          {
+            id: "refresh",
+            type: "button",
+            label: "Refresh"
+          },
+          {
+            id: "period",
+            type: "select",
+            label: "Period",
+            value: "day",
+            options: [
+              { value: "day", label: "Today" },
+              { value: "week", label: "This week" }
+            ]
+          }
+        ]
+      });
+
+    render(() => (
+      <PluginBlockPreview
+        block={{ id: "b1", text: "```hn-top count=5 :: Loading HN top", indent: 0 }}
+        renderer={{
+          plugin_id: "hn-top",
+          id: "hn-top.block",
+          title: "Hacker News Top",
+          kind: "block",
+          languages: ["hn-top"]
+        }}
+        isTauri={() => true}
+        onUpdateText={vi.fn()}
+      />
+    ));
+
+    await screen.findByText("Ready");
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+        "plugin_block_action",
+        expect.objectContaining({
+          actionId: "refresh"
+        })
+      )
+    );
+
+    await user.click(screen.getByRole("button", { name: /period/i }));
+    await user.click(await screen.findByRole("option", { name: "This week" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+        "plugin_block_action",
+        expect.objectContaining({
+          actionId: "period",
+          value: "week"
+        })
+      )
     );
   });
 });

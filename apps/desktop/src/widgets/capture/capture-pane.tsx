@@ -7,6 +7,7 @@ import {
   type Setter
 } from "solid-js";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
+import { Button } from "../../shared/ui/button";
 import { IconButton } from "../../shared/ui/icon-button";
 import {
   ArrowReply16Icon,
@@ -305,15 +306,15 @@ export const CapturePane = (props: CapturePaneProps) => {
                 <span class="capture-chat__replying-label">Replying to</span>
                 <div class="capture-chat__replying-row">
                   <span class="capture-chat__replying-target">{replyingTo()}</span>
-                  <button
-                    type="button"
+                  <Button
                     class="capture-chat__reply-cancel"
+                    variant="unstyled"
                     aria-label="Cancel reply"
                     onClick={() => props.onCancelReply()}
                   >
                     <span>Cancel</span>
                     <kbd class="capture-chat__kbd">Esc</kbd>
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -349,14 +350,15 @@ export const CapturePane = (props: CapturePaneProps) => {
                 aria-hidden="true"
               />
             </div>
-            <button
+            <Button
               class="capture-chat__send"
+              variant="primary"
               disabled={props.text().trim().length === 0}
               onClick={() => handleCapture()}
               aria-label="Send capture"
             >
               <ArrowUp16FilledIcon width="16" height="16" />
-            </button>
+            </Button>
           </div>
         </div>
       </div>

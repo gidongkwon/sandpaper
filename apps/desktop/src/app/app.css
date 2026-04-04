@@ -395,13 +395,7 @@ button:disabled {
 }
 
 .topbar__sidebar-toggle {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-md);
   color: var(--text-tertiary);
-  transition: all var(--duration-fast) var(--ease-out);
 }
 
 .topbar__sidebar-toggle:hover {
@@ -3133,28 +3127,59 @@ button:disabled {
 
 .plugin-block__control {
   font-size: 11px;
-  padding: 4px 10px;
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--border-light);
-  background: var(--bg-primary);
   color: var(--text-secondary);
 }
 
-.plugin-block__control--select {
+.plugin-block__control-group--select {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  border: none;
-  background: none;
 }
 
-.plugin-block__control--select select {
+.plugin-block__select-trigger {
+  min-width: 120px;
+  height: 28px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-xs);
-  padding: 4px 6px;
   background: var(--bg-primary);
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+.plugin-block__select-content {
+  z-index: 40;
+  min-width: max(var(--kb-select-trigger-width, 120px), 120px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-1);
+}
+
+.plugin-block__select-listbox {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  outline: none;
+}
+
+.plugin-block__select-item {
+  list-style: none;
+  cursor: pointer;
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.plugin-block__select-item:hover,
+.plugin-block__select-item[data-highlighted],
+.plugin-block__select-item[data-selected] {
+  background: var(--bg-hover);
 }
 
 .plugin-block__debug {
@@ -3484,8 +3509,6 @@ button:disabled {
 }
 
 .capture-chat__reply-cancel {
-  display: inline-flex;
-  align-items: center;
   gap: var(--space-1-5);
   margin-left: auto;
   padding: 0;
@@ -3578,17 +3601,10 @@ button:disabled {
 
 /* --- Send button --- */
 .capture-chat__send {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   width: 30px;
   height: 30px;
   flex-shrink: 0;
   border-radius: var(--radius-full);
-  background: var(--accent);
-  color: white;
-  border: none;
-  cursor: pointer;
   box-shadow: none;
   transition: all var(--duration-fast) var(--ease-out);
 }

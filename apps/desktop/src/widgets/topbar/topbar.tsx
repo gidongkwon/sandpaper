@@ -101,13 +101,14 @@ export const Topbar = (props: TopbarProps) => {
       data-tauri-drag-region
     >
       <div ref={leftRef} class="topbar__left">
-        <button
+        <IconButton
           class="topbar__sidebar-toggle"
+          variant="toolbar"
           onClick={() => props.toggleSidebar()}
-          aria-label={props.sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
+          label={props.sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
         >
           <PanelLeft16Icon width="16" height="16" />
-        </button>
+        </IconButton>
       </div>
 
       <SegmentedTabs
