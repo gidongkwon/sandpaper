@@ -4407,10 +4407,15 @@ button:disabled {
   color: var(--text-primary);
 }
 
-.settings-nav__item.is-active {
+.settings-nav__item[data-selected] {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 500;
+}
+
+.settings-nav__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .settings-content {

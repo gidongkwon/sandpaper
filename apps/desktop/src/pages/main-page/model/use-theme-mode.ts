@@ -35,10 +35,10 @@ export const createThemeMode = () => {
     document.documentElement.dataset.theme = effectiveTheme;
     document.documentElement.style.colorScheme = effectiveTheme;
     writeLocalStorage(STORAGE_KEY, mode);
-    void setAppTheme(mode === "system" ? null : mode).catch(() => {
+    void Promise.resolve(setAppTheme(mode === "system" ? null : mode)).catch(() => {
       // Ignore in browser tests and non-Tauri environments.
     });
-    void invoke("set_window_theme_effect", { mode, effectiveTheme }).catch(() => {
+    void Promise.resolve(invoke("set_window_theme_effect", { mode, effectiveTheme })).catch(() => {
       // Ignore in browser tests and non-Tauri environments.
     });
   });

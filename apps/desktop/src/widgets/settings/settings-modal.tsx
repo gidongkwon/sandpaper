@@ -1,4 +1,6 @@
-import { Show, type Accessor, type Setter } from "solid-js";
+import * as Dialog from "@kobalte/core/dialog";
+import * as Tabs from "@kobalte/core/tabs";
+import { For, type Accessor, type JSX, type Setter } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
 import type {
   PluginCommand,
@@ -184,21 +186,55 @@ export const SettingsModal = (props: SettingsModalProps) => {
   const importExport = props.importExport;
   const typeScale = props.typeScale;
   /* eslint-enable solid/reactivity */
+  const tabs: Array<{
+    value: SettingsTab;
+    label: string;
+    icon: () => JSX.Element;
+  }> = [
+    {
+      value: "general",
+      label: "General",
+      icon: () => <Settings16Icon width="14" height="14" />
+    },
+    {
+      value: "vault",
+      label: "Vault",
+      icon: () => <LockClosed16Icon width="14" height="14" />
+    },
+    {
+      value: "sync",
+      label: "Sync",
+      icon: () => <ArrowSync16Icon width="14" height="14" />
+    },
+    {
+      value: "plugins",
+      label: "Plugins",
+      icon: () => <PuzzlePiece16Icon width="14" height="14" />
+    },
+    {
+      value: "permissions",
+      label: "Permissions",
+      icon: () => <ShieldCheckmark16Icon width="14" height="14" />
+    },
+    {
+      value: "import",
+      label: "Import",
+      icon: () => <ArrowUpload16Icon width="14" height="14" />
+    }
+  ];
 
   return (
-    <Show when={props.open()}>
-      <div
-        class="modal-backdrop"
-        onClick={(event) => event.target === event.currentTarget && props.onClose()}
-      >
-        <div
-          class="settings-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="settings-title"
-        >
+    <Dialog.Root
+      open={props.open()}
+      onOpenChange={(open) => {
+        if (!open) props.onClose();
+      }}
+    >
+      <Dialog.Portal>
+        <Dialog.Overlay class="modal-backdrop" />
+        <Dialog.Content class="settings-modal">
           <div class="settings-modal__header">
-            <h2 id="settings-title">Settings</h2>
+            <Dialog.Title id="settings-title">Settings</Dialog.Title>
             <IconButton
               class="settings-modal__close"
               label="Close settings"
@@ -207,89 +243,58 @@ export const SettingsModal = (props: SettingsModalProps) => {
               <Dismiss12Icon width="14" height="14" />
             </IconButton>
           </div>
-          <div class="settings-modal__body">
-            <nav class="settings-nav">
-              <button
-                class={`settings-nav__item ${props.tab() === "general" ? "is-active" : ""}`}
-                onClick={() => props.setTab("general")}
-              >
-                <Settings16Icon width="14" height="14" />
-                General
-              </button>
-              <button
-                class={`settings-nav__item ${props.tab() === "vault" ? "is-active" : ""}`}
-                onClick={() => props.setTab("vault")}
-              >
-                <LockClosed16Icon width="14" height="14" />
-                Vault
-              </button>
-              <button
-                class={`settings-nav__item ${props.tab() === "sync" ? "is-active" : ""}`}
-                onClick={() => props.setTab("sync")}
-              >
-                <ArrowSync16Icon width="14" height="14" />
-                Sync
-              </button>
-              <button
-                class={`settings-nav__item ${props.tab() === "plugins" ? "is-active" : ""}`}
-                onClick={() => props.setTab("plugins")}
-              >
-                <PuzzlePiece16Icon width="14" height="14" />
-                Plugins
-              </button>
-              <button
-                class={`settings-nav__item ${props.tab() === "permissions" ? "is-active" : ""}`}
-                onClick={() => props.setTab("permissions")}
-              >
-                <ShieldCheckmark16Icon width="14" height="14" />
-                Permissions
-              </button>
-              <button
-                class={`settings-nav__item ${props.tab() === "import" ? "is-active" : ""}`}
-                onClick={() => props.setTab("import")}
-              >
-                <ArrowUpload16Icon width="14" height="14" />
-                Import
-              </button>
-            </nav>
-            <div class="settings-content">
-              <Show when={props.tab() === "general"}>
-                <SettingsGeneralTab
-                  typeScale={typeScale}
-                  theme={props.theme}
-                  statusSurfaces={props.statusSurfaces}
-                  activeVault={vault.active}
-                />
-              </Show>
-              <Show when={props.tab() === "vault"}>
-                <SettingsVaultTab isTauri={props.isTauri} vault={vault} />
-              </Show>
-              <Show when={props.tab() === "sync"}>
-                <SettingsSyncTab
-                  isTauri={props.isTauri}
-                  vaultKeyStatus={vault.keyStatus}
-                  sync={sync}
-                />
-              </Show>
-              <Show when={props.tab() === "plugins"}>
-                <SettingsPluginsTab
-                  isTauri={props.isTauri}
-                  plugins={plugins}
-                />
-              </Show>
-              <Show when={props.tab() === "permissions"}>
-                <SettingsPermissionsTab plugins={plugins} />
-              </Show>
-              <Show when={props.tab() === "import"}>
-                <SettingsImportTab
-                  isTauri={props.isTauri}
-                  importExport={importExport}
-                />
-              </Show>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Show>
+          <Tabs.Root
+            class="settings-modal__body"
+            value={props.tab()}
+            onChange={props.setTab}
+            orientation="vertical"
+          >
+            <Tabs.List class="settings-nav" aria-label="Settings sections">
+              <For each={tabs}>
+                {(tab) => (
+                <Tabs.Trigger class="settings-nav__item" value={tab.value}>
+                  {tab.icon()}
+                  {tab.label}
+                </Tabs.Trigger>
+                )}
+              </For>
+            </Tabs.List>
+            <Tabs.Content class="settings-content" value="general">
+              <SettingsGeneralTab
+                typeScale={typeScale}
+                theme={props.theme}
+                statusSurfaces={props.statusSurfaces}
+                activeVault={vault.active}
+              />
+            </Tabs.Content>
+            <Tabs.Content class="settings-content" value="vault">
+              <SettingsVaultTab isTauri={props.isTauri} vault={vault} />
+            </Tabs.Content>
+            <Tabs.Content class="settings-content" value="sync">
+              <SettingsSyncTab
+                isTauri={props.isTauri}
+                vaultKeyStatus={vault.keyStatus}
+                sync={sync}
+              />
+            </Tabs.Content>
+            <Tabs.Content class="settings-content" value="plugins">
+              <SettingsPluginsTab
+                isTauri={props.isTauri}
+                plugins={plugins}
+              />
+            </Tabs.Content>
+            <Tabs.Content class="settings-content" value="permissions">
+              <SettingsPermissionsTab plugins={plugins} />
+            </Tabs.Content>
+            <Tabs.Content class="settings-content" value="import">
+              <SettingsImportTab
+                isTauri={props.isTauri}
+                importExport={importExport}
+              />
+            </Tabs.Content>
+          </Tabs.Root>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 };
