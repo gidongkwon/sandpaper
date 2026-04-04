@@ -694,6 +694,47 @@ describe("App editor UX", () => {
     expect(screen.getByRole("tab", { name: "Archived" })).toBeInTheDocument();
   });
 
+  it("turns a recommended destination into a hard-selected destination after editing", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Home follow up");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    expect(within(destinationPanel).getByText("Recommended")).toBeInTheDocument();
+    expect(
+      within(destinationPanel).getByPlaceholderText("Search or create a page...")
+    ).toBeInTheDocument();
+
+    const editorInput = document.querySelector(
+      ".review .editor-pane textarea[data-block-id]"
+    ) as HTMLTextAreaElement | null;
+    expect(editorInput).not.toBeNull();
+    if (!editorInput) return;
+
+    fireEvent.input(editorInput, {
+      target: { value: "Home summary" }
+    });
+
+    await waitFor(() => {
+      expect(within(destinationPanel).queryByText("Recommended")).not.toBeInTheDocument();
+      expect(
+        within(destinationPanel).queryByPlaceholderText("Search or create a page...")
+      ).not.toBeInTheDocument();
+      expect(
+        within(destinationPanel).getByRole("button", { name: "Change destination" })
+      ).toBeInTheDocument();
+    });
+  });
+
   it("switches the review surface into flattened archived state", async () => {
     render(() => <App />);
     const user = userEvent.setup();
@@ -741,6 +782,25 @@ describe("App editor UX", () => {
     expect(
       within(reviewSurface).queryByRole("navigation", { name: "Review queue" })
     ).not.toBeInTheDocument();
+  });
+
+  it("shows how many review cards remain beyond the visible deck", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Capture" }));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    for (const title of ["First thread", "Second thread", "Third thread", "Fourth thread"]) {
+      await user.clear(captureInput);
+      await user.type(captureInput, title);
+      await user.click(screen.getByRole("button", { name: "Send capture" }));
+    }
+
+    await user.click(screen.getByRole("button", { name: "Review" }));
+
+    expect(await screen.findByText("1 more")).toBeInTheDocument();
   });
 
   it("reorders the review deck when selecting a peek card", async () => {

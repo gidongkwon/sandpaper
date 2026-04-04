@@ -1764,7 +1764,7 @@ export const createMainPageState = () => {
     });
   };
 
-  const deleteCaptureThread = (id: string) => {
+  const removeCaptureThreadFromInbox = (id: string) => {
     const existingThread = captureItems().find((thread) => thread.id === id) ?? null;
     updateCaptureInboxBlocks((draft) => {
       const rootIndex = draft.findIndex(
@@ -1801,6 +1801,10 @@ export const createMainPageState = () => {
       active_thread_id: current.active_thread_id === id ? null : current.active_thread_id,
       updated_at: Date.now()
     }));
+  };
+
+  const deleteCaptureThread = (id: string) => {
+    removeCaptureThreadFromInbox(id);
   };
 
   const startCaptureReply = (id: string) => {
@@ -1943,7 +1947,7 @@ export const createMainPageState = () => {
         }
       ]);
     }
-    deleteCaptureThread(threadId);
+    removeCaptureThreadFromInbox(threadId);
     setReviewSession((current) => ({
       ...current,
       destination_page_uid: null,
