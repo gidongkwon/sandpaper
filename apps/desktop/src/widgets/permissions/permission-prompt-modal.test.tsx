@@ -16,7 +16,7 @@ describe("PermissionPromptModal", () => {
       <PermissionPromptModal prompt={prompt} onDeny={onDeny} onAllow={onAllow} />
     ));
 
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
     setPrompt({
       pluginId: "plugin-1",
@@ -24,7 +24,7 @@ describe("PermissionPromptModal", () => {
       permission: "network"
     });
 
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByText("Sample Plugin")).toBeInTheDocument();
     expect(screen.getByText("network")).toBeInTheDocument();
 
