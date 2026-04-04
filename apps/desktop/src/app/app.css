@@ -4921,6 +4921,24 @@ button:disabled {
   font-family: var(--font-mono);
 }
 
+.ui-inline-editor--display {
+  display: block;
+  cursor: text;
+}
+
+.ui-inline-editor--display:focus {
+  outline: none;
+}
+
+.ui-inline-editor__display-markdown {
+  padding: 0;
+  background: transparent;
+}
+
+.ui-inline-editor__display-markdown:hover {
+  background: transparent;
+}
+
 .ui-inline-editor:focus {
   outline: none;
 }

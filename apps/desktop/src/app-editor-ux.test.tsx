@@ -344,7 +344,7 @@ describe("App editor UX", () => {
       expect(document.activeElement).toBe(captureInput);
     });
     expect(getModeControl("Capture")).toBeChecked();
-    expect(await screen.findByDisplayValue("Quick note")).toBeInTheDocument();
+    expect(await screen.findByText("Quick note")).toBeInTheDocument();
   });
 
   it("keeps edited captures in the hidden inbox when returning to editor", async () => {
@@ -361,10 +361,11 @@ describe("App editor UX", () => {
       expect(document.activeElement).toBe(captureInput);
     });
 
+    const capturedItemDisplay = await screen.findByText("Quick note");
+    await user.click(capturedItemDisplay);
     const capturedItemInput = (await screen.findByRole("textbox", {
       name: "Captured item 1"
     })) as HTMLTextAreaElement;
-    await user.click(capturedItemInput);
     fireEvent.input(capturedItemInput, {
       target: { value: "Quick note updated" }
     });
@@ -376,9 +377,11 @@ describe("App editor UX", () => {
     expect(screen.queryByDisplayValue("Quick note updated")).not.toBeInTheDocument();
 
     await user.click(getModeControl("Capture"));
-    expect(
-      await screen.findByRole("textbox", { name: "Captured item 1" })
-    ).toHaveValue("Quick note updated");
+    expect(await screen.findByText("Quick note updated")).toBeInTheDocument();
+    await user.click(screen.getByText("Quick note updated"));
+    expect(await screen.findByRole("textbox", { name: "Captured item 1" })).toHaveValue(
+      "Quick note updated"
+    );
   });
 
   it("stores quick captures in a hidden inbox instead of the active editor page", async () => {
@@ -474,7 +477,7 @@ describe("App editor UX", () => {
       within(thread).getByRole("button", { name: "Reply to Root post" })
     );
     expect(screen.getByText("Replying to")).toBeInTheDocument();
-    expect(screen.getByText("Root post")).toBeInTheDocument();
+    expect(screen.getAllByText("Root post").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Cancel reply" })).toBeInTheDocument();
     expect(screen.getByText("Esc")).toBeInTheDocument();
 
@@ -484,12 +487,12 @@ describe("App editor UX", () => {
     const updatedThread = await screen.findByRole("group", {
       name: "Thread Root post"
     });
-    expect(within(updatedThread).getByDisplayValue("Follow up")).toBeInTheDocument();
+    expect(within(updatedThread).getByText("Follow up")).toBeInTheDocument();
     expect(
       within(updatedThread).getAllByText(/\d{1,2}:\d{2} [AP]M|Now/)
     ).toHaveLength(2);
     expect(screen.getByText("Replying to")).toBeInTheDocument();
-    expect(screen.getByText("Root post")).toBeInTheDocument();
+    expect(screen.getAllByText("Root post").length).toBeGreaterThan(0);
   });
 
   it("moves an active thread to the bottom when it receives a new reply", async () => {

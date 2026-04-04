@@ -30,6 +30,7 @@ import { ActionMenu } from "../../shared/ui/action-menu";
 import { Button } from "../../shared/ui/button";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
 import { IconButton } from "../../shared/ui/icon-button";
+import { renderMarkdownDisplayContent } from "../../shared/ui/markdown-display";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { SearchableCombobox } from "../../shared/ui/searchable-combobox";
 import { copyToClipboard } from "../../shared/lib/clipboard/copy-to-clipboard";
@@ -37,13 +38,8 @@ import { DIAGRAM_LANGS, ensureMermaid } from "../../shared/lib/diagram/mermaid";
 import { makeRandomId } from "../../shared/lib/id/id-factory";
 import { PluginBlockPreview } from "../plugins/plugin-block-preview";
 import {
-  INLINE_MARKDOWN_PATTERN,
   parseInlineFence,
-  parseInlineLinkToken,
-  parseMarkdownList,
-  parseMarkdownTable,
-  rewriteInlineFenceLanguage,
-  parseWikilinkToken
+  rewriteInlineFenceLanguage
 } from "../../shared/lib/markdown/inline-parser";
 import {
   CODE_LANGUAGE_OPTIONS,
@@ -2462,77 +2458,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     return blockRenderersByLang().get(fence.lang) ?? null;
   };
 
-  const renderInlineMarkdown = (text: string): Array<string | JSX.Element> => {
-    const nodes: Array<string | JSX.Element> = [];
-    let cursor = 0;
-    for (const match of text.matchAll(INLINE_MARKDOWN_PATTERN)) {
-      const index = match.index ?? 0;
-      if (index > cursor) {
-        nodes.push(text.slice(cursor, index));
-      }
-      const token = match[0];
-      if (token.startsWith("[[")) {
-        const parsed = parseWikilinkToken(token);
-        if (parsed) {
-          nodes.push(
-            <button
-              type="button"
-              class="wikilink"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void openPageByTitle(parsed.target);
-              }}
-              onMouseEnter={(event) =>
-                void openLinkPreview(parsed.target, event.currentTarget)
-              }
-              onMouseLeave={() => scheduleLinkPreviewClose()}
-              onFocus={(event) =>
-                void openLinkPreview(parsed.target, event.currentTarget)
-              }
-              onBlur={() => scheduleLinkPreviewClose()}
-            >
-              {parsed.label}
-            </button>
-          );
-        } else {
-          nodes.push(token);
-        }
-      } else if (token.startsWith("[")) {
-        const parsed = parseInlineLinkToken(token);
-        if (parsed) {
-          nodes.push(
-            <a
-              href={parsed.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="inline-link"
-            >
-              {parsed.label}
-            </a>
-          );
-        } else {
-          nodes.push(token);
-        }
-      } else if (token.startsWith("`")) {
-        nodes.push(<code>{token.slice(1, -1)}</code>);
-      } else if (token.startsWith("**")) {
-        nodes.push(<strong>{token.slice(2, -2)}</strong>);
-      } else if (token.startsWith("~~")) {
-        nodes.push(<del>{token.slice(2, -2)}</del>);
-      } else if (token.startsWith("*")) {
-        nodes.push(<em>{token.slice(1, -1)}</em>);
-      } else {
-        nodes.push(token);
-      }
-      cursor = index + token.length;
-    }
-    if (cursor < text.length) {
-      nodes.push(text.slice(cursor));
-    }
-    return nodes;
-  };
-
   const CodePreview = (props: {
     code: CodeFence;
     blockId: string;
@@ -2765,48 +2690,16 @@ export const EditorPane = (props: EditorPaneProps) => {
     );
   };
 
-  const renderMarkdownDisplay = (text: string): JSX.Element => {
-    const table = parseMarkdownTable(text);
-    if (table) {
-      return (
-        <div class="markdown-table-wrap">
-          <table class="markdown-table">
-            <thead>
-              <tr>
-                <For each={table.headers}>
-                  {(cell) => <th>{renderInlineMarkdown(cell)}</th>}
-                </For>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={table.rows}>
-                {(row) => (
-                  <tr>
-                    <For each={row}>
-                      {(cell) => <td>{renderInlineMarkdown(cell)}</td>}
-                    </For>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-    const list = parseMarkdownList(text);
-    if (list) {
-      const items = (
-        <For each={list.items}>
-          {(item) => <li>{renderInlineMarkdown(item)}</li>}
-        </For>
-      );
-      if (list.type === "ol") {
-        return <ol class="markdown-list">{items}</ol>;
-      }
-      return <ul class="markdown-list">{items}</ul>;
-    }
-    return <span>{renderInlineMarkdown(text)}</span>;
-  };
+  const renderMarkdownDisplay = (text: string): JSX.Element =>
+    renderMarkdownDisplayContent(text, {
+      onOpenWikilink: (target) => {
+        void openPageByTitle(target);
+      },
+      onOpenWikilinkPreview: (target, anchor) => {
+        void openLinkPreview(target, anchor);
+      },
+      onCloseWikilinkPreview: () => scheduleLinkPreviewClose()
+    });
 
   const renderImageDisplay = (text: string): JSX.Element => {
     const source = extractImageSource(text);

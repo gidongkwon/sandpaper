@@ -9,6 +9,7 @@ import {
 import { AlertDialog } from "../../shared/ui/alert-dialog";
 import { Button } from "../../shared/ui/button";
 import { IconButton } from "../../shared/ui/icon-button";
+import { InlineEditor } from "../../shared/ui/inline-editor";
 import {
   ArrowReply16Icon,
   ArrowUp16FilledIcon,
@@ -98,11 +99,6 @@ export const CapturePane = (props: CapturePaneProps) => {
       setTimeout(() => setJustCaptured(false), 600);
     });
     if (inputRef) inputRef.style.height = "auto";
-  };
-
-  const autoResize = (el: HTMLTextAreaElement) => {
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
   };
 
   const confirmReplyDelete = () => {
@@ -202,18 +198,16 @@ export const CapturePane = (props: CapturePaneProps) => {
                       {formatCaptureTime(thread.root.capturedAt)}
                     </time>
                     <div class="capture-chat__bubble">
-                      <textarea
+                      <InlineEditor
                         class="capture-chat__bubble-text"
                         rows={1}
+                        autoResize
+                        maxHeight={120}
+                        displayMode="markdown"
                         aria-label={`Captured item ${thread.root.position}`}
                         value={thread.root.block.text}
-                        ref={(el) => {
-                          requestAnimationFrame(() => autoResize(el));
-                          syncThreadLine(threadRef, lastReplyRef);
-                        }}
                         onInput={(event) => {
                           props.onEditItem(thread.root.block.id, event.currentTarget.value);
-                          autoResize(event.currentTarget);
                           syncThreadLine(threadRef, lastReplyRef);
                         }}
                       />
@@ -258,18 +252,16 @@ export const CapturePane = (props: CapturePaneProps) => {
                           {formatCaptureTime(reply.capturedAt)}
                         </time>
                         <div class="capture-chat__bubble">
-                          <textarea
+                          <InlineEditor
                             class="capture-chat__bubble-text"
                             rows={1}
+                            autoResize
+                            maxHeight={120}
+                            displayMode="markdown"
                             aria-label={`Captured item ${reply.position}`}
                             value={reply.block.text}
-                            ref={(el) => {
-                              requestAnimationFrame(() => autoResize(el));
-                              syncThreadLine(threadRef, lastReplyRef);
-                            }}
                             onInput={(event) => {
                               props.onEditItem(reply.block.id, event.currentTarget.value);
-                              autoResize(event.currentTarget);
                               syncThreadLine(threadRef, lastReplyRef);
                             }}
                           />
@@ -321,17 +313,18 @@ export const CapturePane = (props: CapturePaneProps) => {
           </Show>
           <div class="capture-chat__composer-row">
             <div class="capture-chat__input-wrap">
-              <textarea
+              <InlineEditor
                 ref={(el) => {
                   inputRef = el;
                 }}
                 class="capture-chat__input"
                 rows={1}
+                autoResize
+                maxHeight={120}
                 placeholder="Capture a thought, link, or task..."
                 value={props.text()}
                 onInput={(event) => {
                   props.setText(event.currentTarget.value);
-                  autoResize(event.currentTarget);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Escape" && props.replyingTo()) {
