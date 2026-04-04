@@ -1,5 +1,7 @@
 import { Show, type Accessor } from "solid-js";
 import type { PluginPanel } from "../../entities/plugin/model/plugin-types";
+import { Dismiss12Icon } from "../../shared/ui/icons";
+import { IconButton } from "../../shared/ui/icon-button";
 
 type PluginPanelProps = {
   panel: Accessor<PluginPanel | null>;
@@ -18,9 +20,14 @@ export const PluginPanelWidget = (props: PluginPanelProps) => {
                 {panel().title} · {panel().id}
               </div>
             </div>
-            <button class="plugin-panel__close" onClick={() => props.onClose()}>
-              Close
-            </button>
+            <IconButton
+              class="plugin-panel__close"
+              variant="panel"
+              label="Close plugin panel"
+              onClick={() => props.onClose()}
+            >
+              <Dismiss12Icon />
+            </IconButton>
           </div>
           <div class="plugin-panel__body">
             <div class="plugin-panel__content">

@@ -1,5 +1,6 @@
 import { createMemo, onCleanup, type Accessor, type Component, type Setter } from "solid-js";
 import type { Mode } from "../../shared/model/mode";
+import { Button } from "../../shared/ui/button";
 
 type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
 
@@ -145,20 +146,20 @@ export const createSectionJump = (
     });
 
     return (
-      <button
+      <Button
         ref={(el) => {
           buttonRef = el;
           sectionJumpRefs.set(props.id, el);
         }}
         class="section-jump"
-        type="button"
+        variant="unstyled"
         data-section-jump={props.id}
         aria-label={`${props.label} section`}
         onClick={() => activateSection(props.id)}
         onKeyDown={(event) => handleSectionJumpKeyDown(props.id, event)}
       >
         {props.label}
-      </button>
+      </Button>
     );
   };
 

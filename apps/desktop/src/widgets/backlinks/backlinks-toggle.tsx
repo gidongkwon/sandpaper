@@ -1,4 +1,5 @@
 import { Show, type Accessor } from "solid-js";
+import { Button } from "../../shared/ui/button";
 import { Link16Icon } from "../../shared/ui/icons";
 
 type BacklinksToggleProps = {
@@ -9,11 +10,12 @@ type BacklinksToggleProps = {
 
 export const BacklinksToggle = (props: BacklinksToggleProps) => {
   return (
-    <button
+    <Button
       class={`backlinks-toggle ${props.open() ? "is-active" : ""} ${
         props.total() > 0 ? "has-links" : ""
       }`}
       onClick={() => props.onToggle()}
+      variant="unstyled"
       aria-label={props.open() ? "Hide backlinks" : "Show backlinks"}
       title={`${props.total()} backlinks`}
     >
@@ -21,6 +23,6 @@ export const BacklinksToggle = (props: BacklinksToggleProps) => {
       <Show when={props.total() > 0}>
         <span class="backlinks-toggle__badge">{props.total()}</span>
       </Show>
-    </button>
+    </Button>
   );
 };

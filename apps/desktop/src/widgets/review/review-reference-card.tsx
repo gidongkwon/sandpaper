@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { ReviewThread } from "../../entities/review/model/review-types";
+import { Button } from "../../shared/ui/button";
 
 type ReviewReferenceCardProps = {
   thread: ReviewThread;
@@ -51,13 +52,13 @@ export const ReviewReferenceCard = (props: ReviewReferenceCardProps) => {
       when={props.clickable}
       fallback={<article class={className()}>{content}</article>}
     >
-      <button
+      <Button
         class={className()}
-        type="button"
+        variant="unstyled"
         onClick={() => props.onSelect?.()}
       >
         {content}
-      </button>
+      </Button>
     </Show>
   );
 };
