@@ -9,7 +9,6 @@
   flex-direction: column;
   min-height: 0;
   background: var(--bg-primary);
-  overflow: hidden;
 }
 
 .editor-pane__header {

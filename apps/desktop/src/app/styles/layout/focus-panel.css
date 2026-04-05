@@ -17,7 +17,6 @@
   box-shadow: var(--shadow-md), var(--shadow-ring);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .focus-panel.is-review {
@@ -32,7 +31,6 @@
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
   @media (max-width: 600px) {

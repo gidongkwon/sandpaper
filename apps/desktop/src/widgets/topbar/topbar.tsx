@@ -109,14 +109,16 @@ export const Topbar = (props: TopbarProps) => {
         }}
         class="topbar__left"
       >
-        <IconButton
-          class="topbar__sidebar-toggle"
-          variant="toolbar"
-          onClick={() => props.toggleSidebar()}
-          label={props.sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
-        >
-          <PanelLeft16Icon width="16" height="16" />
-        </IconButton>
+        <Show when={props.mode() === "editor"}>
+          <IconButton
+            class="topbar__sidebar-toggle"
+            variant="toolbar"
+            onClick={() => props.toggleSidebar()}
+            label={props.sidebarOpen() ? "Hide sidebar" : "Show sidebar"}
+          >
+            <PanelLeft16Icon width="16" height="16" />
+          </IconButton>
+        </Show>
       </div>
 
       <SegmentedTabs

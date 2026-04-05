@@ -42,4 +42,15 @@ describe("App style structure", () => {
     expect(css).toContain(".capture-chat");
     expect(css).toContain(".review-workbench__layout");
   });
+
+  it("resets collapsed workspace offset on small screens", () => {
+    const workspaceCss = readAppStyleFile("app/styles/layout/workspace.css");
+
+    expect(workspaceCss).toContain(".workspace.sidebar-collapsed {");
+    expect(workspaceCss).toContain("padding-left: var(--space-2);");
+    expect(workspaceCss).toMatch(
+      /@media \(max-width: 900px\)\s*\{[\s\S]*\.workspace\.sidebar-collapsed\s*\{[\s\S]*padding-left:\s*0;[\s\S]*\}/u
+    );
+  });
+
 });

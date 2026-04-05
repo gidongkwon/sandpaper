@@ -8,7 +8,6 @@
   grid-template-columns: 240px 1fr;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
   transition: grid-template-columns var(--duration-slow) var(--ease-out);
 }
 
@@ -22,7 +21,6 @@
   display: flex;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
   padding: var(--space-4);
   gap: 0;
   background: var(--bg-primary);
@@ -48,6 +46,11 @@
   @media (max-width: 900px) {
     .workspace {
       grid-template-columns: 1fr;
+    }
+
+    .workspace.sidebar-collapsed {
+      grid-template-columns: 1fr;
+      padding-left: 0;
     }
 
     .main-pane__editor {

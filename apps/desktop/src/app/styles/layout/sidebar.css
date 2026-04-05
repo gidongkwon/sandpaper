@@ -1,8 +1,4 @@
 ﻿@layer layout {
-/* ============================================
-   SIDEBAR - Clean, minimal navigation
-   ============================================ */
-
 .sidebar {
   position: relative;
   display: flex;
@@ -11,6 +7,7 @@
   overflow: hidden;
   font-family: var(--font-native);
   transition: transform var(--duration-slow) var(--ease-out), opacity var(--duration-base) var(--ease-out);
+  padding-right: var(--space-3);
 }
 
 /* Transparent sidebar for vibrancy pass-through (macOS/Windows) */
@@ -26,7 +23,7 @@
 }
 
 .sidebar__header {
-  padding: var(--space-2) var(--space-3) var(--space-2);
+  padding-bottom: var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -85,7 +82,6 @@
 .sidebar__content {
   flex: 1;
   overflow-y: auto;
-  padding: 0 var(--space-2) var(--space-3);
 }
 
 .sidebar__section {
@@ -334,12 +330,16 @@
   }
 
   @media (max-width: 900px) {
+    [data-platform="macos"] .sidebar,
+    [data-platform="windows"] .sidebar,
     .sidebar {
       position: fixed;
       left: 0;
       top: 46px;
       bottom: 0;
       width: 260px;
+      padding-top: var(--space-3);
+      padding-left: var(--space-3);
       z-index: 40;
       transform: translateX(-100%);
       background: var(--bg-primary);

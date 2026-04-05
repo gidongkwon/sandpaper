@@ -58,6 +58,25 @@ describe("App modes", () => {
     expect(await screen.findByText("No capture threads to review.")).toBeInTheDocument();
   });
 
+  it("hides the sidebar toggle outside editor mode", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+
+    expect(screen.getByRole("button", { name: /hide sidebar/i })).toBeInTheDocument();
+
+    await user.click(getModeControl("Capture"));
+    await screen.findByPlaceholderText("Capture a thought, link, or task...");
+    expect(screen.queryByRole("button", { name: /hide sidebar|show sidebar/i })).toBeNull();
+
+    await user.click(getModeControl("Review"));
+    await screen.findByText("No capture threads to review.");
+    expect(screen.queryByRole("button", { name: /hide sidebar|show sidebar/i })).toBeNull();
+
+    await user.click(getModeControl("Editor"));
+    expect(await screen.findByRole("button", { name: /hide sidebar/i })).toBeInTheDocument();
+  });
+
   it("starts a view transition when switching modes from the topbar", async () => {
     const user = userEvent.setup();
     const startViewTransition = vi.fn((callback: () => void) => {
