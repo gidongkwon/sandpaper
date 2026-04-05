@@ -7,7 +7,7 @@
         "height": 720,
         "decorations": false,
         "transparent": true,
-        "shadow": false
+        "shadow": true
       }
     ]
   }
