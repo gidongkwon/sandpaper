@@ -1574,6 +1574,7 @@ export const createMainPageState = () => {
 
   createEffect(() => {
     if (reviewDestinationTransitioning()) return;
+    if (mode() !== "review") return;
     const destinationPageUid = reviewSession().destination_page_uid;
     if (!destinationPageUid) return;
     if (resolvePageUid(activePageUid()) === resolvePageUid(destinationPageUid)) {

@@ -30,6 +30,11 @@ const findDestinationSearch = () =>
 const getDestinationSearch = () =>
   screen.getByRole("combobox", { name: "Destination page" });
 
+const getPageOption = (name: string) =>
+  within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
+    name
+  });
+
 const selectDestinationOption = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
   const listbox = await screen.findByRole("listbox", {
     name: "Destination page options"
@@ -517,7 +522,9 @@ describe("App editor UX", () => {
     await user.click(
       within(thread).getByRole("button", { name: "Reply to Root post" })
     );
-    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    const replying = screen.getByText("Replying to").closest(".capture-chat__replying");
+    expect(replying).not.toBeNull();
+    expect(replying?.closest(".capture-chat__composer-surface")).toBeNull();
     expect(screen.getAllByText("Root post").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Cancel reply" })).toBeInTheDocument();
     expect(screen.getByText("Esc")).toBeInTheDocument();
@@ -534,6 +541,46 @@ describe("App editor UX", () => {
     ).toHaveLength(2);
     expect(screen.getByText("Replying to")).toBeInTheDocument();
     expect(screen.getAllByText("Root post").length).toBeGreaterThan(0);
+  });
+
+  it("uses Ctrl+Enter to reply to the latest thread root from the capture composer", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    const composerSurface = captureInput.closest(".capture-chat__composer-surface");
+    expect(composerSurface).not.toBeNull();
+    if (!composerSurface) return;
+
+    const shortcuts = screen.getByLabelText("Capture composer shortcuts");
+    expect(composerSurface).toContainElement(shortcuts);
+    expect(composerSurface).toContainElement(screen.getByRole("button", { name: "Send capture" }));
+    expect(within(shortcuts).getByText("Reply")).toBeInTheDocument();
+    expect(within(shortcuts).getByText("Ctrl")).toBeInTheDocument();
+    expect(within(shortcuts).getAllByText("Enter").length).toBeGreaterThan(0);
+
+    await user.type(captureInput, "Older thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.type(captureInput, "Latest thread");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await user.type(captureInput, "Latest reply");
+    fireEvent.keyDown(captureInput, { key: "Enter", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(captureInput.value).toBe("");
+      expect(document.activeElement).toBe(captureInput);
+    });
+
+    const latestThread = await screen.findByRole("group", { name: "Thread Latest thread" });
+    expect(within(latestThread).getByText("Latest reply")).toBeInTheDocument();
+    const replying = screen.getByText("Replying to").closest(".capture-chat__replying");
+    expect(replying).not.toBeNull();
+    if (!replying) return;
+    expect(within(replying).getByText("Latest thread")).toBeInTheDocument();
   });
 
   it("moves an active thread to the bottom when it receives a new reply", async () => {
@@ -1221,6 +1268,37 @@ describe("App editor UX", () => {
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
     expect(queueCards[1]).toHaveTextContent("Second thread");
+  });
+
+  it("allows switching editor pages while a review destination is configured", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(getModeControl("Review"));
+
+    await user.type(await findDestinationSearch(), "Project Atlas");
+    await selectDestinationOption(user, 'Create "Project Atlas"');
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
+
+    await user.click(getModeControl("Editor"));
+    await user.click(getPageOption("Home"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Home", { selector: ".editor-pane__title" })
+      ).toBeInTheDocument();
+    });
   });
 
   it("restores the active review session across app restart when safe", async () => {
