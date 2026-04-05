@@ -12,8 +12,8 @@
     "build:desktop": "vp run @sandpaper/desktop#build",
     "test:watch": "vp run -r test:watch",
     "test:ui": "vp run @sandpaper/desktop#test:ui",
-    "tauri:dev": "vp run @sandpaper/desktop#tauri -- dev",
-    "tauri:build": "vp run @sandpaper/desktop#tauri -- build"
+    "tauri:dev": "vp run @sandpaper/desktop#tauri dev",
+    "tauri:build": "vp run @sandpaper/desktop#tauri build"
   },
   "devDependencies": {
     "vite-plus": "0.1.15"
