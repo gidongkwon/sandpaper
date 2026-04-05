@@ -68,6 +68,9 @@ const fromBase64 = (value: string) => {
   return bytes;
 };
 
+const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
 const deriveKey = async (
   passphrase: string,
   salt: Uint8Array,
@@ -86,7 +89,7 @@ const deriveKey = async (
     {
       name: "PBKDF2",
       hash: "SHA-256",
-      salt,
+      salt: toArrayBuffer(salt),
       iterations
     },
     baseKey,
@@ -117,7 +120,7 @@ const deriveKeyBytes = async (
     {
       name: "PBKDF2",
       hash: "SHA-256",
-      salt,
+      salt: toArrayBuffer(salt),
       iterations
     },
     baseKey,
@@ -131,7 +134,7 @@ const importAesKey = async (keyBytes: Uint8Array) => {
   const crypto = getCrypto();
   return crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    toArrayBuffer(keyBytes),
     {
       name: "AES-GCM",
       length: 256
@@ -155,7 +158,7 @@ export const encryptString = async (
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
-      iv
+      iv: toArrayBuffer(iv)
     },
     key,
     textEncoder.encode(plaintext)
@@ -201,7 +204,7 @@ export const encryptStringWithKey = async (
   const ciphertext = await crypto.subtle.encrypt(
     {
       name: "AES-GCM",
-      iv
+      iv: toArrayBuffer(iv)
     },
     key,
     textEncoder.encode(plaintext)
@@ -227,7 +230,7 @@ export const decryptStringWithKey = async (
   const plaintext = await crypto.subtle.decrypt(
     {
       name: "AES-GCM",
-      iv
+      iv: toArrayBuffer(iv)
     },
     key,
     ciphertext
@@ -249,7 +252,7 @@ export const decryptString = async (
   const plaintext = await crypto.subtle.decrypt(
     {
       name: "AES-GCM",
-      iv
+      iv: toArrayBuffer(iv)
     },
     key,
     ciphertext

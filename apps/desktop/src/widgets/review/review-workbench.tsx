@@ -199,7 +199,9 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
         }
       >
         <div
-          ref={layoutRef}
+          ref={(el) => {
+            layoutRef = el;
+          }}
           class="review-workbench__layout"
           data-layout="split"
           data-resizing={isResizing() ? "true" : "false"}

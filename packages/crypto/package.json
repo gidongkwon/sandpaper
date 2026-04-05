@@ -12,8 +12,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "lint": "vp lint src",
+    "check": "vp check --no-fmt src"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

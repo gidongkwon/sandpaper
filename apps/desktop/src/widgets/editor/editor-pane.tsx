@@ -418,7 +418,7 @@ export const EditorPane = (props: EditorPaneProps) => {
     const items: OutlineItem[] = [];
     const visible: OutlineItem[] = [];
     const visibleToActual: number[] = [];
-    const actualToVisible = new Array(blocks.length).fill(-1);
+    const actualToVisible = Array.from({ length: blocks.length }, () => -1);
     const stack: number[] = [];
     const collapsedFlags: boolean[] = [];
     const embeddedFlags: boolean[] = [];
@@ -2678,7 +2678,9 @@ export const EditorPane = (props: EditorPaneProps) => {
           >
             {(value) => (
               <div
-                ref={containerRef}
+                ref={(el) => {
+                  containerRef = el;
+                }}
                 class="diagram-svg"
                 innerHTML={value() ?? ""}
               />
@@ -3836,7 +3838,9 @@ export const EditorPane = (props: EditorPaneProps) => {
       </div>
       <div
         class="editor-pane__body"
-        ref={editorRef}
+        ref={(el) => {
+          editorRef = el;
+        }}
         onPointerDown={handlePointerDown}
         onMouseDown={handleMouseDown}
         onClick={handleBodyClick}

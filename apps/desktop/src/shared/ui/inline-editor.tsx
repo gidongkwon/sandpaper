@@ -174,7 +174,9 @@ export const InlineEditor = (props: InlineEditorProps) => {
       when={!canRenderDisplay()}
       fallback={
         <div
-          ref={displayRef}
+          ref={(el) => {
+            displayRef = el;
+          }}
           class={cx(
             inlineEditorVariants({ font: local.font }),
             "ui-inline-editor--display",

@@ -97,11 +97,18 @@ export const Topbar = (props: TopbarProps) => {
 
   return (
     <header
-      ref={headerRef}
+      ref={(el) => {
+        headerRef = el;
+      }}
       class={`topbar ${modeSwitchCentered() ? "is-mode-centered" : ""}`}
       data-tauri-drag-region
     >
-      <div ref={leftRef} class="topbar__left">
+      <div
+        ref={(el) => {
+          leftRef = el;
+        }}
+        class="topbar__left"
+      >
         <IconButton
           class="topbar__sidebar-toggle"
           variant="toolbar"
@@ -128,7 +135,12 @@ export const Topbar = (props: TopbarProps) => {
         triggerClass="mode-switch__button"
       />
 
-      <div ref={rightRef} class="topbar__right">
+      <div
+        ref={(el) => {
+          rightRef = el;
+        }}
+        class="topbar__right"
+      >
         <Show when={props.showStatusSurfaces()}>
           <span
             class={`topbar__autosave topbar__status-chip is-${autosaveState()}`}

@@ -148,10 +148,7 @@ describe("App offline archive", () => {
     const picker = screen.getByTestId(
       "offline-archive-picker"
     ) as HTMLInputElement;
-    const archiveBuffer = archive.buffer.slice(
-      archive.byteOffset,
-      archive.byteOffset + archive.byteLength
-    );
+    const archiveBuffer = new Uint8Array(archive).buffer;
     const previewEntries = unzipSync(archive);
     expect(Object.keys(previewEntries).length).toBeGreaterThan(0);
     expect(previewEntries["pages/travel-log.md"]).toBeDefined();
@@ -198,10 +195,7 @@ describe("App offline archive", () => {
     const picker = screen.getByTestId(
       "offline-archive-picker"
     ) as HTMLInputElement;
-    const archiveBuffer = archive.buffer.slice(
-      archive.byteOffset,
-      archive.byteOffset + archive.byteLength
-    );
+    const archiveBuffer = new Uint8Array(archive).buffer;
     const file = new File([archiveBuffer], "backup.zip", {
       type: "application/zip"
     });

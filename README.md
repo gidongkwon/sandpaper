@@ -13,9 +13,17 @@ Local-first notes app: Logseq-style outliner + Notion-like blocks, plugin-first,
 
 ## Quick start
 ```sh
-pnpm install
-pnpm tauri:dev
+# install the Vite+ CLI globally, then open a new terminal
+vp install
+vp run tauri:dev
 ```
+
+## Vite+ workflow
+- `vp` is a global CLI. Install it once using the official Vite+ instructions, open a new terminal, then use `vp ...` inside the repo.
+- Use `vp` as the primary interface for install, lint, check, test, build, and task execution.
+- Use built-in commands inside a workspace, such as `vp dev`, `vp build`, `vp lint`, `vp check`, and `vp test`.
+- Use `vp run <script>` for custom root scripts. In this repo that includes `vp run tauri:dev`, `vp run tauri:build`, `vp run build:desktop`, and `vp run ready`.
+- Use `vp run -r check` and `vp run -r test` for recursive monorepo validation.
 
 GPUI prototype:
 ```sh

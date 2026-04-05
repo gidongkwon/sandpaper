@@ -349,7 +349,8 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         month: "2-digit",
         day: "2-digit"
       }).format(new Date());
-      const blob = new Blob([archive], { type: "application/zip" });
+      const archiveBuffer = new Uint8Array(archive).buffer;
+      const blob = new Blob([archiveBuffer], { type: "application/zip" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

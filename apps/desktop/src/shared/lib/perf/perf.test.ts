@@ -105,7 +105,7 @@ describe("createFpsMeter", () => {
 
     const advanceTime = (delta: number) => {
       now += delta;
-      for (const [id, entry] of [...timeouts.entries()]) {
+      for (const [id, entry] of timeouts.entries()) {
         if (entry.time <= now) {
           timeouts.delete(id);
           entry.cb();

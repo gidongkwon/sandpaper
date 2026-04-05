@@ -17,10 +17,10 @@ export type VirtualRange = {
 };
 
 const buildOffsets = (heights: number[]) => {
-  const offsets = new Array<number>(heights.length);
+  const offsets: number[] = [];
   let total = 0;
   for (let i = 0; i < heights.length; i += 1) {
-    offsets[i] = total;
+    offsets.push(total);
     total += heights[i];
   }
   return { offsets, total };

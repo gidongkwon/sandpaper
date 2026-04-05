@@ -653,7 +653,6 @@ export const createMainPageState = () => {
     block_type: resolveBlockType(block)
   });
 
-  let highlightTimeout: number | undefined;
   const autosave = createAutosave({
     isTauri,
     invoke,
@@ -1184,9 +1183,6 @@ export const createMainPageState = () => {
     onCleanup(() => {
       scrollMeter.dispose();
       cancelPendingSave(resolvePageUid(activePageUid()));
-      if (highlightTimeout) {
-        window.clearTimeout(highlightTimeout);
-      }
       void shadowWriter.flush();
       shadowWriter.dispose();
       stopSyncLoop();

@@ -430,7 +430,7 @@ export const createPlugins = (deps: PluginDependencies) => {
     setPluginSettings((current) => ({
       ...current,
       [pluginId]: {
-        ...(current[pluginId] ?? {}),
+        ...current[pluginId],
         [key]: value
       }
     }));

@@ -12,15 +12,23 @@
 
 ## Build, Test, and Development Commands
 Run from repo root:
-- `pnpm install`: install all workspace dependencies.
-- `pnpm dev:desktop`: run Solid dev server for the desktop UI.
-- `pnpm tauri:dev`: run the Tauri desktop app.
-- `pnpm build:desktop`: build the Solid UI.
-- `pnpm lint`: run ESLint on the desktop app.
-- `pnpm typecheck`: TypeScript typecheck for the desktop app.
-- `pnpm test`: run unit tests (Vitest).
-- `pnpm test:watch`: watch mode for tests.
-- `pnpm test:ui`: Vitest UI runner.
+- Install Vite+ globally once using the official setup instructions, then open a new terminal session.
+- `vp install`: install all workspace dependencies.
+- `vp run dev:desktop`: run Solid dev server for the desktop UI.
+- `vp run tauri:dev`: run the Tauri desktop app.
+- `vp run build:desktop`: build the Solid UI.
+- `vp run -r lint`: run linting across workspaces.
+- `vp run -r check`: run workspace checks with Vite+.
+- `vp run -r test`: run unit tests (Vitest).
+- `vp run test:watch`: watch mode for tests.
+- `vp run test:ui`: Vitest UI runner.
+- `vp run ready`: run the repo readiness sweep used by this monorepo.
+
+## Vite+ Workflow
+- `vp` is expected to be available as a global CLI after the one-time Vite+ install step.
+- Prefer `vp` over direct `pnpm` usage for install, dependency management, lint, check, test, build, and monorepo task execution.
+- Use built-in `vp` commands for tool entrypoints inside a workspace: `vp dev`, `vp build`, `vp lint`, `vp check`, `vp test`.
+- Use `vp run <script>` for custom scripts. This matters when a script name overlaps with a Vite+ built-in command.
 
 ## Coding Style & Naming Conventions
 - **File names must be kebab-case** (e.g., `virtual-list.ts`, `app.tsx`).
@@ -33,11 +41,11 @@ Run from repo root:
 - **TDD required**: write tests before implementing changes.
 - Test framework: Vitest + Solid Testing Library.
 - Test files live alongside code: `src/**/*.test.ts(x)`.
-- Run: `pnpm test` or `pnpm test:watch`.
+- Run: `vp run -r test` or `vp run test:watch`.
 
 ## Commit & Pull Request Guidelines
 - Use **Conventional Commits** (e.g., `feat: add virtual list`, `fix: handle empty blocks`).
-- ALWAYS run lint and typecheck before finishing work or committing: `pnpm lint` and `pnpm typecheck`.
+- ALWAYS run validation before finishing work or committing: `vp run -r check` and `vp run -r test`.
 - PRs should include: summary, testing notes, and UI screenshots when visuals change.
 
 ## Agent-Specific Notes

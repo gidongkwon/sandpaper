@@ -94,7 +94,9 @@ const SyncConflictDiagram = () => {
       >
         {(value) => (
           <div
-            ref={containerRef}
+            ref={(el) => {
+              containerRef = el;
+            }}
             class="sync-conflict-diagram__svg"
             innerHTML={value() ?? ""}
           />
