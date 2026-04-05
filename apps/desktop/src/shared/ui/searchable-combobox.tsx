@@ -1,6 +1,6 @@
 import * as Combobox from "@kobalte/core/combobox";
 import { cva, cx } from "class-variance-authority";
-import { Show, createMemo, createSignal } from "solid-js";
+import { Show, createMemo, createSignal, type JSX } from "solid-js";
 import { textFieldVariants } from "./text-field";
 
 export type SearchableComboboxOption = {
@@ -150,6 +150,7 @@ type SearchableComboboxProps = {
   controlClass?: string;
   inputClass?: string;
   iconClass?: string;
+  icon?: JSX.Element;
   contentClass?: string;
   listboxClass?: string;
   itemClass?: string | ((option: SearchableComboboxOption) => string);
@@ -287,7 +288,9 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
             if (props.selectOnFocus) event.currentTarget.select();
           }}
         />
-        <Combobox.Icon class={props.iconClass} aria-hidden="true" />
+        <Combobox.Icon class={props.iconClass} aria-hidden="true">
+          {props.icon}
+        </Combobox.Icon>
       </Combobox.Control>
 
       <Combobox.Portal>

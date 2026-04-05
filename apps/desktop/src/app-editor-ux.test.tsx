@@ -893,7 +893,7 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Complete review" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Complete Review" })).toBeEnabled();
     });
   });
 
@@ -926,7 +926,7 @@ describe("App editor UX", () => {
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Change destination" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Complete review" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Complete Review" })).toBeEnabled();
     });
   });
 
@@ -960,7 +960,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Archived summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete review" }));
+    await user.click(screen.getByRole("button", { name: "Complete Review" }));
     await user.click(getReviewTabControl("Archived"));
 
     await waitFor(() => {
@@ -1058,7 +1058,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete review" })
+        screen.getByRole("button", { name: "Complete Review" })
       ).toBeEnabled();
     });
 
@@ -1118,7 +1118,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete review" })
+        screen.getByRole("button", { name: "Complete Review" })
       ).toBeEnabled();
     });
 
@@ -1172,7 +1172,7 @@ describe("App editor UX", () => {
     await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const completeButton = await screen.findByRole("button", {
-      name: "Complete review"
+      name: "Complete Review"
     });
     expect(completeButton).toBeDisabled();
 
@@ -1188,7 +1188,7 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete review" })
+        screen.getByRole("button", { name: "Complete Review" })
       ).toBeEnabled();
     });
   });
@@ -1249,7 +1249,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete review" })
+        screen.getByRole("button", { name: "Complete Review" })
       ).toBeEnabled();
     });
 
@@ -1293,7 +1293,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete review" })
+        screen.getByRole("button", { name: "Complete Review" })
       ).toBeEnabled();
     });
 
@@ -1336,7 +1336,7 @@ describe("App editor UX", () => {
         screen.queryByRole("button", { name: "Change destination" })
       ).not.toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "Complete review" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Complete Review" })).toBeDisabled();
   });
 
   it("persists review queue FIFO order through the tauri page store", async () => {
@@ -1637,7 +1637,7 @@ describe("App editor UX", () => {
     });
 
     await user.click(
-      within(destinationPanel).getByRole("button", { name: "Complete review" })
+      within(destinationPanel).getByRole("button", { name: "Complete Review" })
     );
 
     await waitFor(() => {
@@ -1680,7 +1680,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Alpha summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete review" }));
+    await user.click(screen.getByRole("button", { name: "Complete Review" }));
 
     await waitFor(() => {
       expect(
@@ -1699,7 +1699,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Beta summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete review" }));
+    await user.click(screen.getByRole("button", { name: "Complete Review" }));
 
     const archivedStorageKey = Array.from({ length: window.localStorage.length }, (_, index) =>
       window.localStorage.key(index)

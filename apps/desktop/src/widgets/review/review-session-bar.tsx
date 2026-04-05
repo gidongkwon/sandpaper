@@ -5,6 +5,7 @@ import type {
   ReviewTab
 } from "../../entities/review/model/review-types";
 import { Button } from "../../shared/ui/button";
+import { Search16Icon } from "../../shared/ui/icons";
 import { SearchableCombobox, type SearchableComboboxOption } from "../../shared/ui/searchable-combobox";
 
 type ReviewSessionBarProps = {
@@ -157,6 +158,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
               variant="review"
               class="review-session-bar__search"
               iconClass="review-session-bar__search-icon"
+              icon={<Search16Icon width="14" height="14" />}
             />
           </Show>
           <Button
@@ -166,7 +168,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
             disabled={!props.canCompleteReview()}
             onClick={() => props.onCompleteReview()}
           >
-            Complete review
+            Complete Review
           </Button>
         </div>
       </Show>
