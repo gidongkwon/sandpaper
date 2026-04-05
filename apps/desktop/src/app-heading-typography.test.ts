@@ -1,27 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import appCssRaw from "./app/app.css?raw";
-
-const readCss = () => {
-  if (appCssRaw.includes(":root")) return appCssRaw;
-  const runtime = globalThis as {
-    process?: {
-      cwd?: () => string;
-    };
-  };
-  const cwd = runtime.process?.cwd?.() ?? "";
-  if (cwd) {
-    try {
-      return readFileSync(new URL(`file://${cwd}/src/app/app.css`), "utf8");
-    } catch {
-      return readFileSync(
-        new URL(`file://${cwd}/apps/desktop/src/app/app.css`),
-        "utf8"
-      );
-    }
-  }
-  return readFileSync(new URL("./app/app.css", import.meta.url), "utf8");
-};
+import { readAppStyles } from "./test/read-app-styles";
 
 const getFontSize = (css: string, selector: string) => {
   const pattern = /([^{}]+)\{([^{}]*?)\}/gu;
@@ -71,7 +49,7 @@ const toNumericPx = (value: string, css: string): number => {
 };
 
 describe("Heading typography", () => {
-  const css = readCss();
+  const css = readAppStyles();
 
   it("uses explicit heading display selectors with descending sizes", () => {
     const h1 = toNumericPx(getFontSize(css, ".block__display.block__display--heading1"), css);

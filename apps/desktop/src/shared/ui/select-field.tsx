@@ -1,4 +1,5 @@
 import * as Select from "@kobalte/core/select";
+import { cx } from "class-variance-authority";
 import { createMemo } from "solid-js";
 
 export type SelectFieldOption = {
@@ -35,24 +36,30 @@ export const SelectField = (props: SelectFieldProps) => {
       optionTextValue="label"
       optionDisabled="disabled"
       itemComponent={(itemProps) => (
-        <Select.Item item={itemProps.item} class={props.itemClass}>
-          <Select.ItemLabel class={props.itemLabelClass}>
+        <Select.Item
+          item={itemProps.item}
+          class={cx("ui-select__item", props.itemClass)}
+        >
+          <Select.ItemLabel class={cx("ui-select__item-label", props.itemLabelClass)}>
             {itemProps.item.rawValue.label}
           </Select.ItemLabel>
         </Select.Item>
       )}
     >
       <Select.HiddenSelect />
-      <Select.Trigger class={props.triggerClass} aria-label={props.label}>
+      <Select.Trigger
+        class={cx("ui-select", props.triggerClass)}
+        aria-label={props.label}
+      >
         <Select.Value<SelectFieldOption>>
           {(state) => state.selectedOption()?.label ?? ""}
         </Select.Value>
       </Select.Trigger>
       <Select.Portal>
-        <Select.Content class={props.contentClass}>
+        <Select.Content class={cx("ui-select__content", props.contentClass)}>
           <Select.Listbox
             aria-label={`${props.label} options`}
-            class={props.listboxClass}
+            class={cx("ui-select__listbox", props.listboxClass)}
           />
         </Select.Content>
       </Select.Portal>

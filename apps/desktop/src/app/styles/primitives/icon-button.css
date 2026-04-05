@@ -1,0 +1,72 @@
+@layer primitives {
+  .ui-icon-button {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .ui-icon-button--toolbar {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ui-icon-button--toolbar:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .ui-icon-button--toolbar:active {
+    background: var(--bg-active);
+  }
+
+  .ui-icon-button--sidebar,
+  .ui-icon-button--panel {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+  }
+
+  .ui-icon-button--sidebar:hover,
+  .ui-icon-button--panel:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .ui-icon-button--sidebar:active,
+  .ui-icon-button--panel:active {
+    background: var(--bg-active);
+  }
+
+  .ui-icon-button--block {
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    color: var(--text-quaternary);
+  }
+
+  .ui-icon-button--block:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .ui-icon-button--block:active {
+    background: var(--bg-active);
+  }
+
+  .ui-icon-button--inline {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-xs);
+  }
+
+  .ui-icon-button--inline:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .ui-icon-button--inline:active {
+    background: var(--bg-active);
+  }
+}

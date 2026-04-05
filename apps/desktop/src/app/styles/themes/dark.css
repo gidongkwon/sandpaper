@@ -1,0 +1,76 @@
+@layer theme {
+  :root[data-theme="dark"] {
+    --bg-canvas: #0a0a0a;
+    --bg-primary: #141414;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #222222;
+    --bg-elevated: #1e1e1e;
+    --bg-overlay: rgba(20, 20, 20, 0.95);
+    --bg-hover: rgba(255, 255, 255, 0.04);
+    --bg-active: rgba(255, 255, 255, 0.06);
+
+    --text-primary: #fafafa;
+    --text-secondary: #a3a3a3;
+    --text-tertiary: #999999;
+    --text-quaternary: #525252;
+    --text-inverse: #171717;
+
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-soft: rgba(59, 130, 246, 0.12);
+    --accent-muted: rgba(59, 130, 246, 0.18);
+
+    --success: #4ade80;
+    --success-soft: rgba(74, 222, 128, 0.12);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.12);
+    --error: #f87171;
+    --error-soft: rgba(248, 113, 113, 0.12);
+
+    --border-subtle: rgba(255, 255, 255, 0.03);
+    --border-light: rgba(255, 255, 255, 0.05);
+    --border-medium: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.1);
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+    --shadow-ring: 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+    --review-card-bg: #dbd1bf;
+    --review-card-bg-accent: rgba(94, 67, 36, 0.08);
+    --review-card-border: rgba(75, 52, 25, 0.18);
+    --review-card-shadow: 0 20px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(67, 46, 22, 0.12);
+    --review-card-text: #211811;
+    --review-card-meta: #64503e;
+
+    --topbar-sidebar-toggle-hover-bg: rgba(255, 255, 255, 0.06);
+    --topbar-sidebar-toggle-active-bg: rgba(255, 255, 255, 0.1);
+    --mode-switch-bg: rgba(255, 255, 255, 0.04);
+    --mode-switch-border: rgba(255, 255, 255, 0.05);
+    --mode-switch-hover-bg: rgba(255, 255, 255, 0.05);
+    --mode-switch-hover-color: var(--text-secondary);
+    --mode-switch-active-bg: rgba(255, 255, 255, 0.1);
+    --mode-switch-active-color: rgba(255, 255, 255, 0.92);
+    --mode-switch-active-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+    --segmented-tabs-bg: rgba(255, 255, 255, 0.04);
+    --segmented-tabs-border: rgba(255, 255, 255, 0.05);
+    --segmented-tabs-hover-bg: rgba(255, 255, 255, 0.05);
+    --segmented-tabs-hover-color: var(--text-secondary);
+    --segmented-tabs-active-bg: rgba(255, 255, 255, 0.1);
+    --segmented-tabs-active-color: rgba(255, 255, 255, 0.92);
+    --segmented-tabs-active-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+    --sidebar-input-bg: rgba(255, 255, 255, 0.06);
+    --sidebar-input-hover-bg: rgba(255, 255, 255, 0.08);
+    --sidebar-input-focus-bg: rgba(255, 255, 255, 0.08);
+    --page-item-hover-bg: rgba(255, 255, 255, 0.05);
+    --page-item-active-bg: rgba(255, 255, 255, 0.08);
+    --page-item-selected-bg: rgba(255, 255, 255, 0.08);
+    --workspace-main-pane-shadow:
+      0 0 0 0.5px rgba(255, 255, 255, 0.06),
+      0 1px 3px rgba(0, 0, 0, 0.3),
+      0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+}

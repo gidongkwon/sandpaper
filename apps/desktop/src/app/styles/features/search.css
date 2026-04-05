@@ -1,0 +1,18 @@
+﻿@layer features {
+  .search-highlight {
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 0 2px;
+    border-radius: 3px;
+  }
+
+  .command-palette {
+    width: min(520px, 92vw);
+  }
+
+  .command-palette__empty {
+    padding: var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+  }
+}

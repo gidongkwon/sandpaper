@@ -1,0 +1,65 @@
+@layer primitives {
+  .ui-checkbox {
+    width: 100%;
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .ui-checkbox__copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-0-5);
+  }
+
+  .ui-checkbox__label {
+    color: var(--text-primary);
+  }
+
+  .ui-checkbox__description {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+  }
+
+  .ui-checkbox__control {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--border-light);
+    background: var(--bg-primary);
+    transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .ui-checkbox[data-checked] .ui-checkbox__control,
+  .ui-checkbox__control[data-checked] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .ui-checkbox__indicator {
+    display: inline-flex;
+    width: 12px;
+    height: 12px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ui-checkbox__indicator svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .ui-checkbox[data-disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}

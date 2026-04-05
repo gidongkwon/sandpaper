@@ -1,0 +1,112 @@
+@layer primitives {
+  .action-listbox {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .action-listbox__item {
+    list-style: none;
+    cursor: pointer;
+    text-align: left;
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .action-listbox__label {
+    display: block;
+  }
+
+  .action-listbox__description {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+  }
+
+  .action-listbox--search-results,
+  .action-listbox--page-nav {
+    gap: 1px;
+  }
+
+  .action-listbox--search-history,
+  .action-listbox--command {
+    gap: 2px;
+  }
+
+  .action-listbox__item--search-results {
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-sm);
+  }
+
+  .action-listbox__item--search-results:hover,
+  .action-listbox__item--search-results[data-highlighted],
+  .action-listbox__item--search-results[data-selected] {
+    background: var(--bg-hover);
+  }
+
+  .action-listbox__item--search-results:active {
+    background: var(--bg-active);
+  }
+
+  .action-listbox__label--search-results {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .action-listbox__item--search-history {
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .action-listbox__item--search-history:hover,
+  .action-listbox__item--search-history[data-highlighted],
+  .action-listbox__item--search-history[data-selected] {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .action-listbox__item--page-nav {
+    border-radius: var(--radius-md);
+  }
+
+  .action-listbox__label--page-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    min-width: 0;
+    padding: 5px var(--space-2);
+  }
+
+  .action-listbox__item--command {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-1-5) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .action-listbox__item--command:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .action-listbox__item--command[data-highlighted],
+  .action-listbox__item--command[data-selected] {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .action-listbox__description--command {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+  }
+}

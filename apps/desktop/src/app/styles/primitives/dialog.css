@@ -1,0 +1,181 @@
+@layer primitives {
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-5);
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  .modal-backdrop__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 0;
+  }
+
+  .modal-backdrop__overlay[data-closed],
+  .modal[data-closed] {
+    display: none;
+  }
+
+  @keyframes modal-in {
+    from {
+      opacity: 0;
+      transform: scale(0.98) translateY(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+  }
+
+  .search-dialog {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+    width: min(520px, 92vw);
+    background: var(--bg-primary);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-xl);
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    animation: modal-in var(--duration-base) var(--ease-out);
+  }
+
+  .search-dialog--command {
+    width: min(520px, 92vw);
+  }
+
+  .search-dialog__title--default,
+  .search-dialog__title--command {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .search-dialog__input--default,
+  .search-dialog__input--command {
+    width: 100%;
+    height: 38px;
+    padding: 0 var(--space-3);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .search-dialog__input--default:focus,
+  .search-dialog__input--command:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  .search-dialog__list--default,
+  .search-dialog__list--command {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 280px;
+    overflow: auto;
+  }
+
+  .modal {
+    width: 100%;
+    max-width: 360px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-xl);
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+  }
+
+  .modal__header {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .modal__header h3 {
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .modal__body {
+    padding: var(--space-4);
+  }
+
+  .modal__body p {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .modal__body strong {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .modal__input {
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+  }
+
+  .modal__input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .modal__actions {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border-subtle);
+    justify-content: flex-end;
+  }
+
+  .modal__button {
+    padding: var(--space-1-5) var(--space-3);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .modal__button:hover {
+    background: var(--bg-hover);
+  }
+
+  .modal__button:active {
+    transform: scale(0.98);
+  }
+
+  .modal__button.is-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .modal__button.is-primary:hover {
+    background: var(--accent-hover);
+  }
+}

@@ -1,0 +1,123 @@
+@layer tokens {
+  :root {
+    --bg-canvas: #f8f8f8;
+    --bg-primary: #ffffff;
+    --bg-secondary: #fafafa;
+    --bg-tertiary: #f3f3f3;
+    --bg-elevated: #ffffff;
+    --bg-overlay: rgba(255, 255, 255, 0.92);
+    --bg-hover: rgba(0, 0, 0, 0.03);
+    --bg-active: rgba(0, 0, 0, 0.05);
+
+    --text-primary: #171717;
+    --text-secondary: #525252;
+    --text-tertiary: #5c5c5c;
+    --text-quaternary: #a1a1a1;
+    --text-inverse: #ffffff;
+
+    --accent: #2563eb;
+    --accent-hover: #3b82f6;
+    --accent-soft: rgba(37, 99, 235, 0.08);
+    --accent-muted: rgba(37, 99, 235, 0.12);
+
+    --success: #4ade80;
+    --success-soft: rgba(74, 222, 128, 0.1);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.1);
+    --error: #f87171;
+    --error-soft: rgba(248, 113, 113, 0.1);
+
+    --border-subtle: rgba(0, 0, 0, 0.04);
+    --border-light: rgba(0, 0, 0, 0.06);
+    --border-medium: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.12);
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+    --shadow-ring: 0 0 0 1px rgba(0, 0, 0, 0.03);
+
+    --review-card-bg: #f4ead1;
+    --review-card-bg-accent: rgba(183, 141, 55, 0.08);
+    --review-card-border: rgba(173, 129, 41, 0.18);
+    --review-card-shadow: 0 16px 30px rgba(86, 60, 18, 0.08), 0 2px 6px rgba(86, 60, 18, 0.04);
+    --review-card-text: #241b14;
+    --review-card-meta: #7b6236;
+
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-serif: "Source Serif 4", "Georgia", "Times New Roman", serif;
+    --font-native: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+
+    --type-scale: 1;
+
+    --text-xs: calc(12px * var(--type-scale));
+    --text-sm: calc(13px * var(--type-scale));
+    --text-base: calc(14px * var(--type-scale));
+    --text-md: calc(15px * var(--type-scale));
+    --text-lg: calc(16px * var(--type-scale));
+    --text-xl: calc(20px * var(--type-scale));
+    --text-2xl: calc(24px * var(--type-scale));
+    --text-3xl: calc(28px * var(--type-scale));
+
+    --space-0: 0;
+    --space-px: 1px;
+    --space-0-5: 2px;
+    --space-1: 4px;
+    --space-1-5: 6px;
+    --space-2: 8px;
+    --space-2-5: 10px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    --radius-xs: 4px;
+    --radius-sm: 5px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-2xl: 16px;
+    --radius-full: 9999px;
+
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --duration-instant: 50ms;
+    --duration-fast: 100ms;
+    --duration-base: 150ms;
+    --duration-slow: 250ms;
+
+    --topbar-sidebar-toggle-hover-bg: rgba(0, 0, 0, 0.05);
+    --topbar-sidebar-toggle-active-bg: rgba(0, 0, 0, 0.08);
+    --mode-switch-bg: var(--bg-secondary);
+    --mode-switch-border: var(--border-light);
+    --mode-switch-hover-bg: var(--bg-hover);
+    --mode-switch-hover-color: var(--text-secondary);
+    --mode-switch-active-bg: var(--bg-primary);
+    --mode-switch-active-color: var(--text-primary);
+    --mode-switch-active-shadow: var(--shadow-sm), var(--shadow-ring);
+    --segmented-tabs-bg: var(--bg-secondary);
+    --segmented-tabs-border: var(--border-light);
+    --segmented-tabs-hover-bg: var(--bg-hover);
+    --segmented-tabs-hover-color: var(--text-secondary);
+    --segmented-tabs-active-bg: var(--bg-primary);
+    --segmented-tabs-active-color: var(--text-primary);
+    --segmented-tabs-active-shadow: var(--shadow-sm), var(--shadow-ring);
+    --sidebar-input-bg: rgba(0, 0, 0, 0.04);
+    --sidebar-input-hover-bg: rgba(0, 0, 0, 0.06);
+    --sidebar-input-focus-bg: rgba(0, 0, 0, 0.06);
+    --page-item-hover-bg: rgba(0, 0, 0, 0.04);
+    --page-item-active-bg: rgba(0, 0, 0, 0.07);
+    --page-item-selected-bg: rgba(0, 0, 0, 0.07);
+    --workspace-main-pane-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.06),
+      0 1px 3px rgba(0, 0, 0, 0.04),
+      0 4px 12px rgba(0, 0, 0, 0.03);
+  }
+}

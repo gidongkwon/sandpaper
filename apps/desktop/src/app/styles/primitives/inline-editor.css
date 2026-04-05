@@ -1,0 +1,46 @@
+@layer primitives {
+  .ui-inline-editor {
+    width: 100%;
+    min-height: 26px;
+    padding: var(--space-0-5) var(--space-1);
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-xs);
+    color: var(--text-primary);
+    font: inherit;
+    line-height: 1.6;
+    resize: none;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    transition: all var(--duration-instant) var(--ease-out);
+  }
+
+  .ui-inline-editor--body {
+    font-family: var(--font-sans);
+  }
+
+  .ui-inline-editor--mono {
+    font-family: var(--font-mono);
+  }
+
+  .ui-inline-editor--display {
+    display: block;
+    cursor: text;
+  }
+
+  .ui-inline-editor--display:focus,
+  .ui-inline-editor:focus {
+    outline: none;
+  }
+
+  .ui-inline-editor__display-markdown {
+    padding: 0;
+    background: transparent;
+  }
+
+  .ui-inline-editor__display-markdown:hover {
+    background: transparent;
+  }
+}

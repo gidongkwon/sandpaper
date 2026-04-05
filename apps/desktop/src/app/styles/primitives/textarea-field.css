@@ -1,0 +1,33 @@
+@layer primitives {
+  .ui-textarea {
+    width: 100%;
+    min-height: 80px;
+    padding: var(--space-2-5);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    font: inherit;
+    resize: vertical;
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .ui-textarea--body {
+    font-family: var(--font-sans);
+  }
+
+  .ui-textarea--mono {
+    font-family: var(--font-mono);
+  }
+
+  .ui-textarea:hover {
+    border-color: var(--border-medium);
+  }
+
+  .ui-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+}

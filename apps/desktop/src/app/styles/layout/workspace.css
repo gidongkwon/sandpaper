@@ -1,0 +1,63 @@
+﻿@layer layout {
+/* ============================================
+   WORKSPACE
+   ============================================ */
+
+.workspace {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  transition: grid-template-columns var(--duration-slow) var(--ease-out);
+}
+
+.workspace.sidebar-collapsed {
+  grid-template-columns: 0 1fr;
+  padding-left: var(--space-2);
+}
+
+.main-pane {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--space-4);
+  gap: 0;
+  background: var(--bg-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--workspace-main-pane-shadow);
+}
+
+.main-pane__editor {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 900px;
+  margin: 0 auto;
+  transition: margin-right var(--duration-slow) var(--ease-out);
+}
+
+.main-pane.has-panel .main-pane__editor {
+  margin-right: var(--space-3);
+}
+
+  @media (max-width: 900px) {
+    .workspace {
+      grid-template-columns: 1fr;
+    }
+
+    .main-pane__editor {
+      max-width: 100%;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .main-pane {
+      padding: var(--space-2);
+    }
+  }
+}
