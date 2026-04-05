@@ -53,4 +53,23 @@ describe("App style structure", () => {
     );
   });
 
+  it("uses the kobalte combobox caret instead of drawing a second language selector arrow", () => {
+    const editorCss = readAppStyleFile("app/styles/features/editor.css");
+
+    expect(editorCss).toMatch(
+      /\.block-renderer__lang-caret\s*\{[\s\S]*font-size:\s*10px;[\s\S]*line-height:\s*1;[\s\S]*\}/u
+    );
+    expect(editorCss).not.toMatch(
+      /\.block-renderer__lang-caret\s*\{[\s\S]*border-left:\s*4px solid transparent;[\s\S]*border-right:\s*4px solid transparent;[\s\S]*border-top:\s*5px solid/u
+    );
+  });
+
+  it("top aligns code language options from flex-start inside the combobox list", () => {
+    const editorCss = readAppStyleFile("app/styles/features/editor.css");
+
+    expect(editorCss).toMatch(
+      /\.block-renderer__lang-option\s*\{[\s\S]*align-items:\s*flex-start;[\s\S]*\}/u
+    );
+  });
+
 });

@@ -77,16 +77,18 @@ describe("App code block preview", () => {
     expect(langSelect).toHaveAttribute("aria-expanded", "true");
     fireEvent.input(langSelect, { target: { value: "type" } });
     expect(langSelect).toHaveValue("type");
-    fireEvent.blur(langSelect);
+    const typescriptOption = await screen.findByRole("option", { name: /typescript/i });
+    fireEvent.pointerDown(typescriptOption, { pointerId: 1, pointerType: "mouse" });
+    fireEvent.pointerUp(typescriptOption, { pointerId: 1, pointerType: "mouse" });
     await waitFor(() => {
       const refreshedPreview = getPreview();
       expect(refreshedPreview).not.toBeNull();
       if (!refreshedPreview) return;
       const refreshedSelect = within(refreshedPreview).getByRole("combobox", {
         name: "Code language"
-      });
-      expect(refreshedSelect).toHaveValue("JavaScript");
-      expect(refreshedPreview).toHaveTextContent("js:console.log('hi')");
+      }) as HTMLInputElement;
+      expect(refreshedSelect).toHaveValue("TypeScript");
+      expect(refreshedPreview).toHaveTextContent("ts:console.log('hi')");
     });
 
     const refreshedPreview = getPreview();

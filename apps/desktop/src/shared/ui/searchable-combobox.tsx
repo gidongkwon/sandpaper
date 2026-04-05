@@ -199,7 +199,9 @@ export const SearchableCombobox = (props: SearchableComboboxProps) => {
       options={[...filteredOptions()]}
       value={selectedOption()}
       onChange={(nextOption) => {
-        if (nextOption) props.onChange(nextOption.value, nextOption);
+        if (!nextOption) return;
+        if (!props.onOptionSelect) setQuery("");
+        props.onChange(nextOption.value, nextOption);
       }}
       onOpenChange={(open) => {
         if (!open && props.queryValue === undefined) setQuery("");

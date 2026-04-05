@@ -1318,12 +1318,13 @@
   position: absolute;
   top: 50%;
   right: var(--space-2);
-  width: 0;
-  height: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--text-tertiary);
-  transform: translateY(-40%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  transform: translateY(-50%);
   pointer-events: none;
 }
 
@@ -1346,7 +1347,7 @@
 
 .block-renderer__lang-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   width: 100%;
   border: none;
@@ -1371,7 +1372,7 @@
 
 .block-renderer__lang-option-label {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .block-renderer__lang-option-value {

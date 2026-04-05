@@ -31,7 +31,10 @@ const getDestinationSearch = () =>
   screen.getByRole("combobox", { name: "Destination page" });
 
 const selectDestinationOption = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
-  await user.click(await screen.findByRole("option", { name }));
+  const listbox = await screen.findByRole("listbox", {
+    name: "Destination page options"
+  });
+  await user.click(within(listbox).getByRole("option", { name }));
 };
 
 describe("App editor UX", () => {
