@@ -777,7 +777,7 @@ describe("App", () => {
 
   it("renames the active page", async () => {
     render(() => <App />);
-    const renameButton = await screen.findByRole("button", { name: "Rename" });
+    const renameButton = await screen.findByRole("button", { name: "Rename page" });
     await userEvent.click(renameButton);
     const dialog = await screen.findByRole("dialog", { name: "Rename page" });
     const input = within(dialog).getByRole("textbox");
@@ -795,7 +795,7 @@ describe("App", () => {
   it("does not allow renaming a normal page to Inbox", async () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const renameButton = await screen.findByRole("button", { name: "Rename" });
+    const renameButton = await screen.findByRole("button", { name: "Rename page" });
     await userEvent.click(renameButton);
     const dialog = await screen.findByRole("dialog", { name: "Rename page" });
     const input = within(dialog).getByRole("textbox");

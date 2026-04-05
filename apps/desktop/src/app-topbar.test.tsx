@@ -65,7 +65,7 @@ describe("App topbar", () => {
     expect(screen.queryByText(/ctrl\+k|cmd\+k/i)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /open settings/i }));
-    const statusToggle = await screen.findByRole("checkbox", {
+    const statusToggle = await screen.findByRole("switch", {
       name: /show status chips/i
     });
     await user.click(statusToggle);

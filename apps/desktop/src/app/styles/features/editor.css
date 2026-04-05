@@ -691,8 +691,6 @@
   cursor: text;
   white-space: pre-wrap;
 }
-  flex-direction: column;
-}
 
 .slash-menu {
   min-width: 180px;
@@ -1676,7 +1674,7 @@
   border-radius: var(--radius-xs);
   overflow-x: auto;
 }
-0
+
 .diagram-error {
   padding: 6px 8px;
   border-radius: var(--radius-xs);

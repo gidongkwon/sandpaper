@@ -1,6 +1,4 @@
 ﻿@layer features {
-  color: var(--text-primary);
-}
 
 .unlinked-list {
   display: flex;

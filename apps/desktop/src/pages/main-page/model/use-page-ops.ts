@@ -114,7 +114,8 @@ export const createPageOps = (deps: PageOpsDeps) => {
     const dailyUid = deps.resolvePageUid(title);
     if (!dailyUid) return;
 
-    const exists = deps.pages().some((page) => {
+    const pageList = deps.pages() ?? [];
+    const exists = pageList.some((page) => {
       const pageUid = deps.resolvePageUid(page.uid);
       const titleUid = deps.resolvePageUid(page.title || "");
       return pageUid === dailyUid || titleUid === dailyUid;
@@ -185,7 +186,7 @@ export const createPageOps = (deps: PageOpsDeps) => {
 
   const resolveUniqueTitle = (baseTitle: string) => {
     const knownUids = new Set<string>();
-    for (const page of deps.pages()) {
+    for (const page of deps.pages() ?? []) {
       knownUids.add(deps.resolvePageUid(page.uid));
       knownUids.add(deps.resolvePageUid(page.title));
     }
@@ -304,8 +305,9 @@ export const createPageOps = (deps: PageOpsDeps) => {
       return;
     }
 
-    const pageList = deps.pages().length
-      ? deps.pages()
+    const localPages = deps.pages() ?? [];
+    const pageList = localPages.length
+      ? localPages
       : ((await deps.invoke("list_pages")) as PageSummary[]);
     for (const page of pageList) {
       const pageUid = deps.resolvePageUid(page.uid);

@@ -43,6 +43,18 @@ export const SliderField = (props: SliderFieldProps) => {
       Math.round((local.maxValue - local.minValue) / (local.step ?? 1)) *
         (local.step ?? 1)
   );
+  const thumbPosition = createMemo(() => {
+    const range = normalizedMaxValue() - local.minValue;
+    if (!Number.isFinite(range) || range <= 0) {
+      return "0%";
+    }
+
+    const clampedValue = Math.min(
+      normalizedMaxValue(),
+      Math.max(local.minValue, local.value)
+    );
+    return `${((clampedValue - local.minValue) / range) * 100}%`;
+  });
 
   return (
     <Slider.Root
@@ -61,7 +73,11 @@ export const SliderField = (props: SliderFieldProps) => {
     >
       <Slider.Track class="ui-slider__track">
         <Slider.Fill class="ui-slider__fill" />
-        <Slider.Thumb class="ui-slider__thumb" aria-label={local.label}>
+        <Slider.Thumb
+          class="ui-slider__thumb"
+          aria-label={local.label}
+          style={{ left: thumbPosition() }}
+        >
           <Slider.Input />
         </Slider.Thumb>
       </Slider.Track>

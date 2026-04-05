@@ -195,7 +195,7 @@ export const createBacklinksState = (deps: BacklinksDeps) => {
 
   const unlinkedReferences = createMemo<UnlinkedReference[]>(() => {
     const currentUid = deps.resolvePageUid(deps.activePageUid());
-    const availablePages = deps.pages().filter(
+    const availablePages = (deps.pages() ?? []).filter(
       (page) =>
         page.title &&
         deps.resolvePageUid(page.uid) !== currentUid &&

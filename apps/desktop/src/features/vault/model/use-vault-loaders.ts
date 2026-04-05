@@ -66,6 +66,18 @@ const resolveKnownPageTitle = (pageUid: PageId, defaultPageUid: PageId) => {
   return "Untitled";
 };
 
+const normalizePageSummaries = (value: unknown): PageSummary[] => {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const candidate = entry as Partial<PageSummary>;
+    if (typeof candidate.uid !== "string" || typeof candidate.title !== "string") {
+      return [];
+    }
+    return [{ uid: candidate.uid, title: candidate.title }];
+  });
+};
+
 export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
   const loadPages = async () => {
     if (!deps.isTauri()) {
@@ -85,7 +97,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     }
 
     try {
-      const remote = (await deps.invoke("list_pages")) as PageSummary[];
+      const remote = normalizePageSummaries(await deps.invoke("list_pages"));
       deps.setPages(remote);
       if (
         remote.length > 0 &&

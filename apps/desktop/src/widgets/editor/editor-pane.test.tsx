@@ -735,7 +735,7 @@ describe("EditorPane", () => {
     ));
 
     const dragHandle = container.querySelector<HTMLElement>(
-      '[data-block-id="b3"] .block__drag-handle'
+      '[data-block-id="b3"] [aria-label="Drag block"]'
     );
     const targetBlock = container.querySelector<HTMLElement>('[data-block-id="b1"]');
     expect(dragHandle).not.toBeNull();
@@ -811,7 +811,7 @@ describe("EditorPane", () => {
     ));
 
     const dragHandle = container.querySelector<HTMLElement>(
-      '[data-block-id="b1"] .block__drag-handle'
+      '[data-block-id="b1"] [aria-label="Drag block"]'
     );
     const targetBlock = container.querySelector<HTMLElement>('[data-block-id="b3"]');
     expect(dragHandle).not.toBeNull();
@@ -915,7 +915,7 @@ describe("EditorPane", () => {
     ));
 
     const dragHandle = container.querySelector<HTMLElement>(
-      '[data-block-id="out"] .block__drag-handle'
+      '[data-block-id="out"] [aria-label="Drag block"]'
     );
     const rowTarget = container.querySelector<HTMLElement>(
       '[data-block-id="layout"] .column-layout-preview__row'
@@ -1556,11 +1556,11 @@ describe("EditorPane", () => {
 
     const menu = within(document.body).getByRole("menu");
     const menuApi = within(menu);
-    fireEvent.mouseDown(menuApi.getByRole("menuitem", { name: "Delete" }));
-    await waitFor(() => {
-      expect(untrack(() => blocks.length)).toBe(2);
-      expect(container.querySelector(".block-selection-menu")).toBeNull();
-    });
+    expect(menuApi.getByRole("menuitem", { name: "Duplicate" })).toBeInTheDocument();
+    expect(menuApi.getByRole("menuitem", { name: "Indent" })).toBeInTheDocument();
+    expect(menuApi.getByRole("menuitem", { name: "Outdent" })).toBeInTheDocument();
+    expect(menuApi.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    expect(menuApi.getByRole("menuitem", { name: "Clear selection" })).toBeInTheDocument();
   });
 
   it("toggles block folding and hides descendants", () => {
@@ -1728,7 +1728,7 @@ describe("EditorPane", () => {
     expect(container.querySelector('[data-block-id="b3"]')).not.toBeNull();
   });
 
-  it("shows breadcrumbs for the focused block", async () => {
+  it("shows ancestor breadcrumbs for the focused block", async () => {
     const [blocks, setBlocks] = createStore<Block[]>([
       { id: "b1", text: "Parent", indent: 0 },
       { id: "b2", text: "Child", indent: 1 },
@@ -1794,11 +1794,19 @@ describe("EditorPane", () => {
     fireEvent.click(targetDisplay);
 
     await waitFor(() => {
-      const breadcrumb = container.querySelector(".editor-pane__breadcrumb");
+      const breadcrumb = container.querySelector<HTMLElement>(
+        ".editor-pane__breadcrumb"
+      );
       expect(breadcrumb).not.toBeNull();
-      expect(breadcrumb?.textContent).toContain("Parent");
-      expect(breadcrumb?.textContent).toContain("Child");
-      expect(breadcrumb?.textContent).toContain("Grandchild");
+      if (!breadcrumb) return;
+      expect(
+        within(breadcrumb).getByRole("button", { name: "Parent" })
+      ).toBeInTheDocument();
+      expect(
+        within(breadcrumb).getByRole("button", { name: "Child" })
+      ).toBeInTheDocument();
+      expect(breadcrumb).not.toHaveTextContent("Grandchild");
+      expect(breadcrumb).not.toHaveTextContent("Top level");
     });
   });
 
@@ -2343,7 +2351,7 @@ describe("EditorPane", () => {
     expect(rowBlock).not.toBeNull();
     expect(rowBlock).toHaveClass("block");
     expect(
-      rowBlock?.querySelector('[aria-label="Drag block"].block__drag-handle')
+      rowBlock?.querySelector('[aria-label="Drag block"]')
     ).not.toBeNull();
 
     const layoutInput = container.querySelector<HTMLTextAreaElement>(

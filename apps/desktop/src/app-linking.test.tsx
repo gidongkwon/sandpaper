@@ -54,7 +54,9 @@ describe("App linking UX", () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const displayText = await screen.findByText("Sandpaper outline prototype");
+    const displayText = await screen.findByText("Sandpaper outline prototype", {
+      selector: ".block__display span"
+    });
     const block = displayText.closest(".block");
     expect(block).not.toBeNull();
     const firstInput = block?.querySelector(
@@ -93,7 +95,9 @@ describe("App linking UX", () => {
     const user = userEvent.setup();
     render(() => <App />);
     await screen.findByText(/saved/i);
-    const displayText = await screen.findByText("Sandpaper outline prototype");
+    const displayText = await screen.findByText("Sandpaper outline prototype", {
+      selector: ".block__display span"
+    });
     const block = displayText.closest(".block");
     expect(block).not.toBeNull();
     const firstInput = block?.querySelector(
@@ -167,7 +171,7 @@ describe("App linking UX", () => {
 
     await user.click(getPageOption("Project Atlas"));
     await screen.findByText("Project Atlas", { selector: ".editor-pane__title" });
-    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.click(screen.getByRole("button", { name: "Rename page" }));
     const renameDialog = await screen.findByRole("dialog", {
       name: "Rename page"
     });

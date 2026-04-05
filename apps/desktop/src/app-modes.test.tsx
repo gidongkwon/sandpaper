@@ -184,6 +184,15 @@ describe("App modes", () => {
     await user.type(captureInput, "{shift>}{enter}{/shift}Line 2");
     fireEvent.keyDown(captureInput, { key: "Enter" });
 
+    await waitFor(() => {
+      expect(document.querySelector(".capture-chat__bubble-text")).not.toBeNull();
+    });
+    const capturedItemDisplay = document.querySelector(
+      ".capture-chat__bubble-text"
+    ) as HTMLElement | null;
+    expect(capturedItemDisplay).not.toBeNull();
+    if (!capturedItemDisplay) return;
+    await user.click(capturedItemDisplay);
     const capturedItem = (await screen.findByRole("textbox", {
       name: "Captured item 1"
     })) as HTMLTextAreaElement;

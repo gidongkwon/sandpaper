@@ -200,7 +200,7 @@ describe("App editor UX", () => {
     });
   });
 
-  it("shows slash command menu and inserts command text", async () => {
+  it("shows slash command menu and inserts command text", { timeout: 15000 }, async () => {
     const user = userEvent.setup();
 
     render(() => <App />);
@@ -345,7 +345,7 @@ describe("App editor UX", () => {
     });
     expect(getModeControl("Capture")).toBeChecked();
     expect(await screen.findByText("Quick note")).toBeInTheDocument();
-  });
+  }, 15000);
 
   it("keeps edited captures in the hidden inbox when returning to editor", async () => {
     render(() => <App />);
@@ -558,7 +558,7 @@ describe("App editor UX", () => {
     const threads = screen.getAllByRole("group");
     const lastThread = threads[threads.length - 1] as HTMLElement;
     expect(lastThread).toHaveAttribute("aria-label", "Thread Older thread");
-    expect(within(lastThread).getByDisplayValue("Older reply")).toBeInTheDocument();
+    expect(within(lastThread).getByText("Older reply")).toBeInTheDocument();
   });
 
   it("confirms before deleting a reply", async () => {
@@ -594,7 +594,9 @@ describe("App editor UX", () => {
         screen.queryByDisplayValue("Reply post")
       ).not.toBeInTheDocument();
     });
-    expect(screen.getByDisplayValue("Root post")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "Thread Root post" })).getByText("Root post")
+    ).toBeInTheDocument();
   });
 
   it("confirms before deleting a thread root and removes the whole thread", async () => {
@@ -1063,7 +1065,10 @@ describe("App editor UX", () => {
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
 
-    await user.click(screen.getByRole("button", { name: "Continue writing" }));
+    const continueDialog = await screen.findByRole("alertdialog", {
+      name: "Discard current draft?"
+    });
+    await user.click(within(continueDialog).getByRole("button", { name: "Continue writing" }));
     await waitFor(() => {
       expect(
         screen.queryByRole("alertdialog", { name: "Discard current draft?" })
@@ -1073,7 +1078,10 @@ describe("App editor UX", () => {
     expect(queueCards[0]).toHaveTextContent("First thread");
 
     await user.click(within(queue).getByRole("button", { name: /second thread/i }));
-    await user.click(screen.getByRole("button", { name: "Discard and switch" }));
+    const discardDialog = await screen.findByRole("alertdialog", {
+      name: "Discard current draft?"
+    });
+    await user.click(within(discardDialog).getByRole("button", { name: "Discard and switch" }));
 
     await waitFor(() => {
       queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));

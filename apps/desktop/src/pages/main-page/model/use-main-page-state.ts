@@ -1286,13 +1286,13 @@ export const createMainPageState = () => {
   };
 
   const visiblePages = createMemo(() =>
-    pages().filter((page) => resolvePageUid(page.uid) !== HIDDEN_INBOX_PAGE_UID)
+    (pages() ?? []).filter((page) => resolvePageUid(page.uid) !== HIDDEN_INBOX_PAGE_UID)
   );
 
   const isLoadedPageForUid = (pageUid: string) => {
     const resolvedPageUid = resolvePageUid(pageUid);
     const knownTitle =
-      pages().find((page) => resolvePageUid(page.uid) === resolvedPageUid)?.title ??
+      (pages() ?? []).find((page) => resolvePageUid(page.uid) === resolvedPageUid)?.title ??
       localPages[resolvedPageUid]?.title ??
       null;
     if (!knownTitle) return true;
