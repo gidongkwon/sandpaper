@@ -26,6 +26,12 @@
     --warning-soft: rgba(251, 191, 36, 0.1);
     --error: #f87171;
     --error-soft: rgba(248, 113, 113, 0.1);
+    --callout-bg: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--warning), white 92%),
+      color-mix(in oklab, var(--warning), white 96%)
+    );
+    --callout-text: var(--text-primary);
 
     --border-subtle: rgba(0, 0, 0, 0.04);
     --border-light: rgba(0, 0, 0, 0.06);

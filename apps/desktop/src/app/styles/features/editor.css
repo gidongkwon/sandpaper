@@ -577,10 +577,11 @@
 }
 
 .block__display--callout {
-  background: linear-gradient(135deg, color-mix(in oklab, var(--warning), white 92%), color-mix(in oklab, var(--warning), white 96%));
+  background: var(--callout-bg);
   border-left: 3px solid var(--warning);
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
+  color: var(--callout-text);
   font-size: var(--text-base);
   line-height: 1.65;
 }
