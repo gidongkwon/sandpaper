@@ -306,7 +306,9 @@ export const EditorPane = (props: EditorPaneProps) => {
     document.activeElement instanceof Element &&
     document.activeElement.closest("[data-editor-suggestion-popover='true']");
   const [dragBox, setDragBox] = createSignal<{
+    left: number;
     top: number;
+    width: number;
     height: number;
   } | null>(null);
   const [draggedBlockId, setDraggedBlockId] = createSignal<string | null>(null);
@@ -329,9 +331,23 @@ export const EditorPane = (props: EditorPaneProps) => {
     }
     return event.altKey;
   };
+  const BLOCK_SELECTION_DRAG_THRESHOLD = 10;
+  const BLOCK_SELECTION_TEXT_MARGIN = 12;
   let selecting = false;
   let selectionAnchor = -1;
   let selectionPointerId: number | null = null;
+  let suppressSelectionClick = false;
+  let pendingSelection:
+    | {
+        index: number;
+        pointerId: number | null;
+        startX: number;
+        startY: number;
+        prefersTextSelection: boolean;
+        textBounds: DOMRect | null;
+      }
+    | null = null;
+  let dragStartClientX: number | null = null;
   let dragStartClientY: number | null = null;
   let handleDragPointerId: number | null = null;
   const inputRefs = new Map<string, HTMLTextAreaElement>();
@@ -526,9 +542,13 @@ export const EditorPane = (props: EditorPaneProps) => {
     setContextMenu(null);
     setDragBox(null);
     selecting = false;
+    pendingSelection = null;
     selectionPointerId = null;
     selectionAnchor = -1;
+    suppressSelectionClick = false;
+    dragStartClientX = null;
     dragStartClientY = null;
+    editorRef?.classList.remove("is-block-selecting");
   };
 
   const setHandleDraggingState = (value: boolean) => {
@@ -542,28 +562,56 @@ export const EditorPane = (props: EditorPaneProps) => {
     selectionAnchor = anchor;
   };
 
-  const updateDragBox = (startY: number, currentY: number) => {
+  const updateDragBox = (
+    startX: number,
+    startY: number,
+    currentX: number,
+    currentY: number
+  ) => {
     if (!editorRef) return;
     const rect = editorRef.getBoundingClientRect();
+    const leftRaw = Math.min(startX, currentX) - rect.left;
+    const rightRaw = Math.max(startX, currentX) - rect.left;
     const topRaw = Math.min(startY, currentY) - rect.top;
     const bottomRaw = Math.max(startY, currentY) - rect.top;
+    const left = Math.max(0, Math.min(rect.width, leftRaw));
+    const right = Math.max(0, Math.min(rect.width, rightRaw));
     const top = Math.max(0, Math.min(rect.height, topRaw));
     const bottom = Math.max(0, Math.min(rect.height, bottomRaw));
+    const width = Math.max(2, right - left);
     const height = Math.max(2, bottom - top);
-    setDragBox({ top, height });
+    setDragBox({ left, top, width, height });
   };
 
-  const isSelectionStartTarget = (target: EventTarget | null) => {
+  const resolveSelectionStart = (
+    target: EventTarget | null,
+    clientY: number
+  ) => {
     const el = target instanceof HTMLElement ? target : null;
-    if (!el) return false;
-    if (
-      el.closest(
-        "textarea, input, button, select, a, .block__display, .block__input"
-      )
-    ) {
-      return false;
+    if (!el) return null;
+    if (el.closest("button, select, a, .block-selection-menu")) {
+      return null;
     }
-    return Boolean(el.closest(".block"));
+    const blockEl = el.closest<HTMLElement>(".block");
+    if (!blockEl) return null;
+    const blockId = blockEl.dataset.blockId;
+    const index =
+      (blockId ? getVisibleIndexById(blockId) : -1) >= 0
+        ? (blockId ? getVisibleIndexById(blockId) : -1)
+        : resolveIndexFromEvent(target, clientY);
+    if (index < 0) return null;
+    const textTarget = el.closest<HTMLElement>(
+      "textarea, input, .block__display, .block__input"
+    );
+    const textBounds =
+      textTarget?.closest<HTMLElement>(".block__body")?.getBoundingClientRect() ??
+      textTarget?.getBoundingClientRect() ??
+      null;
+    return {
+      index,
+      prefersTextSelection: Boolean(textTarget),
+      textBounds
+    };
   };
 
   const indexFromClientY = (clientY: number) => {
@@ -639,14 +687,18 @@ export const EditorPane = (props: EditorPaneProps) => {
   const beginSelection = (
     index: number,
     pointerId: number | null,
+    clientX: number,
     clientY: number
   ) => {
+    pendingSelection = null;
     selectionAnchor = index;
     selecting = true;
     selectionPointerId = pointerId;
+    dragStartClientX = clientX;
     dragStartClientY = clientY;
     setSelectionRange({ start: index, end: index });
-    updateDragBox(clientY, clientY);
+    updateDragBox(clientX, clientY, clientX, clientY);
+    editorRef?.classList.add("is-block-selecting");
   };
 
   const endSelection = (pointerId?: number | null) => {
@@ -659,11 +711,106 @@ export const EditorPane = (props: EditorPaneProps) => {
       return;
     }
     selecting = false;
+    pendingSelection = null;
     selectionPointerId = null;
+    dragStartClientX = null;
     dragStartClientY = null;
     setDragBox(null);
+    editorRef?.classList.remove("is-block-selecting");
     const rangeValue = selectionRange();
     selectionAnchor = rangeValue ? rangeValue.start : -1;
+  };
+
+  const clearNativeTextSelection = () => {
+    if (typeof window !== "undefined") {
+      window.getSelection()?.removeAllRanges();
+    }
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLTextAreaElement ||
+      active instanceof HTMLInputElement
+    ) {
+      const caret = active.selectionEnd ?? active.value.length;
+      active.setSelectionRange(caret, caret);
+    }
+  };
+
+  const markSelectionDragged = (clientX: number, clientY: number) => {
+    if (dragStartClientX === null || dragStartClientY === null) return;
+    if (
+      Math.hypot(clientX - dragStartClientX, clientY - dragStartClientY) >=
+      BLOCK_SELECTION_DRAG_THRESHOLD
+    ) {
+      suppressSelectionClick = true;
+    }
+  };
+
+  const shouldPromotePendingSelection = (
+    index: number,
+    clientX: number,
+    clientY: number
+  ) => {
+    if (!pendingSelection) return false;
+    const deltaX = clientX - pendingSelection.startX;
+    const deltaY = clientY - pendingSelection.startY;
+    if (
+      Math.hypot(deltaX, deltaY) < BLOCK_SELECTION_DRAG_THRESHOLD
+    ) {
+      return false;
+    }
+    if (!pendingSelection.prefersTextSelection) {
+      return true;
+    }
+    if (index >= 0 && index !== pendingSelection.index) {
+      return true;
+    }
+    const bounds = pendingSelection.textBounds;
+    if (!bounds) {
+      return true;
+    }
+    return (
+      clientX < bounds.left - BLOCK_SELECTION_TEXT_MARGIN ||
+      clientX > bounds.right + BLOCK_SELECTION_TEXT_MARGIN ||
+      clientY < bounds.top - BLOCK_SELECTION_TEXT_MARGIN ||
+      clientY > bounds.bottom + BLOCK_SELECTION_TEXT_MARGIN
+    );
+  };
+
+  const maybePromotePendingSelection = (
+    target: EventTarget | null,
+    pointerId: number | null,
+    clientX: number,
+    clientY: number
+  ) => {
+    if (!pendingSelection) return false;
+    const pending = pendingSelection;
+    if (
+      pending.pointerId !== null &&
+      pointerId !== null &&
+      pending.pointerId !== pointerId
+    ) {
+      return false;
+    }
+    const index = resolveIndexFromEvent(target, clientY);
+    if (index < 0 || !shouldPromotePendingSelection(index, clientX, clientY)) {
+      return false;
+    }
+    clearNativeTextSelection();
+    beginSelection(
+      pending.index,
+      pending.pointerId,
+      pending.startX,
+      pending.startY
+    );
+    setSelectionFromIndex(index);
+    updateDragBox(
+      pending.startX,
+      pending.startY,
+      clientX,
+      clientY
+    );
+    suppressSelectionClick = true;
+    return true;
   };
 
   const handlePointerDown = (event: PointerEvent) => {
@@ -672,15 +819,32 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!event.shiftKey && selectionRange()) {
       clearSelection();
     }
-    if (!isSelectionStartTarget(event.target)) return;
-    const index = resolveIndexFromEvent(event.target, event.clientY);
-    if (index < 0) return;
+    const start = resolveSelectionStart(event.target, event.clientY);
+    if (!start) return;
+    pendingSelection = {
+      index: start.index,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      prefersTextSelection: start.prefersTextSelection,
+      textBounds: start.textBounds
+    };
+    if (start.prefersTextSelection) return;
     event.preventDefault();
-    beginSelection(index, event.pointerId, event.clientY);
+    beginSelection(start.index, event.pointerId, event.clientX, event.clientY);
   };
 
   const handlePointerMove = (event: PointerEvent) => {
-    if (!supportsPointer || !selecting) return;
+    if (!supportsPointer) return;
+    if (!selecting) {
+      maybePromotePendingSelection(
+        event.target,
+        event.pointerId,
+        event.clientX,
+        event.clientY
+      );
+      return;
+    }
     if (
       selectionPointerId !== null &&
       event.pointerId !== selectionPointerId
@@ -690,13 +854,26 @@ export const EditorPane = (props: EditorPaneProps) => {
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     setSelectionFromIndex(index);
-    if (dragStartClientY !== null) {
-      updateDragBox(dragStartClientY, event.clientY);
+    markSelectionDragged(event.clientX, event.clientY);
+    if (dragStartClientX !== null && dragStartClientY !== null) {
+      updateDragBox(
+        dragStartClientX,
+        dragStartClientY,
+        event.clientX,
+        event.clientY
+      );
     }
   };
 
   const handlePointerUp = (event: PointerEvent) => {
     if (!supportsPointer) return;
+    if (
+      pendingSelection &&
+      pendingSelection.pointerId === event.pointerId &&
+      !selecting
+    ) {
+      pendingSelection = null;
+    }
     endSelection(event.pointerId);
   };
 
@@ -706,29 +883,56 @@ export const EditorPane = (props: EditorPaneProps) => {
     if (!event.shiftKey && selectionRange()) {
       clearSelection();
     }
-    if (!isSelectionStartTarget(event.target)) return;
-    const index = resolveIndexFromEvent(event.target, event.clientY);
-    if (index < 0) return;
+    const start = resolveSelectionStart(event.target, event.clientY);
+    if (!start) return;
+    pendingSelection = {
+      index: start.index,
+      pointerId: null,
+      startX: event.clientX,
+      startY: event.clientY,
+      prefersTextSelection: start.prefersTextSelection,
+      textBounds: start.textBounds
+    };
+    if (start.prefersTextSelection) return;
     event.preventDefault();
-    beginSelection(index, null, event.clientY);
+    beginSelection(start.index, null, event.clientX, event.clientY);
   };
 
   const handleMouseMove = (event: MouseEvent) => {
-    if (!selecting || selectionPointerId !== null) return;
+    if (selectionPointerId !== null) return;
+    if (!selecting) {
+      maybePromotePendingSelection(event.target, null, event.clientX, event.clientY);
+      return;
+    }
     const index = resolveIndexFromEvent(event.target, event.clientY);
     if (index < 0) return;
     setSelectionFromIndex(index);
-    if (dragStartClientY !== null) {
-      updateDragBox(dragStartClientY, event.clientY);
+    markSelectionDragged(event.clientX, event.clientY);
+    if (dragStartClientX !== null && dragStartClientY !== null) {
+      updateDragBox(
+        dragStartClientX,
+        dragStartClientY,
+        event.clientX,
+        event.clientY
+      );
     }
   };
 
   const handleMouseUp = () => {
     if (selectionPointerId !== null) return;
+    if (!selecting) {
+      pendingSelection = null;
+    }
     endSelection();
   };
 
   const handleBodyClick = (event: MouseEvent) => {
+    if (suppressSelectionClick) {
+      suppressSelectionClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (contextMenu()) {
       setContextMenu(null);
     }
@@ -3564,6 +3768,12 @@ export const EditorPane = (props: EditorPaneProps) => {
             class={`block__display block__display--${blockType()}`}
             style={{ display: isEditing() ? "none" : "block" }}
             onClick={(event) => {
+              if (suppressSelectionClick) {
+                suppressSelectionClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
               if (args.isColumnRow) {
                 event.stopPropagation();
               }
@@ -3849,7 +4059,9 @@ export const EditorPane = (props: EditorPaneProps) => {
             <div
               class="block-selection-box"
               style={{
+                left: `${box().left}px`,
                 top: `${box().top}px`,
+                width: `${box().width}px`,
                 height: `${box().height}px`
               }}
             />

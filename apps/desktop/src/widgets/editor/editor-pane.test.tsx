@@ -95,6 +95,44 @@ const renderEditorPaneHarness = ({
   };
 };
 
+const makeDomRect = (
+  left: number,
+  top: number,
+  width: number,
+  height: number
+) =>
+  ({
+    x: left,
+    y: top,
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+    toJSON: () => ({})
+  }) as DOMRect;
+
+const mockEditorSelectionGeometry = (container: HTMLElement) => {
+  const body = container.querySelector<HTMLElement>(".editor-pane__body");
+  if (body) {
+    Object.defineProperty(body, "getBoundingClientRect", {
+      configurable: true,
+      value: () => makeDomRect(0, 0, 600, 600)
+    });
+  }
+
+  const blockBodies = Array.from(
+    container.querySelectorAll<HTMLElement>(".block__body")
+  );
+  blockBodies.forEach((node, index) => {
+    Object.defineProperty(node, "getBoundingClientRect", {
+      configurable: true,
+      value: () => makeDomRect(48, index * 28, 420, 26)
+    });
+  });
+};
+
 describe("EditorPane", () => {
   it("renders enough rows when measured row height is smaller than estimate", async () => {
     const originalInnerHeight = window.innerHeight;
@@ -363,18 +401,23 @@ describe("EditorPane", () => {
       />
     ));
 
-    const blockEls = Array.from(
-      container.querySelectorAll<HTMLElement>(".block")
-    );
+    mockEditorSelectionGeometry(container);
+
+    const blockEls = Array.from(container.querySelectorAll<HTMLElement>(".block"));
     expect(blockEls.length).toBeGreaterThan(4);
 
-    fireEvent.mouseDown(blockEls[1], { button: 0, clientY: 10 });
-    fireEvent.mouseMove(blockEls[4], { clientY: 60 });
+    fireEvent.mouseDown(blockEls[1], { button: 0, clientX: 40, clientY: 10 });
+    fireEvent.mouseMove(blockEls[4], { clientX: 140, clientY: 60 });
 
-    const selectionBox = container.querySelector(".block-selection-box");
+    const selectionBox = container.querySelector<HTMLElement>(".block-selection-box");
     expect(selectionBox).not.toBeNull();
+    expect(selectionBox?.style.left).toBe("40px");
+    expect(selectionBox?.style.top).toBe("10px");
+    expect(selectionBox?.style.width).toBe("100px");
+    expect(selectionBox?.style.height).toBe("50px");
 
     fireEvent.mouseUp(window);
+    fireEvent.click(blockEls[4]);
 
     const selected = Array.from(
       container.querySelectorAll<HTMLElement>(".block.is-selected")
@@ -387,6 +430,72 @@ describe("EditorPane", () => {
     ]);
 
     expect(container.querySelector(".block-selection-box")).toBeNull();
+  });
+
+  it("keeps a small drag inside text content as text selection", () => {
+    const { container } = renderEditorPaneHarness({
+      initialBlocks: makeBlocks(6),
+      initialActiveId: null
+    });
+
+    mockEditorSelectionGeometry(container);
+
+    const displays = Array.from(
+      container.querySelectorAll<HTMLElement>(".block__display")
+    );
+    expect(displays.length).toBeGreaterThan(4);
+
+    fireEvent.mouseDown(displays[1], {
+      button: 0,
+      clientX: 100,
+      clientY: 40
+    });
+    fireEvent.mouseMove(window, {
+      clientX: 180,
+      clientY: 48
+    });
+    fireEvent.mouseUp(window);
+
+    expect(container.querySelector(".block-selection-box")).toBeNull();
+    expect(container.querySelectorAll(".block.is-selected")).toHaveLength(0);
+  });
+
+  it("promotes a large text drag into block selection", () => {
+    const { container } = renderEditorPaneHarness({
+      initialBlocks: makeBlocks(6),
+      initialActiveId: null
+    });
+
+    mockEditorSelectionGeometry(container);
+
+    const displays = Array.from(
+      container.querySelectorAll<HTMLElement>(".block__display")
+    );
+    expect(displays.length).toBeGreaterThan(4);
+
+    fireEvent.mouseDown(displays[1], {
+      button: 0,
+      clientX: 100,
+      clientY: 40
+    });
+    fireEvent.mouseMove(window, {
+      clientX: 120,
+      clientY: 95
+    });
+
+    expect(container.querySelector(".block-selection-box")).not.toBeNull();
+
+    fireEvent.mouseUp(window);
+    fireEvent.click(displays[3]);
+
+    const selected = Array.from(
+      container.querySelectorAll<HTMLElement>(".block.is-selected")
+    );
+    expect(selected.map((node) => node.dataset.blockId)).toEqual([
+      "b2",
+      "b3",
+      "b4"
+    ]);
   });
 
   it("selects a shift-click range and clears with Escape", () => {

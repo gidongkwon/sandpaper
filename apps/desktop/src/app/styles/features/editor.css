@@ -179,6 +179,12 @@
   position: relative;
 }
 
+.editor-pane__body.is-block-selecting,
+.editor-pane__body.is-block-selecting * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .editor-pane__selection {
   display: flex;
   align-items: center;
@@ -201,8 +207,6 @@
 
 .block-selection-box {
   position: absolute;
-  left: var(--space-4);
-  right: var(--space-4);
   border: 1px dashed var(--accent);
   background: var(--accent-soft);
   border-radius: var(--radius-sm);
