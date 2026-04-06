@@ -1,4 +1,4 @@
-import type { Block, BlockType, Page } from "./block-model";
+import type { Block, BlockMeta, BlockType, CaptureBlockMeta, Page } from "./block-model";
 
 export type MarkdownParseResult = {
   page: Page;
@@ -192,22 +192,74 @@ const inferMarkdownNativeBlockType = (value: string): BlockType | null => {
   return null;
 };
 
-const parseSpBlockType = (raw: string): BlockType | null => {
-  try {
-    const parsed = JSON.parse(raw) as { type?: unknown } | null;
-    if (!parsed || typeof parsed.type !== "string") return null;
-    const value = parsed.type;
-    const known: BlockType[] = [
-      "callout",
-      "toggle",
-      "column_layout",
-      "column",
-      "database_view"
-    ];
-    return known.includes(value as BlockType) ? (value as BlockType) : null;
-  } catch {
-    return null;
+const isMarkdownNativeType = (type: BlockType) =>
+  type === "text" ||
+  type === "heading1" ||
+  type === "heading2" ||
+  type === "heading3" ||
+  type === "quote" ||
+  type === "todo" ||
+  type === "divider" ||
+  type === "code" ||
+  type === "table" ||
+  type === "image" ||
+  type === "ordered_list" ||
+  type === "bookmark" ||
+  type === "file" ||
+  type === "math" ||
+  type === "toc" ||
+  type === "database_view";
+
+const parseSpBlockType = (value: unknown): BlockType | null => {
+  if (typeof value !== "string") return null;
+  const known: BlockType[] = [
+    "text",
+    "heading1",
+    "heading2",
+    "heading3",
+    "quote",
+    "callout",
+    "code",
+    "divider",
+    "toggle",
+    "todo",
+    "image",
+    "table",
+    "ordered_list",
+    "bookmark",
+    "file",
+    "math",
+    "toc",
+    "column_layout",
+    "column",
+    "database_view"
+  ];
+  return known.includes(value as BlockType) ? (value as BlockType) : null;
+};
+
+const parseCaptureMeta = (value: unknown): CaptureBlockMeta | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<CaptureBlockMeta>;
+  if (
+    typeof candidate.batchId !== "string" ||
+    typeof candidate.order !== "number" ||
+    (candidate.role !== "body" && candidate.role !== "attachment")
+  ) {
+    return undefined;
   }
+  return {
+    batchId: candidate.batchId,
+    order: candidate.order,
+    role: candidate.role
+  };
+};
+
+const parseBlockMeta = (value: unknown): BlockMeta | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as { capture?: unknown };
+  const capture = parseCaptureMeta(candidate.capture);
+  if (!capture) return undefined;
+  return { capture };
 };
 
 const extractSpMetadata = (value: string) => {
@@ -215,12 +267,26 @@ const extractSpMetadata = (value: string) => {
   if (!match) {
     return {
       text: value,
-      blockType: null as BlockType | null
+      blockType: null as BlockType | null,
+      meta: undefined as BlockMeta | undefined
     };
+  }
+  let blockType: BlockType | null = null;
+  let meta: BlockMeta | undefined;
+  try {
+    const parsed = JSON.parse(match[1] ?? "") as { type?: unknown; meta?: unknown } | null;
+    if (parsed) {
+      blockType = parseSpBlockType(parsed.type);
+      meta = parseBlockMeta(parsed.meta);
+    }
+  } catch {
+    blockType = null;
+    meta = undefined;
   }
   return {
     text: value.replace(SP_METADATA_PATTERN, ""),
-    blockType: parseSpBlockType(match[1] ?? "")
+    blockType,
+    meta
   };
 };
 
@@ -320,11 +386,17 @@ export const parseMarkdownPage = (
     seenIds.add(resolvedId);
     const normalizedText = text.trimEnd();
     const inferredType = inferMarkdownNativeBlockType(normalizedText);
+    const explicitType = withMetadata.blockType;
+    const resolvedType =
+      explicitType && (!isMarkdownNativeType(explicitType) || inferredType === explicitType)
+        ? explicitType
+        : inferredType ?? "text";
     blocks.push({
       id: resolvedId,
       text: normalizedText,
       indent,
-      block_type: withMetadata.blockType ?? inferredType ?? "text"
+      block_type: resolvedType,
+      ...(withMetadata.meta ? { meta: withMetadata.meta } : {})
     });
     cursor += 1;
   }

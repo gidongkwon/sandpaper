@@ -6,7 +6,18 @@ import {
   type Accessor,
   type Setter
 } from "solid-js";
+import type { Block } from "../../entities/block/model/block-types";
+import {
+  extractImageFilesFromClipboardData,
+  extractImageFilesFromDataTransfer
+} from "../../shared/lib/assets/image-files";
+import {
+  extractFileSource,
+  extractImageSource,
+  resolveBlockType
+} from "../../shared/lib/blocks/block-type-utils";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
+import { AssetImage } from "../../shared/ui/asset-image";
 import { Button } from "../../shared/ui/button";
 import { IconButton } from "../../shared/ui/icon-button";
 import { InlineEditor } from "../../shared/ui/inline-editor";
@@ -17,28 +28,37 @@ import {
 } from "../../shared/ui/icons";
 import type { MarkdownDisplayHandlers } from "../../shared/ui/markdown-display";
 
-export type CaptureItem = {
-  block: {
-    id: string;
-    text: string;
-    indent: number;
-  };
+export type CaptureDraftAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  previewUrl: string;
+};
+
+export type CaptureEntry = {
+  id: string;
+  blocks: Block[];
   position: number;
   capturedAt: number | null;
+  text: string;
 };
 
 export type CaptureThread = {
   id: string;
-  root: CaptureItem;
-  replies: CaptureItem[];
+  root: CaptureEntry;
+  replies: CaptureEntry[];
 };
 
 type CapturePaneProps = {
   text: Accessor<string>;
   setText: Setter<string>;
+  attachments: Accessor<CaptureDraftAttachment[]>;
   items: Accessor<CaptureThread[]>;
-  onCapture: () => void;
+  onCapture: () => void | Promise<void>;
+  onAddAttachments: (files: File[]) => void;
+  onRemoveAttachment: (id: string) => void;
   onEditItem: (id: string, text: string) => void;
+  onDeleteEntry: (id: string) => void;
   onDeleteItem: (id: string) => void;
   onDeleteThread: (id: string) => void;
   onReplyTo: (id: string) => void;
@@ -59,12 +79,80 @@ const formatCaptureTime = (timestamp: number | null) => {
   return `${h12}:${m} ${period}`;
 };
 
+const isTauriRuntime = () =>
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+
+const findBodyBlock = (blocks: Block[]) =>
+  blocks.find((block) => block.meta?.capture?.role === "body") ??
+  blocks.find(
+    (block) =>
+      block.meta?.capture?.role !== "attachment" && resolveBlockType(block) !== "image"
+  );
+
+const findImageBlocks = (blocks: Block[]) =>
+  blocks.filter(
+    (block) => block.meta?.capture?.role === "attachment" || resolveBlockType(block) === "image"
+  );
+
+const MARKDOWN_IMAGE_PATTERN = /^!\[(.*?)\]\((.+)\)$/u;
+const MARKDOWN_LINK_PATTERN = /^\[([^\]]+)\]\(([^)]+)\)$/u;
+const IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "svg",
+  "bmp",
+  "tif",
+  "tiff",
+  "ico"
+]);
+
+const extractPathExtension = (source: string) => {
+  const cleanPath = source.split(/[?#]/u, 1)[0] ?? source;
+  const lastSegment = cleanPath.split("/").pop() ?? "";
+  if (!lastSegment || !lastSegment.includes(".")) return "";
+  return lastSegment.split(".").pop()?.toLowerCase() ?? "";
+};
+
+const normalizeRawAttachmentSource = (source: string) => {
+  const trimmed = source.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith("<") && trimmed.endsWith(">") && trimmed.length > 2
+    ? trimmed.slice(1, -1)
+    : trimmed;
+};
+
+const extractPermissiveAttachmentSource = (value: string) => {
+  const trimmed = value.trim();
+  const markdownImage = trimmed.match(MARKDOWN_IMAGE_PATTERN);
+  if (markdownImage) {
+    return normalizeRawAttachmentSource(markdownImage[2] ?? "");
+  }
+  const markdownLink = trimmed.match(MARKDOWN_LINK_PATTERN);
+  if (markdownLink) {
+    const href = normalizeRawAttachmentSource(markdownLink[2] ?? "");
+    if (!href) return null;
+    return IMAGE_EXTENSIONS.has(extractPathExtension(href)) ? href : null;
+  }
+  return null;
+};
+
+const resolveCaptureAttachmentSource = (block: Block) =>
+  extractImageSource(block.text) ??
+  extractFileSource(block.text)?.source ??
+  extractPermissiveAttachmentSource(block.text);
+
 export const CapturePane = (props: CapturePaneProps) => {
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
   const [justCaptured, setJustCaptured] = createSignal(false);
-  const [pendingReplyDelete, setPendingReplyDelete] = createSignal<{
+  const [dragActive, setDragActive] = createSignal(false);
+  const [pendingEntryDelete, setPendingEntryDelete] = createSignal<{
     id: string;
+    title: string;
     text: string;
   } | null>(null);
   const [pendingThreadDelete, setPendingThreadDelete] = createSignal<{
@@ -72,6 +160,9 @@ export const CapturePane = (props: CapturePaneProps) => {
     text: string;
     replyCount: number;
   } | null>(null);
+
+  const hasPendingCapture = () =>
+    props.text().trim().length > 0 || props.attachments().length > 0;
 
   createEffect(() => {
     props.focusEpoch();
@@ -92,9 +183,8 @@ export const CapturePane = (props: CapturePaneProps) => {
   });
 
   const handleCapture = () => {
-    const text = props.text().trim();
-    if (!text) return;
-    props.onCapture();
+    if (!hasPendingCapture()) return;
+    void props.onCapture();
     setJustCaptured(false);
     queueMicrotask(() => {
       setJustCaptured(true);
@@ -104,8 +194,7 @@ export const CapturePane = (props: CapturePaneProps) => {
   };
 
   const handleReplyToLatestCapture = () => {
-    const text = props.text().trim();
-    if (!text) return;
+    if (!hasPendingCapture()) return;
     if (props.replyingToId()) {
       handleCapture();
       return;
@@ -116,15 +205,15 @@ export const CapturePane = (props: CapturePaneProps) => {
       handleCapture();
       return;
     }
-    props.onReplyTo(latestThread.root.block.id);
+    props.onReplyTo(latestThread.root.id);
     handleCapture();
   };
 
-  const confirmReplyDelete = () => {
-    const pending = pendingReplyDelete();
+  const confirmEntryDelete = () => {
+    const pending = pendingEntryDelete();
     if (!pending) return;
-    props.onDeleteItem(pending.id);
-    setPendingReplyDelete(null);
+    props.onDeleteEntry(pending.id);
+    setPendingEntryDelete(null);
   };
 
   const confirmThreadDelete = () => {
@@ -141,19 +230,105 @@ export const CapturePane = (props: CapturePaneProps) => {
     return `Delete "${pending.text}" and ${replyLabel} from capture?`;
   };
 
-  const syncThreadLine = (
-    threadEl: HTMLElement | undefined,
-    lastReplyEl: HTMLDivElement | undefined
-  ) => {
-    requestAnimationFrame(() => {
-      if (!threadEl) return;
-      if (!lastReplyEl) {
-        threadEl.style.removeProperty("--thread-line-end");
-        return;
-      }
-      const end = Math.max(lastReplyEl.offsetTop - 4, 18);
-      threadEl.style.setProperty("--thread-line-end", `${end}px`);
-    });
+  const handleAttachmentPaste = (event: ClipboardEvent) => {
+    const files = extractImageFilesFromClipboardData(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    props.onAddAttachments(files);
+  };
+
+  const handleDragOver = (event: DragEvent) => {
+    const files = extractImageFilesFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setDragActive(true);
+  };
+
+  const handleDragLeave = () => {
+    setDragActive(false);
+  };
+
+  const handleDrop = (event: DragEvent) => {
+    const files = extractImageFilesFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    setDragActive(false);
+    props.onAddAttachments(files);
+  };
+
+  const renderAttachmentGrid = (imageBlocks: Block[]) => {
+    if (imageBlocks.length === 0) return null;
+    return (
+      <div class="capture-chat__attachment-grid">
+        <For each={imageBlocks}>
+          {(block) => {
+            const source = resolveCaptureAttachmentSource(block);
+            if (!source) return null;
+            return (
+              <div class="capture-chat__attachment-tile">
+                <button
+                  type="button"
+                  class="capture-chat__attachment-preview"
+                  aria-label={`Open image ${block.id}`}
+                  onClick={() => window.open(source, "_blank", "noopener,noreferrer")}
+                >
+                  <AssetImage
+                    class="capture-chat__attachment-image"
+                    source={source}
+                    isTauri={isTauriRuntime()}
+                  />
+                </button>
+                <IconButton
+                  variant="inline"
+                  class="capture-chat__attachment-remove"
+                  aria-label={`Delete attachment ${block.id}`}
+                  onClick={() =>
+                    setPendingEntryDelete({
+                      id: block.id,
+                      title: "Delete attachment",
+                      text: source
+                    })
+                  }
+                >
+                  <Delete16Icon width="16" height="16" />
+                </IconButton>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+    );
+  };
+
+  const renderEntryContent = (entry: CaptureEntry) => {
+    const bodyBlock = findBodyBlock(entry.blocks);
+    const imageBlocks = findImageBlocks(entry.blocks);
+    return (
+      <>
+        <Show when={bodyBlock}>
+          {(block) => (
+            <div class="capture-chat__bubble">
+              <InlineEditor
+                class="capture-chat__bubble-text"
+                rows={1}
+                autoResize
+                maxHeight={120}
+                displayMode="markdown"
+                markdownDisplayHandlers={props.markdownDisplayHandlers}
+                aria-label={`Captured item ${entry.position}`}
+                value={block().text}
+                onInput={(event) => {
+                  props.onEditItem(block().id, event.currentTarget.value);
+                }}
+              />
+            </div>
+          )}
+        </Show>
+        <Show when={imageBlocks.length > 0}>
+          <div class="capture-chat__attachments">{renderAttachmentGrid(imageBlocks)}</div>
+        </Show>
+      </>
+    );
   };
 
   return (
@@ -186,132 +361,85 @@ export const CapturePane = (props: CapturePaneProps) => {
                   </svg>
                 </div>
                 <p class="capture-chat__empty-text">
-                  Capture a thought, link, or task...
+                  Capture a thought, link, task, or screenshot...
                 </p>
               </div>
             }
           >
             <For each={props.items()}>
-              {(thread) => {
-                let threadRef: HTMLElement | undefined;
-                let lastReplyRef: HTMLDivElement | undefined;
-
-                return (
-                  <section
-                    class="capture-chat__thread"
-                    classList={{
-                      "capture-chat__thread--reply-target":
-                        props.replyingToId() === thread.root.block.id,
-                      "capture-chat__thread--with-replies":
-                        thread.replies.length > 0
-                    }}
-                    role="group"
-                    aria-label={`Thread ${thread.root.block.text}`}
-                    ref={(el) => {
-                      threadRef = el;
-                      syncThreadLine(threadRef, lastReplyRef);
-                    }}
-                  >
-                    <div class="capture-chat__bubble-row capture-chat__bubble-row--root">
-                      <div class="capture-chat__content">
-                        <time class="capture-chat__item-time">
-                          {formatCaptureTime(thread.root.capturedAt)}
-                        </time>
-                        <div class="capture-chat__bubble">
-                          <InlineEditor
-                            class="capture-chat__bubble-text"
-                            rows={1}
-                            autoResize
-                            maxHeight={120}
-                            displayMode="markdown"
-                            markdownDisplayHandlers={props.markdownDisplayHandlers}
-                            aria-label={`Captured item ${thread.root.position}`}
-                            value={thread.root.block.text}
-                            onInput={(event) => {
-                              props.onEditItem(thread.root.block.id, event.currentTarget.value);
-                              syncThreadLine(threadRef, lastReplyRef);
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div class="capture-chat__actions">
-                        <IconButton
-                          variant="inline"
-                          class="capture-chat__icon-button"
-                          aria-label={`Reply to ${thread.root.block.text}`}
-                          onClick={() => props.onReplyTo(thread.root.block.id)}
-                        >
-                          <ArrowReply16Icon width="16" height="16" />
-                        </IconButton>
-                        <IconButton
-                          variant="inline"
-                          class="capture-chat__icon-button"
-                          aria-label={`Delete ${thread.root.block.text}`}
-                          onClick={() =>
-                            setPendingThreadDelete({
-                              id: thread.root.block.id,
-                              text: thread.root.block.text,
-                              replyCount: thread.replies.length
-                            })
-                          }
-                        >
-                          <Delete16Icon width="16" height="16" />
-                        </IconButton>
-                      </div>
+              {(thread) => (
+                <section
+                  class="capture-chat__thread"
+                  classList={{
+                    "capture-chat__thread--reply-target":
+                      props.replyingToId() === thread.root.id,
+                    "capture-chat__thread--with-replies": thread.replies.length > 0
+                  }}
+                  role="group"
+                  aria-label={`Thread ${thread.root.text}`}
+                >
+                  <div class="capture-chat__bubble-row capture-chat__bubble-row--root">
+                    <div class="capture-chat__content">
+                      <time class="capture-chat__item-time">
+                        {formatCaptureTime(thread.root.capturedAt)}
+                      </time>
+                      {renderEntryContent(thread.root)}
                     </div>
-                    <For each={thread.replies}>
-                      {(reply, index) => (
-                        <div
-                          class="capture-chat__bubble-row capture-chat__bubble-row--reply"
-                          ref={(el) => {
-                            if (index() === thread.replies.length - 1) {
-                              lastReplyRef = el;
-                              syncThreadLine(threadRef, lastReplyRef);
-                            }
-                          }}
-                        >
-                          <div class="capture-chat__content">
-                            <time class="capture-chat__item-time">
-                              {formatCaptureTime(reply.capturedAt)}
-                            </time>
-                            <div class="capture-chat__bubble">
-                              <InlineEditor
-                                class="capture-chat__bubble-text"
-                                rows={1}
-                                autoResize
-                                maxHeight={120}
-                                displayMode="markdown"
-                                markdownDisplayHandlers={props.markdownDisplayHandlers}
-                                aria-label={`Captured item ${reply.position}`}
-                                value={reply.block.text}
-                                onInput={(event) => {
-                                  props.onEditItem(reply.block.id, event.currentTarget.value);
-                                  syncThreadLine(threadRef, lastReplyRef);
-                                }}
-                              />
-                            </div>
-                          </div>
-                          <div class="capture-chat__actions">
-                            <IconButton
-                              variant="inline"
-                              class="capture-chat__icon-button"
-                              aria-label={`Delete ${reply.block.text}`}
-                              onClick={() =>
-                                setPendingReplyDelete({
-                                  id: reply.block.id,
-                                  text: reply.block.text
-                                })
-                              }
-                            >
-                              <Delete16Icon width="16" height="16" />
-                            </IconButton>
-                          </div>
+                    <div class="capture-chat__actions">
+                      <IconButton
+                        variant="inline"
+                        class="capture-chat__icon-button"
+                        aria-label={`Reply to ${thread.root.text}`}
+                        onClick={() => props.onReplyTo(thread.root.id)}
+                      >
+                        <ArrowReply16Icon width="16" height="16" />
+                      </IconButton>
+                      <IconButton
+                        variant="inline"
+                        class="capture-chat__icon-button"
+                        aria-label={`Delete ${thread.root.text}`}
+                        onClick={() =>
+                          setPendingThreadDelete({
+                            id: thread.root.id,
+                            text: thread.root.text,
+                            replyCount: thread.replies.length
+                          })
+                        }
+                      >
+                        <Delete16Icon width="16" height="16" />
+                      </IconButton>
+                    </div>
+                  </div>
+                  <For each={thread.replies}>
+                    {(reply) => (
+                      <div class="capture-chat__bubble-row capture-chat__bubble-row--reply">
+                        <div class="capture-chat__content">
+                          <time class="capture-chat__item-time">
+                            {formatCaptureTime(reply.capturedAt)}
+                          </time>
+                          {renderEntryContent(reply)}
                         </div>
-                      )}
-                    </For>
-                  </section>
-                );
-              }}
+                        <div class="capture-chat__actions">
+                          <IconButton
+                            variant="inline"
+                            class="capture-chat__icon-button"
+                            aria-label={`Delete ${reply.text}`}
+                            onClick={() =>
+                              setPendingEntryDelete({
+                                id: reply.id,
+                                title: "Delete reply",
+                                text: reply.text
+                              })
+                            }
+                          >
+                            <Delete16Icon width="16" height="16" />
+                          </IconButton>
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </section>
+              )}
             </For>
           </Show>
         </div>
@@ -336,7 +464,46 @@ export const CapturePane = (props: CapturePaneProps) => {
               </div>
             )}
           </Show>
-          <div class="capture-chat__composer-surface">
+          <div
+            class="capture-chat__composer-surface"
+            classList={{ "is-drag-active": dragActive() }}
+            onDragOver={(event) => handleDragOver(event)}
+            onDragLeave={handleDragLeave}
+            onDrop={(event) => handleDrop(event)}
+          >
+            <Show when={props.attachments().length > 0}>
+              <div class="capture-chat__draft-grid">
+                <For each={props.attachments()}>
+                  {(attachment) => (
+                    <div class="capture-chat__attachment-tile">
+                      <button
+                        type="button"
+                        class="capture-chat__attachment-preview"
+                        aria-label={`Open staged image ${attachment.name}`}
+                        onClick={() =>
+                          window.open(attachment.previewUrl, "_blank", "noopener,noreferrer")
+                        }
+                      >
+                        <img
+                          class="capture-chat__attachment-image"
+                          src={attachment.previewUrl}
+                          alt=""
+                          loading="lazy"
+                        />
+                      </button>
+                      <IconButton
+                        variant="inline"
+                        class="capture-chat__attachment-remove"
+                        aria-label={`Remove staged image ${attachment.name}`}
+                        onClick={() => props.onRemoveAttachment(attachment.id)}
+                      >
+                        <Delete16Icon width="16" height="16" />
+                      </IconButton>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
             <div class="capture-chat__composer-row">
               <div class="capture-chat__input-wrap">
                 <InlineEditor
@@ -352,6 +519,7 @@ export const CapturePane = (props: CapturePaneProps) => {
                   onInput={(event) => {
                     props.setText(event.currentTarget.value);
                   }}
+                  onPaste={(event) => handleAttachmentPaste(event)}
                   onKeyDown={(event) => {
                     if (event.key === "Escape" && props.replyingTo()) {
                       event.preventDefault();
@@ -390,7 +558,7 @@ export const CapturePane = (props: CapturePaneProps) => {
               <Button
                 class="capture-chat__send"
                 variant="primary"
-                disabled={props.text().trim().length === 0}
+                disabled={!hasPendingCapture()}
                 onClick={() => handleCapture()}
                 aria-label="Send capture"
               >
@@ -402,12 +570,12 @@ export const CapturePane = (props: CapturePaneProps) => {
       </div>
 
       <AlertDialog
-        open={() => pendingReplyDelete() !== null}
-        title="Delete reply"
-        description={pendingReplyDelete()?.text}
+        open={() => pendingEntryDelete() !== null}
+        title={pendingEntryDelete()?.title ?? "Delete capture entry"}
+        description={pendingEntryDelete()?.text}
         confirmLabel="Delete"
-        onConfirm={confirmReplyDelete}
-        onCancel={() => setPendingReplyDelete(null)}
+        onConfirm={confirmEntryDelete}
+        onCancel={() => setPendingEntryDelete(null)}
       />
       <AlertDialog
         open={() => pendingThreadDelete() !== null}

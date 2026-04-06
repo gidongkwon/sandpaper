@@ -27,9 +27,15 @@ import { LinkPreview } from "../../features/editor/ui/link-preview";
 import { SlashMenu } from "../../features/editor/ui/slash-menu";
 import { WikilinkMenu } from "../../features/editor/ui/wikilink-menu";
 import { ActionMenu } from "../../shared/ui/action-menu";
+import { AssetImage } from "../../shared/ui/asset-image";
 import { Button } from "../../shared/ui/button";
 import { FloatingPanelPopover } from "../../shared/ui/floating-panel-popover";
 import { IconButton } from "../../shared/ui/icon-button";
+import { importImageAssetFile } from "../../shared/lib/assets/import-image-asset";
+import {
+  extractImageFilesFromClipboardData,
+  isImageFile
+} from "../../shared/lib/assets/image-files";
 import { renderMarkdownDisplayContent } from "../../shared/ui/markdown-display";
 import { ModalDialog } from "../../shared/ui/modal-dialog";
 import { SearchableCombobox } from "../../shared/ui/searchable-combobox";
@@ -343,12 +349,6 @@ export const EditorPane = (props: EditorPaneProps) => {
     "tiff",
     "ico"
   ] as const;
-  const IMAGE_EXTENSION_SET = new Set<string>(IMAGE_EXTENSIONS);
-  const isImageFile = (file: File) => {
-    if (file.type.startsWith("image/")) return true;
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    return IMAGE_EXTENSION_SET.has(ext);
-  };
   let editorRef: HTMLDivElement | undefined;
   let copyTimeout: number | undefined;
   let previewCloseTimeout: number | undefined;
@@ -862,8 +862,8 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   const handlePaste = (event: ClipboardEvent) => {
     if (!isTauri()) return;
-    const files = event.clipboardData?.files;
-    if (!files || files.length === 0) return;
+    const files = extractImageFilesFromClipboardData(event.clipboardData);
+    if (files.length === 0) return;
     event.preventDefault();
     void handleDroppedFiles(files);
   };
@@ -1146,16 +1146,31 @@ export const EditorPane = (props: EditorPaneProps) => {
     const nonEmpty = importedBlocks.filter((value) => value.markdown.trim().length > 0);
     if (nonEmpty.length === 0) return;
     const activeIndex = activeId() ? findIndexById(activeId() as string) : -1;
-    const insertAt = activeIndex >= 0 ? activeIndex + 1 : blocks.length;
+    const activeBlock = activeIndex >= 0 ? blocks[activeIndex] : null;
+    const baseIndent = activeBlock?.indent ?? 0;
+    const shouldReplaceActive =
+      Boolean(activeBlock) &&
+      resolveRenderBlockType(activeBlock as Block) === "text" &&
+      activeBlock.text.trim().length === 0;
     const created = nonEmpty.map((asset) =>
       createNewBlock(
         asset.markdown.trim(),
-        activeIndex >= 0 ? blocks[activeIndex].indent : 0,
+        baseIndent,
         asset.blockType
       )
     );
     setBlocks(
       produce((draft) => {
+        if (shouldReplaceActive && activeIndex >= 0) {
+          const [first, ...rest] = created;
+          if (!first) return;
+          draft.splice(activeIndex, 1, first);
+          if (rest.length > 0) {
+            draft.splice(activeIndex + 1, 0, ...rest);
+          }
+          return;
+        }
+        const insertAt = activeIndex >= 0 ? activeIndex + 1 : draft.length;
         draft.splice(insertAt, 0, ...created);
       })
     );
@@ -1849,19 +1864,7 @@ export const EditorPane = (props: EditorPaneProps) => {
 
   const importImageFile = async (file: File) => {
     if (!isTauri()) return null;
-    const filename = file.name || "image";
-    const mimeType = file.type || "application/octet-stream";
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    const bytesB64 = bytesToBase64(bytes);
-    const result = await invoke<ImportedAssetPayload>("import_image_asset_bytes", {
-      filename,
-      mimeType,
-      mime_type: mimeType,
-      bytesB64,
-      bytes_b64: bytesB64
-    });
-    return result;
+    return importImageAssetFile(file, invoke);
   };
 
   const importImageFromPicker = async () => {
@@ -1891,11 +1894,13 @@ export const EditorPane = (props: EditorPaneProps) => {
     const bytes = new Uint8Array(buffer);
     const bytesB64 = bytesToBase64(bytes);
     const result = await invoke<ImportedAssetPayload>("import_file_asset_bytes", {
-      filename,
-      mimeType,
-      mime_type: mimeType,
-      bytesB64,
-      bytes_b64: bytesB64
+      payload: {
+        filename,
+        mimeType,
+        mime_type: mimeType,
+        bytesB64,
+        bytes_b64: bytesB64
+      }
     });
     return result;
   };
@@ -2714,16 +2719,9 @@ export const EditorPane = (props: EditorPaneProps) => {
         </div>
       );
     }
-    if (source.startsWith("http://") || source.startsWith("https://")) {
-      return (
-        <div class="block-renderer block-renderer--image">
-          <img class="block-renderer__image" src={source} alt="" loading="lazy" />
-        </div>
-      );
-    }
     return (
       <div class="block-renderer block-renderer--image">
-        <div class="block-renderer__asset-path">{source}</div>
+        <AssetImage class="block-renderer__image" source={source} isTauri={isTauri()} />
       </div>
     );
   };

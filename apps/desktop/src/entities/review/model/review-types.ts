@@ -1,4 +1,5 @@
 import type { PageId, Timestamp } from "../../../shared/model/id-types";
+import type { Block } from "../../block/model/block-types";
 
 export type ReviewQueueSummary = {
   due_count: number;
@@ -27,6 +28,7 @@ export type ReviewThreadEntry = {
   id: string;
   text: string;
   is_root: boolean;
+  blocks: Block[];
 };
 
 export type ReviewTab = "to-review" | "archived";

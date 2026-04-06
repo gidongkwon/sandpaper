@@ -35,6 +35,7 @@ import type {
 } from "../../../entities/review/model/review-types";
 import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
+import { importImageAssetFile } from "../../../shared/lib/assets/import-image-asset";
 import type { AnchorRect } from "../../../shared/model/position";
 import type { Mode } from "../../../shared/model/mode";
 import {
@@ -99,9 +100,92 @@ type ReviewSessionBaselineSnapshot = {
   blocks: Block[];
 };
 
+type CaptureDraftAttachment = {
+  id: string;
+  file: File;
+  name: string;
+  mimeType: string;
+  previewUrl: string;
+};
+
+type CaptureBatchEntry = {
+  id: string;
+  primaryBlockId: string;
+  blocks: Block[];
+  indent: number;
+  startIndex: number;
+  endIndex: number;
+  position: number;
+  capturedAt: number | null;
+  text: string;
+};
+
+type CaptureThreadView = {
+  id: string;
+  root: CaptureBatchEntry;
+  replies: CaptureBatchEntry[];
+};
+
+const getCaptureBatchId = (block: Block) => block.meta?.capture?.batchId ?? block.id;
+
+const findCaptureBodyBlock = (blocks: Block[]) =>
+  blocks.find((block) => block.meta?.capture?.role === "body") ??
+  blocks.find((block) => resolveBlockType(block) !== "image");
+
+const summarizeCaptureBlocks = (blocks: Block[]) => {
+  const body = findCaptureBodyBlock(blocks)?.text.trim();
+  if (body) return body;
+  const imageCount = blocks.filter((block) => resolveBlockType(block) === "image").length;
+  if (imageCount > 0) {
+    return imageCount === 1 ? "1 image" : `${imageCount} images`;
+  }
+  return blocks[0]?.text.trim() || "Untitled capture";
+};
+
+const buildCaptureBatchEntries = (
+  blocks: Block[],
+  timestamps: Record<string, number>
+): CaptureBatchEntry[] => {
+  const entries: CaptureBatchEntry[] = [];
+  let position = 0;
+  for (let index = 0; index < blocks.length; ) {
+    const block = blocks[index];
+    const batchId = getCaptureBatchId(block);
+    const entryBlocks = [block];
+    let nextIndex = index + 1;
+    while (nextIndex < blocks.length) {
+      const nextBlock = blocks[nextIndex];
+      if (
+        getCaptureBatchId(nextBlock) !== batchId ||
+        nextBlock.indent !== block.indent
+      ) {
+        break;
+      }
+      entryBlocks.push(nextBlock);
+      nextIndex += 1;
+    }
+    const entryTimestamps = entryBlocks
+      .map((entryBlock) => timestamps[entryBlock.id])
+      .filter((value): value is number => typeof value === "number");
+    entries.push({
+      id: batchId,
+      primaryBlockId: entryBlocks[0].id,
+      blocks: entryBlocks,
+      indent: block.indent,
+      startIndex: index,
+      endIndex: nextIndex - 1,
+      position: (position += 1),
+      capturedAt: entryTimestamps[0] ?? null,
+      text: summarizeCaptureBlocks(entryBlocks)
+    });
+    index = nextIndex;
+  }
+  return entries;
+};
+
 const hasTauriInternals = () =>
   typeof window !== "undefined" &&
-  Object.prototype.hasOwnProperty.call(window, "__TAURI_INTERNALS__");
+  ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 
 const readStoredCaptureTimestamps = () => {
   if (
@@ -141,7 +225,8 @@ const normalizeStoredBlocks = (value: unknown): Block[] => {
         id: candidate.id,
         text: candidate.text,
         indent: candidate.indent,
-        block_type: candidate.block_type
+        block_type: candidate.block_type,
+        ...(candidate.meta ? { meta: candidate.meta } : {})
       }
     ];
   });
@@ -224,11 +309,26 @@ const normalizeStoredReviewThread = (value: unknown): ReviewThread | null => {
     ) {
       return [];
     }
+    const blocks = Array.isArray(next.blocks)
+      ? normalizeStoredBlocks(next.blocks)
+      : [
+          {
+            id: next.id,
+            text: next.text,
+            indent: next.is_root ? 0 : 1,
+            block_type: resolveBlockType({
+              id: next.id,
+              text: next.text,
+              indent: next.is_root ? 0 : 1
+            })
+          }
+        ];
     return [
       {
         id: next.id,
         text: next.text,
-        is_root: next.is_root
+        is_root: next.is_root,
+        blocks
       }
     ];
   });
@@ -375,6 +475,7 @@ export const createMainPageState = () => {
   const [newPageTitle, setNewPageTitle] = createSignal("");
   const [renameTitle, setRenameTitle] = createSignal(DEFAULT_PAGE_TITLE);
   const [captureText, setCaptureText] = createSignal("");
+  const [captureAttachments, setCaptureAttachments] = createSignal<CaptureDraftAttachment[]>([]);
   const [captureReplyToId, setCaptureReplyToId] = createSignal<string | null>(null);
   const [captureItemTimestamps, setCaptureItemTimestamps] = createSignal<
     Record<string, number>
@@ -429,6 +530,12 @@ export const createMainPageState = () => {
   const [notificationsOpen, setNotificationsOpen] = createSignal(false);
   const [notificationsAnchorRect, setNotificationsAnchorRect] =
     createSignal<AnchorRect | null>(null);
+
+  onCleanup(() => {
+    for (const attachment of captureAttachments()) {
+      revokeCaptureAttachmentPreview(attachment);
+    }
+  });
   const [settingsTab, setSettingsTab] = createSignal<
     "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
   >("general");
@@ -463,6 +570,12 @@ export const createMainPageState = () => {
   };
 
   const isTauri = () => hasTauriInternals();
+
+  const revokeCaptureAttachmentPreview = (attachment: CaptureDraftAttachment) => {
+    if (attachment.previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(attachment.previewUrl);
+    }
+  };
 
   const notificationsApi = createNotifications();
   const {
@@ -643,14 +756,19 @@ export const createMainPageState = () => {
     });
   };
 
-  const createNewBlock = (text = "", indent = 0) =>
-    makeBlock(isTauri() ? makeRandomId() : makeLocalId(), text, indent);
+  const createNewBlock = (
+    text = "",
+    indent = 0,
+    blockType: Block["block_type"] = "text",
+    meta?: Block["meta"]
+  ) => makeBlock(isTauri() ? makeRandomId() : makeLocalId(), text, indent, blockType, meta);
 
   const toPayload = (block: Block): BlockPayload => ({
     uid: block.id,
     text: block.text,
     indent: block.indent,
-    block_type: resolveBlockType(block)
+    block_type: resolveBlockType(block),
+    ...(block.meta ? { meta: block.meta } : {})
   });
 
   const autosave = createAutosave({
@@ -1310,52 +1428,20 @@ export const createMainPageState = () => {
     () => localPages[HIDDEN_INBOX_PAGE_UID]?.blocks ?? []
   );
 
-  const captureItems = createMemo(() => {
-    let position = 0;
-    const threads: Array<{
-      id: string;
-      root: {
-        block: Block;
-        position: number;
-        capturedAt: number | null;
-      };
-      replies: Array<{
-        block: Block;
-        position: number;
-        capturedAt: number | null;
-      }>;
-    }> = [];
-    let currentThread:
-      | {
-          id: string;
-          root: {
-            block: Block;
-            position: number;
-            capturedAt: number | null;
-          };
-          replies: Array<{
-            block: Block;
-            position: number;
-            capturedAt: number | null;
-          }>;
-        }
-      | undefined;
+  const captureItems = createMemo<CaptureThreadView[]>(() => {
+    const entries = buildCaptureBatchEntries(captureInboxBlocks(), captureItemTimestamps());
+    const threads: CaptureThreadView[] = [];
+    let currentThread: CaptureThreadView | undefined;
 
-    for (const block of captureInboxBlocks()) {
-      const item = {
-        block,
-        position: (position += 1),
-        capturedAt: captureItemTimestamps()[block.id] ?? null
-      };
-
-      if (block.indent > 0 && currentThread) {
-        currentThread.replies.push(item);
+    for (const entry of entries) {
+      if (entry.indent > 0 && currentThread) {
+        currentThread.replies.push(entry);
         continue;
       }
 
       currentThread = {
-        id: block.id,
-        root: item,
+        id: entry.id,
+        root: entry,
         replies: []
       };
       threads.push(currentThread);
@@ -1368,7 +1454,7 @@ export const createMainPageState = () => {
     const replyToId = captureReplyToId();
     if (!replyToId) return null;
     const thread = captureItems().find((item) => item.id === replyToId);
-    return thread?.root.block.text ?? null;
+    return thread?.root.text ?? null;
   });
 
   createEffect(() => {
@@ -1420,9 +1506,13 @@ export const createMainPageState = () => {
     try {
       const stored = (await invoke("get_capture_review_thread_order")) as unknown;
       if (Array.isArray(stored)) {
-        setReviewThreadOrder(
-          stored.filter((entry): entry is string => typeof entry === "string")
+        const normalized = stored.filter(
+          (entry): entry is string => typeof entry === "string"
         );
+        setReviewThreadOrder((current) => [
+          ...normalized,
+          ...current.filter((id) => !normalized.includes(id))
+        ]);
       } else {
         setReviewThreadOrder([]);
       }
@@ -1441,23 +1531,25 @@ export const createMainPageState = () => {
       .filter((thread): thread is NonNullable<typeof thread> => Boolean(thread))
       .map((thread) => {
         const timestamps = [
-          captureItemTimestamps()[thread.root.block.id] ?? null,
-          ...thread.replies.map((reply) => captureItemTimestamps()[reply.block.id] ?? null)
+          thread.root.capturedAt,
+          ...thread.replies.map((reply) => reply.capturedAt)
         ].filter((value): value is number => typeof value === "number");
         return {
           id: thread.id,
-          root_text: thread.root.block.text,
+          root_text: thread.root.text,
           status: "to-review",
           entries: [
             {
-              id: thread.root.block.id,
-              text: thread.root.block.text,
-              is_root: true
+              id: thread.root.id,
+              text: thread.root.text,
+              is_root: true,
+              blocks: snapshotBlocks(thread.root.blocks)
             },
             ...thread.replies.map((reply) => ({
-              id: reply.block.id,
-              text: reply.block.text,
-              is_root: false
+              id: reply.id,
+              text: reply.text,
+              is_root: false,
+              blocks: snapshotBlocks(reply.blocks)
             }))
           ],
           captured_at_start: timestamps[0] ?? null,
@@ -1834,6 +1926,27 @@ export const createMainPageState = () => {
     if (!updated) return;
   };
 
+  const addCaptureAttachments = (files: File[]) => {
+    const nextAttachments = files.map((file) => ({
+      id: isTauri() ? makeRandomId() : makeLocalId(),
+      file,
+      name: file.name || "image",
+      mimeType: file.type || "application/octet-stream",
+      previewUrl: URL.createObjectURL(file)
+    }));
+    setCaptureAttachments((current) => [...current, ...nextAttachments]);
+  };
+
+  const removeCaptureAttachment = (id: string) => {
+    setCaptureAttachments((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+      if (target) {
+        revokeCaptureAttachmentPreview(target);
+      }
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  };
+
   const deleteCaptureItem = (id: string) => {
     updateCaptureInboxBlocks((draft) => {
       const index = draft.findIndex((block) => block.id === id);
@@ -1848,31 +1961,101 @@ export const createMainPageState = () => {
     });
   };
 
+  const deleteCaptureEntry = (id: string) => {
+    const existingEntries = buildCaptureBatchEntries(
+      captureInboxBlocks(),
+      captureItemTimestamps()
+    );
+    const targetEntry = existingEntries.find((entry) => entry.id === id) ?? null;
+    if (!targetEntry) {
+      const targetBlockEntry =
+        existingEntries.find((entry) => entry.blocks.some((block) => block.id === id)) ?? null;
+      if (!targetBlockEntry) return;
+      if (targetBlockEntry.blocks.length <= 1) {
+        if (targetBlockEntry.indent === 0) {
+          removeCaptureThreadFromInbox(targetBlockEntry.id);
+          return;
+        }
+        updateCaptureInboxBlocks((draft) => {
+          draft.splice(
+            targetBlockEntry.startIndex,
+            targetBlockEntry.endIndex - targetBlockEntry.startIndex + 1
+          );
+        });
+        setCaptureItemTimestamps((current) => {
+          const next = { ...current };
+          let changed = false;
+          for (const block of targetBlockEntry.blocks) {
+            if (!(block.id in next)) continue;
+            delete next[block.id];
+            changed = true;
+          }
+          return changed ? next : current;
+        });
+        return;
+      }
+      updateCaptureInboxBlocks((draft) => {
+        const targetIndex = draft.findIndex((block) => block.id === id);
+        if (targetIndex >= 0) {
+          draft.splice(targetIndex, 1);
+        }
+      });
+      setCaptureItemTimestamps((current) => {
+        if (!(id in current)) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      return;
+    }
+    updateCaptureInboxBlocks((draft) => {
+      draft.splice(
+        targetEntry.startIndex,
+        targetEntry.endIndex - targetEntry.startIndex + 1
+      );
+    });
+    setCaptureItemTimestamps((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const block of targetEntry.blocks) {
+        if (!(block.id in next)) continue;
+        delete next[block.id];
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  };
+
   const removeCaptureThreadFromInbox = (id: string) => {
     const existingThread = captureItems().find((thread) => thread.id === id) ?? null;
     updateCaptureInboxBlocks((draft) => {
-      const rootIndex = draft.findIndex(
-        (block) => block.id === id && block.indent === 0
-      );
-      if (rootIndex < 0) return;
-
-      let threadEndIndex = rootIndex + 1;
-      while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
-        threadEndIndex += 1;
+      const entries = buildCaptureBatchEntries(draft, captureItemTimestamps());
+      const rootEntryIndex = entries.findIndex((entry) => entry.id === id && entry.indent === 0);
+      if (rootEntryIndex < 0) return;
+      let endIndex = entries[rootEntryIndex].endIndex;
+      let nextEntryIndex = rootEntryIndex + 1;
+      while (nextEntryIndex < entries.length && entries[nextEntryIndex].indent > 0) {
+        endIndex = entries[nextEntryIndex].endIndex;
+        nextEntryIndex += 1;
       }
-
-      draft.splice(rootIndex, threadEndIndex - rootIndex);
+      draft.splice(
+        entries[rootEntryIndex].startIndex,
+        endIndex - entries[rootEntryIndex].startIndex + 1
+      );
     });
     setCaptureItemTimestamps((current) => {
       let changed = false;
       const next = { ...current };
-      delete next[id];
-      for (const reply of existingThread?.replies ?? []) {
-        if (!(reply.block.id in next)) continue;
-        delete next[reply.block.id];
+      const removedBlockIds = [
+        ...(existingThread?.root.blocks.map((block) => block.id) ?? []),
+        ...(existingThread?.replies.flatMap((reply) => reply.blocks.map((block) => block.id)) ??
+          [])
+      ];
+      for (const blockId of removedBlockIds) {
+        if (!(blockId in next)) continue;
+        delete next[blockId];
         changed = true;
       }
-      if (id in current) changed = true;
       return changed ? next : current;
     });
 
@@ -1901,49 +2084,122 @@ export const createMainPageState = () => {
     setCaptureFocusEpoch((current) => current + 1);
   };
 
-  const addCapture = () => {
+  const addCapture = async () => {
     const text = captureText().trim();
-    if (!text) return;
+    const attachments = captureAttachments();
+    if (!text && attachments.length === 0) return;
     const replyToId = captureReplyToId();
-    const block = createNewBlock(text, replyToId ? 1 : 0);
-    const capturedAt = Date.now();
+    const indent = replyToId ? 1 : 0;
+    const batchId = isTauri() ? makeRandomId() : makeLocalId();
+    const latestKnownCaptureAt = Math.max(0, ...Object.values(captureItemTimestamps()));
+    const capturedAt = Math.max(Date.now(), latestKnownCaptureAt + 1);
+    const createdBlocks: Block[] = [];
+    let batchOrder = 0;
+    if (text) {
+      createdBlocks.push(
+        createNewBlock(text, indent, "text", {
+          capture: {
+            batchId,
+            order: batchOrder,
+            role: "body"
+          }
+        })
+      );
+      batchOrder += 1;
+    }
+    const successfulAttachmentIds: string[] = [];
+    const failedAttachmentNames: string[] = [];
+    for (const attachment of attachments) {
+      try {
+        const imported = await importImageAssetFile(attachment.file, invoke);
+        if (!imported?.markdown) {
+          failedAttachmentNames.push(attachment.name);
+          continue;
+        }
+        createdBlocks.push(
+          createNewBlock(imported.markdown, indent, "image", {
+            capture: {
+              batchId,
+              order: batchOrder,
+              role: "attachment"
+            }
+          })
+        );
+        successfulAttachmentIds.push(attachment.id);
+        batchOrder += 1;
+      } catch (error) {
+        console.error("Failed to import capture attachment", error);
+        failedAttachmentNames.push(attachment.name);
+      }
+    }
+    if (createdBlocks.length === 0) {
+      if (failedAttachmentNames.length > 0) {
+        addNotification({
+          title: "Image import failed",
+          message: "None of the pasted images could be imported.",
+          kind: "error"
+        });
+      }
+      return;
+    }
     setCaptureItemTimestamps((current) => ({
       ...current,
-      [block.id]: capturedAt
+      ...Object.fromEntries(createdBlocks.map((block) => [block.id, capturedAt]))
     }));
     updateCaptureInboxBlocks((draft) => {
       if (!replyToId) {
-        draft.push(block);
+        draft.push(...createdBlocks);
         return;
       }
 
-      const rootIndex = draft.findIndex(
-        (item) => item.id === replyToId && item.indent === 0
+      const entries = buildCaptureBatchEntries(draft, captureItemTimestamps());
+      const rootEntryIndex = entries.findIndex((entry) => entry.id === replyToId && entry.indent === 0);
+      if (rootEntryIndex < 0) {
+        draft.push(...createdBlocks.map((block) => ({ ...block, indent: 0 })));
+        return;
+      }
+      let nextEntryIndex = rootEntryIndex + 1;
+      let threadEndIndex = entries[rootEntryIndex].endIndex;
+      while (nextEntryIndex < entries.length && entries[nextEntryIndex].indent > 0) {
+        threadEndIndex = entries[nextEntryIndex].endIndex;
+        nextEntryIndex += 1;
+      }
+      const threadBlocks = draft.splice(
+        entries[rootEntryIndex].startIndex,
+        threadEndIndex - entries[rootEntryIndex].startIndex + 1
       );
-      if (rootIndex < 0) {
-        draft.push({ ...block, indent: 0 });
-        return;
-      }
-
-      let threadEndIndex = rootIndex + 1;
-      while (threadEndIndex < draft.length && draft[threadEndIndex]?.indent > 0) {
-        threadEndIndex += 1;
-      }
-      const threadBlocks = draft.splice(rootIndex, threadEndIndex - rootIndex);
-      threadBlocks.push(block);
+      threadBlocks.push(...createdBlocks);
       draft.push(...threadBlocks);
     });
     if (!replyToId) {
       setReviewThreadOrder((current) =>
-        current.includes(block.id) ? current : [...current, block.id]
+        current.includes(batchId) ? current : [...current, batchId]
       );
       setReviewSession((current) => ({
         ...current,
-        active_thread_id: current.active_thread_id ?? block.id,
+        active_thread_id: current.active_thread_id ?? batchId,
         updated_at: Date.now()
       }));
     }
     setCaptureText("");
+    setCaptureAttachments((current) => {
+      const failed = current.filter(
+        (attachment) => !successfulAttachmentIds.includes(attachment.id)
+      );
+      for (const attachment of current) {
+        if (successfulAttachmentIds.includes(attachment.id)) {
+          revokeCaptureAttachmentPreview(attachment);
+        }
+      }
+      return failed;
+    });
+    if (failedAttachmentNames.length > 0) {
+      addNotification({
+        title: "Some images were not imported",
+        message: `${failedAttachmentNames.length} attachment${failedAttachmentNames.length === 1 ? "" : "s"} stayed in the composer.`,
+        kind: "error"
+      });
+    }
     setCaptureFocusEpoch((current) => current + 1);
   };
 
@@ -2177,9 +2433,13 @@ export const createMainPageState = () => {
       capture: {
         text: captureText,
         setText: setCaptureText,
+        attachments: captureAttachments,
         items: captureItems,
         onCapture: addCapture,
+        onAddAttachments: addCaptureAttachments,
+        onRemoveAttachment: removeCaptureAttachment,
         onEditItem: editCaptureItem,
+        onDeleteEntry: deleteCaptureEntry,
         onDeleteItem: deleteCaptureItem,
         onDeleteThread: deleteCaptureThread,
         onReplyTo: startCaptureReply,

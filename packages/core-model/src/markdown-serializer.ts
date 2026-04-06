@@ -56,6 +56,21 @@ const isMarkdownNativeType = (type: Block["block_type"] | undefined) =>
   type === "toc" ||
   type === "database_view";
 
+const hasBlockMeta = (meta: Block["meta"] | undefined) =>
+  Boolean(meta && Object.keys(meta).length > 0);
+
+const serializeBlockMeta = (block: Block) => {
+  const type = block.block_type ?? "text";
+  const payload: Record<string, unknown> = {};
+  if (!isMarkdownNativeType(type)) {
+    payload.type = type;
+  }
+  if (hasBlockMeta(block.meta)) {
+    payload.meta = block.meta;
+  }
+  return Object.keys(payload).length > 0 ? ` <!--sp:${JSON.stringify(payload)}-->` : "";
+};
+
 const stripHeadingPrefix = (value: string) => {
   const trimmed = value.trimStart();
   if (trimmed.startsWith("### ")) return trimmed.slice(4);
@@ -310,7 +325,7 @@ const formatBlockLine = (block: Block) => {
   })();
   const formattedText = formatMultilineListText(text, `${indent}${INDENT_UNIT}`);
   const spacer = text.length > 0 ? " " : "";
-  const marker = isMarkdownNativeType(type) ? "" : ` <!--sp:{"type":"${type}"}-->`;
+  const marker = serializeBlockMeta(block);
   return `${indent}- ${formattedText}${spacer}^${block.id}${marker}`;
 };
 

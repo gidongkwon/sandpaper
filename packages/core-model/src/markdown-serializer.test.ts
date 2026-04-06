@@ -97,4 +97,58 @@ describe("serializePageToMarkdown", () => {
         "- | Name | Qty |\n  | --- | --- |\n  | Pencil | 2 | ^tb1\n"
     );
   });
+
+  it("serializes markdown-native blocks with capture metadata as sp metadata markers", () => {
+    const page: Page = {
+      id: "page-6",
+      title: "Capture Batch",
+      blocks: [
+        {
+          id: "img1",
+          text: "![](/assets/cat--abc123.png)",
+          indent: 0,
+          block_type: "image",
+          meta: {
+            capture: {
+              batchId: "batch-1",
+              order: 1,
+              role: "attachment"
+            }
+          }
+        }
+      ]
+    };
+
+    expect(serializePageToMarkdown(page)).toBe(
+      "# Capture Batch ^page-6\n" +
+        "- ![](/assets/cat--abc123.png) ^img1 <!--sp:{\"meta\":{\"capture\":{\"batchId\":\"batch-1\",\"order\":1,\"role\":\"attachment\"}}}-->\n"
+    );
+  });
+
+  it("serializes non-markdown-native block types with capture metadata", () => {
+    const page: Page = {
+      id: "page-7",
+      title: "Callout Capture",
+      blocks: [
+        {
+          id: "c1",
+          text: "Important",
+          indent: 0,
+          block_type: "callout",
+          meta: {
+            capture: {
+              batchId: "batch-2",
+              order: 0,
+              role: "body"
+            }
+          }
+        }
+      ]
+    };
+
+    expect(serializePageToMarkdown(page)).toBe(
+      "# Callout Capture ^page-7\n" +
+        "- Important ^c1 <!--sp:{\"type\":\"callout\",\"meta\":{\"capture\":{\"batchId\":\"batch-2\",\"order\":0,\"role\":\"body\"}}}-->\n"
+    );
+  });
 });

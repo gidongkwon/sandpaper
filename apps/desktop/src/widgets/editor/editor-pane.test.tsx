@@ -10,7 +10,8 @@ import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import { EditorPane } from "./editor-pane";
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn()
+  invoke: vi.fn(),
+  convertFileSrc: vi.fn((value: string) => `asset://${value}`)
 }));
 
 beforeEach(() => {
@@ -23,6 +24,76 @@ const makeBlocks = (total: number) =>
     text: `Block ${index + 1}`,
     indent: 0
   }));
+
+const renderEditorPaneHarness = ({
+  initialBlocks,
+  initialActiveId = initialBlocks[0]?.id ?? null,
+  isTauri = false
+}: {
+  initialBlocks: Block[];
+  initialActiveId?: string | null;
+  isTauri?: boolean;
+}) => {
+  const [blocks, setBlocks] = createStore<Block[]>(initialBlocks);
+  const [activeId, setActiveId] = createSignal<string | null>(initialActiveId);
+  const [focusedId, setFocusedId] = createSignal<string | null>(null);
+  type EditorPaneProps = Parameters<typeof EditorPane>[0];
+  const jumpTarget = (() => null) as EditorPaneProps["jumpTarget"];
+  const setJumpTarget = vi.fn() as EditorPaneProps["setJumpTarget"];
+  const [renameTitle, setRenameTitle] = createSignal("");
+  const [pageTitle] = createSignal("Test Page");
+  const scheduleSave = vi.fn();
+  let counter = 0;
+
+  const renderResult = render(() => (
+    <EditorPane
+      blocks={blocks}
+      setBlocks={setBlocks}
+      activeId={activeId}
+      setActiveId={setActiveId}
+      focusedId={focusedId}
+      setFocusedId={setFocusedId}
+      highlightedBlockId={() => null}
+      jumpTarget={jumpTarget}
+      setJumpTarget={setJumpTarget}
+      createNewBlock={(text = "", indent = 0, blockType = "text") => ({
+        id: `new-${++counter}`,
+        text,
+        indent,
+        block_type: blockType
+      })}
+      scheduleSave={scheduleSave}
+      recordLatency={vi.fn()}
+      addReviewItem={vi.fn()}
+      pageBusy={() => false}
+      renameTitle={renameTitle}
+      setRenameTitle={setRenameTitle}
+      renamePage={vi.fn()}
+      pages={() => [] as PageSummary[]}
+      activePageUid={() => "page-1" as PageId}
+      resolvePageUid={(value) => value as PageId}
+      setNewPageTitle={vi.fn()}
+      createPage={vi.fn()}
+      switchPage={vi.fn()}
+      createPageFromLink={vi.fn()}
+      isTauri={() => isTauri}
+      localPages={{} as Record<PageId, LocalPageRecord>}
+      saveLocalPageSnapshot={vi.fn()}
+      snapshotBlocks={(source) => source.map((block) => ({ ...block }))}
+      pageTitle={pageTitle}
+      renderersByKind={() => new Map()}
+      blockRenderersByLang={() => new Map()}
+      perfEnabled={() => false}
+      scrollMeter={{ notifyScroll: vi.fn() }}
+    />
+  ));
+
+  return {
+    ...renderResult,
+    scheduleSave,
+    getBlocks: () => untrack(() => blocks)
+  };
+};
 
 describe("EditorPane", () => {
   it("renders enough rows when measured row height is smaller than estimate", async () => {
@@ -2549,5 +2620,137 @@ describe("EditorPane", () => {
     );
     expect(createdColumn).toBeDefined();
     expect(createdColumn?.text).toBe("");
+  });
+
+  it("replaces an empty active text block when pasting an image from clipboard items", async () => {
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "import_image_asset_bytes") {
+        expect(payload).toMatchObject({
+          payload: {
+            filename: "shot.png",
+            mime_type: "image/png"
+          }
+        });
+        return Promise.resolve({
+          asset_path: "/assets/shot--abc123.png",
+          markdown: "![](/assets/shot--abc123.png)",
+          mime_type: "image/png",
+          original_name: "shot.png"
+        });
+      }
+      if (command === "resolve_asset_path") {
+        return Promise.resolve("C:/vault/assets/shot--abc123.png");
+      }
+      return Promise.resolve(null);
+    });
+    const file = new File(["image"], "shot.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => new TextEncoder().encode("image").buffer
+    });
+    const { container, getBlocks, scheduleSave } = renderEditorPaneHarness({
+      initialBlocks: [{ id: "b1", text: "", indent: 0, block_type: "text" }],
+      isTauri: true
+    });
+
+    const host = container.querySelector(".editor-pane__body");
+    expect(host).not.toBeNull();
+    if (!host) return;
+
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true
+    }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        files: [],
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => file
+          }
+        ]
+      }
+    });
+
+    fireEvent(host, event);
+
+    await waitFor(() => {
+      expect(getBlocks()).toEqual([
+        {
+          id: "new-1",
+          text: "![](/assets/shot--abc123.png)",
+          indent: 0,
+          block_type: "image"
+        }
+      ]);
+    });
+    expect(scheduleSave).toHaveBeenCalled();
+  });
+
+  it("inserts pasted images below a non-empty active text block", async () => {
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "import_image_asset_bytes") {
+        expect(payload).toMatchObject({
+          payload: {
+            filename: "shot.png",
+            mime_type: "image/png"
+          }
+        });
+        return Promise.resolve({
+          asset_path: "/assets/shot--abc123.png",
+          markdown: "![](/assets/shot--abc123.png)",
+          mime_type: "image/png",
+          original_name: "shot.png"
+        });
+      }
+      if (command === "resolve_asset_path") {
+        return Promise.resolve("C:/vault/assets/shot--abc123.png");
+      }
+      return Promise.resolve(null);
+    });
+    const file = new File(["image"], "shot.png", { type: "image/png" });
+    Object.defineProperty(file, "arrayBuffer", {
+      value: async () => new TextEncoder().encode("image").buffer
+    });
+    const { container, getBlocks, scheduleSave } = renderEditorPaneHarness({
+      initialBlocks: [
+        { id: "b1", text: "Alpha", indent: 0, block_type: "text" },
+        { id: "b2", text: "Beta", indent: 0, block_type: "text" }
+      ],
+      initialActiveId: "b1",
+      isTauri: true
+    });
+
+    const host = container.querySelector(".editor-pane__body");
+    expect(host).not.toBeNull();
+    if (!host) return;
+
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true
+    }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        files: [file],
+        items: []
+      }
+    });
+
+    fireEvent(host, event);
+
+    await waitFor(() => {
+      expect(getBlocks()).toEqual([
+        { id: "b1", text: "Alpha", indent: 0, block_type: "text" },
+        {
+          id: "new-1",
+          text: "![](/assets/shot--abc123.png)",
+          indent: 0,
+          block_type: "image"
+        },
+        { id: "b2", text: "Beta", indent: 0, block_type: "text" }
+      ]);
+    });
+    expect(scheduleSave).toHaveBeenCalled();
   });
 });

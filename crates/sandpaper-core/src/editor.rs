@@ -31,6 +31,7 @@ impl EditorModel {
                 text: String::new(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             });
         }
         if self.active_ix >= self.blocks.len() {
@@ -60,6 +61,7 @@ impl EditorModel {
                 text,
                 indent,
                 block_type: BlockType::Text,
+                meta: None,
             },
         );
         self.active_ix = insert_ix;
@@ -203,6 +205,7 @@ impl EditorModel {
             text: block.text,
             indent: block.indent,
             block_type: block.block_type,
+            meta: block.meta,
         };
         self.blocks.insert(insert_ix, clone);
         self.active_ix = insert_ix;
@@ -227,6 +230,7 @@ impl EditorModel {
                 text: block.text.clone(),
                 indent: block.indent,
                 block_type: block.block_type,
+                meta: block.meta.clone(),
             })
             .collect();
         if clones.is_empty() {
@@ -250,6 +254,7 @@ impl EditorModel {
                 text: String::new(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             }];
             self.active_ix = 0;
             return Some(Cursor {
@@ -410,6 +415,7 @@ mod tests {
             text: text.to_string(),
             indent,
             block_type: BlockType::Text,
+            meta: None,
         }
     }
 

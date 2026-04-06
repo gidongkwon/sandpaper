@@ -17,6 +17,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import App from "./app/app";
 import { formatReviewDate } from "./pages/main-page/model/review-utils";
+import { clearResolvedAssetSrcCache } from "./shared/lib/assets/resolve-asset-src";
 
 const getModeControl = (name: "Capture" | "Review" | "Editor") =>
   screen.getByRole("radio", { name });
@@ -51,6 +52,7 @@ describe("App editor UX", () => {
   afterEach(() => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: Record<string, unknown> })
       .__TAURI_INTERNALS__;
+    clearResolvedAssetSrcCache();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
@@ -354,6 +356,80 @@ describe("App editor UX", () => {
     expect(getModeControl("Capture")).toBeChecked();
     expect(await screen.findByText("Quick note")).toBeInTheDocument();
   }, 15000);
+
+  it("stages pasted images in capture and sends an image-only thread", async () => {
+    vi.mocked(invoke).mockImplementation((command, payload) => {
+      if (command === "import_image_asset_bytes") {
+        expect(payload).toMatchObject({
+          payload: {
+            filename: "pasted.png",
+            mime_type: "image/png"
+          }
+        });
+        return Promise.resolve({
+          asset_path: "/assets/pasted.png",
+          markdown: "![](/assets/pasted.png)",
+          mime_type: "image/png",
+          original_name: "pasted.png"
+        });
+      }
+      if (command === "resolve_asset_path") {
+        return Promise.resolve("C:/vault/assets/pasted.png");
+      }
+      return Promise.resolve(null);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:staged-image");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    const image = new File(["image"], "pasted.png", { type: "image/png" });
+    Object.defineProperty(image, "arrayBuffer", {
+      configurable: true,
+      value: () => Promise.resolve(new TextEncoder().encode("image").buffer)
+    });
+    fireEvent.paste(captureInput, {
+      clipboardData: {
+        files: [],
+        items: [
+          {
+            kind: "file",
+            type: "image/png",
+            getAsFile: () => image
+          }
+        ]
+      }
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Open staged image pasted.png" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send capture" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Open staged image pasted.png" })
+      ).not.toBeInTheDocument();
+    });
+
+    const thread = await screen.findByRole("group", { name: "Thread 1 image" });
+    expect(within(thread).getAllByRole("button", { name: /Open image / }).length).toBe(1);
+    expect(thread.querySelector("img")).not.toBeNull();
+    expect(within(thread).queryByRole("link", { name: "pasted.png" })).toBeNull();
+
+    await user.click(getModeControl("Review"));
+
+    await waitFor(() => {
+      expect(document.querySelector(".review-reference-card__thumb-image")).not.toBeNull();
+    });
+  });
 
   it("keeps edited captures in the hidden inbox when returning to editor", async () => {
     render(() => <App />);
@@ -1418,7 +1494,13 @@ describe("App editor UX", () => {
   });
 
   it("persists review queue FIFO order through the tauri page store", async () => {
-    let storedBlocks: Array<{ uid: string; text: string; indent: number }> = [];
+    let storedBlocks: Array<{
+      uid: string;
+      text: string;
+      indent: number;
+      block_type?: string;
+      meta?: unknown;
+    }> = [];
     let storedReviewThreadOrder: string[] = [];
 
     vi.mocked(invoke).mockImplementation((command, payload) => {
@@ -1463,7 +1545,10 @@ describe("App editor UX", () => {
           storedBlocks = payload.blocks.map((block) => ({
             uid: String(block.uid),
             text: String(block.text),
-            indent: Number(block.indent)
+            indent: Number(block.indent),
+            block_type:
+              typeof block.block_type === "string" ? block.block_type : undefined,
+            meta: "meta" in block ? block.meta : undefined
           }));
         }
         return Promise.resolve(null);

@@ -65,6 +65,54 @@ describe("parseMarkdownPage", () => {
     expect(result.page.blocks[0]?.block_type).toBe("text");
   });
 
+  it("parses capture metadata from sp markers on markdown-native blocks", () => {
+    const makeId = buildIdFactory();
+    const result = parseMarkdownPage(
+      "# Notes\n- ![](/assets/cat--abc123.png) ^img1 <!--sp:{\"meta\":{\"capture\":{\"batchId\":\"batch-1\",\"order\":1,\"role\":\"attachment\"}}}-->\n",
+      makeId
+    );
+
+    expect(result.page.blocks).toEqual([
+      {
+        id: "img1",
+        text: "![](/assets/cat--abc123.png)",
+        indent: 0,
+        block_type: "image",
+        meta: {
+          capture: {
+            batchId: "batch-1",
+            order: 1,
+            role: "attachment"
+          }
+        }
+      }
+    ]);
+  });
+
+  it("parses type and capture metadata together from sp markers", () => {
+    const makeId = buildIdFactory();
+    const result = parseMarkdownPage(
+      "# Notes\n- Important ^c1 <!--sp:{\"type\":\"callout\",\"meta\":{\"capture\":{\"batchId\":\"batch-2\",\"order\":0,\"role\":\"body\"}}}-->\n",
+      makeId
+    );
+
+    expect(result.page.blocks).toEqual([
+      {
+        id: "c1",
+        text: "Important",
+        indent: 0,
+        block_type: "callout",
+        meta: {
+          capture: {
+            batchId: "batch-2",
+            order: 0,
+            role: "body"
+          }
+        }
+      }
+    ]);
+  });
+
   it("infers markdown-native block types from text", () => {
     const makeId = buildIdFactory();
     const result = parseMarkdownPage(

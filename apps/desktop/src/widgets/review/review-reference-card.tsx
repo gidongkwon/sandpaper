@@ -1,4 +1,6 @@
 import { For, Show } from "solid-js";
+import { extractImageSource } from "../../shared/lib/blocks/block-type-utils";
+import { AssetImage } from "../../shared/ui/asset-image";
 import type { ReviewThread } from "../../entities/review/model/review-types";
 import { Button } from "../../shared/ui/button";
 import { ArrowRight16Icon } from "../../shared/ui/icons";
@@ -16,6 +18,16 @@ type ReviewReferenceCardProps = {
 };
 
 export const ReviewReferenceCard = (props: ReviewReferenceCardProps) => {
+  const findBodyText = (entry: ReviewThread["entries"][number]) =>
+    entry.blocks.find((block) => block.meta?.capture?.role === "body")?.text ??
+    entry.blocks.find((block) => !extractImageSource(block.text))?.text ??
+    entry.text;
+
+  const findImageSources = (entry: ReviewThread["entries"][number]) =>
+    entry.blocks
+      .map((block) => extractImageSource(block.text))
+      .filter((source): source is string => source !== null);
+
   const content = (
     <>
       <div class="review-reference-card__meta">
@@ -26,7 +38,32 @@ export const ReviewReferenceCard = (props: ReviewReferenceCardProps) => {
       </div>
       <div class="review-reference-card__entries">
         <For each={props.thread.entries}>
-          {(entry) => <p class="review-reference-card__entry">{entry.text}</p>}
+          {(entry) => {
+            const bodyText = findBodyText(entry);
+            const imageSources = findImageSources(entry);
+            return (
+              <section class="review-reference-card__entry-group">
+                <Show when={bodyText.trim().length > 0}>
+                  <p class="review-reference-card__entry">{bodyText}</p>
+                </Show>
+                <Show when={imageSources.length > 0}>
+                  <div class="review-reference-card__thumb-grid">
+                    <For each={imageSources}>
+                      {(source) => (
+                        <div class="review-reference-card__thumb">
+                          <AssetImage
+                            class="review-reference-card__thumb-image"
+                            source={source}
+                            isTauri={source.startsWith("/assets/")}
+                          />
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </section>
+            );
+          }}
         </For>
       </div>
       <Show when={props.destinationLabel}>

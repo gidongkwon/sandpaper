@@ -205,7 +205,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
         id: block.uid,
         text: block.text,
         indent: block.indent,
-        block_type: resolveBlockType({ text: block.text, block_type: block.block_type })
+        block_type: resolveBlockType({ text: block.text, block_type: block.block_type }),
+        ...(block.meta ? { meta: block.meta } : {})
       }));
       const title =
         response.title || resolveKnownPageTitle(resolvedUid, deps.defaultPageUid);
@@ -278,7 +279,8 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
         id: block.uid,
         text: block.text,
         indent: block.indent,
-        block_type: resolveBlockType({ text: block.text, block_type: block.block_type })
+        block_type: resolveBlockType({ text: block.text, block_type: block.block_type }),
+        ...(block.meta ? { meta: block.meta } : {})
       }));
       deps.saveLocalPageSnapshot(
         HIDDEN_INBOX_PAGE_UID,

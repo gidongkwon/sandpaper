@@ -1,6 +1,7 @@
 use crate::blocks::BlockType;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::path::Path;
 
 pub struct Database {
@@ -261,6 +262,8 @@ pub struct BlockSnapshot {
     pub indent: i64,
     #[serde(default)]
     pub block_type: BlockType,
+    #[serde(default)]
+    pub meta: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -615,6 +618,7 @@ impl Database {
                 text: row.get(1)?,
                 indent: parse_indent(&props),
                 block_type: parse_block_type(&props),
+                meta: parse_meta(&props),
             })
         })?;
         rows.collect()
@@ -1188,10 +1192,21 @@ fn parse_block_type(props: &str) -> BlockType {
     }
 }
 
+fn parse_meta(props: &str) -> Option<Value> {
+    let parsed: Value = match serde_json::from_str(props) {
+        Ok(value) => value,
+        Err(_) => return None,
+    };
+    parsed.get("meta").cloned()
+}
+
 fn serialize_block_props(block: &BlockSnapshot) -> String {
     let mut props = serde_json::json!({ "indent": block.indent });
     if !block.block_type.is_text() {
         props["block_type"] = serde_json::to_value(block.block_type).unwrap_or_default();
+    }
+    if let Some(meta) = block.meta.as_ref() {
+        props["meta"] = meta.clone();
     }
     props.to_string()
 }
@@ -1404,12 +1419,14 @@ mod tests {
                 text: "First line".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Indented line".to_string(),
                 indent: 2,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
 
@@ -1746,12 +1763,14 @@ mod tests {
                     text: "first".to_string(),
                     indent: 0,
                     block_type: BlockType::Text,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "cap-2".to_string(),
                     text: "second".to_string(),
                     indent: 0,
                     block_type: BlockType::Text,
+                    meta: None,
                 },
             ],
         )
@@ -1770,6 +1789,7 @@ mod tests {
                 text: "second".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             }],
         )
         .expect("replace blocks");

@@ -1,4 +1,4 @@
-export type { Block, BlockType, Page } from "./block-model";
+export type { Block, BlockMeta, BlockType, CaptureBlockMeta, Page } from "./block-model";
 export {
   extractBlockRefs,
   extractWikiLinks,

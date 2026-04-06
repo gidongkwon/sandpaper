@@ -237,7 +237,8 @@ export const createSync = (deps: SyncDependencies) => {
             block.uid,
             block.text,
             block.indent,
-            resolveBlockType({ text: block.text, block_type: block.block_type })
+            resolveBlockType({ text: block.text, block_type: block.block_type }),
+            block.meta
           )
         )
       };

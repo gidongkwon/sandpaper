@@ -812,6 +812,14 @@ fn markdown_file_text(source: &str, original_name: &str) -> String {
     format!("[{safe_label}]({source})")
 }
 
+fn normalize_asset_relative_path(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches('/').to_string()
+}
+
+fn asset_source_from_relative_path(path: &str) -> String {
+    format!("/{}", normalize_asset_relative_path(path))
+}
+
 fn ensure_image_asset_from_bytes(
     db: &Database,
     vault_root: &std::path::Path,
@@ -836,7 +844,7 @@ fn ensure_image_asset_from_bytes(
         .get_asset_by_hash(&hash)
         .map_err(|err| format!("{:?}", err))?
     {
-        let source = format!("/{}", existing.path.trim_start_matches('/'));
+        let source = asset_source_from_relative_path(&existing.path);
         return Ok(ImageAssetImportResponse {
             asset_path: source.clone(),
             markdown: markdown_image_text(&source, original_name),
@@ -860,17 +868,18 @@ fn ensure_image_asset_from_bytes(
         std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
     }
     std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
+    let normalized_relative_path = normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
 
     let record = db
         .upsert_asset(
             &hash,
-            relative_path.to_string_lossy().as_ref(),
+            &normalized_relative_path,
             &mime,
             bytes.len() as i64,
             Some(original_name),
         )
         .map_err(|err| format!("{:?}", err))?;
-    let source = format!("/{}", record.path.trim_start_matches('/'));
+    let source = asset_source_from_relative_path(&record.path);
     Ok(ImageAssetImportResponse {
         asset_path: source.clone(),
         markdown: markdown_image_text(&source, original_name),
@@ -904,7 +913,7 @@ fn ensure_file_asset_from_bytes(
         .get_asset_by_hash(&hash)
         .map_err(|err| format!("{:?}", err))?
     {
-        let source = format!("/{}", existing.path.trim_start_matches('/'));
+        let source = asset_source_from_relative_path(&existing.path);
         return Ok(ImageAssetImportResponse {
             asset_path: source.clone(),
             markdown: markdown_file_text(&source, original_name),
@@ -928,17 +937,18 @@ fn ensure_file_asset_from_bytes(
         std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
     }
     std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
+    let normalized_relative_path = normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
 
     let record = db
         .upsert_asset(
             &hash,
-            relative_path.to_string_lossy().as_ref(),
+            &normalized_relative_path,
             &mime,
             bytes.len() as i64,
             Some(original_name),
         )
         .map_err(|err| format!("{:?}", err))?;
-    let source = format!("/{}", record.path.trim_start_matches('/'));
+    let source = asset_source_from_relative_path(&record.path);
     Ok(ImageAssetImportResponse {
         asset_path: source.clone(),
         markdown: markdown_file_text(&source, original_name),
@@ -1434,6 +1444,7 @@ fn apply_sync_ops_to_blocks(
             text: block.text,
             indent: block.indent,
             block_type: block.block_type,
+            meta: None,
         })
         .collect()
 }
@@ -1793,24 +1804,28 @@ fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> 
             text: "Summary".to_string(),
             indent: 0,
             block_type: BlockType::Text,
+            meta: None,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "What moved forward?".to_string(),
             indent: 1,
             block_type: BlockType::Text,
+            meta: None,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "Loose threads".to_string(),
             indent: 1,
             block_type: BlockType::Text,
+            meta: None,
         },
         BlockSnapshot {
             uid: uuid::Uuid::new_v4().to_string(),
             text: "Next steps".to_string(),
             indent: 1,
             block_type: BlockType::Text,
+            meta: None,
         },
     ];
     db.replace_blocks_for_page(page_id, &blocks)
@@ -2051,6 +2066,7 @@ fn export_markdown() -> Result<MarkdownExportStatus, String> {
                     text: block.text.clone(),
                     indent: block.indent,
                     block_type: block.block_type,
+                    meta: block.meta.clone(),
                 })
                 .collect(),
         };
@@ -2147,6 +2163,31 @@ fn import_file_asset_bytes(
         &payload.filename,
         payload.mime_type.as_deref(),
     )
+}
+
+#[tauri::command]
+fn resolve_asset_path(asset_path: String) -> Result<String, String> {
+    let trimmed = asset_path.trim();
+    let relative = trimmed
+        .strip_prefix("/assets/")
+        .ok_or_else(|| "Asset path must start with /assets/.".to_string())?;
+    let relative_path = PathBuf::from("assets").join(relative);
+    if relative_path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::Prefix(_)
+                | std::path::Component::RootDir
+                | std::path::Component::ParentDir
+        )
+    }) {
+        return Err("Invalid asset path.".to_string());
+    }
+    let vault_root = resolve_active_vault_path()?;
+    let absolute = vault_root.join(relative_path);
+    if !absolute.exists() {
+        return Err("Asset not found.".to_string());
+    }
+    Ok(absolute.to_string_lossy().to_string())
 }
 
 fn strip_heading_prefix(value: &str) -> &str {
@@ -2837,6 +2878,7 @@ pub fn run() {
             import_image_asset_bytes,
             import_file_asset,
             import_file_asset_bytes,
+            resolve_asset_path,
             list_plugins_command,
             install_plugin_command,
             update_plugin_command,
@@ -2920,7 +2962,9 @@ mod tests {
         .expect("import asset");
         assert!(response.asset_path.starts_with("/assets/cat-photo--"));
         assert!(response.asset_path.ends_with(".png"));
+        assert!(!response.asset_path.contains('\\'));
         assert!(response.markdown.contains("](/assets/cat-photo--"));
+        assert!(!response.markdown.contains("\\"));
         let relative = response.asset_path.trim_start_matches('/');
         assert!(dir.path().join(relative).exists());
     }
@@ -2940,7 +2984,9 @@ mod tests {
         .expect("import file asset");
         assert!(response.asset_path.starts_with("/assets/project-plan--"));
         assert!(response.asset_path.ends_with(".pdf"));
+        assert!(!response.asset_path.contains('\\'));
         assert!(response.markdown.contains("[Project Plan.pdf](/assets/project-plan--"));
+        assert!(!response.markdown.contains("\\"));
         let relative = response.asset_path.trim_start_matches('/');
         assert!(dir.path().join(relative).exists());
     }
@@ -2985,12 +3031,14 @@ mod tests {
                 text: "First line".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Child line".to_string(),
                 indent: 1,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
         db.replace_blocks_for_page(page_id, &blocks)
@@ -3014,12 +3062,14 @@ mod tests {
                 text: "First line updated".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "block-2".to_string(),
                 text: "Child line".to_string(),
                 indent: 2,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
         db.replace_blocks_for_page(page_id, &updated_blocks)
@@ -3208,12 +3258,14 @@ mod tests {
                     text: "First".to_string(),
                     indent: 0,
                     block_type: BlockType::Text,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "b2".to_string(),
                     text: "Child".to_string(),
                     indent: 1,
                     block_type: BlockType::Text,
+                    meta: None,
                 },
             ],
         };
@@ -3235,12 +3287,14 @@ mod tests {
                     text: "Important".to_string(),
                     indent: 0,
                     block_type: BlockType::Heading2,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "c1".to_string(),
                     text: "Callout".to_string(),
                     indent: 0,
                     block_type: BlockType::Callout,
+                    meta: None,
                 },
             ],
         };
@@ -3262,72 +3316,84 @@ mod tests {
                     text: "Quote".to_string(),
                     indent: 0,
                     block_type: BlockType::Quote,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "t1".to_string(),
                     text: "Task".to_string(),
                     indent: 0,
                     block_type: BlockType::Todo,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "d1".to_string(),
                     text: "".to_string(),
                     indent: 0,
                     block_type: BlockType::Divider,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "c1".to_string(),
                     text: "const x = 1".to_string(),
                     indent: 0,
                     block_type: BlockType::Code,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "i1".to_string(),
                     text: "https://example.com/cat.png".to_string(),
                     indent: 0,
                     block_type: BlockType::Image,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "tb1".to_string(),
                     text: "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |".to_string(),
                     indent: 0,
                     block_type: BlockType::Table,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "n1".to_string(),
                     text: "Numbered".to_string(),
                     indent: 0,
                     block_type: BlockType::OrderedList,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "bm1".to_string(),
                     text: "https://example.com/article".to_string(),
                     indent: 0,
                     block_type: BlockType::Bookmark,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "f1".to_string(),
                     text: "/assets/spec--abc123.pdf".to_string(),
                     indent: 0,
                     block_type: BlockType::File,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "m1".to_string(),
                     text: "E = mc^2".to_string(),
                     indent: 0,
                     block_type: BlockType::Math,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "toc1".to_string(),
                     text: "".to_string(),
                     indent: 0,
                     block_type: BlockType::Toc,
+                    meta: None,
                 },
                 BlockSnapshot {
                     uid: "db1".to_string(),
                     text: "query=project".to_string(),
                     indent: 0,
                     block_type: BlockType::DatabaseView,
+                    meta: None,
                 },
             ],
         };
@@ -3378,12 +3444,14 @@ mod tests {
                 text: "First".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "b2".to_string(),
                 text: "Second".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
 
@@ -3461,6 +3529,7 @@ mod tests {
             text: "Local text".to_string(),
             indent: 0,
             block_type: BlockType::Text,
+            meta: None,
         }];
 
         let ops = vec![SyncOpPayload {
@@ -3508,12 +3577,14 @@ mod tests {
                 text: "First".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "b2".to_string(),
                 text: "Second".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
         let next = vec![
@@ -3522,12 +3593,14 @@ mod tests {
                 text: "First updated".to_string(),
                 indent: 1,
                 block_type: BlockType::Text,
+                meta: None,
             },
             BlockSnapshot {
                 uid: "b3".to_string(),
                 text: "Third".to_string(),
                 indent: 0,
                 block_type: BlockType::Text,
+                meta: None,
             },
         ];
 

@@ -20,11 +20,22 @@ export type BlockType =
   | "column"
   | "database_view";
 
+export type CaptureBlockMeta = {
+  batchId: string;
+  order: number;
+  role: "body" | "attachment";
+};
+
+export type BlockMeta = {
+  capture?: CaptureBlockMeta;
+};
+
 export type Block = {
   id: string;
   text: string;
   indent: number;
   block_type?: BlockType;
+  meta?: BlockMeta;
 };
 
 export type Page = {
