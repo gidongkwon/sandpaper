@@ -115,6 +115,17 @@
     --segmented-tabs-active-bg: var(--bg-primary);
     --segmented-tabs-active-color: var(--text-primary);
     --segmented-tabs-active-shadow: var(--shadow-sm), var(--shadow-ring);
+    --switch-track-bg: color-mix(in oklab, var(--bg-tertiary), black 3%);
+    --switch-track-hover-bg: color-mix(in oklab, var(--bg-tertiary), white 10%);
+    --switch-track-border: color-mix(in oklab, var(--border-strong), black 10%);
+    --switch-track-checked-bg: color-mix(in oklab, var(--accent), white 4%);
+    --switch-track-checked-hover-bg: var(--accent-hover);
+    --switch-track-checked-border: color-mix(in oklab, var(--accent), black 16%);
+    --switch-thumb-bg: var(--bg-elevated);
+    --switch-thumb-border: color-mix(in oklab, var(--border-medium), white 18%);
+    --switch-thumb-checked-bg: white;
+    --switch-thumb-checked-border: color-mix(in oklab, var(--accent), white 58%);
+    --switch-focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent-soft), white 18%);
     --sidebar-input-bg: rgba(0, 0, 0, 0.04);
     --sidebar-input-hover-bg: rgba(0, 0, 0, 0.06);
     --sidebar-input-focus-bg: rgba(0, 0, 0, 0.06);

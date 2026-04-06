@@ -68,6 +68,17 @@
     --segmented-tabs-active-bg: rgba(255, 255, 255, 0.1);
     --segmented-tabs-active-color: rgba(255, 255, 255, 0.92);
     --segmented-tabs-active-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.24), 0 0 0 0.5px rgba(255, 255, 255, 0.04);
+    --switch-track-bg: color-mix(in oklab, var(--bg-tertiary), black 10%);
+    --switch-track-hover-bg: color-mix(in oklab, var(--bg-tertiary), white 6%);
+    --switch-track-border: color-mix(in oklab, var(--border-strong), white 18%);
+    --switch-track-checked-bg: color-mix(in oklab, var(--accent), black 6%);
+    --switch-track-checked-hover-bg: color-mix(in oklab, var(--accent-hover), black 4%);
+    --switch-track-checked-border: color-mix(in oklab, var(--accent-hover), black 18%);
+    --switch-thumb-bg: color-mix(in oklab, var(--bg-elevated), white 14%);
+    --switch-thumb-border: color-mix(in oklab, var(--border-medium), white 22%);
+    --switch-thumb-checked-bg: white;
+    --switch-thumb-checked-border: color-mix(in oklab, white, var(--accent) 26%);
+    --switch-focus-ring: 0 0 0 3px color-mix(in oklab, var(--accent-soft), white 6%);
     --sidebar-input-bg: rgba(255, 255, 255, 0.06);
     --sidebar-input-hover-bg: rgba(255, 255, 255, 0.08);
     --sidebar-input-focus-bg: rgba(255, 255, 255, 0.08);
