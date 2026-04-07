@@ -2862,4 +2862,96 @@ describe("EditorPane", () => {
     });
     expect(scheduleSave).toHaveBeenCalled();
   });
+
+  it("splits pasted markdown paragraphs into separate blocks for an empty active block", async () => {
+    const { container, getBlocks, scheduleSave } = renderEditorPaneHarness({
+      initialBlocks: [{ id: "b1", text: "", indent: 0, block_type: "text" }],
+      initialActiveId: "b1",
+      isTauri: false
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [],
+        items: [],
+        getData: (type: string) =>
+          type === "text/plain"
+            ? "# Heading\n\nFirst paragraph line 1\nFirst paragraph line 2\n\n1. Ordered item"
+            : ""
+      }
+    });
+
+    await waitFor(() => {
+      expect(getBlocks()).toEqual([
+        {
+          id: "new-1",
+          text: "# Heading",
+          indent: 0,
+          block_type: "heading1"
+        },
+        {
+          id: "new-2",
+          text: "First paragraph line 1\nFirst paragraph line 2",
+          indent: 0,
+          block_type: "text"
+        },
+        {
+          id: "new-3",
+          text: "1. Ordered item",
+          indent: 0,
+          block_type: "ordered_list"
+        }
+      ]);
+    });
+    expect(scheduleSave).toHaveBeenCalled();
+  });
+
+  it("keeps fenced code and tables as single pasted blocks", async () => {
+    const { container, getBlocks, scheduleSave } = renderEditorPaneHarness({
+      initialBlocks: [{ id: "b1", text: "", indent: 0, block_type: "text" }],
+      initialActiveId: "b1",
+      isTauri: false
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>(
+      'textarea[data-block-id="b1"]'
+    );
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        files: [],
+        items: [],
+        getData: (type: string) =>
+          type === "text/plain"
+            ? "```ts\nconsole.log('hello')\n```\n\n| Name | Qty |\n| --- | --- |\n| Pencil | 2 |"
+            : ""
+      }
+    });
+
+    await waitFor(() => {
+      expect(getBlocks()).toEqual([
+        {
+          id: "new-1",
+          text: "```ts\nconsole.log('hello')\n```",
+          indent: 0,
+          block_type: "code"
+        },
+        {
+          id: "new-2",
+          text: "| Name | Qty |\n| --- | --- |\n| Pencil | 2 |",
+          indent: 0,
+          block_type: "table"
+        }
+      ]);
+    });
+    expect(scheduleSave).toHaveBeenCalled();
+  });
 });

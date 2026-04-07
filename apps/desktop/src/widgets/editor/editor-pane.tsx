@@ -208,6 +208,102 @@ const stripCodeTypeMarker = (value: string): string => {
   return withoutOpeningFence.replace(/\n?```[\t ]*$/u, "");
 };
 
+type PastedMarkdownBlock = {
+  text: string;
+  blockType: BlockType;
+};
+
+const splitPastedMarkdownBlocks = (value: string): PastedMarkdownBlock[] => {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return [];
+
+  const lines = normalized.split("\n");
+  const blocks: PastedMarkdownBlock[] = [];
+  let index = 0;
+  let paragraphLines: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const text = paragraphLines.join("\n").trim();
+    paragraphLines = [];
+    if (!text) return;
+    blocks.push({
+      text,
+      blockType: inferBlockTypeFromText(text)
+    });
+  };
+
+  while (index < lines.length) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      flushParagraph();
+      const codeLines = [line];
+      index += 1;
+      while (index < lines.length) {
+        const nextLine = lines[index] ?? "";
+        codeLines.push(nextLine);
+        index += 1;
+        if (nextLine.trim().startsWith("```")) {
+          break;
+        }
+      }
+      const text = codeLines.join("\n").trim();
+      blocks.push({
+        text,
+        blockType: inferBlockTypeFromText(text)
+      });
+      continue;
+    }
+
+    if (
+      index + 1 < lines.length &&
+      inferBlockTypeFromText(`${line}\n${lines[index + 1] ?? ""}`) === "table"
+    ) {
+      flushParagraph();
+      const tableLines = [line, lines[index + 1] ?? ""];
+      index += 2;
+      while (index < lines.length) {
+        const nextLine = lines[index] ?? "";
+        if (!nextLine.trim()) break;
+        const candidate = [...tableLines, nextLine].join("\n");
+        if (inferBlockTypeFromText(candidate) !== "table") break;
+        tableLines.push(nextLine);
+        index += 1;
+      }
+      const text = tableLines.join("\n").trim();
+      blocks.push({
+        text,
+        blockType: inferBlockTypeFromText(text)
+      });
+      continue;
+    }
+
+    if (inferBlockTypeFromText(trimmed) !== "text") {
+      flushParagraph();
+      blocks.push({
+        text: trimmed,
+        blockType: inferBlockTypeFromText(trimmed)
+      });
+      index += 1;
+      continue;
+    }
+
+    paragraphLines.push(line.trimEnd());
+    index += 1;
+  }
+
+  flushParagraph();
+  return blocks;
+};
+
 export const EditorPane = (props: EditorPaneProps) => {
   // Props here are accessors/handlers; destructuring keeps the render readable without breaking reactivity.
   /* eslint-disable solid/reactivity */
@@ -1065,11 +1161,25 @@ export const EditorPane = (props: EditorPaneProps) => {
   };
 
   const handlePaste = (event: ClipboardEvent) => {
-    if (!isTauri()) return;
-    const files = extractImageFilesFromClipboardData(event.clipboardData);
-    if (files.length === 0) return;
+    if (isTauri()) {
+      const files = extractImageFilesFromClipboardData(event.clipboardData);
+      if (files.length > 0) {
+        event.preventDefault();
+        void handleDroppedFiles(files);
+        return;
+      }
+    }
+
+    const pastedText = event.clipboardData?.getData("text/plain") ?? "";
+    if (!pastedText.trim()) return;
+    const pastedBlocks = splitPastedMarkdownBlocks(pastedText);
+    const shouldInterceptTextPaste =
+      pastedBlocks.length > 1 ||
+      pastedBlocks.some((block) => block.blockType !== "text");
+    if (!shouldInterceptTextPaste) return;
+
     event.preventDefault();
-    void handleDroppedFiles(files);
+    insertPastedMarkdownBlocksAfterActive(pastedBlocks);
   };
 
   const breadcrumbItems = createMemo(() => {
@@ -1362,6 +1472,43 @@ export const EditorPane = (props: EditorPaneProps) => {
         baseIndent,
         asset.blockType
       )
+    );
+    setBlocks(
+      produce((draft) => {
+        if (shouldReplaceActive && activeIndex >= 0) {
+          const [first, ...rest] = created;
+          if (!first) return;
+          draft.splice(activeIndex, 1, first);
+          if (rest.length > 0) {
+            draft.splice(activeIndex + 1, 0, ...rest);
+          }
+          return;
+        }
+        const insertAt = activeIndex >= 0 ? activeIndex + 1 : draft.length;
+        draft.splice(insertAt, 0, ...created);
+      })
+    );
+    scheduleSave();
+    const first = created[0];
+    if (first) {
+      focusBlock(first.id, "end");
+    }
+  };
+
+  const insertPastedMarkdownBlocksAfterActive = (
+    pastedBlocks: PastedMarkdownBlock[]
+  ) => {
+    const nonEmpty = pastedBlocks.filter((value) => value.text.trim().length > 0);
+    if (nonEmpty.length === 0) return;
+    const activeIndex = activeId() ? findIndexById(activeId() as string) : -1;
+    const activeBlock = activeIndex >= 0 ? blocks[activeIndex] : null;
+    const baseIndent = activeBlock?.indent ?? 0;
+    const shouldReplaceActive =
+      Boolean(activeBlock) &&
+      resolveRenderBlockType(activeBlock as Block) === "text" &&
+      activeBlock.text.trim().length === 0;
+    const created = nonEmpty.map((item) =>
+      createNewBlock(item.text.trim(), baseIndent, item.blockType)
     );
     setBlocks(
       produce((draft) => {
