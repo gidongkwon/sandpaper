@@ -27,7 +27,7 @@ import { SettingsImportTab } from "./settings-import-tab";
 import { SettingsPermissionsTab } from "./settings-permissions-tab";
 import { SettingsPluginsTab } from "./settings-plugins-tab";
 import { SettingsSyncTab } from "./settings-sync-tab";
-import { SettingsVaultTab } from "./settings-vault-tab";
+import { SettingsVaultTab, type RagStatus } from "./settings-vault-tab";
 import type { ThemeMode } from "../../pages/main-page/model/use-theme-mode";
 import type { MotionMode } from "../../pages/main-page/model/use-motion-mode";
 
@@ -98,6 +98,14 @@ type SettingsModalProps = {
     keyBusy: Accessor<boolean>;
     setKey: () => void | Promise<void>;
     keyMessage: Accessor<string | null>;
+    ragStatus: Accessor<RagStatus | null>;
+    ragBusy: Accessor<boolean>;
+    ragUpdatingModel: Accessor<boolean>;
+    setRagEmbeddingModel: (model: string) => void | Promise<void>;
+    prepareRagEmbeddingModel: () => void | Promise<void>;
+    cancelRagEmbeddingModelDownload: () => void | Promise<void>;
+    rebuildRagIndex: () => void | Promise<void>;
+    ragMessage: Accessor<string | null>;
   };
   sync: {
     status: Accessor<SyncStatus>;

@@ -28,6 +28,7 @@ describe("SettingsModal", () => {
     const [newPath, setNewPath] = createSignal("");
     const [passphrase, setPassphrase] = createSignal("");
     const [keyBusy] = createSignal(false);
+    const [ragBusy] = createSignal(false);
     const [serverUrl, setServerUrl] = createSignal("");
     const [vaultIdInput, setVaultIdInput] = createSignal("");
     const [deviceIdInput, setDeviceIdInput] = createSignal("");
@@ -116,7 +117,15 @@ describe("SettingsModal", () => {
           setPassphrase,
           keyBusy,
           setKey: vi.fn(),
-          keyMessage: () => null
+          keyMessage: () => null,
+          ragStatus: () => null,
+          ragBusy,
+          ragUpdatingModel: () => false,
+          setRagEmbeddingModel: vi.fn(),
+          prepareRagEmbeddingModel: vi.fn(),
+          cancelRagEmbeddingModelDownload: vi.fn(),
+          rebuildRagIndex: vi.fn(),
+          ragMessage: () => null
         }}
         sync={{
           status: () => ({
@@ -242,5 +251,231 @@ describe("SettingsModal", () => {
     expect(tab()).toBe("vault");
     expect(vaultTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByText("Encryption Key")).toBeInTheDocument();
+  });
+
+  it("keeps the embedding model select open inside the settings dialog", async () => {
+    const user = userEvent.setup();
+    const [open] = createSignal(true);
+    const [tab, setTab] = createSignal<
+      "general" | "vault" | "sync" | "plugins" | "permissions" | "import"
+    >("vault");
+    const [ragStatus, setRagStatus] = createSignal({
+      indexExists: true,
+      indexedPages: 1,
+      indexedChunks: 2,
+      dirtyPages: 0,
+      availableEmbeddingModels: [
+        {
+          id: "local",
+          label: "Local substring/trigram",
+          requiresDownload: false,
+          experimental: false
+        },
+        {
+          id: "pplx",
+          label: "pplx-embed-v1-0.6b",
+          requiresDownload: true,
+          experimental: true
+        }
+      ],
+      selectedEmbeddingModel: "local",
+      selectedEmbeddingModelReady: true,
+      selectedEmbeddingModelActive: true,
+      embeddingStatusMessage: null,
+      lastFullRebuildAt: null,
+      lastIncrementalRunAt: null,
+      embeddingProvider: "local",
+      embeddingModel: "hashed-trigram-v1",
+      modelDownload: null
+    });
+
+    render(() => (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            setRagStatus((current) => ({
+              ...current,
+              selectedEmbeddingModel: "pplx",
+              selectedEmbeddingModelReady: false,
+              selectedEmbeddingModelActive: false,
+              embeddingStatusMessage:
+                "pplx-embed-v1-0.6b is selected but not downloaded yet. Download the model before rebuilding the index."
+            }))
+          }
+        >
+          Switch model
+        </button>
+        <SettingsModal
+          open={open}
+          onClose={vi.fn()}
+          tab={tab}
+          setTab={setTab}
+          isTauri={() => false}
+          typeScale={{
+            value: () => 1,
+            set: vi.fn(),
+            min: 0.8,
+            max: 1.2,
+            step: 0.05,
+            defaultPosition: "50%"
+          }}
+          theme={{
+            mode: () => "system",
+            setMode: vi.fn()
+          }}
+          motion={{
+            mode: () => "system",
+            setMode: vi.fn()
+          }}
+          statusSurfaces={{
+            showStatusSurfaces: () => true,
+            setShowStatusSurfaces: vi.fn()
+          }}
+          vault={{
+            active: () => ({
+              id: "default",
+              name: "Default",
+              path: "vault"
+            }),
+            list: () => [
+              {
+                id: "default",
+                name: "Default",
+                path: "vault"
+              }
+            ],
+            applyActiveVault: vi.fn(),
+            formOpen: () => false,
+            setFormOpen: vi.fn(),
+            newName: () => "",
+            setNewName: vi.fn(),
+            newPath: () => "",
+            setNewPath: vi.fn(),
+            create: vi.fn(),
+            shadowPendingCount: () => 0,
+            keyStatus: () => ({
+              configured: false,
+              kdf: null,
+              iterations: null,
+              salt_b64: null
+            }),
+            passphrase: () => "",
+            setPassphrase: vi.fn(),
+            keyBusy: () => false,
+            setKey: vi.fn(),
+            keyMessage: () => null,
+            ragStatus,
+            ragBusy: () => false,
+            ragUpdatingModel: () => false,
+            setRagEmbeddingModel: vi.fn(),
+            prepareRagEmbeddingModel: vi.fn(),
+            cancelRagEmbeddingModelDownload: vi.fn(),
+            rebuildRagIndex: vi.fn(),
+            ragMessage: () => null
+          }}
+          sync={{
+            status: () => ({
+              state: "idle",
+              pending_ops: 0,
+              last_synced_at: null,
+              last_error: null,
+              last_push_count: 0,
+              last_pull_count: 0,
+              last_apply_count: 0
+            }),
+            stateLabel: () => "Disconnected",
+            stateDetail: () => "Not connected",
+            serverUrl: () => "",
+            setServerUrl: vi.fn(),
+            vaultIdInput: () => "",
+            setVaultIdInput: vi.fn(),
+            deviceIdInput: () => "",
+            setDeviceIdInput: vi.fn(),
+            busy: () => false,
+            connected: () => false,
+            connect: vi.fn(),
+            syncNow: vi.fn(),
+            message: () => null,
+            config: () => null,
+            log: () => [],
+            copyLog: vi.fn(),
+            conflicts: () => [],
+            resolveConflict: vi.fn(),
+            startMerge: vi.fn(),
+            cancelMerge: vi.fn(),
+            mergeId: () => null,
+            mergeDrafts: {},
+            setMergeDrafts: vi.fn(),
+            getConflictPageTitle: () => "Untitled"
+          }}
+          plugins={{
+            error: () => null,
+            errorDetails: () => null,
+            loadRuntime: vi.fn(),
+            busy: () => false,
+            list: () => [],
+            commandStatus: () => null,
+            status: () => null,
+            requestGrant: vi.fn(),
+            runCommand: vi.fn(),
+            openPanel: vi.fn(),
+            installPath: () => "",
+            setInstallPath: vi.fn(),
+            installStatus: () => null,
+            installing: () => false,
+            installPlugin: vi.fn(),
+            updatePlugin: vi.fn(),
+            removePlugin: vi.fn(),
+            clearInstallStatus: vi.fn(),
+            manageStatus: () => ({}),
+            settings: () => ({}),
+            settingsDirty: () => ({}),
+            settingsStatus: () => ({}),
+            updateSetting: vi.fn(),
+            resetSettings: vi.fn(),
+            saveSettings: vi.fn(),
+            devMode: () => false,
+            setDevMode: vi.fn()
+          }}
+          importExport={{
+            importText: () => "",
+            setImportText: vi.fn(),
+            importStatus: () => null,
+            setImportStatus: vi.fn(),
+            importing: () => false,
+            importMarkdown: vi.fn(),
+            exporting: () => false,
+            exportMarkdown: vi.fn(),
+            exportStatus: () => null,
+            offlineExporting: () => false,
+            exportOfflineArchive: vi.fn(),
+            offlineExportStatus: () => null,
+            offlineImporting: () => false,
+            importOfflineArchive: vi.fn(),
+            offlineImportFile: () => null,
+            setOfflineImportFile: vi.fn(),
+            offlineImportStatus: () => null,
+            setOfflineImportStatus: vi.fn()
+          }}
+        />
+      </>
+    ));
+
+    await user.click(screen.getByRole("button", { name: /embedding model/i }));
+
+    const listbox = screen.getByRole("listbox", { name: /embedding model/i });
+    expect(listbox).toBeVisible();
+    expect(
+      within(listbox).getByRole("option", {
+        name: "pplx-embed-v1-0.6b (Experimental)"
+      })
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Switch model" }));
+
+    await user.click(screen.getByRole("button", { name: /embedding model/i }));
+
+    expect(screen.getByRole("listbox", { name: /embedding model/i })).toBeVisible();
   });
 });

@@ -1,12 +1,20 @@
 import type { Accessor, JSX, Setter } from "solid-js";
 import type { UnlinkedReference } from "../../entities/page/model/backlink-types";
 import type { PageSummary } from "../../entities/page/model/page-types";
-import type { SearchResult } from "../../entities/search/model/search-types";
+import type {
+  SearchAnswerResult,
+  SearchCitation,
+  SearchMode,
+  SearchResult
+} from "../../entities/search/model/search-types";
 import { UnlinkedReferencesPane } from "../discovery/unlinked-references-pane";
 import { SearchPane } from "../search/search-pane";
 import { PagesPane } from "./pages-pane";
 
 type SidebarSearchProps = {
+  mode: Accessor<SearchMode>;
+  setMode: Setter<SearchMode>;
+  answer: Accessor<SearchAnswerResult | null>;
   inputRef?: (el: HTMLInputElement) => void;
   query: Accessor<string>;
   setQuery: Setter<string>;
@@ -16,6 +24,7 @@ type SidebarSearchProps = {
   results: Accessor<SearchResult[]>;
   renderHighlight: (text: string) => JSX.Element;
   onResultSelect: (block: SearchResult) => void;
+  onCitationSelect: (citation: SearchCitation) => void;
 };
 
 type SidebarUnlinkedProps = {
@@ -42,6 +51,9 @@ type SidebarContentProps = {
 export const SidebarContent = (props: SidebarContentProps) => {
   return (
     <SearchPane
+      mode={props.search.mode}
+      setMode={props.search.setMode}
+      answer={props.search.answer}
       searchInputRef={props.search.inputRef}
       query={props.search.query}
       setQuery={props.search.setQuery}
@@ -51,6 +63,7 @@ export const SidebarContent = (props: SidebarContentProps) => {
       results={props.search.results}
       renderHighlight={props.search.renderHighlight}
       onResultSelect={props.search.onResultSelect}
+      onCitationSelect={props.search.onCitationSelect}
     >
       <UnlinkedReferencesPane
         query={props.unlinked.query}

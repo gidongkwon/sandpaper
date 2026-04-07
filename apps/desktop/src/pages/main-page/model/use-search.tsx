@@ -6,8 +6,12 @@ import {
   type Accessor,
   type JSX
 } from "solid-js";
-import type { Block, BlockSearchResult } from "../../../entities/block/model/block-types";
-import type { SearchResult } from "../../../entities/search/model/search-types";
+import type { Block } from "../../../entities/block/model/block-types";
+import type {
+  SearchAnswerResult,
+  SearchMode,
+  SearchResult
+} from "../../../entities/search/model/search-types";
 import { escapeRegExp } from "../../../shared/lib/string/escape-regexp";
 import {
   readLocalStorage,
@@ -31,6 +35,7 @@ type SearchDeps = {
 
 export const createSearchState = (deps: SearchDeps) => {
   const [searchQuery, setSearchQuery] = createSignal("");
+  const [searchMode, setSearchMode] = createSignal<SearchMode>("lexical");
   const [searchFilter, setSearchFilter] = createSignal<SearchFilter>("all");
   const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
 
@@ -41,28 +46,61 @@ export const createSearchState = (deps: SearchDeps) => {
       .blocks()
       .filter((block) => block.text.toLowerCase().includes(normalized))
       .slice(0, 12)
-      .map((block) => ({ id: block.id, text: block.text }));
+      .map((block) => ({
+        id: block.id,
+        text: block.text,
+        blockUid: block.id,
+        source: "local"
+      }));
   };
 
   const localResults = createMemo<SearchResult[]>(() => {
     const trimmed = searchQuery().trim();
     if (!trimmed) return [];
+    if (searchMode() === "answer") return [];
     return localSearch(trimmed);
   });
 
   const [remoteResults] = createResource(
-    searchQuery,
-    async (query) => {
+    () => ({ query: searchQuery(), mode: searchMode() }),
+    async ({ query, mode }) => {
       const trimmed = query.trim();
       if (!trimmed) return [];
+      if (mode === "answer") return [];
       if (!deps.isTauri()) return [];
 
       try {
-        const remote = (await deps.invoke("search_blocks", {
-          query: trimmed
-        })) as BlockSearchResult[] | null;
+        const command =
+          mode === "vector"
+            ? "rag_search_vector"
+            : mode === "hybrid"
+              ? "rag_search_hybrid"
+              : "rag_search_lex";
+        const remote = (await deps.invoke(command, {
+          payload: {
+            query: trimmed,
+            limit: 20
+          }
+        })) as
+          | Array<{
+              page_uid: string;
+              block_uid: string;
+              chunk_id: string;
+              title: string;
+              breadcrumb?: string | null;
+              snippet: string;
+            }>
+          | null;
         if (remote && remote.length > 0) {
-          return remote.map((block) => ({ id: block.uid, text: block.text }));
+          return remote.map((hit) => ({
+            id: hit.block_uid,
+            text: hit.snippet,
+            title: hit.title,
+            pageUid: hit.page_uid,
+            blockUid: hit.block_uid,
+            breadcrumb: hit.breadcrumb ?? null,
+            source: mode
+          }));
         }
       } catch (error) {
         console.error("Search failed", error);
@@ -75,6 +113,74 @@ export const createSearchState = (deps: SearchDeps) => {
 
   const searchResults = createMemo<SearchResult[]>(() =>
     deps.isTauri() ? remoteResults() : localResults()
+  );
+
+  const [remoteAnswer] = createResource(
+    () => ({ query: searchQuery(), mode: searchMode() }),
+    async ({ query, mode }) => {
+      const trimmed = query.trim();
+      if (!trimmed) return null;
+      if (mode !== "answer") return null;
+      if (!deps.isTauri()) return null;
+
+      try {
+        const remote = (await deps.invoke("rag_answer_query", {
+          payload: {
+            query: trimmed,
+            limit: 10
+          }
+        })) as
+          | {
+              answer: string;
+              citations: Array<{
+                page_uid: string;
+                block_uid: string;
+                chunk_id: string;
+                title: string;
+                breadcrumb?: string | null;
+                snippet: string;
+                rank: number;
+              }>;
+              used_chunks: string[];
+              latency_ms: number;
+              provider: string;
+              model: string;
+            }
+          | null;
+        if (!remote) return null;
+        return {
+          answer: remote.answer,
+          citations: remote.citations.map((citation) => ({
+            pageUid: citation.page_uid,
+            blockUid: citation.block_uid,
+            chunkId: citation.chunk_id,
+            title: citation.title,
+            breadcrumb: citation.breadcrumb ?? null,
+            snippet: citation.snippet,
+            rank: citation.rank
+          })),
+          usedChunks: remote.used_chunks,
+          latencyMs: remote.latency_ms,
+          provider: remote.provider,
+          model: remote.model
+        } satisfies SearchAnswerResult;
+      } catch (error) {
+        console.error("Answer query failed", error);
+        return {
+          answer: "Answer generation failed.",
+          citations: [],
+          usedChunks: [],
+          latencyMs: 0,
+          provider: "local",
+          model: "error"
+        } satisfies SearchAnswerResult;
+      }
+    },
+    { initialValue: null }
+  );
+
+  const searchAnswer = createMemo<SearchAnswerResult | null>(() =>
+    searchMode() === "answer" ? remoteAnswer() : null
   );
 
   const filteredSearchResults = createMemo<SearchResult[]>(() =>
@@ -138,10 +244,13 @@ export const createSearchState = (deps: SearchDeps) => {
   return {
     searchQuery,
     setSearchQuery,
+    searchMode,
+    setSearchMode,
     searchFilter,
     setSearchFilter,
     searchHistory,
     filteredSearchResults,
+    searchAnswer,
     commitSearchTerm,
     applySearchTerm,
     renderSearchHighlight

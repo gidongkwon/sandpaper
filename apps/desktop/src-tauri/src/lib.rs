@@ -1,3 +1,5 @@
+mod rag;
+
 use aes_gcm::aead::{Aead, KeyInit};
 use base64::Engine;
 use rand_core::RngCore;
@@ -16,6 +18,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
 #[cfg(target_os = "macos")]
@@ -202,6 +205,12 @@ struct ImportFileAssetBytesPayload {
     filename: String,
     mime_type: Option<String>,
     bytes_b64: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RagEmbeddingModelPayload {
+    model: rag::types::EmbeddingModelId,
 }
 
 #[derive(Debug, Clone)]
@@ -601,6 +610,166 @@ struct MarkdownExportStatus {
     pages: usize,
 }
 
+struct RagModelDownloadJob {
+    cancel_requested: Arc<AtomicBool>,
+    running: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+#[derive(Default)]
+struct RagModelDownloadState {
+    status: Arc<Mutex<Option<rag::types::ModelDownloadStatus>>>,
+    job: Mutex<Option<RagModelDownloadJob>>,
+}
+
+impl RagModelDownloadState {
+    fn status(&self) -> Option<rag::types::ModelDownloadStatus> {
+        self.cleanup_finished_job();
+        self.status.lock().unwrap_or_else(|err| err.into_inner()).clone()
+    }
+
+    fn has_active_job(&self) -> bool {
+        self.cleanup_finished_job();
+        self.job
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .as_ref()
+            .map(|job| job.running.load(Ordering::SeqCst))
+            .unwrap_or(false)
+    }
+
+    fn start(&self, model: rag::types::EmbeddingModelId) -> Result<(), String> {
+        let mut job_guard = self.job.lock().unwrap_or_else(|err| err.into_inner());
+        Self::cleanup_finished_job_locked(&mut job_guard);
+        if job_guard
+            .as_ref()
+            .map(|job| job.running.load(Ordering::SeqCst))
+            .unwrap_or(false)
+        {
+            return Err("embedding-model-download-already-running".to_string());
+        }
+
+        let status = Arc::clone(&self.status);
+        let model_label = rag::provider::embedding_model_label(&model);
+        let model_for_callback = model.clone();
+        let cancel_requested = Arc::new(AtomicBool::new(false));
+        let running = Arc::new(AtomicBool::new(true));
+        let thread_cancel_requested = Arc::clone(&cancel_requested);
+        let thread_running = Arc::clone(&running);
+        let callback: Arc<dyn Fn(rag::types::ModelDownloadState, f32, String) + Send + Sync> =
+            Arc::new(move |state, progress, message| {
+                let can_cancel = matches!(
+                    state,
+                    rag::types::ModelDownloadState::Downloading
+                        | rag::types::ModelDownloadState::Verifying
+                        | rag::types::ModelDownloadState::CancelRequested
+                );
+                let mut guard = status.lock().unwrap_or_else(|err| err.into_inner());
+                *guard = Some(rag::types::ModelDownloadStatus {
+                    model: model_for_callback.clone(),
+                    state,
+                    progress,
+                    message,
+                    can_cancel,
+                });
+            });
+
+        callback(
+            rag::types::ModelDownloadState::Downloading,
+            0.0,
+            format!("Preparing {} download", model_label),
+        );
+
+        let status_for_thread = Arc::clone(&self.status);
+        let model_for_thread = model.clone();
+        let model_label_for_thread = rag::provider::embedding_model_label(&model);
+        let handle = std::thread::spawn(move || {
+            let result = rag::provider::prepare_model_download(
+                model_for_thread.clone(),
+                Arc::clone(&callback),
+                Arc::clone(&thread_cancel_requested),
+            );
+
+            let mut guard = status_for_thread.lock().unwrap_or_else(|err| err.into_inner());
+            *guard = Some(match result {
+                Ok(()) => rag::types::ModelDownloadStatus {
+                    model: model_for_thread.clone(),
+                    state: rag::types::ModelDownloadState::Completed,
+                    progress: 1.0,
+                    message: format!("{} is ready.", model_label_for_thread),
+                    can_cancel: false,
+                },
+                Err(error) if error == "download-canceled" => rag::types::ModelDownloadStatus {
+                    model: model_for_thread.clone(),
+                    state: rag::types::ModelDownloadState::Canceled,
+                    progress: guard.as_ref().map(|item| item.progress).unwrap_or_default(),
+                    message: format!("{} download canceled.", model_label_for_thread),
+                    can_cancel: false,
+                },
+                Err(error) => rag::types::ModelDownloadStatus {
+                    model: model_for_thread,
+                    state: rag::types::ModelDownloadState::Failed,
+                    progress: guard.as_ref().map(|item| item.progress).unwrap_or_default(),
+                    message: error,
+                    can_cancel: false,
+                },
+            });
+            thread_running.store(false, Ordering::SeqCst);
+        });
+
+        *job_guard = Some(RagModelDownloadJob {
+            cancel_requested,
+            running,
+            handle,
+        });
+        Ok(())
+    }
+
+    fn cancel(&self) -> bool {
+        let mut job_guard = self.job.lock().unwrap_or_else(|err| err.into_inner());
+        Self::cleanup_finished_job_locked(&mut job_guard);
+        let Some(job) = job_guard.as_ref() else {
+            return false;
+        };
+        if !job.running.load(Ordering::SeqCst) {
+            return false;
+        }
+
+        job.cancel_requested.store(true, Ordering::SeqCst);
+        let mut status = self.status.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(current) = status.as_mut() {
+            current.state = rag::types::ModelDownloadState::CancelRequested;
+            current.message = format!("Cancel requested. Finishing {}", current.message);
+            current.can_cancel = false;
+        }
+        true
+    }
+
+    fn cleanup_finished_job(&self) {
+        let mut guard = self.job.lock().unwrap_or_else(|err| err.into_inner());
+        Self::cleanup_finished_job_locked(&mut guard);
+    }
+
+    fn cleanup_finished_job_locked(job: &mut Option<RagModelDownloadJob>) {
+        let should_join = job
+            .as_ref()
+            .map(|current| !current.running.load(Ordering::SeqCst))
+            .unwrap_or(false);
+        if should_join {
+            if let Some(finished) = job.take() {
+                let _ = finished.handle.join();
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RagSearchPayload {
+    query: String,
+    limit: Option<usize>,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -638,6 +807,17 @@ fn open_active_database() -> Result<Database, String> {
     let (_vault, db) =
         sandpaper_core::app::open_active_database().map_err(|err| format!("{:?}", err))?;
     Ok(db)
+}
+
+fn sync_rag_page_index(
+    db: &Database,
+    vault_path: &std::path::Path,
+    page_uid: &str,
+) -> Result<(), String> {
+    let conn = rag::schema::open_or_create_rag_db(vault_path)?;
+    let mut repo = rag::repository::RagRepository::new(conn);
+    rag::indexer::index_page(db, &mut repo, page_uid)?;
+    Ok(())
 }
 
 fn plugin_registry_for_vault(vault_path: &std::path::Path) -> PluginRegistry {
@@ -1896,9 +2076,11 @@ fn create_page(payload: CreatePagePayload) -> Result<PageSummary, String> {
         return Err("Title is required".to_string());
     }
     let db = open_active_database()?;
+    let vault_path = resolve_active_vault_path()?;
     let uid = resolve_unique_page_uid(&db, title)?;
     db.insert_page(&uid, title)
         .map_err(|err| format!("{:?}", err))?;
+    sync_rag_page_index(&db, &vault_path, &uid)?;
     Ok(PageSummary {
         uid,
         title: title.to_string(),
@@ -1912,6 +2094,7 @@ fn rename_page(payload: RenamePagePayload) -> Result<PageSummary, String> {
         return Err("Title is required".to_string());
     }
     let db = open_active_database()?;
+    let vault_path = resolve_active_vault_path()?;
     let page_uid = sanitize_kebab(&payload.page_uid);
     let page = db
         .get_page_by_uid(&page_uid)
@@ -1919,6 +2102,7 @@ fn rename_page(payload: RenamePagePayload) -> Result<PageSummary, String> {
         .ok_or_else(|| "Page not found".to_string())?;
     db.update_page_title(page.id, title)
         .map_err(|err| format!("{:?}", err))?;
+    sync_rag_page_index(&db, &vault_path, &page_uid)?;
     Ok(PageSummary {
         uid: page_uid,
         title: title.to_string(),
@@ -1943,6 +2127,93 @@ fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
     let db = open_active_database()?;
     db.search_block_summaries(&query, 50)
         .map_err(|err| format!("{:?}", err))
+}
+
+#[tauri::command]
+fn rag_get_status(
+    state: tauri::State<'_, Arc<RagModelDownloadState>>,
+) -> Result<rag::types::IndexStatus, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let mut status = rag::retrieval::read_status(&vault_path)?;
+    status.model_download = state.status();
+    Ok(status)
+}
+
+#[tauri::command]
+fn rag_rebuild_index() -> Result<rag::types::IndexBuildSummary, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let db = open_active_database()?;
+    rag::retrieval::rebuild_index(&db, &vault_path)
+}
+
+#[tauri::command]
+fn rag_search_lex(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let db = open_active_database()?;
+    let limit = payload.limit.unwrap_or(20).max(1).min(100);
+    rag::retrieval::search_lexical_with_fallback(&db, &vault_path, &payload.query, limit)
+}
+
+#[tauri::command]
+fn rag_search_vector(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let limit = payload.limit.unwrap_or(20).max(1).min(100);
+    rag::retrieval::search_vector(&vault_path, &payload.query, limit)
+}
+
+#[tauri::command]
+fn rag_search_hybrid(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let limit = payload.limit.unwrap_or(20).max(1).min(100);
+    rag::retrieval::search_hybrid(&vault_path, &payload.query, limit)
+}
+
+#[tauri::command]
+fn rag_answer_query(payload: RagSearchPayload) -> Result<rag::types::AnswerResult, String> {
+    let vault_path = resolve_active_vault_path()?;
+    let limit = payload.limit.unwrap_or(10).max(1).min(20);
+    rag::answer::answer_query(&vault_path, &payload.query, limit)
+}
+
+#[tauri::command]
+fn rag_set_embedding_model(payload: RagEmbeddingModelPayload) -> Result<(), String> {
+    if !rag::provider::model_is_supported(&payload.model) {
+        return Err(format!(
+            "unsupported-embedding-model: {}",
+            payload.model.as_str()
+        ));
+    }
+    let vault_path = resolve_active_vault_path()?;
+    let conn = rag::schema::open_or_create_rag_db(&vault_path)?;
+    let mut repo = rag::repository::RagRepository::new(conn);
+    repo.set_selected_embedding_model(payload.model)?;
+    Ok(())
+}
+
+#[tauri::command]
+fn rag_prepare_embedding_model(
+    state: tauri::State<'_, Arc<RagModelDownloadState>>,
+) -> Result<(), String> {
+    if state.has_active_job() {
+        return Err("embedding-model-download-already-running".to_string());
+    }
+
+    let vault_path = resolve_active_vault_path()?;
+    let conn = rag::schema::open_or_create_rag_db(&vault_path)?;
+    let repo = rag::repository::RagRepository::new(conn);
+    let model = repo.read_selected_embedding_model()?;
+    if !rag::provider::model_requires_download(&model) {
+        return Ok(());
+    }
+
+    state.start(model)
+}
+
+#[tauri::command]
+fn rag_cancel_embedding_model_download(
+    state: tauri::State<'_, Arc<RagModelDownloadState>>,
+) -> bool {
+    state.cancel()
 }
 
 #[tauri::command]
@@ -1997,6 +2268,7 @@ fn link_matches_target(record: &BlockPageRecord, target_uid: &str) -> bool {
 #[tauri::command]
 fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), String> {
     let mut db = open_active_database()?;
+    let vault_path = resolve_active_vault_path()?;
     let title = fallback_page_title(&page_uid);
     let page_id = ensure_page(&db, &page_uid, title)?;
     let previous = db
@@ -2024,16 +2296,20 @@ fn save_page_blocks(page_uid: String, blocks: Vec<BlockSnapshot>) -> Result<(), 
         store_device_clock(&db, next_clock)?;
     }
 
+    sync_rag_page_index(&db, &vault_path, &page_uid)?;
+
     Ok(())
 }
 
 #[tauri::command]
 fn set_page_title(payload: PageTitlePayload) -> Result<(), String> {
     let db = open_active_database()?;
+    let vault_path = resolve_active_vault_path()?;
     let page_uid = sanitize_kebab(&payload.page_uid);
     let page_id = ensure_page(&db, &page_uid, &payload.title)?;
     db.update_page_title(page_id, &payload.title)
         .map_err(|err| format!("{:?}", err))?;
+    sync_rag_page_index(&db, &vault_path, &page_uid)?;
     Ok(())
 }
 
@@ -2826,6 +3102,7 @@ fn set_window_theme_effect(
 pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(RuntimeState::new()))
+        .manage(Arc::new(RagModelDownloadState::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -2854,6 +3131,15 @@ pub fn run() {
             rename_page,
             list_pages,
             search_blocks,
+            rag_get_status,
+            rag_rebuild_index,
+            rag_set_embedding_model,
+            rag_prepare_embedding_model,
+            rag_cancel_embedding_model_download,
+            rag_search_lex,
+            rag_search_vector,
+            rag_search_hybrid,
+            rag_answer_query,
             load_page_blocks,
             list_page_wikilink_backlinks,
             save_page_blocks,

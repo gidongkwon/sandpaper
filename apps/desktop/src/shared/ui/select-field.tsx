@@ -1,6 +1,6 @@
 import * as Select from "@kobalte/core/select";
 import { cx } from "class-variance-authority";
-import { createMemo } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 
 export type SelectFieldOption = {
   value: string;
@@ -13,6 +13,7 @@ type SelectFieldProps = {
   value: string;
   options: readonly SelectFieldOption[];
   onChange: (value: string) => void;
+  disabled?: boolean;
   triggerClass?: string;
   contentClass?: string;
   listboxClass?: string;
@@ -21,16 +22,24 @@ type SelectFieldProps = {
 };
 
 export const SelectField = (props: SelectFieldProps) => {
+  const [triggerRef, setTriggerRef] = createSignal<HTMLButtonElement | undefined>(
+    undefined
+  );
   const selectedOption = createMemo(
     () => props.options.find((option) => option.value === props.value) ?? null
+  );
+  const portalMount = createMemo(
+    () => triggerRef()?.closest(".settings-modal") as HTMLElement | null | undefined
   );
 
   return (
     <Select.Root<SelectFieldOption>
-      options={[...props.options]}
+      options={props.options}
       value={selectedOption() ?? undefined}
       onChange={(option) => {
-        if (option) props.onChange(option.value);
+        if (option && option.value !== props.value) {
+          props.onChange(option.value);
+        }
       }}
       optionValue="value"
       optionTextValue="label"
@@ -48,14 +57,16 @@ export const SelectField = (props: SelectFieldProps) => {
     >
       <Select.HiddenSelect />
       <Select.Trigger
+        ref={setTriggerRef}
         class={cx("ui-select", props.triggerClass)}
         aria-label={props.label}
+        disabled={props.disabled}
       >
         <Select.Value<SelectFieldOption>>
           {(state) => state.selectedOption()?.label ?? ""}
         </Select.Value>
       </Select.Trigger>
-      <Select.Portal>
+      <Select.Portal mount={portalMount() ?? undefined}>
         <Select.Content class={cx("ui-select__content", props.contentClass)}>
           <Select.Listbox
             aria-label={`${props.label} options`}

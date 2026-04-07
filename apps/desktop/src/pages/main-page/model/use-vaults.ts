@@ -14,6 +14,7 @@ type VaultDeps = {
   ensureDailyNote: () => Promise<void>;
   loadPlugins: () => Promise<void>;
   loadVaultKeyStatus: () => Promise<void>;
+  loadRagStatus: () => Promise<void>;
   loadSyncConfig: () => Promise<void>;
   loadReviewSummary: () => Promise<void>;
   loadReviewQueue: () => Promise<void>;
@@ -77,6 +78,7 @@ export const createVaultState = (deps: VaultDeps) => {
       await deps.ensureDailyNote();
       await deps.loadPlugins();
       await deps.loadVaultKeyStatus();
+      await deps.loadRagStatus();
       await deps.loadSyncConfig();
       await deps.loadCaptureReviewThreadOrder();
       await deps.loadReviewSummary();
@@ -100,6 +102,7 @@ export const createVaultState = (deps: VaultDeps) => {
       await deps.ensureDailyNote();
       await deps.loadPlugins();
       await deps.loadVaultKeyStatus();
+      await deps.loadRagStatus();
       await deps.loadSyncConfig();
       await deps.loadCaptureReviewThreadOrder();
       await deps.loadReviewSummary();
@@ -127,6 +130,7 @@ export const createVaultState = (deps: VaultDeps) => {
     await deps.ensureDailyNote();
     await deps.loadPlugins();
     await deps.loadVaultKeyStatus();
+    await deps.loadRagStatus();
     await deps.loadSyncConfig();
     await deps.loadCaptureReviewThreadOrder();
     await deps.loadReviewSummary();
@@ -152,6 +156,7 @@ export const createVaultState = (deps: VaultDeps) => {
       await deps.ensureDailyNote();
       await deps.loadPlugins();
       await deps.loadVaultKeyStatus();
+      await deps.loadRagStatus();
       await deps.loadSyncConfig();
       await deps.loadReviewSummary();
       await deps.loadReviewQueue();

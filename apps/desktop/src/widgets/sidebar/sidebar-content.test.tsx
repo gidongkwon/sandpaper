@@ -2,7 +2,11 @@ import { render, screen, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { vi } from "vitest";
-import type { SearchResult } from "../../entities/search/model/search-types";
+import type {
+  SearchAnswerResult,
+  SearchMode,
+  SearchResult
+} from "../../entities/search/model/search-types";
 import type { UnlinkedReference } from "../../entities/page/model/backlink-types";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { SidebarContent } from "./sidebar-content";
@@ -10,6 +14,8 @@ import { SidebarContent } from "./sidebar-content";
 describe("SidebarContent", () => {
   it("renders pages and unlinked references actions", async () => {
     const [query, setQuery] = createSignal("");
+    const [mode, setMode] = createSignal<SearchMode>("lexical");
+    const [answer] = createSignal<SearchAnswerResult | null>(null);
     const [history] = createSignal<string[]>([]);
     const [results] = createSignal<SearchResult[]>([]);
     const [references] = createSignal<UnlinkedReference[]>([
@@ -35,6 +41,9 @@ describe("SidebarContent", () => {
     render(() => (
       <SidebarContent
         search={{
+          mode,
+          setMode,
+          answer,
           query,
           setQuery,
           commitTerm: () => {},
@@ -42,7 +51,8 @@ describe("SidebarContent", () => {
           applyTerm: () => {},
           results,
           renderHighlight: (text) => text,
-          onResultSelect: () => {}
+          onResultSelect: () => {},
+          onCitationSelect: () => {}
         }}
         unlinked={{
           query,

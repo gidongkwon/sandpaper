@@ -2,6 +2,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  on,
   onCleanup,
   onMount
 } from "solid-js";
@@ -67,6 +68,10 @@ import { createVaultKeyState } from "./use-vault-key";
 import { createVaultState } from "./use-vaults";
 import { shouldFocusModeInput } from "./mode-focus-utils";
 import { type MainPageContextValue } from "./main-page-context";
+import type {
+  RagEmbeddingModelId,
+  RagStatus
+} from "../../../widgets/settings/settings-vault-tab";
 import {
   DEFAULT_PAGE_UID,
   DEFAULT_PAGE_TITLE,
@@ -85,6 +90,67 @@ import { getReviewDestinationRecommendations } from "./review-destination-recomm
 type JumpTarget = {
   id: string;
   caret: "start" | "end" | "preserve";
+};
+
+type RagStatusPayload = {
+  index_exists: boolean;
+  indexed_pages: number;
+  indexed_chunks: number;
+  dirty_pages: number;
+  available_embedding_models: Array<{
+    id: RagEmbeddingModelId;
+    label: string;
+    requires_download: boolean;
+    experimental: boolean;
+  }>;
+  selected_embedding_model: RagEmbeddingModelId;
+  selected_embedding_model_ready: boolean;
+  selected_embedding_model_active: boolean;
+  embedding_status_message?: string | null;
+  last_full_rebuild_at?: number | null;
+  last_incremental_run_at?: number | null;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
+  model_download?: {
+    model: RagEmbeddingModelId;
+    state:
+      | "downloading"
+      | "verifying"
+      | "cancel_requested"
+      | "completed"
+      | "failed"
+      | "canceled";
+    progress: number;
+    message: string;
+    can_cancel: boolean;
+  } | null;
+};
+
+type RagRebuildPageProfilePayload = {
+  page_uid: string;
+  title: string;
+  chunk_count: number;
+  page_load_ms: number;
+  chunking_ms: number;
+  provider_init_ms: number;
+  first_batch_ms: number;
+  embedding_ms: number;
+  write_ms: number;
+  total_ms: number;
+};
+
+type RagRebuildSummaryPayload = {
+  pages_indexed: number;
+  changed_pages: number;
+  chunks_written: number;
+  elapsed_ms: number;
+  page_load_ms: number;
+  chunking_ms: number;
+  provider_init_ms: number;
+  first_batch_ms: number;
+  embedding_ms: number;
+  write_ms: number;
+  slow_pages: RagRebuildPageProfilePayload[];
 };
 
 const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
@@ -524,6 +590,10 @@ export const createMainPageState = () => {
   const [selectedReviewTemplate, setSelectedReviewTemplate] =
     createSignal("daily-brief");
   const [shadowPendingCount, setShadowPendingCount] = createSignal(0);
+  const [ragStatus, setRagStatus] = createSignal<RagStatus | null>(null);
+  const [ragBusy, setRagBusy] = createSignal(false);
+  const [ragUpdatingModel, setRagUpdatingModel] = createSignal(false);
+  const [ragMessage, setRagMessage] = createSignal<string | null>(null);
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
@@ -708,8 +778,11 @@ export const createMainPageState = () => {
   const {
     searchQuery,
     setSearchQuery,
+    searchMode,
+    setSearchMode,
     searchHistory,
     filteredSearchResults,
+    searchAnswer,
     commitSearchTerm,
     applySearchTerm,
     renderSearchHighlight
@@ -1049,6 +1122,132 @@ export const createMainPageState = () => {
     setVaultKey
   } = vaultKeyState;
 
+  const mapRagStatus = (status: RagStatusPayload): RagStatus => ({
+    indexExists: status.index_exists,
+    indexedPages: status.indexed_pages,
+    indexedChunks: status.indexed_chunks,
+    dirtyPages: status.dirty_pages,
+    availableEmbeddingModels: status.available_embedding_models.map((model) => ({
+      id: model.id,
+      label: model.label,
+      requiresDownload: model.requires_download,
+      experimental: model.experimental
+    })),
+    selectedEmbeddingModel: status.selected_embedding_model,
+    selectedEmbeddingModelReady: status.selected_embedding_model_ready,
+    selectedEmbeddingModelActive: status.selected_embedding_model_active,
+    embeddingStatusMessage: status.embedding_status_message ?? null,
+    lastFullRebuildAt: status.last_full_rebuild_at ?? null,
+    lastIncrementalRunAt: status.last_incremental_run_at ?? null,
+    embeddingProvider: status.embedding_provider ?? null,
+    embeddingModel: status.embedding_model ?? null,
+    modelDownload: status.model_download
+      ? {
+          model: status.model_download.model,
+          state: status.model_download.state,
+          progress: status.model_download.progress,
+          message: status.model_download.message,
+          canCancel: status.model_download.can_cancel
+        }
+      : null
+  });
+
+  const loadRagStatus = async () => {
+    if (!isTauri()) {
+      setRagStatus(null);
+      return;
+    }
+    try {
+      const status = await invoke<RagStatusPayload>("rag_get_status");
+      setRagStatus(mapRagStatus(status));
+    } catch (error) {
+      console.error("Failed to load RAG status", error);
+      setRagStatus(null);
+    }
+  };
+
+  const rebuildRagIndex = async () => {
+    if (!isTauri()) return;
+    setRagBusy(true);
+    setRagMessage(null);
+    try {
+      const summary = await invoke<RagRebuildSummaryPayload>("rag_rebuild_index");
+      await loadRagStatus();
+      const totalSeconds = (summary.elapsed_ms / 1000).toFixed(1);
+      const embeddingSeconds = (summary.embedding_ms / 1000).toFixed(1);
+      const initSeconds = (summary.provider_init_ms / 1000).toFixed(1);
+      const firstBatchSeconds = (summary.first_batch_ms / 1000).toFixed(1);
+      const slowestPage = summary.slow_pages[0];
+      const slowestSuffix = slowestPage
+        ? ` Slowest page: ${slowestPage.title} (${(
+            slowestPage.total_ms / 1000
+          ).toFixed(1)}s, ${slowestPage.chunk_count} chunks, init ${(
+            slowestPage.provider_init_ms / 1000
+          ).toFixed(1)}s, first batch ${(
+            slowestPage.first_batch_ms / 1000
+          ).toFixed(1)}s, embed ${(
+            slowestPage.embedding_ms / 1000
+          ).toFixed(1)}s).`
+        : "";
+      setRagMessage(
+        `RAG index rebuilt in ${totalSeconds}s for ${summary.pages_indexed} pages (${summary.chunks_written} chunks, init ${initSeconds}s, first batch ${firstBatchSeconds}s, embedding ${embeddingSeconds}s).${slowestSuffix}`
+      );
+    } catch (error) {
+      console.error("Failed to rebuild RAG index", error);
+      setRagMessage("Failed to rebuild RAG index.");
+    } finally {
+      setRagBusy(false);
+    }
+  };
+
+  const setRagEmbeddingModel = async (model: RagEmbeddingModelId) => {
+    if (!isTauri()) return;
+    setRagUpdatingModel(true);
+    setRagMessage(null);
+    try {
+      await invoke("rag_set_embedding_model", {
+        payload: { model }
+      });
+      await loadRagStatus();
+      const selectedModel = ragStatus()?.availableEmbeddingModels.find(
+        (entry) => entry.id === model
+      );
+      if (selectedModel?.requiresDownload) {
+        setRagMessage(`${selectedModel.label} selected. Download the model, then rebuild the index.`);
+      } else {
+        setRagMessage(`${selectedModel?.label ?? "Embedding model"} selected. Rebuild the index to refresh vectors.`);
+      }
+    } catch (error) {
+      console.error("Failed to update RAG embedding model", error);
+      setRagMessage("Failed to update RAG embedding model.");
+    } finally {
+      setRagUpdatingModel(false);
+    }
+  };
+
+  const prepareRagEmbeddingModel = async () => {
+    if (!isTauri()) return;
+    setRagMessage(null);
+    try {
+      await invoke("rag_prepare_embedding_model");
+      await loadRagStatus();
+    } catch (error) {
+      console.error("Failed to start RAG embedding model download", error);
+      setRagMessage("Failed to start model download.");
+    }
+  };
+
+  const cancelRagEmbeddingModelDownload = async () => {
+    if (!isTauri()) return;
+    try {
+      await invoke("rag_cancel_embedding_model_download");
+      await loadRagStatus();
+    } catch (error) {
+      console.error("Failed to cancel RAG embedding model download", error);
+      setRagMessage("Failed to cancel model download.");
+    }
+  };
+
   const syncApi = createSync({
     isTauri,
     invoke,
@@ -1255,6 +1454,7 @@ export const createMainPageState = () => {
     ensureDailyNote,
     loadPlugins,
     loadVaultKeyStatus,
+    loadRagStatus,
     loadSyncConfig,
     loadCaptureReviewThreadOrder,
     loadReviewSummary,
@@ -1448,6 +1648,37 @@ export const createMainPageState = () => {
     }
 
     return threads;
+  });
+
+  createEffect(
+    on(
+      () => activeVault()?.id,
+      () => {
+        setRagMessage(null);
+      }
+    )
+  );
+
+  createEffect(() => {
+    if (!settingsOpen()) return;
+    if (!activeVault()) return;
+    void loadRagStatus();
+  });
+
+  createEffect(() => {
+    const state = ragStatus()?.modelDownload?.state;
+    if (
+      state !== "downloading" &&
+      state !== "verifying" &&
+      state !== "cancel_requested"
+    ) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadRagStatus();
+    }, 700);
+    onCleanup(() => window.clearInterval(timer));
   });
 
   const captureReplyTarget = createMemo(() => {
@@ -2371,6 +2602,9 @@ export const createMainPageState = () => {
         connectionLabel: syncStateLabel,
         connectionDetail: syncStateDetail,
         search: {
+          mode: searchMode,
+          setMode: setSearchMode,
+          answer: searchAnswer,
           inputRef: (el) => {
             searchInputRef = el;
           },
@@ -2382,8 +2616,13 @@ export const createMainPageState = () => {
           results: filteredSearchResults,
           renderHighlight: renderSearchHighlight,
           onResultSelect: (block) => {
-            setActiveId(block.id);
-            setJumpTarget({ id: block.id, caret: "start" });
+            const targetId = block.blockUid ?? block.id;
+            setActiveId(targetId);
+            setJumpTarget({ id: targetId, caret: "start" });
+          },
+          onCitationSelect: (citation) => {
+            setActiveId(citation.blockUid);
+            setJumpTarget({ id: citation.blockUid, caret: "start" });
           }
         },
         unlinked: {
@@ -2568,7 +2807,15 @@ export const createMainPageState = () => {
           setPassphrase: setVaultPassphrase,
           keyBusy: vaultKeyBusy,
           setKey: setVaultKey,
-          keyMessage: vaultKeyMessage
+          keyMessage: vaultKeyMessage,
+          ragStatus,
+          ragBusy,
+          ragUpdatingModel,
+          setRagEmbeddingModel,
+          prepareRagEmbeddingModel,
+          cancelRagEmbeddingModelDownload,
+          rebuildRagIndex,
+          ragMessage
         },
         sync: {
           status: syncStatus,
