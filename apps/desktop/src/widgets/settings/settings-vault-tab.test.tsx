@@ -204,6 +204,94 @@ describe("SettingsVaultTab", () => {
     expect(cancelDownload).toHaveBeenCalledTimes(1);
   });
 
+  it("renders rebuild progress while the index is building", () => {
+    render(() => (
+      <SettingsVaultTab
+        isTauri={() => false}
+        vault={{
+          active: () => ({
+            id: "default",
+            name: "Default",
+            path: "vault"
+          }),
+          list: () => [
+            {
+              id: "default",
+              name: "Default",
+              path: "vault"
+            }
+          ],
+          applyActiveVault: vi.fn(),
+          formOpen: () => false,
+          setFormOpen: vi.fn(),
+          newName: () => "",
+          setNewName: vi.fn(),
+          newPath: () => "",
+          setNewPath: vi.fn(),
+          create: vi.fn(),
+          shadowPendingCount: () => 0,
+          keyStatus: () => ({
+            configured: false,
+            kdf: null,
+            iterations: null,
+            salt_b64: null
+          }),
+          passphrase: () => "",
+          setPassphrase: vi.fn(),
+          keyBusy: () => false,
+          setKey: vi.fn(),
+          keyMessage: () => null,
+          ragStatus: () => ({
+            indexExists: true,
+            indexedPages: 2,
+            indexedChunks: 10,
+            dirtyPages: 2,
+            availableEmbeddingModels: [
+              {
+                id: "local",
+                label: "Local substring/trigram",
+                requiresDownload: false,
+                experimental: false
+              }
+            ],
+            selectedEmbeddingModel: "local",
+            selectedEmbeddingModelReady: true,
+            selectedEmbeddingModelActive: true,
+            embeddingStatusMessage: null,
+            lastFullRebuildAt: null,
+            lastIncrementalRunAt: null,
+            embeddingProvider: "local",
+            embeddingModel: "hashed-trigram-v1",
+            modelDownload: null,
+            rebuildStatus: {
+              state: "running",
+              progress: 0.4,
+              processedPages: 2,
+              totalPages: 5,
+              currentPageTitle: "Daily note",
+              message: "Indexing Daily note",
+              canCancel: false,
+              summary: null,
+              error: null
+            }
+          }),
+          ragBusy: () => true,
+          ragUpdatingModel: () => false,
+          setRagEmbeddingModel: vi.fn(),
+          prepareRagEmbeddingModel: vi.fn(),
+          cancelRagEmbeddingModelDownload: vi.fn(),
+          rebuildRagIndex: vi.fn(),
+          ragMessage: () => null
+        }}
+      />
+    ));
+
+    expect(screen.getByTestId("rag-rebuild-progress")).toHaveValue(0.4);
+    expect(screen.getByText("Indexing Daily note")).toBeInTheDocument();
+    expect(screen.getByText("2 / 5 pages")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /rebuilding/i })).toBeDisabled();
+  });
+
   it("shows repair guidance when the selected downloaded model falls back to local provider", async () => {
     const repairModel = vi.fn();
     const user = userEvent.setup();

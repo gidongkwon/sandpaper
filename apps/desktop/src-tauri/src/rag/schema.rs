@@ -180,7 +180,9 @@ DROP TABLE IF EXISTS indexed_pages;
 
 #[cfg(test)]
 mod tests {
-    use super::{current_schema_version, open_or_create_rag_db, rag_index_path, RAG_SCHEMA_VERSION};
+    use super::{
+        current_schema_version, open_or_create_rag_db, rag_index_path, RAG_SCHEMA_VERSION,
+    };
     use rusqlite::{Connection, OptionalExtension};
     use std::path::Path;
     use tempfile::tempdir;
@@ -236,11 +238,9 @@ mod tests {
         assert!(table_exists(&conn, "chunk_edges"));
         assert!(table_exists(&conn, "query_cache"));
         assert!(table_exists(&conn, "retrieval_log"));
-        assert!(
-            object_sql(&conn, "chunks_fts")
-                .expect("chunks_fts sql")
-                .contains("tokenize='trigram'")
-        );
+        assert!(object_sql(&conn, "chunks_fts")
+            .expect("chunks_fts sql")
+            .contains("tokenize='trigram'"));
     }
 
     #[test]

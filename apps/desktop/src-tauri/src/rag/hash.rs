@@ -50,7 +50,12 @@ pub fn hash_page_snapshot(page_uid: &str, title: &str, blocks: &[BlockSnapshot])
     })
 }
 
-pub fn hash_chunk_content(page_uid: &str, block_uid: &str, ordinal: usize, content: &str) -> String {
+pub fn hash_chunk_content(
+    page_uid: &str,
+    block_uid: &str,
+    ordinal: usize,
+    content: &str,
+) -> String {
     #[derive(Serialize)]
     struct ChunkHashInput<'a> {
         page_uid: &'a str,

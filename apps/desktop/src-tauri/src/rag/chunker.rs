@@ -86,7 +86,11 @@ fn direct_child_context(blocks: &[BlockSnapshot], index: usize) -> Vec<String> {
     children
 }
 
-pub fn chunk_page_blocks(page_uid: &str, title: &str, blocks: &[BlockSnapshot]) -> Vec<ChunkRecord> {
+pub fn chunk_page_blocks(
+    page_uid: &str,
+    title: &str,
+    blocks: &[BlockSnapshot],
+) -> Vec<ChunkRecord> {
     let mut chunks = Vec::new();
     let mut ancestor_stack: Vec<String> = Vec::new();
 
@@ -102,7 +106,11 @@ pub fn chunk_page_blocks(page_uid: &str, title: &str, blocks: &[BlockSnapshot]) 
         let breadcrumb = build_breadcrumb(&ancestor_stack);
         let mut content_parts = Vec::new();
         let mut token_count = 0usize;
-        append_segment(&mut content_parts, title.trim().to_string(), &mut token_count);
+        append_segment(
+            &mut content_parts,
+            title.trim().to_string(),
+            &mut token_count,
+        );
         if let Some(value) = breadcrumb.as_ref() {
             append_segment(&mut content_parts, value.clone(), &mut token_count);
         }

@@ -186,7 +186,9 @@ impl PplxEmbeddingProvider {
         Ok(matrix.outer_iter().map(|row| row.to_vec()).collect())
     }
 
-    fn read_embedding_output(outputs: &ort::session::SessionOutputs<'_>) -> Result<Vec<Vec<f32>>, String> {
+    fn read_embedding_output(
+        outputs: &ort::session::SessionOutputs<'_>,
+    ) -> Result<Vec<Vec<f32>>, String> {
         let named_candidates = [
             "int8_embeddings",
             "embeddings",
@@ -615,10 +617,10 @@ pub fn resolve_provider(model: &EmbeddingModelId) -> ResolvedEmbeddingProvider {
 #[cfg(test)]
 mod tests {
     use super::{
-        available_embedding_models, embedding_model_label, embedding_model_option,
-        model_is_ready, model_is_supported, model_requires_download,
-        selected_model_matches_provider, EmbeddingProvider, LocalEmbeddingProvider,
-        PplxEmbeddingProvider, PPLX_MODEL_LABEL, LOCAL_EMBEDDING_DIM,
+        available_embedding_models, embedding_model_label, embedding_model_option, model_is_ready,
+        model_is_supported, model_requires_download, selected_model_matches_provider,
+        EmbeddingProvider, LocalEmbeddingProvider, PplxEmbeddingProvider, LOCAL_EMBEDDING_DIM,
+        PPLX_MODEL_LABEL,
     };
     use crate::rag::types::EmbeddingModelId;
 
@@ -638,7 +640,10 @@ mod tests {
         let models = available_embedding_models();
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].id, EmbeddingModelId::local());
-        assert_eq!(models[1].id, EmbeddingModelId::new("pplx").expect("pplx id"));
+        assert_eq!(
+            models[1].id,
+            EmbeddingModelId::new("pplx").expect("pplx id")
+        );
         assert!(models[1].requires_download);
         assert!(models[1].experimental);
     }
@@ -666,7 +671,9 @@ mod tests {
     #[test]
     fn local_provider_returns_stable_query_dimension() {
         let provider = LocalEmbeddingProvider;
-        let embedding = provider.embed_query("Semantic indexing").expect("query embedding");
+        let embedding = provider
+            .embed_query("Semantic indexing")
+            .expect("query embedding");
         assert_eq!(embedding.len(), LOCAL_EMBEDDING_DIM);
     }
 
@@ -698,8 +705,14 @@ mod tests {
     #[test]
     fn local_provider_normalizes_query_vectors() {
         let provider = LocalEmbeddingProvider;
-        let embedding = provider.embed_query("Semantic indexing").expect("query embedding");
-        let norm = embedding.iter().map(|value| value * value).sum::<f32>().sqrt();
+        let embedding = provider
+            .embed_query("Semantic indexing")
+            .expect("query embedding");
+        let norm = embedding
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
         assert!((norm - 1.0).abs() < 0.0001, "norm was {norm}");
     }
 
@@ -709,7 +722,11 @@ mod tests {
         let embedding = provider
             .embed_document("Semantic indexing")
             .expect("document embedding");
-        let norm = embedding.iter().map(|value| value * value).sum::<f32>().sqrt();
+        let norm = embedding
+            .iter()
+            .map(|value| value * value)
+            .sum::<f32>()
+            .sqrt();
         assert!((norm - 1.0).abs() < 0.0001, "norm was {norm}");
     }
 

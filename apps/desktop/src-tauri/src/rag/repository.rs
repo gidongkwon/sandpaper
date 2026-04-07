@@ -46,11 +46,15 @@ impl RagRepository {
     pub fn read_index_status(&self) -> Result<IndexStatus, String> {
         let indexed_pages = self
             .conn
-            .query_row("SELECT COUNT(*) FROM indexed_pages", [], |row| row.get::<_, i64>(0))
+            .query_row("SELECT COUNT(*) FROM indexed_pages", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .map_err(|err| format!("{:?}", err))?;
         let indexed_chunks = self
             .conn
-            .query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get::<_, i64>(0))
+            .query_row("SELECT COUNT(*) FROM chunks", [], |row| {
+                row.get::<_, i64>(0)
+            })
             .map_err(|err| format!("{:?}", err))?;
         let dirty_pages = self
             .conn
@@ -76,6 +80,7 @@ impl RagRepository {
             embedding_provider: None,
             embedding_model: None,
             model_download: None,
+            rebuild_status: None,
         })
     }
 
@@ -105,7 +110,10 @@ impl RagRepository {
             return Ok(false);
         }
 
-        let tx = self.conn.transaction().map_err(|err| format!("{:?}", err))?;
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|err| format!("{:?}", err))?;
         tx.execute(
             "INSERT INTO index_meta(key, value)
              VALUES (?1, ?2)
@@ -188,7 +196,10 @@ impl RagRepository {
         title: &str,
         chunks: &[ChunkRecord],
     ) -> Result<(), String> {
-        let tx = self.conn.transaction().map_err(|err| format!("{:?}", err))?;
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|err| format!("{:?}", err))?;
         tx.execute("DELETE FROM chunks_fts WHERE chunk_id IN (SELECT chunk_id FROM chunks WHERE page_uid = ?1)", [page_uid])
             .map_err(|err| format!("{:?}", err))?;
         tx.execute("DELETE FROM chunk_vectors WHERE chunk_id IN (SELECT chunk_id FROM chunks WHERE page_uid = ?1)", [page_uid])
@@ -367,7 +378,10 @@ impl RagRepository {
         page_uid: &str,
         embeddings: &[(String, Vec<f32>)],
     ) -> Result<(), String> {
-        let tx = self.conn.transaction().map_err(|err| format!("{:?}", err))?;
+        let tx = self
+            .conn
+            .transaction()
+            .map_err(|err| format!("{:?}", err))?;
         tx.execute(
             "DELETE FROM chunk_vectors
              WHERE chunk_id IN (SELECT chunk_id FROM chunks WHERE page_uid = ?1)",
@@ -402,7 +416,9 @@ impl RagRepository {
 
         rows.map(|row| {
             row.map_err(|err| format!("{:?}", err))
-                .and_then(|(chunk_id, bytes)| decode_embedding(&bytes).map(|values| (chunk_id, values)))
+                .and_then(|(chunk_id, bytes)| {
+                    decode_embedding(&bytes).map(|values| (chunk_id, values))
+                })
         })
         .collect()
     }
@@ -534,18 +550,32 @@ mod tests {
         repo.replace_chunks_for_page(
             "page-1",
             "Inbox",
-            &[sample_chunk("chunk-1", "page-1", "block-1", 0, "alpha beta")],
+            &[sample_chunk(
+                "chunk-1",
+                "page-1",
+                "block-1",
+                0,
+                "alpha beta",
+            )],
         )
         .expect("replace chunks");
-        repo.replace_chunk_embeddings_for_page("page-1", &[("chunk-1".to_string(), vec![1.0, 0.0])])
-            .expect("replace vectors");
+        repo.replace_chunk_embeddings_for_page(
+            "page-1",
+            &[("chunk-1".to_string(), vec![1.0, 0.0])],
+        )
+        .expect("replace vectors");
 
         repo.set_selected_embedding_model(EmbeddingModelId::local())
             .expect("set embedding model");
 
         let status = repo.read_index_status().expect("read status");
         assert_eq!(status.dirty_pages, 0);
-        assert_eq!(repo.list_all_chunk_embeddings().expect("list vectors").len(), 1);
+        assert_eq!(
+            repo.list_all_chunk_embeddings()
+                .expect("list vectors")
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -613,7 +643,13 @@ mod tests {
         repo.replace_chunks_for_page(
             "page-1",
             "Inbox",
-            &[sample_chunk("chunk-1", "page-1", "block-1", 0, "한국어검색품질")],
+            &[sample_chunk(
+                "chunk-1",
+                "page-1",
+                "block-1",
+                0,
+                "한국어검색품질",
+            )],
         )
         .expect("replace chunks");
 
@@ -633,20 +669,38 @@ mod tests {
         repo.replace_chunks_for_page(
             "page-1",
             "Inbox",
-            &[sample_chunk("chunk-1", "page-1", "block-1", 0, "alpha beta")],
+            &[sample_chunk(
+                "chunk-1",
+                "page-1",
+                "block-1",
+                0,
+                "alpha beta",
+            )],
         )
         .expect("replace chunks");
-        repo.replace_chunk_embeddings_for_page("page-1", &[("chunk-1".to_string(), vec![1.0, 0.0])])
-            .expect("replace vectors");
+        repo.replace_chunk_embeddings_for_page(
+            "page-1",
+            &[("chunk-1".to_string(), vec![1.0, 0.0])],
+        )
+        .expect("replace vectors");
 
         repo.replace_chunks_for_page(
             "page-1",
             "Inbox",
-            &[sample_chunk("chunk-2", "page-1", "block-2", 0, "gamma delta")],
+            &[sample_chunk(
+                "chunk-2",
+                "page-1",
+                "block-2",
+                0,
+                "gamma delta",
+            )],
         )
         .expect("replace chunks again");
-        repo.replace_chunk_embeddings_for_page("page-1", &[("chunk-2".to_string(), vec![0.0, 1.0])])
-            .expect("replace vectors again");
+        repo.replace_chunk_embeddings_for_page(
+            "page-1",
+            &[("chunk-2".to_string(), vec![0.0, 1.0])],
+        )
+        .expect("replace vectors again");
 
         let stored = repo.list_all_chunk_embeddings().expect("list vectors");
         assert_eq!(stored.len(), 1);

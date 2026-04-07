@@ -129,6 +129,7 @@ pub struct IndexStatus {
     pub embedding_provider: Option<String>,
     pub embedding_model: Option<String>,
     pub model_download: Option<ModelDownloadStatus>,
+    pub rebuild_status: Option<IndexBuildStatus>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -158,6 +159,28 @@ pub struct IndexBuildSummary {
     pub embedding_ms: u64,
     pub write_ms: u64,
     pub slow_pages: Vec<RebuildPageProfile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexBuildState {
+    Queued,
+    Running,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IndexBuildStatus {
+    pub state: IndexBuildState,
+    pub progress: f32,
+    pub processed_pages: usize,
+    pub total_pages: usize,
+    pub current_page_title: Option<String>,
+    pub message: String,
+    pub can_cancel: bool,
+    pub summary: Option<IndexBuildSummary>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

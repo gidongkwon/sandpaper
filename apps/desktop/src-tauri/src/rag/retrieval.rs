@@ -5,7 +5,10 @@ use crate::rag::provider::{
 };
 use crate::rag::repository::RagRepository;
 use crate::rag::schema::open_or_create_rag_db;
-use crate::rag::types::{EmbeddingModelId, IndexBuildSummary, IndexStatus, SearchHit, SearchMode};
+use crate::rag::types::{
+    EmbeddingModelId, IndexBuildState, IndexBuildStatus, IndexBuildSummary, IndexStatus, SearchHit,
+    SearchMode,
+};
 use sandpaper_core::db::Database;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -67,14 +70,27 @@ pub fn read_status(vault_path: &Path) -> Result<IndexStatus, String> {
     );
     status.embedding_provider = Some(provider.provider_name().to_string());
     status.embedding_model = Some(provider.model_name().to_string());
+    status.rebuild_status = None;
     Ok(status)
 }
 
 pub fn rebuild_index(db: &Database, vault_path: &Path) -> Result<IndexBuildSummary, String> {
+    rebuild_index_with_progress(db, vault_path, |_| {})
+}
+
+pub fn rebuild_index_with_progress<F>(
+    db: &Database,
+    vault_path: &Path,
+    mut progress: F,
+) -> Result<IndexBuildSummary, String>
+where
+    F: FnMut(&IndexBuildStatus),
+{
     let started_at = Instant::now();
     let conn = open_or_create_rag_db(vault_path)?;
     let mut repo = RagRepository::new(conn);
     let pages = db.list_pages().map_err(|err| format!("{:?}", err))?;
+    let total_pages = pages.len();
 
     let mut pages_indexed = 0usize;
     let mut changed_pages = 0usize;
@@ -87,7 +103,41 @@ pub fn rebuild_index(db: &Database, vault_path: &Path) -> Result<IndexBuildSumma
     let mut write_ms = 0u64;
     let mut slow_pages = Vec::new();
 
+    let queued = IndexBuildStatus {
+        state: IndexBuildState::Queued,
+        progress: if total_pages == 0 { 1.0 } else { 0.0 },
+        processed_pages: 0,
+        total_pages,
+        current_page_title: None,
+        message: if total_pages == 0 {
+            "RAG index is already up to date.".to_string()
+        } else {
+            format!("Queued rebuild for {total_pages} page(s).")
+        },
+        can_cancel: false,
+        summary: None,
+        error: None,
+    };
+    progress(&queued);
+
     for page in pages {
+        let running = IndexBuildStatus {
+            state: IndexBuildState::Running,
+            progress: if total_pages == 0 {
+                1.0
+            } else {
+                pages_indexed as f32 / total_pages as f32
+            },
+            processed_pages: pages_indexed,
+            total_pages,
+            current_page_title: Some(page.title.clone()),
+            message: format!("Indexing {}", page.title),
+            can_cancel: false,
+            summary: None,
+            error: None,
+        };
+        progress(&running);
+
         let outcome = index_page(db, &mut repo, &page.uid)?;
         pages_indexed += 1;
         if outcome.changed {
@@ -105,7 +155,7 @@ pub fn rebuild_index(db: &Database, vault_path: &Path) -> Result<IndexBuildSumma
     slow_pages.sort_by(|left, right| right.total_ms.cmp(&left.total_ms));
     slow_pages.truncate(5);
 
-    Ok(IndexBuildSummary {
+    let summary = IndexBuildSummary {
         pages_indexed,
         changed_pages,
         chunks_written,
@@ -117,10 +167,29 @@ pub fn rebuild_index(db: &Database, vault_path: &Path) -> Result<IndexBuildSumma
         embedding_ms,
         write_ms,
         slow_pages,
-    })
+    };
+
+    let completed = IndexBuildStatus {
+        state: IndexBuildState::Completed,
+        progress: 1.0,
+        processed_pages: summary.pages_indexed,
+        total_pages,
+        current_page_title: None,
+        message: format!("Indexed {} page(s).", summary.pages_indexed),
+        can_cancel: false,
+        summary: Some(summary.clone()),
+        error: None,
+    };
+    progress(&completed);
+
+    Ok(summary)
 }
 
-pub fn search_lexical(vault_path: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, String> {
+pub fn search_lexical(
+    vault_path: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
     let conn = open_or_create_rag_db(vault_path)?;
     let repo = RagRepository::new(conn);
     repo.search_fts(query, limit)
@@ -174,11 +243,7 @@ fn query_match_bonus(hit: &SearchHit, query: &str, query_terms: &[String]) -> f6
     }
 
     let title = hit.title.to_lowercase();
-    let breadcrumb = hit
-        .breadcrumb
-        .as_deref()
-        .unwrap_or_default()
-        .to_lowercase();
+    let breadcrumb = hit.breadcrumb.as_deref().unwrap_or_default().to_lowercase();
     let snippet = hit.snippet.to_lowercase();
 
     let mut bonus = 0.0;
@@ -203,7 +268,11 @@ fn query_match_bonus(hit: &SearchHit, query: &str, query_terms: &[String]) -> f6
     bonus
 }
 
-pub fn search_vector(vault_path: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, String> {
+pub fn search_vector(
+    vault_path: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
     let conn = open_or_create_rag_db(vault_path)?;
     let repo = RagRepository::new(conn);
     let selected_model = repo.read_selected_embedding_model()?;
@@ -231,9 +300,7 @@ pub fn search_vector(vault_path: &Path, query: &str, limit: usize) -> Result<Vec
                 matched_terms: vec![query.to_string()],
             }
         })
-        .filter(|hit| {
-            hit.vector_score.unwrap_or_default() >= tuning.min_vector_score
-        })
+        .filter(|hit| hit.vector_score.unwrap_or_default() >= tuning.min_vector_score)
         .collect();
 
     hits.sort_by(|left, right| cmp_desc_f64(left.score, right.score));
@@ -244,7 +311,11 @@ pub fn search_vector(vault_path: &Path, query: &str, limit: usize) -> Result<Vec
     Ok(hits)
 }
 
-pub fn search_hybrid(vault_path: &Path, query: &str, limit: usize) -> Result<Vec<SearchHit>, String> {
+pub fn search_hybrid(
+    vault_path: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
     let conn = open_or_create_rag_db(vault_path)?;
     let repo = RagRepository::new(conn);
     let tuning = retrieval_tuning(repo.read_selected_embedding_model()?);
@@ -341,14 +412,15 @@ pub fn search_lexical_with_fallback(
 #[cfg(test)]
 mod tests {
     use super::{
-        read_status, rebuild_index, retrieval_tuning, search_hybrid, search_lexical,
-        search_lexical_with_fallback, search_vector,
+        read_status, rebuild_index, rebuild_index_with_progress, retrieval_tuning, search_hybrid,
+        search_lexical, search_lexical_with_fallback, search_vector,
     };
     use crate::rag::provider::{
         selected_model_matches_provider, LocalEmbeddingProvider, PplxEmbeddingProvider,
     };
-    use crate::rag::types::{EmbeddingModelId, SearchMode};
+    use crate::rag::types::{EmbeddingModelId, IndexBuildState, SearchMode};
     use sandpaper_core::db::Database;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
 
     fn setup_db() -> Database {
@@ -372,6 +444,45 @@ mod tests {
         assert_eq!(summary.pages_indexed, 1);
         assert_eq!(summary.changed_pages, 1);
         assert_eq!(summary.chunks_written, 1);
+    }
+
+    #[test]
+    fn rebuild_index_with_progress_reports_running_updates_and_completion() {
+        let db = setup_db();
+        let page_id = db.insert_page("page-1", "Inbox").expect("insert page");
+        db.insert_block(page_id, "block-1", None, "000001", "semantic alpha", "{}")
+            .expect("insert block");
+        let page_id = db.insert_page("page-2", "Archive").expect("insert page");
+        db.insert_block(page_id, "block-2", None, "000001", "semantic beta", "{}")
+            .expect("insert block");
+
+        let dir = tempdir().expect("tempdir");
+        let updates = Arc::new(Mutex::new(Vec::new()));
+        let updates_for_callback = Arc::clone(&updates);
+        let summary = rebuild_index_with_progress(&db, dir.path(), |status| {
+            updates_for_callback
+                .lock()
+                .expect("lock updates")
+                .push(status.clone());
+        })
+        .expect("rebuild index");
+
+        let updates = updates.lock().expect("lock updates");
+        assert!(updates
+            .iter()
+            .any(|status| status.state == IndexBuildState::Running));
+        assert_eq!(
+            updates.last().map(|status| status.state),
+            Some(IndexBuildState::Completed)
+        );
+        assert_eq!(updates.last().map(|status| status.total_pages), Some(2));
+        assert_eq!(
+            updates
+                .last()
+                .and_then(|status| status.summary.as_ref())
+                .map(|summary| summary.pages_indexed),
+            Some(summary.pages_indexed)
+        );
     }
 
     #[test]
@@ -470,9 +581,7 @@ mod tests {
             "{}",
         )
         .expect("insert alpha block");
-        let beta_page_id = db
-            .insert_page("page-2", "메모")
-            .expect("insert beta page");
+        let beta_page_id = db.insert_page("page-2", "메모").expect("insert beta page");
         db.insert_block(
             beta_page_id,
             "block-2",
@@ -487,7 +596,10 @@ mod tests {
         rebuild_index(&db, dir.path()).expect("rebuild index");
 
         let hits = search_hybrid(dir.path(), "한국어 검색", 10).expect("hybrid search");
-        assert_eq!(hits.first().map(|hit| hit.page_uid.as_str()), Some("page-1"));
+        assert_eq!(
+            hits.first().map(|hit| hit.page_uid.as_str()),
+            Some("page-1")
+        );
     }
 
     #[test]

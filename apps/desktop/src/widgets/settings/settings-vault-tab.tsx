@@ -29,6 +29,43 @@ export type RagModelDownloadStatus = {
   canCancel: boolean;
 };
 
+export type RagRebuildState = "queued" | "running" | "completed" | "failed";
+
+export type RagRebuildStatus = {
+  state: RagRebuildState;
+  progress: number;
+  processedPages: number;
+  totalPages: number;
+  currentPageTitle?: string | null;
+  message: string;
+  canCancel: boolean;
+  summary?: {
+    pagesIndexed: number;
+    changedPages: number;
+    chunksWritten: number;
+    elapsedMs: number;
+    pageLoadMs: number;
+    chunkingMs: number;
+    providerInitMs: number;
+    firstBatchMs: number;
+    embeddingMs: number;
+    writeMs: number;
+    slowPages?: Array<{
+      pageUid: string;
+      title: string;
+      chunkCount: number;
+      pageLoadMs: number;
+      chunkingMs: number;
+      providerInitMs: number;
+      firstBatchMs: number;
+      embeddingMs: number;
+      writeMs: number;
+      totalMs: number;
+    }>;
+  } | null;
+  error?: string | null;
+};
+
 export type RagStatus = {
   indexExists: boolean;
   indexedPages: number;
@@ -44,6 +81,7 @@ export type RagStatus = {
   embeddingProvider?: string | null;
   embeddingModel?: string | null;
   modelDownload?: RagModelDownloadStatus | null;
+  rebuildStatus?: RagRebuildStatus | null;
 };
 
 type SettingsVaultProps = {
@@ -200,6 +238,12 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
 
   const embeddingModelBusy = () =>
     props.vault.ragUpdatingModel() || isDownloadActive();
+
+  const rebuildStatus = createMemo(() => ragStatus()?.rebuildStatus ?? null);
+  const isRebuildActive = () => {
+    const state = rebuildStatus()?.state;
+    return state === "queued" || state === "running";
+  };
 
   return (
     <>
@@ -367,6 +411,26 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
             <div class="settings-download__message">{activeDownload()?.message}</div>
           </div>
         </Show>
+        <Show when={rebuildStatus()}>
+          <div class="settings-download">
+            <div class="settings-download__header">
+              <span class="settings-label">Index rebuild</span>
+              <span class="settings-value">
+                {Math.round((rebuildStatus()?.progress ?? 0) * 100)}%
+              </span>
+            </div>
+            <progress
+              class="settings-progress"
+              data-testid="rag-rebuild-progress"
+              max="1"
+              value={Math.min(Math.max(rebuildStatus()?.progress ?? 0, 0), 1)}
+            />
+            <div class="settings-download__message">{rebuildStatus()?.message}</div>
+            <div class="settings-download__message">
+              {rebuildStatus()?.processedPages ?? 0} / {rebuildStatus()?.totalPages ?? 0} pages
+            </div>
+          </div>
+        </Show>
         <div class="settings-row">
           <label class="settings-label">Active provider</label>
           <span class="settings-value">{ragProviderLabel()}</span>
@@ -375,10 +439,14 @@ export const SettingsVaultTab = (props: SettingsVaultTabProps) => {
           <Button
             variant="primary"
             size="sm"
-            disabled={props.vault.ragBusy() || props.vault.ragUpdatingModel()}
+            disabled={
+              props.vault.ragBusy() ||
+              props.vault.ragUpdatingModel() ||
+              isRebuildActive()
+            }
             onClick={() => void props.vault.rebuildRagIndex()}
           >
-            {props.vault.ragBusy() ? "Rebuilding..." : "Rebuild index"}
+            {isRebuildActive() || props.vault.ragBusy() ? "Rebuilding..." : "Rebuild index"}
           </Button>
         </div>
         <Show when={ragReadinessMessage()}>

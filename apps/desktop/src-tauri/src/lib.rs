@@ -21,10 +21,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
-#[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_mica;
+#[cfg(target_os = "macos")]
+use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
@@ -625,7 +625,10 @@ struct RagModelDownloadState {
 impl RagModelDownloadState {
     fn status(&self) -> Option<rag::types::ModelDownloadStatus> {
         self.cleanup_finished_job();
-        self.status.lock().unwrap_or_else(|err| err.into_inner()).clone()
+        self.status
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone()
     }
 
     fn has_active_job(&self) -> bool {
@@ -690,7 +693,9 @@ impl RagModelDownloadState {
                 Arc::clone(&thread_cancel_requested),
             );
 
-            let mut guard = status_for_thread.lock().unwrap_or_else(|err| err.into_inner());
+            let mut guard = status_for_thread
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             *guard = Some(match result {
                 Ok(()) => rag::types::ModelDownloadStatus {
                     model: model_for_thread.clone(),
@@ -751,6 +756,119 @@ impl RagModelDownloadState {
     }
 
     fn cleanup_finished_job_locked(job: &mut Option<RagModelDownloadJob>) {
+        let should_join = job
+            .as_ref()
+            .map(|current| !current.running.load(Ordering::SeqCst))
+            .unwrap_or(false);
+        if should_join {
+            if let Some(finished) = job.take() {
+                let _ = finished.handle.join();
+            }
+        }
+    }
+}
+
+struct RagIndexBuildJob {
+    running: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+#[derive(Default)]
+struct RagIndexBuildState {
+    status: Arc<Mutex<Option<rag::types::IndexBuildStatus>>>,
+    job: Mutex<Option<RagIndexBuildJob>>,
+}
+
+impl RagIndexBuildState {
+    fn status(&self) -> Option<rag::types::IndexBuildStatus> {
+        self.cleanup_finished_job();
+        self.status
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone()
+    }
+
+    fn start(&self, vault_path: PathBuf) -> Result<(), String> {
+        let mut job_guard = self.job.lock().unwrap_or_else(|err| err.into_inner());
+        Self::cleanup_finished_job_locked(&mut job_guard);
+        if job_guard
+            .as_ref()
+            .map(|job| job.running.load(Ordering::SeqCst))
+            .unwrap_or(false)
+        {
+            return Err("rag-index-rebuild-already-running".to_string());
+        }
+
+        let running = Arc::new(AtomicBool::new(true));
+        let thread_running = Arc::clone(&running);
+        let status = Arc::clone(&self.status);
+
+        {
+            let mut guard = status.lock().unwrap_or_else(|err| err.into_inner());
+            *guard = Some(rag::types::IndexBuildStatus {
+                state: rag::types::IndexBuildState::Queued,
+                progress: 0.0,
+                processed_pages: 0,
+                total_pages: 0,
+                current_page_title: None,
+                message: "Queued RAG index rebuild.".to_string(),
+                can_cancel: false,
+                summary: None,
+                error: None,
+            });
+        }
+
+        let handle = std::thread::spawn(move || {
+            let db_path = vault_path.join("sandpaper.db");
+            let result = (|| -> Result<rag::types::IndexBuildSummary, String> {
+                let db = Database::open(&db_path).map_err(|err| format!("{:?}", err))?;
+                db.run_migrations().map_err(|err| format!("{:?}", err))?;
+                rag::retrieval::rebuild_index_with_progress(&db, &vault_path, |next_status| {
+                    let mut guard = status.lock().unwrap_or_else(|err| err.into_inner());
+                    *guard = Some(next_status.clone());
+                })
+            })();
+
+            if let Err(error) = result {
+                let mut guard = status.lock().unwrap_or_else(|err| err.into_inner());
+                let fallback = guard.clone();
+                *guard = Some(rag::types::IndexBuildStatus {
+                    state: rag::types::IndexBuildState::Failed,
+                    progress: fallback
+                        .as_ref()
+                        .map(|status| status.progress)
+                        .unwrap_or(0.0),
+                    processed_pages: fallback
+                        .as_ref()
+                        .map(|status| status.processed_pages)
+                        .unwrap_or(0),
+                    total_pages: fallback
+                        .as_ref()
+                        .map(|status| status.total_pages)
+                        .unwrap_or(0),
+                    current_page_title: fallback
+                        .as_ref()
+                        .and_then(|status| status.current_page_title.clone()),
+                    message: "RAG index rebuild failed.".to_string(),
+                    can_cancel: false,
+                    summary: None,
+                    error: Some(error),
+                });
+            }
+
+            thread_running.store(false, Ordering::SeqCst);
+        });
+
+        *job_guard = Some(RagIndexBuildJob { running, handle });
+        Ok(())
+    }
+
+    fn cleanup_finished_job(&self) {
+        let mut guard = self.job.lock().unwrap_or_else(|err| err.into_inner());
+        Self::cleanup_finished_job_locked(&mut guard);
+    }
+
+    fn cleanup_finished_job_locked(job: &mut Option<RagIndexBuildJob>) {
         let should_join = job
             .as_ref()
             .map(|current| !current.running.load(Ordering::SeqCst))
@@ -957,9 +1075,7 @@ fn file_mime_for_extension(ext: &str) -> &'static str {
         "tar" => "application/x-tar",
         "7z" => "application/x-7z-compressed",
         "doc" => "application/msword",
-        "docx" => {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        }
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "xls" => "application/vnd.ms-excel",
         "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "ppt" => "application/vnd.ms-powerpoint",
@@ -1048,7 +1164,8 @@ fn ensure_image_asset_from_bytes(
         std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
     }
     std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
-    let normalized_relative_path = normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
+    let normalized_relative_path =
+        normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
 
     let record = db
         .upsert_asset(
@@ -1117,7 +1234,8 @@ fn ensure_file_asset_from_bytes(
         std::fs::create_dir_all(parent).map_err(|err| format!("{:?}", err))?;
     }
     std::fs::write(&full_path, bytes).map_err(|err| format!("{:?}", err))?;
-    let normalized_relative_path = normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
+    let normalized_relative_path =
+        normalize_asset_relative_path(relative_path.to_string_lossy().as_ref());
 
     let record = db
         .upsert_asset(
@@ -2132,47 +2250,55 @@ fn search_blocks(query: String) -> Result<Vec<BlockSearchResult>, String> {
 #[tauri::command]
 fn rag_get_status(
     state: tauri::State<'_, Arc<RagModelDownloadState>>,
+    rebuild_state: tauri::State<'_, Arc<RagIndexBuildState>>,
 ) -> Result<rag::types::IndexStatus, String> {
     let vault_path = resolve_active_vault_path()?;
     let mut status = rag::retrieval::read_status(&vault_path)?;
     status.model_download = state.status();
+    status.rebuild_status = rebuild_state.status();
     Ok(status)
 }
 
 #[tauri::command]
-fn rag_rebuild_index() -> Result<rag::types::IndexBuildSummary, String> {
+fn rag_rebuild_index(state: tauri::State<'_, Arc<RagIndexBuildState>>) -> Result<(), String> {
+    let vault_path = resolve_active_vault_path()?;
+    state.start(vault_path)
+}
+
+#[tauri::command]
+async fn rag_search_lex(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
     let vault_path = resolve_active_vault_path()?;
     let db = open_active_database()?;
-    rag::retrieval::rebuild_index(&db, &vault_path)
-}
-
-#[tauri::command]
-fn rag_search_lex(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
-    let vault_path = resolve_active_vault_path()?;
-    let db = open_active_database()?;
     let limit = payload.limit.unwrap_or(20).max(1).min(100);
-    rag::retrieval::search_lexical_with_fallback(&db, &vault_path, &payload.query, limit)
+    run_blocking(move || {
+        rag::retrieval::search_lexical_with_fallback(&db, &vault_path, &payload.query, limit)
+    })
+    .await
 }
 
 #[tauri::command]
-fn rag_search_vector(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
+async fn rag_search_vector(
+    payload: RagSearchPayload,
+) -> Result<Vec<rag::types::SearchHit>, String> {
     let vault_path = resolve_active_vault_path()?;
     let limit = payload.limit.unwrap_or(20).max(1).min(100);
-    rag::retrieval::search_vector(&vault_path, &payload.query, limit)
+    run_blocking(move || rag::retrieval::search_vector(&vault_path, &payload.query, limit)).await
 }
 
 #[tauri::command]
-fn rag_search_hybrid(payload: RagSearchPayload) -> Result<Vec<rag::types::SearchHit>, String> {
+async fn rag_search_hybrid(
+    payload: RagSearchPayload,
+) -> Result<Vec<rag::types::SearchHit>, String> {
     let vault_path = resolve_active_vault_path()?;
     let limit = payload.limit.unwrap_or(20).max(1).min(100);
-    rag::retrieval::search_hybrid(&vault_path, &payload.query, limit)
+    run_blocking(move || rag::retrieval::search_hybrid(&vault_path, &payload.query, limit)).await
 }
 
 #[tauri::command]
-fn rag_answer_query(payload: RagSearchPayload) -> Result<rag::types::AnswerResult, String> {
+async fn rag_answer_query(payload: RagSearchPayload) -> Result<rag::types::AnswerResult, String> {
     let vault_path = resolve_active_vault_path()?;
     let limit = payload.limit.unwrap_or(10).max(1).min(20);
-    rag::answer::answer_query(&vault_path, &payload.query, limit)
+    run_blocking(move || rag::answer::answer_query(&vault_path, &payload.query, limit)).await
 }
 
 #[tauri::command]
@@ -2367,8 +2493,10 @@ fn import_image_asset(path: String) -> Result<ImageAssetImportResponse, String> 
     if !file_path.exists() {
         return Err("Image file not found.".to_string());
     }
-    let ext = image_extension_for_path(&file_path).ok_or_else(|| "Unsupported image type".to_string())?;
-    let mime = image_mime_for_extension(&ext).ok_or_else(|| "Unsupported image type".to_string())?;
+    let ext =
+        image_extension_for_path(&file_path).ok_or_else(|| "Unsupported image type".to_string())?;
+    let mime =
+        image_mime_for_extension(&ext).ok_or_else(|| "Unsupported image type".to_string())?;
     let original_name = file_path
         .file_name()
         .and_then(|value| value.to_str())
@@ -2578,7 +2706,11 @@ fn parse_markdown_link(value: &str) -> Option<(String, String)> {
     let label = trimmed[1..split].trim().to_string();
     let href_raw = &trimmed[split + 2..trimmed.len() - 1];
     let href = normalize_url_like_source(href_raw)?;
-    let resolved_label = if label.is_empty() { href.clone() } else { label };
+    let resolved_label = if label.is_empty() {
+        href.clone()
+    } else {
+        label
+    };
     Some((resolved_label, href))
 }
 
@@ -2787,8 +2919,8 @@ fn build_markdown_export(page: &PageBlocksResponse) -> String {
             BlockType::Table => (block.text.trim_end().to_string(), String::new()),
             BlockType::Text => (block.text.trim_end().to_string(), String::new()),
             _ => {
-                let encoded =
-                    serde_json::to_string(&block.block_type).unwrap_or_else(|_| "\"text\"".to_string());
+                let encoded = serde_json::to_string(&block.block_type)
+                    .unwrap_or_else(|_| "\"text\"".to_string());
                 (
                     block.text.trim_end().to_string(),
                     format!(" <!--sp:{{\"type\":{encoded}}}-->"),
@@ -3091,11 +3223,7 @@ fn set_window_theme_effect(
     mode: String,
     effective_theme: Option<String>,
 ) -> Result<(), String> {
-    apply_theme_window_effect(
-        &window,
-        Some(mode.as_str()),
-        effective_theme.as_deref(),
-    )
+    apply_theme_window_effect(&window, Some(mode.as_str()), effective_theme.as_deref())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -3103,6 +3231,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Arc::new(RuntimeState::new()))
         .manage(Arc::new(RagModelDownloadState::default()))
+        .manage(Arc::new(RagIndexBuildState::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -3203,12 +3332,11 @@ mod tests {
     use super::{
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
-        ensure_plugin_permission, get_plugin_settings, list_permissions_for_plugins,
-        ensure_file_asset_from_bytes, ensure_image_asset_from_bytes, load_sync_config,
-        next_review_due, resolve_review_interval,
-        run_blocking, sanitize_asset_stem, sanitize_kebab, set_plugin_settings,
-        shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot, BlockType, Database,
-        PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
+        ensure_file_asset_from_bytes, ensure_image_asset_from_bytes, ensure_plugin_permission,
+        get_plugin_settings, list_permissions_for_plugins, load_sync_config, next_review_due,
+        resolve_review_interval, run_blocking, sanitize_asset_stem, sanitize_kebab,
+        set_plugin_settings, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
+        BlockType, Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
     };
     use aes_gcm::aead::Aead;
     use aes_gcm::aead::KeyInit;
@@ -3271,7 +3399,9 @@ mod tests {
         assert!(response.asset_path.starts_with("/assets/project-plan--"));
         assert!(response.asset_path.ends_with(".pdf"));
         assert!(!response.asset_path.contains('\\'));
-        assert!(response.markdown.contains("[Project Plan.pdf](/assets/project-plan--"));
+        assert!(response
+            .markdown
+            .contains("[Project Plan.pdf](/assets/project-plan--"));
         assert!(!response.markdown.contains("\\"));
         let relative = response.asset_path.trim_start_matches('/');
         assert!(dir.path().join(relative).exists());

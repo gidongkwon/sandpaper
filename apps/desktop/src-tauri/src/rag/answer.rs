@@ -90,7 +90,11 @@ fn score_sentence(sentence: &str, query: &str, query_terms: &[String]) -> usize 
     (term_hits * 2) + phrase_bonus
 }
 
-fn extract_excerpt(hit: &SearchHit, query: &str, query_terms: &[String]) -> Option<(String, usize)> {
+fn extract_excerpt(
+    hit: &SearchHit,
+    query: &str,
+    query_terms: &[String],
+) -> Option<(String, usize)> {
     let segments = strip_hit_scaffold_segments(hit);
     if segments.is_empty() {
         return None;
@@ -152,9 +156,7 @@ pub fn answer_query(vault_path: &Path, query: &str, limit: usize) -> Result<Answ
                 score,
             })
         })
-        .filter(|candidate| {
-            seen_excerpt_keys.insert(candidate.excerpt.trim().to_lowercase())
-        })
+        .filter(|candidate| seen_excerpt_keys.insert(candidate.excerpt.trim().to_lowercase()))
         .collect::<Vec<_>>();
     selected_hits.sort_by(|left, right| {
         right
@@ -240,7 +242,7 @@ mod tests {
             "Overview sentence. Semantic alpha unlocks the result. Supporting detail follows.",
             "{}",
         )
-            .expect("insert block");
+        .expect("insert block");
         db.insert_block(page_id, "block-2", None, "000002", "semantic beta", "{}")
             .expect("insert block");
 
@@ -260,8 +262,15 @@ mod tests {
     fn answer_query_returns_conservative_fallback_when_only_semantic_hits_exist() {
         let db = setup_db();
         let page_id = db.insert_page("page-1", "Inbox").expect("insert page");
-        db.insert_block(page_id, "block-1", None, "000001", "semantic alpha concept", "{}")
-            .expect("insert block");
+        db.insert_block(
+            page_id,
+            "block-1",
+            None,
+            "000001",
+            "semantic alpha concept",
+            "{}",
+        )
+        .expect("insert block");
 
         let dir = tempdir().expect("tempdir");
         rebuild_index(&db, dir.path()).expect("rebuild index");
@@ -301,7 +310,9 @@ mod tests {
         rebuild_index(&db, dir.path()).expect("rebuild index");
 
         let result = answer_query(dir.path(), "semantic alpha", 10).expect("answer");
-        assert!(result.answer.contains("Semantic alpha answers the question."));
+        assert!(result
+            .answer
+            .contains("Semantic alpha answers the question."));
         assert!(result.answer.contains("Supporting detail stays nearby."));
         assert!(!result.answer.contains("Unrelated sibling note"));
     }

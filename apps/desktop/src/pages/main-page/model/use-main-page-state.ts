@@ -124,6 +124,17 @@ type RagStatusPayload = {
     message: string;
     can_cancel: boolean;
   } | null;
+  rebuild_status?: {
+    state: "queued" | "running" | "completed" | "failed";
+    progress: number;
+    processed_pages: number;
+    total_pages: number;
+    current_page_title?: string | null;
+    message: string;
+    can_cancel: boolean;
+    summary?: RagRebuildSummaryPayload | null;
+    error?: string | null;
+  } | null;
 };
 
 type RagRebuildPageProfilePayload = {
@@ -594,6 +605,8 @@ export const createMainPageState = () => {
   const [ragBusy, setRagBusy] = createSignal(false);
   const [ragUpdatingModel, setRagUpdatingModel] = createSignal(false);
   const [ragMessage, setRagMessage] = createSignal<string | null>(null);
+  const [lastHandledRagRebuildSignature, setLastHandledRagRebuildSignature] =
+    createSignal<string | null>(null);
   const [activePanel, setActivePanel] = createSignal<PluginPanel | null>(null);
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
@@ -1149,6 +1162,44 @@ export const createMainPageState = () => {
           message: status.model_download.message,
           canCancel: status.model_download.can_cancel
         }
+      : null,
+    rebuildStatus: status.rebuild_status
+      ? {
+          state: status.rebuild_status.state,
+          progress: status.rebuild_status.progress,
+          processedPages: status.rebuild_status.processed_pages,
+          totalPages: status.rebuild_status.total_pages,
+          currentPageTitle: status.rebuild_status.current_page_title ?? null,
+          message: status.rebuild_status.message,
+          canCancel: status.rebuild_status.can_cancel,
+          summary: status.rebuild_status.summary
+            ? {
+                pagesIndexed: status.rebuild_status.summary.pages_indexed,
+                changedPages: status.rebuild_status.summary.changed_pages,
+                chunksWritten: status.rebuild_status.summary.chunks_written,
+                elapsedMs: status.rebuild_status.summary.elapsed_ms,
+                pageLoadMs: status.rebuild_status.summary.page_load_ms,
+                chunkingMs: status.rebuild_status.summary.chunking_ms,
+                providerInitMs: status.rebuild_status.summary.provider_init_ms,
+                firstBatchMs: status.rebuild_status.summary.first_batch_ms,
+                embeddingMs: status.rebuild_status.summary.embedding_ms,
+                writeMs: status.rebuild_status.summary.write_ms,
+                slowPages: status.rebuild_status.summary.slow_pages.map((page) => ({
+                  pageUid: page.page_uid,
+                  title: page.title,
+                  chunkCount: page.chunk_count,
+                  pageLoadMs: page.page_load_ms,
+                  chunkingMs: page.chunking_ms,
+                  providerInitMs: page.provider_init_ms,
+                  firstBatchMs: page.first_batch_ms,
+                  embeddingMs: page.embedding_ms,
+                  writeMs: page.write_ms,
+                  totalMs: page.total_ms
+                }))
+              }
+            : null,
+          error: status.rebuild_status.error ?? null
+        }
       : null
   });
 
@@ -1171,32 +1222,11 @@ export const createMainPageState = () => {
     setRagBusy(true);
     setRagMessage(null);
     try {
-      const summary = await invoke<RagRebuildSummaryPayload>("rag_rebuild_index");
+      await invoke("rag_rebuild_index");
       await loadRagStatus();
-      const totalSeconds = (summary.elapsed_ms / 1000).toFixed(1);
-      const embeddingSeconds = (summary.embedding_ms / 1000).toFixed(1);
-      const initSeconds = (summary.provider_init_ms / 1000).toFixed(1);
-      const firstBatchSeconds = (summary.first_batch_ms / 1000).toFixed(1);
-      const slowestPage = summary.slow_pages[0];
-      const slowestSuffix = slowestPage
-        ? ` Slowest page: ${slowestPage.title} (${(
-            slowestPage.total_ms / 1000
-          ).toFixed(1)}s, ${slowestPage.chunk_count} chunks, init ${(
-            slowestPage.provider_init_ms / 1000
-          ).toFixed(1)}s, first batch ${(
-            slowestPage.first_batch_ms / 1000
-          ).toFixed(1)}s, embed ${(
-            slowestPage.embedding_ms / 1000
-          ).toFixed(1)}s).`
-        : "";
-      setRagMessage(
-        `RAG index rebuilt in ${totalSeconds}s for ${summary.pages_indexed} pages (${summary.chunks_written} chunks, init ${initSeconds}s, first batch ${firstBatchSeconds}s, embedding ${embeddingSeconds}s).${slowestSuffix}`
-      );
     } catch (error) {
       console.error("Failed to rebuild RAG index", error);
       setRagMessage("Failed to rebuild RAG index.");
-    } finally {
-      setRagBusy(false);
     }
   };
 
@@ -1679,6 +1709,82 @@ export const createMainPageState = () => {
       void loadRagStatus();
     }, 700);
     onCleanup(() => window.clearInterval(timer));
+  });
+
+  createEffect(() => {
+    const state = ragStatus()?.rebuildStatus?.state;
+    if (state !== "queued" && state !== "running") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadRagStatus();
+    }, 700);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  createEffect(() => {
+    const rebuildStatus = ragStatus()?.rebuildStatus;
+    if (!rebuildStatus) {
+      if (ragBusy()) {
+        setRagBusy(false);
+      }
+      return;
+    }
+
+    if (rebuildStatus.state === "queued" || rebuildStatus.state === "running") {
+      if (!ragBusy()) {
+        setRagBusy(true);
+      }
+      return;
+    }
+
+    const signature = JSON.stringify({
+      state: rebuildStatus.state,
+      summary: rebuildStatus.summary,
+      error: rebuildStatus.error
+    });
+    if (lastHandledRagRebuildSignature() === signature) {
+      if (ragBusy()) {
+        setRagBusy(false);
+      }
+      return;
+    }
+
+    setLastHandledRagRebuildSignature(signature);
+    setRagBusy(false);
+
+    if (rebuildStatus.state === "failed") {
+      setRagMessage(rebuildStatus.error ?? "Failed to rebuild RAG index.");
+      return;
+    }
+
+    const summary = rebuildStatus.summary;
+    if (!summary) {
+      setRagMessage(rebuildStatus.message);
+      return;
+    }
+
+    const totalSeconds = (summary.elapsedMs / 1000).toFixed(1);
+    const embeddingSeconds = (summary.embeddingMs / 1000).toFixed(1);
+    const initSeconds = (summary.providerInitMs / 1000).toFixed(1);
+    const firstBatchSeconds = (summary.firstBatchMs / 1000).toFixed(1);
+    const slowestPage = summary.slowPages?.[0];
+    const slowestSuffix = slowestPage
+      ? ` Slowest page: ${slowestPage.title} (${(
+          slowestPage.totalMs / 1000
+        ).toFixed(1)}s, ${slowestPage.chunkCount} chunks, init ${(
+          slowestPage.providerInitMs / 1000
+        ).toFixed(1)}s, first batch ${(
+          slowestPage.firstBatchMs / 1000
+        ).toFixed(1)}s, embed ${(
+          slowestPage.embeddingMs / 1000
+        ).toFixed(1)}s).`
+      : "";
+    setRagMessage(
+      `RAG index rebuilt in ${totalSeconds}s for ${summary.pagesIndexed} pages (${summary.chunksWritten} chunks, init ${initSeconds}s, first batch ${firstBatchSeconds}s, embedding ${embeddingSeconds}s).${slowestSuffix}`
+    );
+    void loadRagStatus();
   });
 
   const captureReplyTarget = createMemo(() => {

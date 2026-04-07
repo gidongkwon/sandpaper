@@ -166,8 +166,8 @@ mod tests {
     use crate::rag::repository::RagRepository;
     use crate::rag::schema::open_or_create_rag_db;
     use crate::rag::types::IndexedPageRecord;
-    use sandpaper_core::db::Database;
     use chrono::Utc;
+    use sandpaper_core::db::Database;
     use tempfile::tempdir;
 
     fn setup_main_db() -> Database {
