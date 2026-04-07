@@ -51,6 +51,46 @@
   .action-listbox__label--search-results {
     font-size: var(--text-sm);
     color: var(--text-primary);
+  }
+
+  .action-listbox__label--search-results.search-result-card {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .search-result-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .search-result-card__title {
+    font-size: var(--text-xs);
+    line-height: 1.35;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .search-result-card__snippet {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    line-height: 1.45;
+    color: var(--text-primary);
+    word-break: break-word;
+  }
+
+  .action-listbox__description--search-results.search-result-card__breadcrumb {
+    margin-top: 3px;
+    font-size: var(--text-xs);
+    line-height: 1.35;
+    color: var(--text-tertiary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

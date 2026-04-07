@@ -30,26 +30,9 @@ type SearchPaneProps = {
 
 export const SearchPane = (props: SearchPaneProps) => {
   const modeItems = [
-    { value: "lexical", label: "Lexical" },
-    { value: "vector", label: "Vector" },
-    { value: "hybrid", label: "Hybrid" },
+    { value: "hybrid", label: "Search" },
     { value: "answer", label: "Answer" }
   ] as const;
-
-  const formatResultDescription = (result: SearchResult) => {
-    const segments = [
-      result.title?.trim(),
-      result.breadcrumb?.trim(),
-      result.source === "lexical"
-        ? "Indexed lexical"
-        : result.source === "vector"
-          ? "Semantic vector"
-          : result.source === "hybrid"
-            ? "Hybrid retrieval"
-            : null
-    ].filter((value): value is string => !!value);
-    return segments.join(" · ");
-  };
 
   const citationOptions = createMemo<ActionListboxOption<SearchCitation>[]>(() =>
     (props.answer()?.citations ?? []).map((citation) => ({
@@ -71,7 +54,7 @@ export const SearchPane = (props: SearchPaneProps) => {
     props.results().map((result) => ({
       value: result.id,
       label: result.text || "Untitled",
-      description: formatResultDescription(result) || null,
+      description: result.breadcrumb?.trim() || null,
       data: result
     }))
   );
@@ -161,7 +144,21 @@ export const SearchPane = (props: SearchPaneProps) => {
                 onSelect={(option) => props.onResultSelect(option.data)}
                 ariaLabel="Search results"
                 variant="search-results"
-                renderLabel={(option) => props.renderHighlight(option.data.text || "Untitled")}
+                itemLabelClass="search-result-card"
+                itemDescriptionClass="search-result-card__breadcrumb"
+                renderLabel={(option) => (
+                  <div class="search-result-card__content">
+                    <Show when={option.data.title?.trim()}>
+                      <div class="search-result-card__title">{option.data.title?.trim()}</div>
+                    </Show>
+                    <div class="search-result-card__snippet">
+                      {props.renderHighlight(option.data.text || "Untitled")}
+                    </div>
+                  </div>
+                )}
+                renderDescription={(option) => (
+                  <span>{option.data.breadcrumb?.trim() || option.description}</span>
+                )}
                 emptyState={
                   <EmptyState class="sidebar__empty" message="No matches found" />
                 }

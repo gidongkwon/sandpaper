@@ -4,7 +4,23 @@ import { vi } from "vitest";
 import { createSearchState } from "./use-search";
 
 describe("createSearchState", () => {
-  it("wraps rag search payloads for tauri commands", async () => {
+  it("defaults to hybrid search mode", () => {
+    render(() => {
+      const state = createSearchState({
+        blocks: () => [],
+        isTauri: () => false,
+        invoke: vi.fn(),
+        historyKey: () => "default-mode-test",
+        focusInput: () => {}
+      });
+
+      return <div>{state.searchMode()}</div>;
+    });
+
+    expect(screen.getByText("hybrid")).toBeInTheDocument();
+  });
+
+  it("wraps hybrid rag search payloads for tauri commands", async () => {
     const invoke = vi.fn().mockResolvedValue([
       {
         page_uid: "page-1",
@@ -26,7 +42,6 @@ describe("createSearchState", () => {
       });
 
       createEffect(() => {
-        state.setSearchMode("lexical");
         state.setSearchQuery("Draft");
       });
 
@@ -34,7 +49,7 @@ describe("createSearchState", () => {
     });
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("rag_search_lex", {
+      expect(invoke).toHaveBeenCalledWith("rag_search_hybrid", {
         payload: {
           query: "Draft",
           limit: 20

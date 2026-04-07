@@ -14,7 +14,7 @@ import { SidebarContent } from "./sidebar-content";
 describe("SidebarContent", () => {
   it("renders pages and unlinked references actions", async () => {
     const [query, setQuery] = createSignal("");
-    const [mode, setMode] = createSignal<SearchMode>("lexical");
+    const [mode, setMode] = createSignal<SearchMode>("hybrid");
     const [answer] = createSignal<SearchAnswerResult | null>(null);
     const [history] = createSignal<string[]>([]);
     const [results] = createSignal<SearchResult[]>([]);

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@solidjs/testing-library";
+import { render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";
 import { vi } from "vitest";
@@ -10,9 +10,9 @@ import type {
 import { SearchPane } from "./search-pane";
 
 describe("SearchPane", () => {
-  it("renders accessible recent search and results listboxes", async () => {
+  it("renders search results with search and answer modes", async () => {
     const [query, setQuery] = createSignal("Draft");
-    const [mode, setMode] = createSignal<SearchMode>("lexical");
+    const [mode, setMode] = createSignal<SearchMode>("hybrid");
     const [answer] = createSignal<SearchAnswerResult | null>(null);
     const [history] = createSignal(["Draft line 2"]);
     const [results] = createSignal<SearchResult[]>([
@@ -21,7 +21,7 @@ describe("SearchPane", () => {
         text: "Draft line 1",
         title: "Inbox",
         breadcrumb: "Project",
-        source: "lexical"
+        source: "hybrid"
       }
     ]);
     const commitTerm = vi.fn();
@@ -47,23 +47,26 @@ describe("SearchPane", () => {
       />
     ));
 
-    const historyListbox = screen.getByRole("listbox", { name: "Recent searches" });
-    const resultsListbox = screen.getByRole("listbox", { name: "Search results" });
-    expect(screen.getByText("Inbox · Project · Indexed lexical")).toBeInTheDocument();
-    await user.click(screen.getByRole("radio", { name: "Hybrid" }));
-    expect(mode()).toBe("hybrid");
+    expect(screen.getByText("Search")).toBeInTheDocument();
+    expect(screen.getByText("Answer")).toBeInTheDocument();
+    expect(screen.getByText("Inbox")).toBeInTheDocument();
+    expect(screen.getByText("Project")).toBeInTheDocument();
+    expect(screen.getByText("Draft line 1")).toBeInTheDocument();
 
-    await user.click(within(historyListbox).getByRole("option", { name: "Draft line 2" }));
+    await user.click(screen.getByText("Draft line 2"));
     expect(applyTerm).toHaveBeenCalledWith("Draft line 2");
 
-    await user.click(within(resultsListbox).getByRole("option", { name: "Draft line 1" }));
+    await user.click(screen.getByText("Draft line 1"));
     expect(onResultSelect).toHaveBeenCalledWith({
       id: "block-1",
       text: "Draft line 1",
       title: "Inbox",
       breadcrumb: "Project",
-      source: "lexical"
+      source: "hybrid"
     });
+
+    await user.click(screen.getByText("Answer"));
+    expect(mode()).toBe("answer");
   });
 
   it("renders answer mode citations", async () => {
@@ -110,7 +113,7 @@ describe("SearchPane", () => {
     ));
 
     expect(screen.getByText("Answer line")).toBeInTheDocument();
-    await user.click(screen.getByRole("option", { name: /Draft line 1/i }));
+    await user.click(screen.getByText("Draft line 1"));
     expect(onCitationSelect).toHaveBeenCalledWith({
       pageUid: "page-1",
       blockUid: "block-1",

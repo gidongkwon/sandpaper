@@ -35,7 +35,7 @@ type SearchDeps = {
 
 export const createSearchState = (deps: SearchDeps) => {
   const [searchQuery, setSearchQuery] = createSignal("");
-  const [searchMode, setSearchMode] = createSignal<SearchMode>("lexical");
+  const [searchMode, setSearchMode] = createSignal<SearchMode>("hybrid");
   const [searchFilter, setSearchFilter] = createSignal<SearchFilter>("all");
   const [searchHistory, setSearchHistory] = createSignal<string[]>([]);
 
