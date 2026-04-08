@@ -18,6 +18,37 @@ pub struct IndexPageOutcome {
 }
 
 const EMBEDDING_BATCH_SIZE: usize = 8;
+const CONTEXTUAL_DOCUMENT_TOKEN_BUDGET: usize = 1536;
+
+fn partition_chunks_for_contextual_documents(
+    chunks: &[crate::rag::types::ChunkRecord],
+) -> Vec<&[crate::rag::types::ChunkRecord]> {
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+
+    let mut partitions = Vec::new();
+    let mut start = 0usize;
+    let mut budget = 0usize;
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        let chunk_budget = chunk.token_count.max(1) + 1;
+        let would_overflow =
+            index > start && budget + chunk_budget > CONTEXTUAL_DOCUMENT_TOKEN_BUDGET;
+        if would_overflow {
+            partitions.push(&chunks[start..index]);
+            start = index;
+            budget = 0;
+        }
+        budget += chunk_budget;
+    }
+
+    if start < chunks.len() {
+        partitions.push(&chunks[start..]);
+    }
+
+    partitions
+}
 
 fn embed_chunks_with_provider(
     provider: &impl EmbeddingProvider,
@@ -25,31 +56,41 @@ fn embed_chunks_with_provider(
 ) -> Result<(Vec<(String, Vec<f32>)>, u64), String> {
     if provider.supports_contextual_documents() {
         let batch_started_at = Instant::now();
-        let documents = vec![chunks.iter().map(|chunk| chunk.content.clone()).collect()];
+        let partitions = partition_chunks_for_contextual_documents(chunks);
+        let documents = partitions
+            .iter()
+            .map(|partition| {
+                partition
+                    .iter()
+                    .map(|chunk| chunk.content.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         let embeddings_by_document = provider.embed_document_chunks(&documents)?;
         let first_batch_ms = batch_started_at.elapsed().as_millis() as u64;
-        if embeddings_by_document.len() != 1 {
+        if embeddings_by_document.len() != partitions.len() {
             return Err(format!(
-                "embedding provider returned {} documents for 1 page",
+                "embedding provider returned {} documents for {} page partitions",
                 embeddings_by_document.len()
+                , partitions.len()
             ));
         }
-        let mut documents = embeddings_by_document.into_iter();
-        let document_embeddings = documents
-            .next()
-            .ok_or_else(|| "embedding provider returned no contextual embeddings".to_string())?;
-        if document_embeddings.len() != chunks.len() {
-            return Err(format!(
-                "embedding provider returned {} embeddings for {} chunks",
-                document_embeddings.len(),
-                chunks.len()
-            ));
+        let mut embeddings = Vec::with_capacity(chunks.len());
+        for (partition, document_embeddings) in partitions.iter().zip(embeddings_by_document) {
+            if document_embeddings.len() != partition.len() {
+                return Err(format!(
+                    "embedding provider returned {} embeddings for {} chunks in a contextual partition",
+                    document_embeddings.len(),
+                    partition.len()
+                ));
+            }
+            embeddings.extend(
+                partition
+                    .iter()
+                    .zip(document_embeddings.into_iter())
+                    .map(|(chunk, embedding)| (chunk.chunk_id.clone(), embedding)),
+            );
         }
-        let embeddings = chunks
-            .iter()
-            .zip(document_embeddings.into_iter())
-            .map(|(chunk, embedding)| (chunk.chunk_id.clone(), embedding))
-            .collect();
         return Ok((embeddings, first_batch_ms));
     }
 
@@ -200,7 +241,10 @@ pub fn index_page(
 
 #[cfg(test)]
 mod tests {
-    use super::{embed_chunks_with_provider, index_page, EMBEDDING_BATCH_SIZE};
+    use super::{
+        embed_chunks_with_provider, index_page, partition_chunks_for_contextual_documents,
+        EMBEDDING_BATCH_SIZE,
+    };
     use crate::rag::repository::RagRepository;
     use crate::rag::schema::open_or_create_rag_db;
     use crate::rag::types::{ChunkRecord, IndexedPageRecord};
@@ -219,6 +263,7 @@ mod tests {
     #[derive(Default)]
     struct FakeContextProvider {
         contextual_calls: Cell<usize>,
+        last_document_sizes: std::cell::RefCell<Vec<usize>>,
     }
 
     impl EmbeddingProvider for FakeContextProvider {
@@ -251,6 +296,8 @@ mod tests {
             documents: &[Vec<String>],
         ) -> Result<Vec<Vec<Vec<f32>>>, String> {
             self.contextual_calls.set(self.contextual_calls.get() + 1);
+            *self.last_document_sizes.borrow_mut() =
+                documents.iter().map(|document| document.len()).collect();
             Ok(documents
                 .iter()
                 .map(|document| {
@@ -406,10 +453,59 @@ mod tests {
             embed_chunks_with_provider(&provider, &chunks).expect("contextual embeddings");
 
         assert_eq!(provider.contextual_calls.get(), 1);
+        assert_eq!(&*provider.last_document_sizes.borrow(), &[2]);
         assert_eq!(embeddings.len(), 2);
         assert_eq!(embeddings[0].0, "page-1:block-1");
         assert_eq!(embeddings[1].0, "page-1:block-2");
         assert_eq!(embeddings[0].1, vec![1.0, 0.0]);
         assert_eq!(embeddings[1].1, vec![2.0, 0.0]);
+    }
+
+    #[test]
+    fn contextual_partitioning_splits_large_pages_into_multiple_documents() {
+        let chunks = (0..64)
+            .map(|index| ChunkRecord {
+                chunk_id: format!("page-1:block-{index}"),
+                page_uid: "page-1".to_string(),
+                block_uid: format!("block-{index}"),
+                ordinal: index,
+                source_kind: "block".to_string(),
+                breadcrumb: None,
+                content: format!("chunk {index}"),
+                token_count: 48,
+                chunk_hash: format!("hash-{index}"),
+            })
+            .collect::<Vec<_>>();
+
+        let partitions = partition_chunks_for_contextual_documents(&chunks);
+
+        assert!(partitions.len() > 1);
+        assert_eq!(partitions.iter().map(|partition| partition.len()).sum::<usize>(), 64);
+        assert!(partitions.iter().all(|partition| !partition.is_empty()));
+    }
+
+    #[test]
+    fn contextual_provider_embeds_large_pages_across_multiple_partitions() {
+        let provider = FakeContextProvider::default();
+        let chunks = (0..64)
+            .map(|index| ChunkRecord {
+                chunk_id: format!("page-1:block-{index}"),
+                page_uid: "page-1".to_string(),
+                block_uid: format!("block-{index}"),
+                ordinal: index,
+                source_kind: "block".to_string(),
+                breadcrumb: None,
+                content: format!("chunk {index}"),
+                token_count: 48,
+                chunk_hash: format!("hash-{index}"),
+            })
+            .collect::<Vec<_>>();
+
+        let (embeddings, _) =
+            embed_chunks_with_provider(&provider, &chunks).expect("contextual embeddings");
+
+        assert_eq!(provider.contextual_calls.get(), 1);
+        assert!(provider.last_document_sizes.borrow().len() > 1);
+        assert_eq!(embeddings.len(), 64);
     }
 }
