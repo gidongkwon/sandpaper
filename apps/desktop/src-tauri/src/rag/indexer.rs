@@ -19,6 +19,67 @@ pub struct IndexPageOutcome {
 
 const EMBEDDING_BATCH_SIZE: usize = 8;
 
+fn embed_chunks_with_provider(
+    provider: &impl EmbeddingProvider,
+    chunks: &[crate::rag::types::ChunkRecord],
+) -> Result<(Vec<(String, Vec<f32>)>, u64), String> {
+    if provider.supports_contextual_documents() {
+        let batch_started_at = Instant::now();
+        let documents = vec![chunks.iter().map(|chunk| chunk.content.clone()).collect()];
+        let embeddings_by_document = provider.embed_document_chunks(&documents)?;
+        let first_batch_ms = batch_started_at.elapsed().as_millis() as u64;
+        if embeddings_by_document.len() != 1 {
+            return Err(format!(
+                "embedding provider returned {} documents for 1 page",
+                embeddings_by_document.len()
+            ));
+        }
+        let mut documents = embeddings_by_document.into_iter();
+        let document_embeddings = documents
+            .next()
+            .ok_or_else(|| "embedding provider returned no contextual embeddings".to_string())?;
+        if document_embeddings.len() != chunks.len() {
+            return Err(format!(
+                "embedding provider returned {} embeddings for {} chunks",
+                document_embeddings.len(),
+                chunks.len()
+            ));
+        }
+        let embeddings = chunks
+            .iter()
+            .zip(document_embeddings.into_iter())
+            .map(|(chunk, embedding)| (chunk.chunk_id.clone(), embedding))
+            .collect();
+        return Ok((embeddings, first_batch_ms));
+    }
+
+    let mut first_batch_ms = 0u64;
+    let mut embeddings = Vec::with_capacity(chunks.len());
+    for (batch_index, batch) in chunks.chunks(EMBEDDING_BATCH_SIZE).enumerate() {
+        let batch_started_at = Instant::now();
+        let texts: Vec<String> = batch.iter().map(|chunk| chunk.content.clone()).collect();
+        let batch_embeddings = provider.embed_documents(&texts)?;
+        if batch_embeddings.len() != batch.len() {
+            return Err(format!(
+                "embedding provider returned {} embeddings for {} chunks",
+                batch_embeddings.len(),
+                batch.len()
+            ));
+        }
+        embeddings.extend(
+            batch
+                .iter()
+                .zip(batch_embeddings.into_iter())
+                .map(|(chunk, embedding)| (chunk.chunk_id.clone(), embedding)),
+        );
+        let batch_ms = batch_started_at.elapsed().as_millis() as u64;
+        if batch_index == 0 {
+            first_batch_ms = batch_ms;
+        }
+    }
+    Ok((embeddings, first_batch_ms))
+}
+
 pub fn index_page(
     db: &Database,
     repo: &mut RagRepository,
@@ -113,30 +174,7 @@ pub fn index_page(
         0
     };
     let embedding_started_at = Instant::now();
-    let mut first_batch_ms = 0u64;
-    let mut embeddings = Vec::with_capacity(chunks.len());
-    for (batch_index, batch) in chunks.chunks(EMBEDDING_BATCH_SIZE).enumerate() {
-        let batch_started_at = Instant::now();
-        let texts: Vec<String> = batch.iter().map(|chunk| chunk.content.clone()).collect();
-        let batch_embeddings = provider.embed_documents(&texts)?;
-        if batch_embeddings.len() != batch.len() {
-            return Err(format!(
-                "embedding provider returned {} embeddings for {} chunks",
-                batch_embeddings.len(),
-                batch.len()
-            ));
-        }
-        embeddings.extend(
-            batch
-                .iter()
-                .zip(batch_embeddings.into_iter())
-                .map(|(chunk, embedding)| (chunk.chunk_id.clone(), embedding)),
-        );
-        let batch_ms = batch_started_at.elapsed().as_millis() as u64;
-        if batch_index == 0 {
-            first_batch_ms = batch_ms;
-        }
-    }
+    let (embeddings, first_batch_ms) = embed_chunks_with_provider(&provider, &chunks)?;
     let embedding_ms = embedding_started_at.elapsed().as_millis() as u64;
     let vector_write_started_at = Instant::now();
     repo.replace_chunk_embeddings_for_page(&page.uid, &embeddings)?;
@@ -162,18 +200,68 @@ pub fn index_page(
 
 #[cfg(test)]
 mod tests {
-    use super::{index_page, EMBEDDING_BATCH_SIZE};
+    use super::{embed_chunks_with_provider, index_page, EMBEDDING_BATCH_SIZE};
     use crate::rag::repository::RagRepository;
     use crate::rag::schema::open_or_create_rag_db;
-    use crate::rag::types::IndexedPageRecord;
+    use crate::rag::types::{ChunkRecord, IndexedPageRecord};
+    use crate::rag::provider::EmbeddingProvider;
     use chrono::Utc;
     use sandpaper_core::db::Database;
+    use std::cell::Cell;
     use tempfile::tempdir;
 
     fn setup_main_db() -> Database {
         let db = Database::new_in_memory().expect("db init");
         db.run_migrations().expect("migrations");
         db
+    }
+
+    #[derive(Default)]
+    struct FakeContextProvider {
+        contextual_calls: Cell<usize>,
+    }
+
+    impl EmbeddingProvider for FakeContextProvider {
+        fn provider_name(&self) -> &'static str {
+            "test"
+        }
+
+        fn model_name(&self) -> &'static str {
+            "fake-context"
+        }
+
+        fn embed_query(&self, _query: &str) -> Result<Vec<f32>, String> {
+            Ok(vec![1.0, 0.0])
+        }
+
+        fn embed_document(&self, _text: &str) -> Result<Vec<f32>, String> {
+            Err("unused".to_string())
+        }
+
+        fn embed_documents(&self, _texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+            Err("chunk-batch path should not be used".to_string())
+        }
+
+        fn supports_contextual_documents(&self) -> bool {
+            true
+        }
+
+        fn embed_document_chunks(
+            &self,
+            documents: &[Vec<String>],
+        ) -> Result<Vec<Vec<Vec<f32>>>, String> {
+            self.contextual_calls.set(self.contextual_calls.get() + 1);
+            Ok(documents
+                .iter()
+                .map(|document| {
+                    document
+                        .iter()
+                        .enumerate()
+                        .map(|(index, _)| vec![index as f32 + 1.0, 0.0])
+                        .collect()
+                })
+                .collect())
+        }
     }
 
     #[test]
@@ -284,5 +372,44 @@ mod tests {
         assert_eq!(outcome.chunk_count, EMBEDDING_BATCH_SIZE + 3);
         let vectors = repo.list_all_chunk_embeddings().expect("vectors");
         assert_eq!(vectors.len(), EMBEDDING_BATCH_SIZE + 3);
+    }
+
+    #[test]
+    fn contextual_provider_embeds_page_chunks_in_single_document_batch() {
+        let provider = FakeContextProvider::default();
+        let chunks = vec![
+            ChunkRecord {
+                chunk_id: "page-1:block-1".to_string(),
+                page_uid: "page-1".to_string(),
+                block_uid: "block-1".to_string(),
+                ordinal: 0,
+                source_kind: "block".to_string(),
+                breadcrumb: None,
+                content: "alpha".to_string(),
+                token_count: 1,
+                chunk_hash: "hash-1".to_string(),
+            },
+            ChunkRecord {
+                chunk_id: "page-1:block-2".to_string(),
+                page_uid: "page-1".to_string(),
+                block_uid: "block-2".to_string(),
+                ordinal: 1,
+                source_kind: "block".to_string(),
+                breadcrumb: None,
+                content: "beta".to_string(),
+                token_count: 1,
+                chunk_hash: "hash-2".to_string(),
+            },
+        ];
+
+        let (embeddings, _) =
+            embed_chunks_with_provider(&provider, &chunks).expect("contextual embeddings");
+
+        assert_eq!(provider.contextual_calls.get(), 1);
+        assert_eq!(embeddings.len(), 2);
+        assert_eq!(embeddings[0].0, "page-1:block-1");
+        assert_eq!(embeddings[1].0, "page-1:block-2");
+        assert_eq!(embeddings[0].1, vec![1.0, 0.0]);
+        assert_eq!(embeddings[1].1, vec![2.0, 0.0]);
     }
 }

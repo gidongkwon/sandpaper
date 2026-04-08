@@ -416,7 +416,8 @@ mod tests {
         search_lexical, search_lexical_with_fallback, search_vector,
     };
     use crate::rag::provider::{
-        selected_model_matches_provider, LocalEmbeddingProvider, PplxEmbeddingProvider,
+        selected_model_matches_provider, LocalEmbeddingProvider, PplxContextEmbeddingProvider,
+        PplxEmbeddingProvider,
     };
     use crate::rag::types::{EmbeddingModelId, IndexBuildState, SearchMode};
     use sandpaper_core::db::Database;
@@ -616,7 +617,7 @@ mod tests {
         assert_eq!(status.selected_embedding_model, EmbeddingModelId::local());
         assert!(status.selected_embedding_model_active);
         assert_eq!(status.embedding_provider.as_deref(), Some("local"));
-        assert_eq!(status.available_embedding_models.len(), 2);
+        assert_eq!(status.available_embedding_models.len(), 3);
         assert!(status.embedding_status_message.is_none());
     }
 
@@ -649,6 +650,31 @@ mod tests {
         let provider = PplxEmbeddingProvider;
         assert!(selected_model_matches_provider(
             &EmbeddingModelId::new("pplx").expect("pplx id"),
+            &provider
+        ));
+    }
+
+    #[test]
+    fn embedding_status_message_reports_not_ready_context_model() {
+        assert_eq!(
+            super::embedding_status_message(
+                &EmbeddingModelId::new("pplx-embed-context")
+                    .expect("pplx-embed-context id"),
+                false,
+                false,
+            )
+            .as_deref(),
+            Some(
+                "pplx-embed-context-v1-0.6b is selected but not downloaded yet. Download the model before rebuilding the index."
+            )
+        );
+    }
+
+    #[test]
+    fn generic_model_status_check_recognizes_pplx_context_provider() {
+        let provider = PplxContextEmbeddingProvider;
+        assert!(selected_model_matches_provider(
+            &EmbeddingModelId::new("pplx-embed-context").expect("pplx-embed-context id"),
             &provider
         ));
     }
