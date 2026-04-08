@@ -2370,13 +2370,18 @@ fn load_page_blocks(page_uid: String) -> Result<PageBlocksResponse, String> {
 #[tauri::command]
 fn list_page_wikilink_backlinks(page_uid: String) -> Result<Vec<PageBacklinkEntry>, String> {
     let db = open_active_database()?;
-    let target_uid = sanitize_kebab(&page_uid);
+    let target_page = db
+        .get_page_by_uid(&page_uid)
+        .map_err(|err| format!("{:?}", err))?
+        .ok_or_else(|| "Page not found".to_string())?;
+    let target_uid = sanitize_kebab(&target_page.uid);
+    let target_title = target_page.title.trim().to_string();
     let records = db
         .list_blocks_with_wikilinks()
         .map_err(|err| format!("{:?}", err))?;
     let mut results = Vec::new();
     for record in records {
-        if link_matches_target(&record, &target_uid) {
+        if link_matches_target(&record, &target_uid, &target_title) {
             results.push(PageBacklinkEntry {
                 block_uid: record.block_uid,
                 text: record.text,
@@ -2388,9 +2393,17 @@ fn list_page_wikilink_backlinks(page_uid: String) -> Result<Vec<PageBacklinkEntr
     Ok(results)
 }
 
-fn link_matches_target(record: &BlockPageRecord, target_uid: &str) -> bool {
+fn link_matches_target(record: &BlockPageRecord, target_uid: &str, target_title: &str) -> bool {
+    let normalized_title = target_title.to_lowercase();
     for link in extract_wikilinks(&record.text) {
-        if sanitize_kebab(&link) == target_uid {
+        let trimmed = link.trim();
+        if trimmed.eq_ignore_ascii_case(target_title) {
+            return true;
+        }
+        if trimmed.to_lowercase() == normalized_title {
+            return true;
+        }
+        if sanitize_kebab(trimmed) == target_uid {
             return true;
         }
     }
@@ -3389,16 +3402,18 @@ mod tests {
         apply_sync_ops_to_blocks, build_markdown_export, build_sync_ops,
         compute_missing_permissions, detect_sync_conflicts, encrypt_sync_payload,
         ensure_file_asset_from_bytes, ensure_image_asset_from_bytes, ensure_plugin_permission,
-        get_plugin_settings, list_permissions_for_plugins, load_sync_config, next_review_due,
-        resolve_review_interval, run_blocking, sanitize_asset_stem, sanitize_kebab,
-        set_plugin_settings, shadow_markdown_path, write_shadow_markdown_to_vault, BlockSnapshot,
-        BlockType, Database, PageBlocksResponse, PluginInfo, RuntimeState, SyncOpPayload,
+        get_plugin_settings, link_matches_target, list_permissions_for_plugins, load_sync_config,
+        next_review_due, resolve_review_interval, run_blocking, sanitize_asset_stem,
+        sanitize_kebab, set_plugin_settings, shadow_markdown_path, write_shadow_markdown_to_vault,
+        BlockSnapshot, BlockType, Database, PageBlocksResponse, PluginInfo, RuntimeState,
+        SyncOpPayload,
     };
     use aes_gcm::aead::Aead;
     use aes_gcm::aead::KeyInit;
     use base64::Engine;
     use chrono::TimeZone;
     use sandpaper_core::app::backup_before_migration_at;
+    use sandpaper_core::db::BlockPageRecord;
     use serde_json::Value;
     use std::collections::HashMap;
     use tauri::async_runtime::block_on;
@@ -3409,6 +3424,30 @@ mod tests {
         assert_eq!(sanitize_kebab("Daily Notes"), "daily-notes");
         assert_eq!(sanitize_kebab("  ### "), "page");
         assert_eq!(sanitize_kebab("multi__part--name"), "multi-part-name");
+    }
+
+    #[test]
+    fn link_matches_target_accepts_exact_page_titles() {
+        let record = BlockPageRecord {
+            block_uid: "block-1".to_string(),
+            text: "See [[백링크 테스트]]".to_string(),
+            page_uid: "source-page".to_string(),
+            page_title: "Source".to_string(),
+        };
+
+        assert!(link_matches_target(&record, "page-2", "백링크 테스트"));
+    }
+
+    #[test]
+    fn link_matches_target_accepts_alias_and_heading_with_exact_titles() {
+        let record = BlockPageRecord {
+            block_uid: "block-2".to_string(),
+            text: "See [[백링크 테스트#개요|테스트]]".to_string(),
+            page_uid: "source-page".to_string(),
+            page_title: "Source".to_string(),
+        };
+
+        assert!(link_matches_target(&record, "page-2", "백링크 테스트"));
     }
 
     #[test]
