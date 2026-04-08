@@ -32,6 +32,11 @@ type ExportStatus = {
   preview?: string;
 };
 
+export type MarkdownImportEntry = {
+  path: string;
+  text: string;
+};
+
 type ShadowWriter = {
   scheduleWrite: (pageUid: string, content: string) => void;
 };
@@ -78,6 +83,52 @@ export const createImportExportState = (deps: ImportExportDeps) => {
     createSignal<File | null>(null);
   const [offlineImportStatus, setOfflineImportStatus] =
     createSignal<StatusMessage | null>(null);
+
+  const scheduleShadowMarkdownWrite = (
+    pageUid: string,
+    title: string,
+    blocks: Block[]
+  ) => {
+    deps.shadowWriter.scheduleWrite(
+      pageUid,
+      serializePageToMarkdown({
+        id: pageUid,
+        title,
+        blocks: blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent,
+          block_type: resolveBlockType(block)
+        }))
+      })
+    );
+  };
+
+  const upsertImportedPage = async (
+    pageUid: string,
+    title: string,
+    blocks: Block[]
+  ) => {
+    if (deps.isTauri()) {
+      if (title.trim()) {
+        await deps.invoke("set_page_title", {
+          payload: {
+            page_uid: pageUid,
+            title: title.trim()
+          }
+        });
+      }
+      await deps.invoke("save_page_blocks", {
+        pageUid,
+        page_uid: pageUid,
+        blocks: blocks.map((block) => deps.toPayload(block))
+      });
+    } else {
+      deps.saveLocalPageSnapshot(pageUid, title, blocks);
+    }
+
+    scheduleShadowMarkdownWrite(pageUid, title, blocks);
+  };
 
   const importMarkdown = async () => {
     if (importing()) return;
@@ -135,22 +186,10 @@ export const createImportExportState = (deps: ImportExportDeps) => {
       }
 
       if (deps.isTauri()) {
-        if (targetTitle.trim()) {
-          await deps.invoke("set_page_title", {
-            payload: {
-              page_uid: targetUid,
-              title: targetTitle.trim()
-            }
-          });
-        }
-        await deps.invoke("save_page_blocks", {
-          pageUid: targetUid,
-          page_uid: targetUid,
-          blocks: nextBlocks.map((block) => deps.toPayload(block))
-        });
+        await upsertImportedPage(targetUid, targetTitle, nextBlocks);
         await deps.loadPages();
       } else {
-        deps.saveLocalPageSnapshot(targetUid, targetTitle, nextBlocks);
+        await upsertImportedPage(targetUid, targetTitle, nextBlocks);
         await deps.loadPages();
       }
 
@@ -164,25 +203,114 @@ export const createImportExportState = (deps: ImportExportDeps) => {
         message: `Imported ${importedBlocks.length} blocks into ${scopeLabel}.${warningSuffix}`
       });
       deps.markSaved();
-      deps.shadowWriter.scheduleWrite(
-        targetUid,
-        serializePageToMarkdown({
-          id: targetUid,
-          title: targetTitle,
-          blocks: nextBlocks.map((block) => ({
-            id: block.id,
-            text: block.text,
-            indent: block.indent,
-            block_type: resolveBlockType(block)
-          }))
-        })
-      );
       setImportText("");
     } catch (error) {
       console.error("Import failed", error);
       setImportStatus({
         state: "error",
         message: "Import failed. Check the logs for details."
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const deriveTitleFromPath = (path: string) => {
+    const leaf = path.split(/[\\/]/u).pop() ?? path;
+    const stem = leaf.replace(/\.[^/.]+$/u, "").trim();
+    if (!stem) return "Imported";
+    return stem
+      .replace(/[-_]+/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+  };
+
+  const importMarkdownFolder = async (entries: MarkdownImportEntry[]) => {
+    if (importing()) return;
+    const normalizedEntries = entries
+      .map((entry) => ({
+        path: entry.path.trim(),
+        text: entry.text
+      }))
+      .filter((entry) => entry.path.length > 0 && entry.text.trim().length > 0)
+      .sort((left, right) => left.path.localeCompare(right.path));
+
+    if (normalizedEntries.length === 0) {
+      setImportStatus({
+        state: "error",
+        message: "Choose a folder with Markdown files before importing."
+      });
+      return;
+    }
+
+    setImporting(true);
+    setImportStatus(null);
+
+    try {
+      let importedPages = 0;
+      let warningCount = 0;
+      let firstPageUid: string | null = null;
+
+      for (const entry of normalizedEntries) {
+        const parsed = parseMarkdownPage(entry.text, deps.makeRandomId);
+        if (parsed.page.blocks.length === 0) continue;
+
+        const fallbackTitle = deriveTitleFromPath(entry.path);
+        const title =
+          parsed.hasHeader && parsed.page.title.trim()
+            ? parsed.page.title.trim()
+            : fallbackTitle;
+        const pageUid = deps.resolvePageUid(
+          parsed.hasHeader ? parsed.page.id : title
+        );
+        if (!pageUid || deps.resolvePageUid(pageUid) === HIDDEN_INBOX_PAGE_UID) {
+          continue;
+        }
+
+        const snapshot = parsed.page.blocks.map((block) => ({
+          id: block.id,
+          text: block.text,
+          indent: block.indent,
+          block_type: resolveBlockType({
+            text: block.text,
+            block_type: block.block_type
+          }),
+          ...(block.meta ? { meta: block.meta } : {})
+        }));
+
+        await upsertImportedPage(pageUid, title, snapshot);
+        warningCount += parsed.warnings.length;
+        importedPages += 1;
+        firstPageUid ??= pageUid;
+      }
+
+      if (importedPages === 0) {
+        setImportStatus({
+          state: "error",
+          message: "No Markdown pages were found to import."
+        });
+        return;
+      }
+
+      await deps.loadPages();
+      if (firstPageUid) {
+        await deps.switchPage(firstPageUid);
+      }
+
+      setImportStatus({
+        state: "success",
+        message: `Imported ${importedPages} page${
+          importedPages === 1 ? "" : "s"
+        } from ${normalizedEntries.length} Markdown file${
+          normalizedEntries.length === 1 ? "" : "s"
+        }.${warningCount > 0 ? ` ${warningCount} warnings.` : ""}`
+      });
+      deps.markSaved();
+    } catch (error) {
+      console.error("Folder import failed", error);
+      setImportStatus({
+        state: "error",
+        message: "Folder import failed. Check the logs for details."
       });
     } finally {
       setImporting(false);
@@ -507,6 +635,7 @@ export const createImportExportState = (deps: ImportExportDeps) => {
     setImportStatus,
     importing,
     importMarkdown,
+    importMarkdownFolder,
     exporting,
     exportMarkdown,
     exportStatus,

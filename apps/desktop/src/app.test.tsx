@@ -674,6 +674,9 @@ describe("App", () => {
       screen.getByRole("button", { name: /open settings/i })
     );
     await userEvent.click(screen.getByRole("tab", { name: "Import" }));
+    expect(
+      await screen.findByRole("button", { name: /import format/i })
+    ).toBeInTheDocument();
     const input = screen.getByPlaceholderText(/paste markdown here/i);
     await userEvent.type(
       input,
@@ -681,7 +684,7 @@ describe("App", () => {
 - Imported line ^import-1`
     );
     const importSection = screen
-      .getByRole("heading", { name: "Import Markdown" })
+      .getByRole("heading", { name: "Import Data" })
       .closest(".settings-section");
     expect(importSection).not.toBeNull();
     const importButton = within(importSection as HTMLElement).getByRole(
@@ -722,6 +725,48 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("imports a folder of markdown pages in browser mode", async () => {
+    render(() => <App />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
+
+    await userEvent.click(screen.getByRole("button", { name: /import format/i }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Markdown folder" })
+    );
+
+    const picker = screen.getByTestId("markdown-folder-picker") as HTMLInputElement;
+    const first = new File(["# Search Note\n- 재색인"], "01-search.md", {
+      type: "text/markdown"
+    });
+    Object.defineProperty(first, "webkitRelativePath", {
+      value: "rag-eval/01-search.md"
+    });
+    const second = new File(["# Launcher Note\n- command palette"], "02-launcher.md", {
+      type: "text/markdown"
+    });
+    Object.defineProperty(second, "webkitRelativePath", {
+      value: "rag-eval/02-launcher.md"
+    });
+
+    fireEvent.change(picker, { target: { files: [first, second] } });
+
+    expect(await screen.findByText(/2 markdown files ready/i)).toBeInTheDocument();
+
+    const importButton = screen.getByRole("button", { name: "Import" });
+    await userEvent.click(importButton);
+
+    expect(await screen.findByText(/imported 2 pages/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText("Search Note", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Launcher Note", { selector: ".page-item__title" })
+    ).toBeInTheDocument();
+  });
+
   it("uses the native dialog to import markdown when available", async () => {
     render(() => <App />);
     vi.mocked(openDialog).mockResolvedValueOnce("/Users/demo/note.md");
@@ -746,6 +791,36 @@ describe("App", () => {
     expect(
       await screen.findByDisplayValue(/# Import/)
     ).toBeInTheDocument();
+  });
+
+  it("uses the native dialog to import a markdown folder when available", async () => {
+    render(() => <App />);
+    vi.mocked(openDialog).mockResolvedValueOnce("/Users/demo/rag-eval");
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { path: "01-search.md", text: "# Search Note\n- 재색인" },
+      { path: "02-launcher.md", text: "# Launcher Note\n- command palette" }
+    ]);
+    await userEvent.click(
+      screen.getByRole("button", { name: /open settings/i })
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Import" }));
+    (window as typeof window & { __TAURI_INTERNALS__: Record<string, unknown> })
+      .__TAURI_INTERNALS__ = {};
+
+    await userEvent.click(screen.getByRole("button", { name: /import format/i }));
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Markdown folder" })
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+
+    expect(vi.mocked(openDialog)).toHaveBeenCalledWith(
+      expect.objectContaining({ directory: true, multiple: false })
+    );
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith("read_markdown_directory", {
+      path: "/Users/demo/rag-eval"
+    });
+    expect(await screen.findByText(/2 markdown files ready/i)).toBeInTheDocument();
   });
 
   it("creates a new page and switches to it", async () => {

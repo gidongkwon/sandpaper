@@ -174,6 +174,9 @@ type SettingsModalProps = {
     setImportStatus: Setter<StatusMessage | null>;
     importing: Accessor<boolean>;
     importMarkdown: () => void | Promise<void>;
+    importMarkdownFolder: (
+      entries: Array<{ path: string; text: string }>
+    ) => void | Promise<void>;
     exporting: Accessor<boolean>;
     exportMarkdown: () => void | Promise<void>;
     exportStatus: Accessor<ExportStatus | null>;

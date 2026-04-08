@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use tauri::Manager;
@@ -608,6 +608,12 @@ impl Drop for RuntimeState {
 struct MarkdownExportStatus {
     path: String,
     pages: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct MarkdownDirectoryEntry {
+    path: String,
+    text: String,
 }
 
 struct RagModelDownloadJob {
@@ -3191,6 +3197,55 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|err| format!("{:?}", err))
 }
 
+fn collect_markdown_directory_entries(
+    root: &Path,
+    current: &Path,
+    entries: &mut Vec<MarkdownDirectoryEntry>,
+) -> Result<(), String> {
+    let read_dir = std::fs::read_dir(current).map_err(|err| format!("{:?}", err))?;
+    for item in read_dir {
+        let item = item.map_err(|err| format!("{:?}", err))?;
+        let path = item.path();
+        if path.is_dir() {
+            collect_markdown_directory_entries(root, &path, entries)?;
+            continue;
+        }
+
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase());
+        if !matches!(extension.as_deref(), Some("md" | "markdown")) {
+            continue;
+        }
+
+        let text = std::fs::read_to_string(&path).map_err(|err| format!("{:?}", err))?;
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|err| format!("{:?}", err))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        entries.push(MarkdownDirectoryEntry {
+            path: relative,
+            text,
+        });
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn read_markdown_directory(path: String) -> Result<Vec<MarkdownDirectoryEntry>, String> {
+    let root = PathBuf::from(path.trim());
+    if !root.is_dir() {
+        return Err("Selected path is not a directory.".to_string());
+    }
+
+    let mut entries = Vec::new();
+    collect_markdown_directory_entries(&root, &root, &mut entries)?;
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(entries)
+}
+
 fn apply_theme_window_effect(
     window: &tauri::WebviewWindow,
     mode: Option<&str>,
@@ -3310,6 +3365,7 @@ pub fn run() {
             get_plugin_settings_command,
             set_plugin_settings_command,
             read_text_file,
+            read_markdown_directory,
             set_window_theme_effect
         ])
         .build(tauri::generate_context!())

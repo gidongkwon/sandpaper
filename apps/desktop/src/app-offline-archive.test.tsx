@@ -45,12 +45,10 @@ describe("App offline archive", () => {
   it("exports an offline archive with pages and manifest", async () => {
     const user = userEvent.setup();
     let capturedBlob: Blob | null = null;
-    const createSpy = vi
-      .spyOn(URL, "createObjectURL")
-      .mockImplementation((blob) => {
-        capturedBlob = blob as Blob;
-        return "blob:offline";
-      });
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return "blob:offline";
+    });
     const revokeSpy = vi
       .spyOn(URL, "revokeObjectURL")
       .mockImplementation(() => undefined);
@@ -66,9 +64,7 @@ describe("App offline archive", () => {
     });
     await user.click(exportButton);
 
-    expect(
-      await screen.findByText(/offline export ready/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/offline export ready/i)).toBeInTheDocument();
     expect(capturedBlob).not.toBeNull();
     const blob = capturedBlob!;
     await readBlobAsArrayBuffer(blob);
@@ -83,12 +79,10 @@ describe("App offline archive", () => {
   it("excludes the hidden inbox from offline archive exports", async () => {
     const user = userEvent.setup();
     let capturedBlob: Blob | null = null;
-    const createSpy = vi
-      .spyOn(URL, "createObjectURL")
-      .mockImplementation((blob) => {
-        capturedBlob = blob as Blob;
-        return "blob:hidden-inbox";
-      });
+    const createSpy = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      capturedBlob = blob as Blob;
+      return "blob:hidden-inbox";
+    });
     const revokeSpy = vi
       .spyOn(URL, "revokeObjectURL")
       .mockImplementation(() => undefined);
@@ -110,9 +104,7 @@ describe("App offline archive", () => {
       await screen.findByRole("button", { name: /export offline archive/i })
     );
 
-    expect(
-      await screen.findByText(/offline export ready/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/offline export ready/i)).toBeInTheDocument();
     expect(capturedBlob).not.toBeNull();
 
     const archiveBytes = new Uint8Array(await readBlobAsArrayBuffer(capturedBlob!));
@@ -144,6 +136,10 @@ describe("App offline archive", () => {
     render(() => <App />);
     await user.click(screen.getByRole("button", { name: /open settings/i }));
     await user.click(screen.getByRole("tab", { name: "Import" }));
+    await user.click(screen.getByRole("button", { name: /import format/i }));
+    await user.click(
+      await screen.findByRole("option", { name: "Offline archive" })
+    );
 
     const picker = screen.getByTestId(
       "offline-archive-picker"
@@ -158,10 +154,7 @@ describe("App offline archive", () => {
     await user.upload(picker, file);
     expect(screen.getByText("backup.zip")).toBeInTheDocument();
 
-    const importButton = screen.getByRole("button", {
-      name: /import archive/i
-    });
-    await user.click(importButton);
+    await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(
       await screen.findByText("Travel Log", {
@@ -191,6 +184,10 @@ describe("App offline archive", () => {
     render(() => <App />);
     await user.click(screen.getByRole("button", { name: /open settings/i }));
     await user.click(screen.getByRole("tab", { name: "Import" }));
+    await user.click(screen.getByRole("button", { name: /import format/i }));
+    await user.click(
+      await screen.findByRole("option", { name: "Offline archive" })
+    );
 
     const picker = screen.getByTestId(
       "offline-archive-picker"
@@ -200,7 +197,7 @@ describe("App offline archive", () => {
       type: "application/zip"
     });
     await user.upload(picker, file);
-    await user.click(screen.getByRole("button", { name: /import archive/i }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
 
     expect(
       await screen.findByText("Travel Log", {
