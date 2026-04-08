@@ -29,6 +29,8 @@ const PPLX_CONTEXT_TOKENIZER_URL: &str =
 const PPLX_CONTEXT_SPECIAL_TOKENS_URL: &str = "https://huggingface.co/perplexity-ai/pplx-embed-context-v1-0.6b/resolve/main/special_tokens_map.json";
 const PPLX_CONTEXT_ONNX_URL: &str =
     "https://huggingface.co/perplexity-ai/pplx-embed-context-v1-0.6b/resolve/main/onnx/model.onnx";
+const PPLX_CONTEXT_ONNX_DATA_URL: &str =
+    "https://huggingface.co/perplexity-ai/pplx-embed-context-v1-0.6b/resolve/main/onnx/model.onnx_data";
 const PPLX_MAX_TOKENS: usize = 2048;
 
 type DownloadCallback = dyn Fn(ModelDownloadState, f32, String) + Send + Sync;
@@ -385,6 +387,10 @@ impl PplxContextEmbeddingProvider {
         Ok(Self::cache_dir()?.join("onnx").join("model.onnx"))
     }
 
+    fn onnx_data_path() -> Result<PathBuf, String> {
+        Ok(Self::cache_dir()?.join("onnx").join("model.onnx_data"))
+    }
+
     fn clear_cache() -> Result<(), String> {
         let cache_dir = Self::cache_dir()?;
         if cache_dir.exists() {
@@ -403,7 +409,8 @@ impl PplxContextEmbeddingProvider {
     fn required_files_exist() -> Result<bool, String> {
         Ok(Self::tokenizer_path()?.exists()
             && Self::special_tokens_map_path()?.exists()
-            && Self::onnx_path()?.exists())
+            && Self::onnx_path()?.exists()
+            && Self::onnx_data_path()?.exists())
     }
 
     fn load_sep_token(tokenizer: &Tokenizer) -> Result<(String, u32), String> {
@@ -827,8 +834,18 @@ pub fn prepare_model_download(
             &callback,
             &cancel_requested,
             0.45,
-            0.5,
+            0.2,
             "onnx/model.onnx",
+        )?;
+        download_file(
+            &client,
+            PPLX_CONTEXT_ONNX_DATA_URL,
+            &PplxContextEmbeddingProvider::onnx_data_path()?,
+            &callback,
+            &cancel_requested,
+            0.65,
+            0.3,
+            "onnx/model.onnx_data",
         )?;
         callback(
             ModelDownloadState::Verifying,
