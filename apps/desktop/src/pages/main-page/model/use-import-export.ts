@@ -113,7 +113,7 @@ export const createImportExportState = (deps: ImportExportDeps) => {
       if (title.trim()) {
         await deps.invoke("set_page_title", {
           payload: {
-            page_uid: pageUid,
+            pageUid,
             title: title.trim()
           }
         });
@@ -593,7 +593,7 @@ export const createImportExportState = (deps: ImportExportDeps) => {
           }
           if (title.trim()) {
             await deps.invoke("set_page_title", {
-              payload: { page_uid: uid, title }
+              payload: { pageUid: uid, title }
             });
           }
           await deps.invoke("save_page_blocks", {
