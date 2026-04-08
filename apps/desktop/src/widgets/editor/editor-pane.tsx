@@ -20,6 +20,7 @@ import type {
   PageSummary
 } from "../../entities/page/model/page-types";
 import type { PageId } from "../../shared/model/id-types";
+import type { JumpTarget } from "../../shared/model/jump-target";
 import type { PluginRenderer } from "../../entities/plugin/model/plugin-types";
 import type { CodeFence } from "../../shared/model/markdown-types";
 import type { AnchorRect, CaretPosition } from "../../shared/model/position";
@@ -70,11 +71,6 @@ import {
   resolveBlockType,
   toggleTodoText
 } from "../../shared/lib/blocks/block-type-utils";
-
-type JumpTarget = {
-  id: string;
-  caret: "start" | "end" | "preserve";
-};
 
 type SlashMenuState = {
   open: boolean;

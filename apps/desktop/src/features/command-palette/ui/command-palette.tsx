@@ -2,13 +2,7 @@ import { Show, createMemo, type Accessor, type Setter } from "solid-js";
 import { EmptyState } from "../../../shared/ui/empty-state";
 import { ActionListbox, type ActionListboxOption } from "../../../shared/ui/action-listbox";
 import { SearchDialog } from "../../../shared/ui/search-dialog";
-
-type CommandPaletteItem = {
-  id: string;
-  label: string;
-  hint?: string;
-  action: () => void | Promise<void>;
-};
+import type { CommandPaletteItem } from "../../../pages/main-page/model/command-palette-utils";
 
 type CommandPaletteProps = {
   open: Accessor<boolean>;
@@ -16,7 +10,7 @@ type CommandPaletteProps = {
   query: Accessor<string>;
   setQuery: Setter<string>;
   inputRef: (el: HTMLInputElement) => void;
-  commands: Accessor<CommandPaletteItem[]>;
+  items: Accessor<CommandPaletteItem[]>;
   activeIndex: Accessor<number>;
   setActiveIndex: Setter<number>;
   moveIndex: (delta: number) => void;
@@ -24,28 +18,36 @@ type CommandPaletteProps = {
 };
 
 export const CommandPalette = (props: CommandPaletteProps) => {
-  const commandOptions = createMemo<ActionListboxOption<CommandPaletteItem>[]>(() =>
-    props.commands().map((command) => ({
-      value: command.id,
-      label: command.label,
-      description: command.hint,
-      data: command
+  const itemOptions = createMemo<ActionListboxOption<CommandPaletteItem>[]>(() =>
+    props.items().map((item) => ({
+      value: item.id,
+      label:
+        item.kind === "note"
+          ? `${item.title} ${item.snippet ?? ""}`.trim()
+          : item.label,
+      description:
+        item.kind === "note"
+          ? item.breadcrumb ?? null
+          : item.kind === "command"
+            ? item.hint ?? null
+            : "Create a new page",
+      data: item
     }))
   );
-  const activeCommandId = createMemo(
-    () => props.commands()[props.activeIndex()]?.id ?? null
+  const activeItemId = createMemo(
+    () => props.items()[props.activeIndex()]?.id ?? null
   );
 
   return (
     <SearchDialog
       open={props.open}
       onClose={props.onClose}
-      title="Command palette"
+      ariaLabel="Command palette"
       variant="command"
       query={props.query}
       setQuery={props.setQuery}
       inputRef={props.inputRef}
-      inputPlaceholder="Search commands..."
+      inputPlaceholder="Search notes and commands..."
       listLabel="Command results"
       class="command-palette"
       onInputKeyDown={(event) => {
@@ -61,7 +63,7 @@ export const CommandPalette = (props: CommandPaletteProps) => {
         }
         if (event.key === "Enter") {
           event.preventDefault();
-          void props.onRun(props.commands()[props.activeIndex()]);
+          void props.onRun(props.items()[props.activeIndex()]);
           return;
         }
         if (event.key === "Escape") {
@@ -71,17 +73,51 @@ export const CommandPalette = (props: CommandPaletteProps) => {
       }}
     >
       <Show
-        when={props.commands().length > 0}
+        when={props.items().length > 0}
         fallback={
           <EmptyState class="command-palette__empty" message="No matches" />
         }
       >
         <ActionListbox
-          options={commandOptions()}
-          selectedValue={activeCommandId()}
+          options={itemOptions()}
+          selectedValue={activeItemId()}
           onSelect={(option) => void props.onRun(option.data)}
           ariaLabel="Command results"
           variant="command"
+          itemLabelClass="command-palette__result"
+          itemDescriptionClass="command-palette__meta"
+          renderLabel={(option) => (
+            <div class="command-palette__row">
+              <div class="command-palette__content">
+                <Show when={option.data.kind === "note"}>
+                  <div class="command-palette__title">
+                    {(option.data.kind === "note" && option.data.title) || option.label}
+                  </div>
+                </Show>
+                <div class="command-palette__label">
+                  {option.data.kind === "note"
+                    ? option.data.snippet || "Open page"
+                    : option.label}
+                </div>
+              </div>
+              <div class="command-palette__badge">
+                {option.data.kind === "note"
+                  ? "Note"
+                  : option.data.kind === "command"
+                    ? "Command"
+                    : "Create"}
+              </div>
+            </div>
+          )}
+          renderDescription={(option) => (
+            <span>
+              {option.data.kind === "note"
+                ? option.data.breadcrumb || option.data.pageUid
+                : option.data.kind === "command"
+                  ? option.data.hint || null
+                  : "Create a page with this title"}
+            </span>
+          )}
         />
       </Show>
     </SearchDialog>

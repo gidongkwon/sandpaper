@@ -17,16 +17,12 @@ import type {
   LocalPageRecord,
   PageSummary
 } from "../../../entities/page/model/page-types";
+import type { JumpTarget } from "../../../shared/model/jump-target";
 import { escapeRegExp } from "../../../shared/lib/string/escape-regexp";
 import { formatBacklinkSnippet, stripWikilinks } from "./page-utils";
 import { groupPageBacklinks } from "./backlink-utils";
 
 type InvokeFn = typeof import("@tauri-apps/api/core").invoke;
-
-type JumpTarget = {
-  id: string;
-  caret: "start" | "end" | "preserve";
-};
 
 type BacklinksDeps = {
   blocks: Accessor<Block[]>;
@@ -183,7 +179,7 @@ export const createBacklinksState = (deps: BacklinksDeps) => {
       await deps.switchPage(targetPage);
     }
     deps.setActiveId(entry.id);
-    deps.setJumpTarget({ id: entry.id, caret: "start" });
+    deps.setJumpTarget({ id: entry.id, pageUid: targetUid, caret: "start" });
   };
 
   const supportsMultiPane = false;
@@ -229,6 +225,9 @@ export const createBacklinksState = (deps: BacklinksDeps) => {
   });
 
   const linkUnlinkedReference = (ref: UnlinkedReference) => {
+    const currentUid = deps.resolvePageUid(
+      deps.activePageUid() || deps.defaultPageUid
+    );
     const block = deps.blocks()[ref.blockIndex];
     if (!block || block.id !== ref.blockId) return;
     const pattern = new RegExp(escapeRegExp(ref.pageTitle), "i");
@@ -237,7 +236,7 @@ export const createBacklinksState = (deps: BacklinksDeps) => {
     deps.setBlocks(ref.blockIndex, "text", nextText);
     deps.scheduleSave();
     deps.setActiveId(ref.blockId);
-    deps.setJumpTarget({ id: ref.blockId, caret: "end" });
+    deps.setJumpTarget({ id: ref.blockId, pageUid: currentUid, caret: "end" });
   };
 
   return {

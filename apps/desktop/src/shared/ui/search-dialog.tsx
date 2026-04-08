@@ -6,7 +6,8 @@ import { TextField } from "./text-field";
 type SearchDialogProps = {
   open: Accessor<boolean>;
   onClose: () => void;
-  title: string;
+  title?: string;
+  ariaLabel: string;
   query: Accessor<string>;
   setQuery: Setter<string>;
   inputRef?: (el: HTMLInputElement) => void;
@@ -83,11 +84,14 @@ export const SearchDialog = (props: SearchDialogProps) => {
           <div class="modal-backdrop">
             <Dialog.Overlay class="modal-backdrop__overlay" />
             <Dialog.Content
+              aria-label={props.ariaLabel}
               class={cx(searchDialogVariants({ variant: variant() }), props.class)}
             >
-              <Dialog.Title class={searchDialogTitleVariants({ variant: variant() })}>
-                {props.title}
-              </Dialog.Title>
+              <Show when={props.title}>
+                <Dialog.Title class={searchDialogTitleVariants({ variant: variant() })}>
+                  {props.title}
+                </Dialog.Title>
+              </Show>
               <TextField
                 ref={props.inputRef}
                 class={searchDialogInputVariants({ variant: variant() })}

@@ -37,7 +37,7 @@ describe("App accessibility", () => {
     const palette = await screen.findByRole("dialog", {
       name: "Command palette"
     });
-    const input = within(palette).getByPlaceholderText("Search commands...");
+    const input = within(palette).getByPlaceholderText("Search notes and commands...");
     await waitFor(() => {
       expect(document.activeElement).toBe(input);
     });
@@ -61,7 +61,7 @@ describe("App accessibility", () => {
     const palette = await screen.findByRole("dialog", {
       name: "Command palette"
     });
-    const input = within(palette).getByPlaceholderText("Search commands...");
+    const input = within(palette).getByPlaceholderText("Search notes and commands...");
     await waitFor(() => {
       expect(document.activeElement).toBe(input);
     });
@@ -77,6 +77,31 @@ describe("App accessibility", () => {
     expect(
       await screen.findByText("Block Type Showcase", {
         selector: ".page-item__title"
+      })
+    ).toBeInTheDocument();
+  });
+
+  it("creates a page from command palette fallback when no results match", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+
+    await screen.findByText(/saved/i);
+    await user.keyboard("{Control>}k{/Control}");
+
+    const palette = await screen.findByRole("dialog", {
+      name: "Command palette"
+    });
+    const input = within(palette).getByPlaceholderText("Search notes and commands...");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(input);
+    });
+
+    await user.type(input, "Palette Fallback Note");
+    await user.keyboard("{Enter}");
+
+    expect(
+      await screen.findByText("Palette Fallback Note", {
+        selector: ".editor-pane__title"
       })
     ).toBeInTheDocument();
   });

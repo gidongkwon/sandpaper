@@ -12,6 +12,7 @@ import type {
   PageSummary
 } from "../../../entities/page/model/page-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
+import type { JumpTarget } from "../../../shared/model/jump-target";
 import type { MarkdownExportStatus } from "../../../shared/model/markdown-export-types";
 import { makeBlock } from "../../../entities/block/model/make-block";
 import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
@@ -29,11 +30,6 @@ type ExportStatus = {
   state: "success" | "error";
   message: string;
   preview?: string;
-};
-
-type JumpTarget = {
-  id: string;
-  caret: "start" | "end" | "preserve";
 };
 
 type ShadowWriter = {

@@ -38,6 +38,7 @@ import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { importImageAssetFile } from "../../../shared/lib/assets/import-image-asset";
 import type { AnchorRect } from "../../../shared/model/position";
+import type { JumpTarget } from "../../../shared/model/jump-target";
 import type { Mode } from "../../../shared/model/mode";
 import {
   buildAllBlockTypeShowcaseBlocks,
@@ -86,11 +87,6 @@ import {
 } from "../../../shared/lib/storage/safe-local-storage";
 import { createReviewPageHash } from "./review-session-hash";
 import { getReviewDestinationRecommendations } from "./review-destination-recommender";
-
-type JumpTarget = {
-  id: string;
-  caret: "start" | "end" | "preserve";
-};
 
 type RagStatusPayload = {
   index_exists: boolean;
@@ -768,6 +764,10 @@ export const createMainPageState = () => {
     const vaultId = activeVault()?.id ?? "default";
     return `sandpaper:search-history:${vaultId}`;
   });
+  const paletteRecentPagesKey = createMemo(() => {
+    const vaultId = activeVault()?.id ?? "default";
+    return `sandpaper:palette-recent-pages:${vaultId}`;
+  });
   const reviewArchivedThreadsKey = createMemo(() => {
     const vaultId = activeVault()?.id ?? "default";
     return `${REVIEW_ARCHIVED_THREADS_KEY_PREFIX}:${vaultId}`;
@@ -1069,6 +1069,31 @@ export const createMainPageState = () => {
       return;
     }
     await switchPage(pageUid);
+  };
+
+  const jumpToLocation = async (target: {
+    pageUid?: string | null;
+    blockUid?: string | null;
+    id?: string | null;
+    caret?: JumpTarget["caret"];
+  }) => {
+    const targetPageUid = target.pageUid ? resolvePageUid(target.pageUid) : null;
+    const currentPageUid = resolvePageUid(activePageUid());
+    if (mode() !== "editor") {
+      setMode("editor");
+    }
+    if (targetPageUid && targetPageUid !== currentPageUid) {
+      await switchWorkspacePage(targetPageUid);
+    }
+
+    const targetId = target.blockUid ?? target.id ?? null;
+    if (!targetId) return;
+    setActiveId(targetId);
+    setJumpTarget({
+      id: targetId,
+      pageUid: targetPageUid,
+      caret: target.caret ?? "start"
+    });
   };
 
   const findVisiblePageByTitle = (title: string) => {
@@ -1451,13 +1476,27 @@ export const createMainPageState = () => {
     focusEditorSection,
     openNewPageDialog,
     createPageWithAllBlockTypes,
+    createPageFromTitle: async (title) => {
+      const created = await createPageFromLink(title);
+      if (!created) return;
+      await switchWorkspacePage(created.uid);
+    },
     openRenamePageDialog,
     setSettingsOpen,
     syncConnected,
     syncNow,
     pluginCommands: () => pluginStatus()?.commands ?? [],
     runPluginCommand: (command) => void runPluginCommand(command),
-    isTauri
+    isTauri,
+    invoke,
+    pages,
+    localPages: () => localPages,
+    blocks: () => blocks,
+    pageTitle,
+    activePageUid,
+    resolvePageUid,
+    recentPagesKey: paletteRecentPagesKey,
+    jumpToLocation
   });
   const {
     paletteOpen,
@@ -1465,7 +1504,7 @@ export const createMainPageState = () => {
     setPaletteQuery,
     paletteIndex,
     setPaletteIndex,
-    filteredPaletteCommands,
+    paletteItems,
     closeCommandPalette,
     movePaletteIndex,
     runPaletteCommand,
@@ -2721,15 +2760,19 @@ export const createMainPageState = () => {
           applyTerm: applySearchTerm,
           results: filteredSearchResults,
           renderHighlight: renderSearchHighlight,
-          onResultSelect: (block) => {
-            const targetId = block.blockUid ?? block.id;
-            setActiveId(targetId);
-            setJumpTarget({ id: targetId, caret: "start" });
-          },
-          onCitationSelect: (citation) => {
-            setActiveId(citation.blockUid);
-            setJumpTarget({ id: citation.blockUid, caret: "start" });
-          }
+          onResultSelect: (block) =>
+            void jumpToLocation({
+              pageUid: block.pageUid ?? null,
+              blockUid: block.blockUid ?? null,
+              id: block.id,
+              caret: "start"
+            }),
+          onCitationSelect: (citation) =>
+            void jumpToLocation({
+              pageUid: citation.pageUid,
+              blockUid: citation.blockUid,
+              caret: "start"
+            })
         },
         unlinked: {
           query: searchQuery,
@@ -2864,7 +2907,7 @@ export const createMainPageState = () => {
         query: paletteQuery,
         setQuery: setPaletteQuery,
         inputRef: registerPaletteInput,
-        commands: filteredPaletteCommands,
+        items: paletteItems,
         activeIndex: paletteIndex,
         setActiveIndex: setPaletteIndex,
         moveIndex: movePaletteIndex,
