@@ -18,6 +18,10 @@
   padding-left: 78px;
 }
 
+[data-platform="macos"] .topbar__settings {
+  margin-right: var(--space-2);
+}
+
 [data-platform="windows"] .topbar {
   padding-left: var(--space-3);
 } 

@@ -13,7 +13,7 @@
 
 .workspace.sidebar-collapsed {
   grid-template-columns: 0 1fr;
-  padding-left: var(--space-2);
+  padding-left: 0;
 }
 
 .main-pane {
