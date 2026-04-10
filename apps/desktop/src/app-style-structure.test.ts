@@ -72,4 +72,13 @@ describe("App style structure", () => {
     );
   });
 
+  it("keeps the desktop window shell transparent so vibrancy stays visible", () => {
+    const baseCss = readAppStyleFile("app/styles/base.css");
+    const appShellCss = readAppStyleFile("app/styles/layout/app-shell.css");
+
+    expect(baseCss).toMatch(/:root\s*\{[\s\S]*background:\s*transparent;/u);
+    expect(baseCss).toMatch(/body\s*\{[\s\S]*background:\s*transparent;/u);
+    expect(appShellCss).toMatch(/\.app\s*\{[\s\S]*background:\s*transparent;/u);
+  });
+
 });

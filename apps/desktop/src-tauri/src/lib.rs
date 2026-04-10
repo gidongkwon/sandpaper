@@ -20,11 +20,18 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
-use tauri::Manager;
+use tauri::{Manager, Theme};
+#[cfg(target_os = "macos")]
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_mica;
 #[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectMaterial};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{
+    NSAppearance, NSAppearanceCustomization, NSAppearanceNameVibrantDark,
+    NSAppearanceNameVibrantLight, NSView,
+};
 
 #[derive(Debug, Serialize)]
 struct PageBlocksResponse {
@@ -3264,12 +3271,14 @@ fn apply_theme_window_effect(
     mode: Option<&str>,
     effective_theme: Option<&str>,
 ) -> Result<(), String> {
+    apply_window_theme(window, mode)?;
+
     #[cfg(target_os = "macos")]
     {
-        let _ = mode;
-        let _ = effective_theme;
+        let _ = clear_vibrancy(window);
         apply_vibrancy(window, NSVisualEffectMaterial::Sidebar, None, None)
             .map_err(|err| format!("{:?}", err))?;
+        apply_macos_vibrancy_appearance(window, effective_theme.or(mode))?;
     }
 
     #[cfg(target_os = "windows")]
@@ -3282,6 +3291,44 @@ fn apply_theme_window_effect(
         apply_mica(window, dark).map_err(|err| format!("{:?}", err))?;
     }
 
+    Ok(())
+}
+
+fn apply_window_theme(window: &tauri::WebviewWindow, mode: Option<&str>) -> Result<(), String> {
+    let theme = match mode {
+        Some("light") => Some(Theme::Light),
+        Some("dark") => Some(Theme::Dark),
+        _ => None,
+    };
+
+    window.set_theme(theme).map_err(|err| err.to_string())
+}
+
+#[cfg(target_os = "macos")]
+const MACOS_VIBRANCY_VIEW_TAG: isize = 91_376_254;
+
+#[cfg(target_os = "macos")]
+fn apply_macos_vibrancy_appearance(
+    window: &tauri::WebviewWindow,
+    effective_theme: Option<&str>,
+) -> Result<(), String> {
+    let handle = window.window_handle().map_err(|err| err.to_string())?;
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return Ok(());
+    };
+
+    let view: &NSView = unsafe { handle.ns_view.cast().as_ref() };
+    let Some(vibrancy_view) = view.viewWithTag(MACOS_VIBRANCY_VIEW_TAG) else {
+        return Ok(());
+    };
+
+    let appearance = match effective_theme {
+        Some("dark") => unsafe { NSAppearance::appearanceNamed(NSAppearanceNameVibrantDark) },
+        Some("light") => unsafe { NSAppearance::appearanceNamed(NSAppearanceNameVibrantLight) },
+        _ => None,
+    };
+
+    vibrancy_view.setAppearance(appearance.as_deref());
     Ok(())
 }
 
