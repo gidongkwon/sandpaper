@@ -256,7 +256,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
         when={props.threads().length > 0 || props.archivedThreads().length > 0}
         fallback={
           <EmptyState class="review__empty">
-            <div>No capture threads to review.</div>
+            <div>No capture threads to refine.</div>
             <div>Capture a thread first, then refine it here.</div>
           </EmptyState>
         }
@@ -272,7 +272,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
         >
           <section
             class="review-workbench__surface"
-            aria-label="Review surface"
+            aria-label="Refine surface"
             data-review-tab={props.activeTab()}
           >
             <div
@@ -308,10 +308,10 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                 value={props.activeTab()}
                 onChange={props.setActiveTab}
                 items={[
-                  { value: "to-review", label: "To Review" },
+                  { value: "to-review", label: "To Refine" },
                   { value: "archived", label: "Archived" }
                 ]}
-                aria-label="Review tabs"
+                aria-label="Refine tabs"
                 class="review-workbench__tabs"
                 triggerClass="review-workbench__tab"
               />
@@ -326,7 +326,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
           <div
             class="review-workbench__divider"
             role="separator"
-            aria-label="Resize review panes"
+            aria-label="Resize refine panes"
             aria-orientation="vertical"
             aria-valuemin={0}
             aria-valuemax={100}
@@ -399,7 +399,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                   onClick={() => props.onCompleteReview()}
                 >
                   <ArrowRight16Icon width={16} height={16} />
-                  <span>Complete Review</span>
+                  <span>Complete Refinement</span>
                 </Button>
               </div>
             </Show>
@@ -410,7 +410,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
       <AlertDialog
         open={confirmOpen}
         title="Discard current draft?"
-        description="This review already changed the destination note. Continue writing to keep the draft, or discard it before switching."
+        description="This refinement already changed the destination note. Continue writing to keep the draft, or discard it before switching."
         confirmLabel="Discard and switch"
         cancelLabel="Continue writing"
         onConfirm={() => void confirmDiscard()}

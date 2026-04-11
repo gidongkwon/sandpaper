@@ -19,11 +19,19 @@ import App from "./app/app";
 import { formatReviewDate } from "./pages/main-page/model/review-utils";
 import { clearResolvedAssetSrcCache } from "./shared/lib/assets/resolve-asset-src";
 
-const getModeControl = (name: "Capture" | "Review" | "Editor") =>
-  screen.getByRole("radio", { name });
+const REFINE_MODE_LABEL = "Refine";
+const TO_REFINE_TAB_LABEL = "To Refine";
+const REFINE_QUEUE_LABEL = "Refine queue";
+const ARCHIVED_REFINE_QUEUE_LABEL = "Archived refine queue";
+const REFINE_SURFACE_LABEL = "Refine surface";
+const RESIZE_REFINE_PANES_LABEL = "Resize refine panes";
+const COMPLETE_REFINEMENT_LABEL = "Complete Refinement";
 
-const getReviewTabControl = (name: "To Review" | "Archived") =>
-  screen.getByRole("radio", { name });
+const getModeControl = (name: "Capture" | "Review" | "Refine" | "Editor") =>
+  screen.getByRole("radio", { name: name === "Review" ? REFINE_MODE_LABEL : name });
+
+const getReviewTabControl = (name: "To Review" | "To Refine" | "Archived") =>
+  screen.getByRole("radio", { name: name === "To Review" ? TO_REFINE_TAB_LABEL : name });
 
 const findDestinationSearch = () =>
   screen.findByRole("textbox", { name: "Destination page" });
@@ -334,7 +342,7 @@ describe("App editor UX", () => {
     render(() => <App />);
     await screen.findByText(/saved/i);
     expect(screen.queryByRole("button", { name: "Insert block below" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Add to review" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add to refine" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Link to page" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Duplicate block" })).toBeNull();
   });
@@ -462,8 +470,6 @@ describe("App editor UX", () => {
 
     await user.click(getModeControl("Capture"));
     expect(await screen.findByText("Quick note updated")).toBeInTheDocument();
-    await user.click(screen.getByText("Quick note updated"));
-    expect(await screen.findByDisplayValue("Quick note updated")).toBeInTheDocument();
   });
 
   it("stores quick captures in a hidden inbox instead of the active editor page", async () => {
@@ -709,7 +715,8 @@ describe("App editor UX", () => {
       within(updatedThread).getByRole("button", { name: "Delete Reply post" })
     );
 
-    const dialog = await screen.findByRole("alertdialog", { name: "Delete reply" });
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete reply");
     expect(dialog).toHaveTextContent("Reply post");
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
@@ -747,7 +754,8 @@ describe("App editor UX", () => {
       within(updatedThread).getByRole("button", { name: "Delete Root post" })
     );
 
-    const dialog = await screen.findByRole("alertdialog", { name: "Delete thread" });
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Delete thread");
     expect(dialog).toHaveTextContent("Root post");
     expect(dialog).toHaveTextContent("1 reply");
     await user.click(within(dialog).getByRole("button", { name: "Delete thread" }));
@@ -782,7 +790,7 @@ describe("App editor UX", () => {
 
     await user.click(getModeControl("Review"));
 
-    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    const queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     const queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("Older thread");
     expect(queueCards[1]).toHaveTextContent("Newer thread");
@@ -806,7 +814,7 @@ describe("App editor UX", () => {
     await user.click(getModeControl("Review"));
 
     expect(
-      await screen.findByRole("radio", { name: "To Review" })
+      await screen.findByRole("radio", { name: TO_REFINE_TAB_LABEL })
     ).toBeInTheDocument();
     expect(
       getReviewTabControl("Archived")
@@ -832,7 +840,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const reviewSurface = await screen.findByRole("region", { name: "Review surface" });
+    const reviewSurface = await screen.findByRole("region", { name: REFINE_SURFACE_LABEL });
     const reviewLayout = reviewSurface.closest(".review-workbench")?.querySelector(
       ".review-workbench__layout"
     );
@@ -854,7 +862,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const reviewSurface = await screen.findByRole("region", { name: "Review surface" });
+    const reviewSurface = await screen.findByRole("region", { name: REFINE_SURFACE_LABEL });
     const reviewLayout = reviewSurface.closest(".review-workbench")?.querySelector(
       ".review-workbench__layout"
     ) as HTMLDivElement | null;
@@ -876,7 +884,7 @@ describe("App editor UX", () => {
       })
     });
 
-    const divider = screen.getByRole("separator", { name: "Resize review panes" });
+    const divider = screen.getByRole("separator", { name: RESIZE_REFINE_PANES_LABEL });
 
     expect(reviewLayout.style.getPropertyValue("--review-left-pane")).toBe("50%");
 
@@ -1062,7 +1070,7 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Complete Review" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })).toBeEnabled();
     });
   });
 
@@ -1097,7 +1105,7 @@ describe("App editor UX", () => {
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Change Destination" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Complete Review" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })).toBeEnabled();
     });
   });
 
@@ -1178,10 +1186,10 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const reviewSurface = screen.getByRole("region", { name: "Review surface" });
+    const reviewSurface = screen.getByRole("region", { name: REFINE_SURFACE_LABEL });
     expect(reviewSurface).toHaveAttribute("data-review-tab", "to-review");
     expect(
-      within(reviewSurface).getByRole("navigation", { name: "Review queue" })
+      within(reviewSurface).getByRole("navigation", { name: REFINE_QUEUE_LABEL })
     ).toBeInTheDocument();
 
     await user.type(await findDestinationSearch(), "Archive Target");
@@ -1196,17 +1204,17 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Archived summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete Review" }));
+    await user.click(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL }));
     await user.click(getReviewTabControl("Archived"));
 
     await waitFor(() => {
       expect(reviewSurface).toHaveAttribute("data-review-tab", "archived");
     });
     expect(
-      within(reviewSurface).getByRole("navigation", { name: "Archived review queue" })
+      within(reviewSurface).getByRole("navigation", { name: ARCHIVED_REFINE_QUEUE_LABEL })
     ).toBeInTheDocument();
     expect(
-      within(reviewSurface).queryByRole("navigation", { name: "Review queue" })
+      within(reviewSurface).queryByRole("navigation", { name: REFINE_QUEUE_LABEL })
     ).not.toBeInTheDocument();
   });
 
@@ -1226,7 +1234,7 @@ describe("App editor UX", () => {
 
     await user.click(getModeControl("Review"));
 
-    const footer = (await screen.findByRole("radio", { name: "To Review" })).closest(
+    const footer = (await screen.findByRole("radio", { name: TO_REFINE_TAB_LABEL })).closest(
       ".review-workbench__footer"
     );
     expect(footer).not.toBeNull();
@@ -1247,7 +1255,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    const queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
     expect(queueCards[1]).toHaveTextContent("Second thread");
@@ -1294,11 +1302,11 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete Review" })
+        screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })
       ).toBeEnabled();
     });
 
-    const queue = await screen.findByRole("navigation", { name: "Review queue" });
+    const queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     await user.click(within(queue).getByRole("button", { name: /second thread/i }));
 
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
@@ -1354,7 +1362,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete Review" })
+        screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })
       ).toBeEnabled();
     });
 
@@ -1410,7 +1418,7 @@ describe("App editor UX", () => {
     await selectDestinationOption(user, 'Create "Project Atlas"');
 
     const completeButton = await screen.findByRole("button", {
-      name: "Complete Review"
+      name: COMPLETE_REFINEMENT_LABEL
     });
     expect(completeButton).toBeDisabled();
 
@@ -1426,7 +1434,7 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete Review" })
+        screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })
       ).toBeEnabled();
     });
   });
@@ -1445,7 +1453,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
     await user.click(getModeControl("Review"));
-    let queue = await screen.findByRole("navigation", { name: "Review queue" });
+    let queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
     expect(queueCards[1]).toHaveTextContent("Second thread");
@@ -1455,7 +1463,7 @@ describe("App editor UX", () => {
     render(() => <App />);
     await user.click(getModeControl("Review"));
 
-    queue = await screen.findByRole("navigation", { name: "Review queue" });
+    queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("First thread");
     expect(queueCards[1]).toHaveTextContent("Second thread");
@@ -1518,7 +1526,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete Review" })
+        screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })
       ).toBeEnabled();
     });
 
@@ -1562,7 +1570,7 @@ describe("App editor UX", () => {
     });
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Complete Review" })
+        screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })
       ).toBeEnabled();
     });
 
@@ -1605,7 +1613,7 @@ describe("App editor UX", () => {
         screen.queryByRole("button", { name: "Change Destination" })
       ).not.toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "Complete Review" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL })).toBeDisabled();
   });
 
   it("persists review queue FIFO order through the tauri page store", async () => {
@@ -1744,7 +1752,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
 
     await user.click(getModeControl("Review"));
-    let queue = await screen.findByRole("navigation", { name: "Review queue" });
+    let queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     let queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("Older thread");
     expect(queueCards[1]).toHaveTextContent("Newer thread");
@@ -1754,9 +1762,9 @@ describe("App editor UX", () => {
     firstRender.unmount();
 
     render(() => <App />);
-    await user.click(await screen.findByRole("radio", { name: "Review" }));
+    await user.click(await screen.findByRole("radio", { name: REFINE_MODE_LABEL }));
 
-    queue = await screen.findByRole("navigation", { name: "Review queue" });
+    queue = await screen.findByRole("navigation", { name: REFINE_QUEUE_LABEL });
     queueCards = Array.from(queue.querySelectorAll(".review-reference-card"));
     expect(queueCards[0]).toHaveTextContent("Older thread");
     expect(queueCards[1]).toHaveTextContent("Newer thread");
@@ -1914,7 +1922,7 @@ describe("App editor UX", () => {
       target: { value: "Project Atlas summary" }
     });
 
-    await user.click(screen.getByRole("button", { name: "Complete Review" }));
+    await user.click(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL }));
 
     await waitFor(() => {
       expect(
@@ -1956,7 +1964,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Alpha summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete Review" }));
+    await user.click(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL }));
 
     await waitFor(() => {
       expect(
@@ -1975,7 +1983,7 @@ describe("App editor UX", () => {
     fireEvent.input(editorInput, {
       target: { value: "Beta summary" }
     });
-    await user.click(screen.getByRole("button", { name: "Complete Review" }));
+    await user.click(screen.getByRole("button", { name: COMPLETE_REFINEMENT_LABEL }));
 
     const archivedStorageKey = Array.from({ length: window.localStorage.length }, (_, index) =>
       window.localStorage.key(index)

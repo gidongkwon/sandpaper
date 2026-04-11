@@ -28,8 +28,8 @@ export const BlockActions = (props: BlockActionsProps) => {
       <IconButton
         variant="block"
         class="block__action"
-        label="Add to review"
-        title="Add to review"
+        label="Add to refine"
+        title="Add to refine"
         onClick={props.onAddReview}
       >
         <Add16Icon width="12" height="12" />

@@ -58,11 +58,11 @@ export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
     <div class="review-queue-deck">
       <Show
         when={orderedThreads().length > 0}
-        fallback={<div class="review-queue-deck__empty">No capture threads to review.</div>}
+        fallback={<div class="review-queue-deck__empty">No capture threads to refine.</div>}
       >
         <nav
           class="review-queue-deck__stack"
-          aria-label="Review queue"
+          aria-label="Refine queue"
           data-transitioning={promotionState() ? "true" : "false"}
         >
           <For each={visibleThreads()}>

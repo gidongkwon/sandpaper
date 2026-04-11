@@ -17,8 +17,8 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import App from "./app/app";
 
-const getModeControl = (name: "Capture" | "Review" | "Editor") =>
-  screen.getByRole("radio", { name });
+const getModeControl = (name: "Capture" | "Review" | "Refine" | "Editor") =>
+  screen.getByRole("radio", { name: name === "Review" ? "Refine" : name });
 
 const readBlobAsArrayBuffer = async (blob: Blob) => {
   return await new Promise<ArrayBuffer>((resolve, reject) => {

@@ -18,8 +18,10 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import App from "./app/app";
 
-const getModeControl = (name: "Capture" | "Review" | "Editor") =>
-  screen.getByRole("radio", { name });
+const REFINE_MODE_LABEL = "Refine";
+
+const getModeControl = (name: "Capture" | "Review" | "Refine" | "Editor") =>
+  screen.getByRole("radio", { name: name === "Review" ? REFINE_MODE_LABEL : name });
 const getPageOption = (name: string) =>
   within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
     name
@@ -62,7 +64,7 @@ describe("App", () => {
     render(() => <App />);
     const modeSwitch = screen.getByRole("radiogroup", { name: "App modes" });
     expect(within(modeSwitch).getByRole("radio", { name: "Capture" })).toBeInTheDocument();
-    expect(within(modeSwitch).getByRole("radio", { name: "Review" })).toBeInTheDocument();
+    expect(within(modeSwitch).getByRole("radio", { name: REFINE_MODE_LABEL })).toBeInTheDocument();
     expect(within(modeSwitch).getByRole("radio", { name: "Editor" })).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Viewer" })
@@ -269,7 +271,7 @@ describe("App", () => {
     render(() => <App />);
     await userEvent.click(getModeControl("Review"));
     expect(
-      await screen.findByText("No capture threads to review.")
+      await screen.findByText("No capture threads to refine.")
     ).toBeInTheDocument();
   });
 

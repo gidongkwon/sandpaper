@@ -16,8 +16,10 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 
 import App from "./app/app";
 
-const getModeControl = (name: "Capture" | "Review" | "Editor") =>
-  screen.getByRole("radio", { name });
+const REFINE_MODE_LABEL = "Refine";
+
+const getModeControl = (name: "Capture" | "Review" | "Refine" | "Editor") =>
+  screen.getByRole("radio", { name: name === "Review" ? REFINE_MODE_LABEL : name });
 
 const clearStorage = () => {
   const storage = window.localStorage;
@@ -55,7 +57,7 @@ describe("App modes", () => {
     expect(await screen.findByPlaceholderText("Capture a thought, link, or task...")).toBeInTheDocument();
 
     await user.click(getModeControl("Review"));
-    expect(await screen.findByText("No capture threads to review.")).toBeInTheDocument();
+    expect(await screen.findByText("No capture threads to refine.")).toBeInTheDocument();
   });
 
   it("hides the sidebar toggle outside editor mode", async () => {
@@ -70,7 +72,7 @@ describe("App modes", () => {
     expect(screen.queryByRole("button", { name: /hide sidebar|show sidebar/i })).toBeNull();
 
     await user.click(getModeControl("Review"));
-    await screen.findByText("No capture threads to review.");
+    await screen.findByText("No capture threads to refine.");
     expect(screen.queryByRole("button", { name: /hide sidebar|show sidebar/i })).toBeNull();
 
     await user.click(getModeControl("Editor"));

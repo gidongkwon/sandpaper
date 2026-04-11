@@ -124,7 +124,7 @@ export const buildPaletteCommands = (args: BuildPaletteArgs) => {
     items.push({
       kind: "command",
       id: "switch-review",
-      label: "Switch to review",
+      label: "Switch to refine",
       action: args.actions.switchToReview
     });
   }

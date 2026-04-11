@@ -78,7 +78,7 @@ export const createReviewState = (deps: ReviewDeps) => {
 
   const addReviewItem = async (blockId: string) => {
     if (!deps.isTauri()) {
-      setReviewMessage("Review queue is only available in the desktop app.");
+      setReviewMessage("Refine queue is only available in the desktop app.");
       return;
     }
     const pageUid = deps.resolvePageUid(deps.activePageUid());
@@ -90,12 +90,12 @@ export const createReviewState = (deps: ReviewDeps) => {
         blockUid: blockId,
         block_uid: blockId
       });
-      setReviewMessage("Added to review queue.");
+      setReviewMessage("Added to refine queue.");
       await deps.loadReviewSummary();
       await deps.loadReviewQueue();
     } catch (error) {
       console.error("Failed to add review item", error);
-      setReviewMessage("Unable to add to review queue.");
+      setReviewMessage("Unable to add to refine queue.");
     }
   };
 
@@ -142,13 +142,13 @@ export const createReviewState = (deps: ReviewDeps) => {
           title: `${template.title} · ${today}`
         }
       });
-      setReviewMessage(`${template.title} template queued for review.`);
+      setReviewMessage(`${template.title} template queued for refinement.`);
       await deps.loadPages();
       await deps.loadReviewSummary();
       await deps.loadReviewQueue();
     } catch (error) {
       console.error("Failed to create review template", error);
-      setReviewMessage("Unable to create review template.");
+      setReviewMessage("Unable to create refinement template.");
     } finally {
       setReviewBusy(false);
     }

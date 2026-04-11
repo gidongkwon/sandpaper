@@ -15,7 +15,7 @@ export const ReviewArchiveList = (props: ReviewArchiveListProps) => (
     when={props.threads.length > 0}
     fallback={<div class="review-archive-list__empty">Archived items will appear here.</div>}
   >
-    <nav class="review-archive-list" aria-label="Archived review queue">
+    <nav class="review-archive-list" aria-label="Archived refine queue">
       <For each={props.threads}>
         {(thread) => (
           <div

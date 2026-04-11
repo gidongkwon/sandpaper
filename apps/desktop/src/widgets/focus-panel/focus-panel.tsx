@@ -20,7 +20,7 @@ export const FocusPanel = (props: FocusPanelProps) => {
     >
       <props.sectionJump
         id={props.mode() === "quick-capture" ? "capture" : "review"}
-        label={props.mode() === "quick-capture" ? "Capture" : "Review"}
+        label={props.mode() === "quick-capture" ? "Capture" : "Refine"}
       />
       <Show when={props.mode() === "quick-capture"} fallback={props.review}>
         {props.capture}

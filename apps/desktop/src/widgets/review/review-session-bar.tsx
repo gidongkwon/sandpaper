@@ -129,7 +129,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
                 <span class="review-session-bar__badge">Recommended</span>
               </Show>
               <Show when={props.destinationIsHardSelected() && props.activeTab() === "to-review"}>
-                <span class="review-session-bar__hint">Locked for this review</span>
+                <span class="review-session-bar__hint">Locked for this refinement</span>
               </Show>
               <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
                 <span class="review-session-bar__hint">

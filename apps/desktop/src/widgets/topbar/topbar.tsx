@@ -129,7 +129,7 @@ export const Topbar = (props: TopbarProps) => {
         onChange={switchMode}
         items={[
           { value: "quick-capture", label: "Capture" },
-          { value: "review", label: "Review" },
+          { value: "review", label: "Refine" },
           { value: "editor", label: "Editor" }
         ]}
         aria-label="App modes"
