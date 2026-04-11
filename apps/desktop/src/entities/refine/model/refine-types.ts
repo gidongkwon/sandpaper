@@ -1,12 +1,12 @@
 import type { PageId, Timestamp } from "../../../shared/model/id-types";
 import type { Block } from "../../block/model/block-types";
 
-export type ReviewQueueSummary = {
+export type RefineQueueSummary = {
   due_count: number;
   next_due_at: Timestamp | null;
 };
 
-export type ReviewQueueItem = {
+export type RefineQueueItem = {
   id: number;
   page_uid: PageId;
   block_uid: string;
@@ -18,24 +18,24 @@ export type ReviewQueueItem = {
   text: string;
 };
 
-export type ReviewTemplate = {
+export type RefineTemplate = {
   id: string;
   title: string;
   description: string;
 };
 
-export type ReviewThreadEntry = {
+export type RefineThreadEntry = {
   id: string;
   text: string;
   is_root: boolean;
   blocks: Block[];
 };
 
-export type ReviewTab = "to-review" | "archived";
+export type RefineTab = "to-refine" | "archived";
 
-export type ReviewThreadStatus = "to-review" | "archived";
+export type RefineThreadStatus = "to-refine" | "archived";
 
-export type DestinationRecommendation = {
+export type RefineDestinationRecommendation = {
   page_uid: PageId;
   title: string;
   score: number;
@@ -43,7 +43,7 @@ export type DestinationRecommendation = {
   provider: "heuristic" | "ai";
 };
 
-export type ReviewDestinationSuggestion = {
+export type RefineDestinationSuggestion = {
   page_uid: PageId;
   title: string;
   snippet: string | null;
@@ -51,7 +51,7 @@ export type ReviewDestinationSuggestion = {
   provider: "heuristic" | "rag";
 };
 
-export type ReviewThreadArchiveRecord = {
+export type RefineThreadArchiveRecord = {
   thread_id: string;
   destination_page_uid: PageId;
   archived_at: Timestamp;
@@ -59,12 +59,12 @@ export type ReviewThreadArchiveRecord = {
   captured_at_end: Timestamp | null;
 };
 
-export type ReviewSessionState = {
+export type RefineSessionState = {
   active_thread_id: string | null;
-  tab: ReviewTab;
+  tab: RefineTab;
   selected_archived_thread_id: string | null;
   destination_page_uid: PageId | null;
-  destination_recommendations: DestinationRecommendation[];
+  destination_recommendations: RefineDestinationRecommendation[];
   is_hard_selected: boolean;
   baseline_page_hash: string | null;
   last_known_page_hash?: string | null;
@@ -72,11 +72,11 @@ export type ReviewSessionState = {
   updated_at: Timestamp;
 };
 
-export type ReviewThread = {
+export type RefineThread = {
   id: string;
   root_text: string;
-  entries: ReviewThreadEntry[];
-  status?: ReviewThreadStatus;
+  entries: RefineThreadEntry[];
+  status?: RefineThreadStatus;
   captured_at_start?: Timestamp | null;
   captured_at_end?: Timestamp | null;
   destination_page_uid?: PageId;

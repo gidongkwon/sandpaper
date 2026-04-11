@@ -17,5 +17,5 @@ const normalizeHashInput = (input: ReviewPageHashInput) => ({
   }))
 });
 
-export const createReviewPageHash = (input: ReviewPageHashInput) =>
+export const createRefinePageHash = (input: ReviewPageHashInput) =>
   JSON.stringify(normalizeHashInput(input));

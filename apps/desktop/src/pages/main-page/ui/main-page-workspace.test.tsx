@@ -30,14 +30,14 @@ vi.mock("../../../widgets/plugins/plugin-panel", () => ({
 vi.mock("../../../widgets/capture/capture-pane", () => ({
   CapturePane: () => <div data-testid="capture-pane" />
 }));
-vi.mock("../../../widgets/review/review-workbench", () => ({
-  ReviewWorkbench: () => <div data-testid="review-workbench" />
+vi.mock("../../../widgets/refine/refine-workbench", () => ({
+  RefineWorkbench: () => <div data-testid="refine-workbench" />
 }));
 vi.mock("../../../widgets/focus-panel/focus-panel", () => ({
-  FocusPanel: (props: { capture: JSX.Element; review: JSX.Element }) => (
+  FocusPanel: (props: { capture: JSX.Element; refine: JSX.Element }) => (
     <div data-testid="focus-panel">
       {props.capture}
-      {props.review}
+      {props.refine}
     </div>
   )
 }));
@@ -91,7 +91,7 @@ describe("MainPageWorkspace", () => {
       backlinks: {} as MainPageContextValue["workspace"]["backlinks"],
       pluginPanel: {} as MainPageContextValue["workspace"]["pluginPanel"],
       capture: {} as MainPageContextValue["workspace"]["capture"],
-      review: {} as MainPageContextValue["workspace"]["review"]
+      refine: {} as MainPageContextValue["workspace"]["refine"]
     } satisfies MainPageContextValue["workspace"];
 
     const value = {
@@ -129,6 +129,6 @@ describe("MainPageWorkspace", () => {
 
     expect(await screen.findByTestId("focus-panel")).toBeInTheDocument();
     expect(screen.getByTestId("capture-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+    expect(screen.getByTestId("refine-workbench")).toBeInTheDocument();
   });
 });

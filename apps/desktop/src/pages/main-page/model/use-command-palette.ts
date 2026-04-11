@@ -243,7 +243,7 @@ export const createCommandPalette = (deps: CommandPaletteDeps) => {
         openSettings: () => deps.setSettingsOpen(true),
         switchToEditor: () => deps.setMode("editor"),
         switchToCapture: () => deps.setMode("quick-capture"),
-        switchToReview: () => deps.setMode("review"),
+        switchToRefine: () => deps.setMode("refine"),
         focusSearch: () => {
           if (!deps.sidebarOpen()) {
             deps.setSidebarOpen(true);

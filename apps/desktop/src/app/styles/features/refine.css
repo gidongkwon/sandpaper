@@ -150,7 +150,7 @@
     filter var(--duration-slow) var(--ease-out);
 }
 
-.review-workbench__surface[data-review-tab="to-review"] .review-workbench__surface-body {
+.review-workbench__surface[data-review-tab="to-refine"] .review-workbench__surface-body {
   transform: translateY(0) scale(1);
   filter: saturate(1);
 }

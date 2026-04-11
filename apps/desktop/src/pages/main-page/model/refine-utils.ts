@@ -1,4 +1,4 @@
-export const formatReviewDate = (
+export const formatRefineDate = (
   timestamp: number | null,
   formatter?: Intl.DateTimeFormat
 ) => {

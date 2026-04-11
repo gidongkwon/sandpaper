@@ -42,7 +42,7 @@ type PaletteActions = {
   openSettings: () => void;
   switchToEditor: () => void;
   switchToCapture: () => void;
-  switchToReview: () => void;
+  switchToRefine: () => void;
   focusSearch: () => void;
   focusEditor: () => void;
   newPage: () => void;
@@ -120,12 +120,12 @@ export const buildPaletteCommands = (args: BuildPaletteArgs) => {
       action: args.actions.switchToCapture
     });
   }
-  if (args.mode !== "review") {
+  if (args.mode !== "refine") {
     items.push({
       kind: "command",
-      id: "switch-review",
+      id: "switch-refine",
       label: "Switch to refine",
-      action: args.actions.switchToReview
+      action: args.actions.switchToRefine
     });
   }
   if (args.mode === "editor") {

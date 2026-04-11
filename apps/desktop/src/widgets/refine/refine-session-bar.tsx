@@ -9,26 +9,26 @@ import {
 } from "solid-js";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import type {
-  DestinationRecommendation,
-  ReviewDestinationSuggestion,
-  ReviewTab
-} from "../../entities/review/model/review-types";
+  RefineDestinationRecommendation,
+  RefineDestinationSuggestion,
+  RefineTab
+} from "../../entities/refine/model/refine-types";
 import { Search16Icon } from "../../shared/ui/icons";
 import { TextField } from "../../shared/ui/text-field";
 
-type ReviewSessionBarProps = {
-  activeTab: Accessor<ReviewTab>;
+type RefineSessionBarProps = {
+  activeTab: Accessor<RefineTab>;
   panelMode: Accessor<"editor" | "select">;
   destinationSelected: Accessor<boolean>;
   destinationTitle: Accessor<string | null>;
   destinationPageUid: Accessor<string | null>;
-  destinationRecommendations: Accessor<DestinationRecommendation[]>;
+  destinationRecommendations: Accessor<RefineDestinationRecommendation[]>;
   destinationIsHardSelected: Accessor<boolean>;
   destinationQuery: Accessor<string>;
   setDestinationQuery: (value: string) => void;
   destinationMatches: Accessor<PageSummary[]>;
   destinationHasExactMatch: Accessor<boolean>;
-  destinationSuggestions: Accessor<ReviewDestinationSuggestion[]>;
+  destinationSuggestions: Accessor<RefineDestinationSuggestion[]>;
   invalidated: Accessor<boolean>;
   onOpenDestination: (pageUid: string) => void | Promise<void>;
   onCreateDestination: () => void | Promise<void>;
@@ -36,7 +36,7 @@ type ReviewSessionBarProps = {
   formatReviewDate: (value: number | null) => string;
 };
 
-export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
+export const RefineSessionBar = (props: RefineSessionBarProps) => {
   type DestinationListItem =
     | {
         kind: "page";
@@ -69,7 +69,7 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   });
 
   const isRecommended = createMemo(() => {
-    if (props.activeTab() !== "to-review") return false;
+    if (props.activeTab() !== "to-refine") return false;
     if (props.destinationIsHardSelected()) return false;
     const destinationPageUid = props.destinationPageUid();
     if (!destinationPageUid) return false;
@@ -121,14 +121,14 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
   return (
     <header class="review-session-bar" data-mode={props.panelMode()}>
       <Show
-        when={props.activeTab() === "to-review" && props.panelMode() === "select"}
+        when={props.activeTab() === "to-refine" && props.panelMode() === "select"}
         fallback={
           <div class="review-session-bar__panel review-session-bar__panel--editor">
             <div class="review-session-bar__meta-row">
               <Show when={isRecommended()}>
                 <span class="review-session-bar__badge">Recommended</span>
               </Show>
-              <Show when={props.destinationIsHardSelected() && props.activeTab() === "to-review"}>
+              <Show when={props.destinationIsHardSelected() && props.activeTab() === "to-refine"}>
                 <span class="review-session-bar__hint">Locked for this refinement</span>
               </Show>
               <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>

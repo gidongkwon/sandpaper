@@ -5,7 +5,7 @@ import { CapturePane } from "../../../widgets/capture/capture-pane";
 import { EditorPane } from "../../../widgets/editor/editor-pane";
 import { FocusPanel } from "../../../widgets/focus-panel/focus-panel";
 import { PluginPanelWidget } from "../../../widgets/plugins/plugin-panel";
-import { ReviewWorkbench } from "../../../widgets/review/review-workbench";
+import { RefineWorkbench } from "../../../widgets/refine/refine-workbench";
 import { SidebarContent } from "../../../widgets/sidebar/sidebar-content";
 import { SidebarPanel } from "../../../widgets/sidebar/sidebar-panel";
 import { EditorWorkspace } from "../../../widgets/workspace/editor-workspace";
@@ -23,7 +23,7 @@ export const MainPageWorkspace = () => {
             mode={workspace.mode}
             sectionJump={workspace.sectionJump.SectionJumpLink}
             capture={<CapturePane {...workspace.capture} />}
-            review={<ReviewWorkbench {...workspace.review} />}
+            refine={<RefineWorkbench {...workspace.refine} />}
           />
         }
       >

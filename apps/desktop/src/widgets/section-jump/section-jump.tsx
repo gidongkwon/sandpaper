@@ -2,7 +2,7 @@ import { createMemo, onCleanup, type Accessor, type Component, type Setter } fro
 import type { Mode } from "../../shared/model/mode";
 import { Button } from "../../shared/ui/button";
 
-type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "review";
+type SectionId = "sidebar" | "editor" | "backlinks" | "capture" | "refine";
 
 type CreateSectionJumpOptions = {
   mode: Accessor<Mode>;
@@ -40,10 +40,10 @@ export const createSectionJump = (
     if (options.mode() === "quick-capture") {
       return ["capture"];
     }
-    if (options.mode() === "review") {
-      return ["review"];
+    if (options.mode() === "refine") {
+      return ["refine"];
     }
-    return ["review"];
+    return ["refine"];
   });
 
   const focusSectionJump = (id: SectionId) => {
@@ -116,7 +116,7 @@ export const createSectionJump = (
       });
       return;
     }
-    if (id === "review") {
+    if (id === "refine") {
       requestAnimationFrame(() => {
         const target = document.querySelector<HTMLElement>(
           ".review-card__button, .review__button, .review-template"

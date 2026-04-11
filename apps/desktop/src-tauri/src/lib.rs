@@ -145,13 +145,13 @@ struct SyncApplyResult {
 }
 
 #[derive(Debug, Serialize)]
-struct ReviewQueueSummary {
+struct RefineQueueSummary {
     due_count: i64,
     next_due_at: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
-struct ReviewQueueItemResponse {
+struct RefineQueueItemResponse {
     id: i64,
     page_uid: String,
     block_uid: String,
@@ -165,14 +165,14 @@ struct ReviewQueueItemResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewActionPayload {
+struct RefineActionPayload {
     id: i64,
     action: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ReviewTemplatePayload {
+struct RefineTemplatePayload {
     page_uid: String,
     template: String,
     title: String,
@@ -2025,21 +2025,21 @@ fn apply_sync_inbox() -> Result<SyncApplyResult, String> {
 }
 
 #[tauri::command]
-fn review_queue_summary() -> Result<ReviewQueueSummary, String> {
+fn refine_queue_summary() -> Result<RefineQueueSummary, String> {
     let db = open_active_database()?;
     let now = chrono::Utc::now().timestamp_millis();
     let due = db
         .list_review_queue_due(now, 200)
         .map_err(|err| format!("{:?}", err))?;
     let next_due_at = due.iter().map(|item| item.due_at).min();
-    Ok(ReviewQueueSummary {
+    Ok(RefineQueueSummary {
         due_count: due.len() as i64,
         next_due_at,
     })
 }
 
 #[tauri::command]
-fn add_review_queue_item(
+fn add_refine_queue_item(
     page_uid: String,
     block_uid: String,
     due_at: Option<i64>,
@@ -2052,7 +2052,7 @@ fn add_review_queue_item(
 }
 
 #[tauri::command]
-fn list_review_queue_due(limit: i64) -> Result<Vec<ReviewQueueItemResponse>, String> {
+fn list_refine_queue_due(limit: i64) -> Result<Vec<RefineQueueItemResponse>, String> {
     let db = open_active_database()?;
     let now = chrono::Utc::now().timestamp_millis();
     let items = db
@@ -2069,7 +2069,7 @@ fn list_review_queue_due(limit: i64) -> Result<Vec<ReviewQueueItemResponse>, Str
             .find(|block| block.uid == item.block_uid)
             .map(|block| block.text.clone())
             .unwrap_or_else(|| "Missing block".to_string());
-        responses.push(ReviewQueueItemResponse {
+        responses.push(RefineQueueItemResponse {
             id: item.id,
             page_uid: item.page_uid,
             block_uid: item.block_uid,
@@ -2085,7 +2085,7 @@ fn list_review_queue_due(limit: i64) -> Result<Vec<ReviewQueueItemResponse>, Str
 }
 
 #[tauri::command]
-fn update_review_queue_item(payload: ReviewActionPayload) -> Result<(), String> {
+fn update_refine_queue_item(payload: RefineActionPayload) -> Result<(), String> {
     let db = open_active_database()?;
     let now = chrono::Utc::now().timestamp_millis();
     let interval = resolve_review_interval(&payload.action, 3);
@@ -2105,7 +2105,7 @@ fn update_review_queue_item(payload: ReviewActionPayload) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn create_review_template(payload: ReviewTemplatePayload) -> Result<(), String> {
+fn create_refine_template(payload: RefineTemplatePayload) -> Result<(), String> {
     let mut db = open_active_database()?;
     let page_uid = sanitize_kebab(&payload.page_uid);
     let page_id = ensure_page(&db, &page_uid, &payload.title)?;
@@ -3397,11 +3397,11 @@ pub fn run() {
             list_sync_ops_since,
             store_sync_inbox_ops,
             apply_sync_inbox,
-            review_queue_summary,
-            add_review_queue_item,
-            list_review_queue_due,
-            update_review_queue_item,
-            create_review_template,
+            refine_queue_summary,
+            add_refine_queue_item,
+            list_refine_queue_due,
+            update_refine_queue_item,
+            create_refine_template,
             write_shadow_markdown,
             export_markdown,
             import_image_asset,

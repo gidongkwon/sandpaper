@@ -31,12 +31,12 @@ import type {
   PluginRenderer
 } from "../../../entities/plugin/model/plugin-types";
 import type {
-  ReviewDestinationSuggestion,
-  ReviewQueueItem,
-  ReviewQueueSummary,
-  ReviewSessionState,
-  ReviewThread
-} from "../../../entities/review/model/review-types";
+  RefineDestinationSuggestion as ReviewDestinationSuggestion,
+  RefineQueueItem as ReviewQueueItem,
+  RefineQueueSummary as ReviewQueueSummary,
+  RefineSessionState as ReviewSessionState,
+  RefineThread as ReviewThread
+} from "../../../entities/refine/model/refine-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { importImageAssetFile } from "../../../shared/lib/assets/import-image-asset";
 import type { AnchorRect } from "../../../shared/model/position";
@@ -62,7 +62,7 @@ import { createCommandPalette } from "./use-command-palette";
 import { createImportExportState } from "./use-import-export";
 import { createPageDialog } from "./use-page-dialog";
 import { createPageOps } from "./use-page-ops";
-import { createReviewState } from "./use-review";
+import { createRefineState as createReviewState } from "./use-refine";
 import { createSearchState } from "./use-search";
 import { createMotionMode } from "./use-motion-mode";
 import { createThemeMode } from "./use-theme-mode";
@@ -87,13 +87,13 @@ import {
   readLocalStorage,
   writeLocalStorage
 } from "../../../shared/lib/storage/safe-local-storage";
-import { createReviewPageHash } from "./review-session-hash";
+import { createRefinePageHash as createReviewPageHash } from "./refine-session-hash";
 import {
-  getFallbackReviewDestinationSuggestions,
-  getReviewDestinationRecommendations,
-  getReviewDestinationSuggestionsFromRecommendations,
-  getReviewDestinationSuggestionsFromSearchHits
-} from "./review-destination-recommender";
+  getFallbackRefineDestinationSuggestions as getFallbackReviewDestinationSuggestions,
+  getRefineDestinationRecommendations as getReviewDestinationRecommendations,
+  getRefineDestinationSuggestionsFromRecommendations as getReviewDestinationSuggestionsFromRecommendations,
+  getRefineDestinationSuggestionsFromSearchHits as getReviewDestinationSuggestionsFromSearchHits
+} from "./refine-destination-recommender";
 
 type RagStatusPayload = {
   index_exists: boolean;
@@ -169,10 +169,14 @@ type RagRebuildSummaryPayload = {
 
 const CAPTURE_TIMESTAMPS_KEY = "sandpaper:capture:item-timestamps";
 const LOCAL_PAGES_KEY = "sandpaper:local:pages";
-const REVIEW_THREAD_ORDER_KEY = "sandpaper:capture:review-thread-order";
-const REVIEW_ARCHIVED_THREADS_KEY_PREFIX = "sandpaper:review:archived-threads";
-const REVIEW_SESSION_KEY_PREFIX = "sandpaper:review:session";
-const REVIEW_SESSION_BASELINE_KEY_PREFIX = "sandpaper:review:baseline";
+const REFINE_THREAD_ORDER_KEY = "sandpaper:capture:refine-thread-order";
+const REFINE_ARCHIVED_THREADS_KEY_PREFIX = "sandpaper:refine:archived-threads";
+const REFINE_SESSION_KEY_PREFIX = "sandpaper:refine:session";
+const REFINE_SESSION_BASELINE_KEY_PREFIX = "sandpaper:refine:baseline";
+const LEGACY_REVIEW_THREAD_ORDER_KEY = "sandpaper:capture:review-thread-order";
+const LEGACY_REVIEW_ARCHIVED_THREADS_KEY_PREFIX = "sandpaper:review:archived-threads";
+const LEGACY_REVIEW_SESSION_KEY_PREFIX = "sandpaper:review:session";
+const LEGACY_REVIEW_SESSION_BASELINE_KEY_PREFIX = "sandpaper:review:baseline";
 
 type ReviewSessionBaselineSnapshot = {
   page_uid: string;
@@ -359,7 +363,9 @@ const readStoredLocalPages = (
 };
 
 const readStoredReviewThreadOrder = () => {
-  const raw = readLocalStorage(REVIEW_THREAD_ORDER_KEY);
+  const raw =
+    readLocalStorage(REFINE_THREAD_ORDER_KEY) ??
+    readLocalStorage(LEGACY_REVIEW_THREAD_ORDER_KEY);
   if (!raw) return [] as string[];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -372,7 +378,7 @@ const readStoredReviewThreadOrder = () => {
 
 const createDefaultReviewSessionState = (): ReviewSessionState => ({
   active_thread_id: null,
-  tab: "to-review",
+  tab: "to-refine",
   selected_archived_thread_id: null,
   destination_page_uid: null,
   destination_recommendations: [],
@@ -428,7 +434,7 @@ const normalizeStoredReviewThread = (value: unknown): ReviewThread | null => {
     id: candidate.id,
     root_text: candidate.root_text,
     entries,
-    status: candidate.status === "archived" ? "archived" : "to-review",
+    status: candidate.status === "archived" ? "archived" : "to-refine",
     captured_at_start:
       typeof candidate.captured_at_start === "number" ? candidate.captured_at_start : null,
     captured_at_end:
@@ -453,7 +459,9 @@ type RagSearchHitPayload = {
 };
 
 const readStoredArchivedReviewThreads = (key: string) => {
-  const raw = readLocalStorage(key);
+  const raw =
+    readLocalStorage(key) ??
+    readLocalStorage(key.replace(REFINE_ARCHIVED_THREADS_KEY_PREFIX, LEGACY_REVIEW_ARCHIVED_THREADS_KEY_PREFIX));
   if (!raw) return [] as ReviewThread[];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -468,7 +476,9 @@ const readStoredArchivedReviewThreads = (key: string) => {
 };
 
 const readStoredReviewSession = (key: string): ReviewSessionState => {
-  const raw = readLocalStorage(key);
+  const raw =
+    readLocalStorage(key) ??
+    readLocalStorage(key.replace(REFINE_SESSION_KEY_PREFIX, LEGACY_REVIEW_SESSION_KEY_PREFIX));
   if (!raw) return createDefaultReviewSessionState();
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -479,7 +489,7 @@ const readStoredReviewSession = (key: string): ReviewSessionState => {
     return {
       active_thread_id:
         typeof candidate.active_thread_id === "string" ? candidate.active_thread_id : null,
-      tab: candidate.tab === "archived" ? "archived" : "to-review",
+      tab: candidate.tab === "archived" ? "archived" : "to-refine",
       selected_archived_thread_id:
         typeof candidate.selected_archived_thread_id === "string"
           ? candidate.selected_archived_thread_id
@@ -535,7 +545,11 @@ const normalizeStoredReviewSessionBaseline = (
 };
 
 const readStoredReviewSessionBaseline = (key: string) => {
-  const raw = readLocalStorage(key);
+  const raw =
+    readLocalStorage(key) ??
+    readLocalStorage(
+      key.replace(REFINE_SESSION_BASELINE_KEY_PREFIX, LEGACY_REVIEW_SESSION_BASELINE_KEY_PREFIX)
+    );
   if (!raw) return null;
   try {
     return normalizeStoredReviewSessionBaseline(JSON.parse(raw));
@@ -797,15 +811,15 @@ export const createMainPageState = () => {
   });
   const reviewArchivedThreadsKey = createMemo(() => {
     const vaultId = activeVault()?.id ?? "default";
-    return `${REVIEW_ARCHIVED_THREADS_KEY_PREFIX}:${vaultId}`;
+    return `${REFINE_ARCHIVED_THREADS_KEY_PREFIX}:${vaultId}`;
   });
   const reviewSessionKey = createMemo(() => {
     const vaultId = activeVault()?.id ?? "default";
-    return `${REVIEW_SESSION_KEY_PREFIX}:${vaultId}`;
+    return `${REFINE_SESSION_KEY_PREFIX}:${vaultId}`;
   });
   const reviewSessionBaselineKey = createMemo(() => {
     const vaultId = activeVault()?.id ?? "default";
-    return `${REVIEW_SESSION_BASELINE_KEY_PREFIX}:${vaultId}`;
+    return `${REFINE_SESSION_BASELINE_KEY_PREFIX}:${vaultId}`;
   });
 
   const searchState = createSearchState({
@@ -1148,28 +1162,28 @@ export const createMainPageState = () => {
     invoke,
     activePageUid,
     resolvePageUid,
-    loadReviewSummary,
-    loadReviewQueue,
+    loadRefineSummary: loadReviewSummary,
+    loadRefineQueue: loadReviewQueue,
     loadPages,
     state: {
-      reviewSummary,
-      setReviewSummary,
-      reviewItems,
-      setReviewItems,
-      reviewBusy,
-      setReviewBusy,
-      reviewMessage,
-      setReviewMessage,
-      selectedReviewTemplate,
-      setSelectedReviewTemplate
+      refineSummary: reviewSummary,
+      setRefineSummary: setReviewSummary,
+      refineItems: reviewItems,
+      setRefineItems: setReviewItems,
+      refineBusy: reviewBusy,
+      setRefineBusy: setReviewBusy,
+      refineMessage: reviewMessage,
+      setRefineMessage: setReviewMessage,
+      selectedRefineTemplate: selectedReviewTemplate,
+      setSelectedRefineTemplate: setSelectedReviewTemplate
     }
   });
   const {
-    reviewTemplates,
-    formatReviewDate,
-    addReviewItem,
-    handleReviewAction,
-    createReviewTemplate
+    refineTemplates: reviewTemplates,
+    formatRefineDate: formatReviewDate,
+    addRefineItem: addReviewItem,
+    handleRefineAction: handleReviewAction,
+    createRefineTemplate: createReviewTemplate
   } = reviewState;
 
   const vaultKeyState = createVaultKeyState({
@@ -1898,7 +1912,7 @@ export const createMainPageState = () => {
       return;
     }
     if (!canUseStorage()) return;
-    window.localStorage.setItem(REVIEW_THREAD_ORDER_KEY, JSON.stringify(reviewThreadOrder()));
+    window.localStorage.setItem(REFINE_THREAD_ORDER_KEY, JSON.stringify(reviewThreadOrder()));
   });
 
   async function loadCaptureReviewThreadOrder() {
@@ -1941,7 +1955,7 @@ export const createMainPageState = () => {
         return {
           id: thread.id,
           root_text: thread.root.text,
-          status: "to-review",
+          status: "to-refine",
           entries: [
             {
               id: thread.root.id,
@@ -2010,7 +2024,7 @@ export const createMainPageState = () => {
   });
 
   createEffect(() => {
-    if (reviewSession().tab !== "to-review") return;
+    if (reviewSession().tab !== "to-refine") return;
     const thread = activeReviewThread();
     const threadId = thread?.id ?? null;
     const configuredThreadId = reviewConfiguredThreadId();
@@ -2070,7 +2084,7 @@ export const createMainPageState = () => {
 
   createEffect(() => {
     if (reviewDestinationTransitioning()) return;
-    if (mode() !== "review") return;
+    if (mode() !== "refine") return;
     const destinationPageUid = reviewSession().destination_page_uid;
     if (!destinationPageUid) return;
     if (resolvePageUid(activePageUid()) === resolvePageUid(destinationPageUid)) {
@@ -2092,7 +2106,7 @@ export const createMainPageState = () => {
   createEffect(() => {
     const session = reviewSession();
     if (
-      session.tab !== "to-review" ||
+      session.tab !== "to-refine" ||
       session.destination_page_uid ||
       session.is_hard_selected ||
       reviewPendingBaselineHash() !== null
@@ -2211,7 +2225,7 @@ export const createMainPageState = () => {
     const session = reviewSession();
     const pendingBaselineHash = reviewPendingBaselineHash();
     if (
-      session.tab !== "to-review" ||
+      session.tab !== "to-refine" ||
       session.destination_page_uid !== null ||
       session.is_hard_selected ||
       !pendingBaselineHash
@@ -2282,8 +2296,8 @@ export const createMainPageState = () => {
     () => ({
       enabled:
         isTauri() &&
-        mode() === "review" &&
-        reviewSession().tab === "to-review" &&
+        mode() === "refine" &&
+        reviewSession().tab === "to-refine" &&
         activeReviewThread()?.id !== undefined,
       query: reviewDestinationSuggestionQuery(),
       pageKey: visiblePages()
@@ -2963,7 +2977,7 @@ export const createMainPageState = () => {
           }
         }
       },
-      review: {
+      refine: {
         summary: reviewSummary,
         items: reviewItems,
         busy: reviewBusy,
@@ -2998,7 +3012,7 @@ export const createMainPageState = () => {
           setReviewSession((current) => ({
             ...current,
             active_thread_id: id,
-            tab: "to-review",
+            tab: "to-refine",
             updated_at: Date.now()
           }));
         },

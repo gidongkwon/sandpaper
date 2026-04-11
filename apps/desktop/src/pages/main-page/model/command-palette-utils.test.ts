@@ -16,7 +16,7 @@ const buildActions = () => ({
   openSettings: noop,
   switchToEditor: noop,
   switchToCapture: noop,
-  switchToReview: noop,
+  switchToRefine: noop,
   focusSearch: noop,
   focusEditor: noop,
   newPage: noop,
@@ -66,7 +66,7 @@ describe("command palette utils", () => {
 
     const ids = commands.map((command) => command.id);
     expect(ids).toContain("switch-editor");
-    expect(ids).toContain("switch-review");
+    expect(ids).toContain("switch-refine");
     expect(ids).not.toContain("new-page");
   });
 

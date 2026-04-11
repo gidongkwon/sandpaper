@@ -143,10 +143,10 @@ describe("Sync conflict UI", () => {
         }
         return Promise.resolve({ pages: [], applied: 0, conflicts: [] });
       }
-      if (command === "review_queue_summary") {
+      if (command === "refine_queue_summary") {
         return Promise.resolve({ due_count: 0, next_due_at: null });
       }
-      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "list_refine_queue_due") return Promise.resolve([]);
       if (command === "save_page_blocks") return Promise.resolve(null);
       if (command === "write_shadow_markdown") return Promise.resolve(null);
       return Promise.resolve(null);

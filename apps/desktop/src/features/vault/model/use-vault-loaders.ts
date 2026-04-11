@@ -8,9 +8,9 @@ import type {
 } from "../../../entities/page/model/page-types";
 import type { PageId } from "../../../shared/model/id-types";
 import type {
-  ReviewQueueItem,
-  ReviewQueueSummary
-} from "../../../entities/review/model/review-types";
+  RefineQueueItem as ReviewQueueItem,
+  RefineQueueSummary as ReviewQueueSummary
+} from "../../../entities/refine/model/refine-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { readLocalStorage } from "../../../shared/lib/storage/safe-local-storage";
 import { resolveBlockType } from "../../../shared/lib/blocks/block-type-utils";
@@ -139,7 +139,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     }
     try {
       const summary = (await deps.invoke(
-        "review_queue_summary"
+        "refine_queue_summary"
       )) as ReviewQueueSummary;
       deps.setReviewSummary(summary);
     } catch (error) {
@@ -154,7 +154,7 @@ export const createVaultLoaders = (deps: VaultLoaderDependencies) => {
     }
     deps.setReviewBusy(true);
     try {
-      const items = (await deps.invoke("list_review_queue_due", {
+      const items = (await deps.invoke("list_refine_queue_due", {
         limit: 12
       })) as ReviewQueueItem[];
       deps.setReviewItems(items);

@@ -1,16 +1,16 @@
 import { For, Show } from "solid-js";
-import type { ReviewThread } from "../../entities/review/model/review-types";
-import { ReviewReferenceCard } from "./review-reference-card";
+import type { RefineThread } from "../../entities/refine/model/refine-types";
+import { RefineReferenceCard } from "./refine-reference-card";
 
-type ReviewArchiveListProps = {
-  threads: ReviewThread[];
+type RefineArchiveListProps = {
+  threads: RefineThread[];
   selectedThreadId: string | null;
   onOpenThread: (id: string) => void;
-  formatCapturedRange: (thread: ReviewThread) => string;
+  formatCapturedRange: (thread: RefineThread) => string;
   formatReviewDate: (value: number | null | undefined) => string;
 };
 
-export const ReviewArchiveList = (props: ReviewArchiveListProps) => (
+export const RefineArchiveList = (props: RefineArchiveListProps) => (
   <Show
     when={props.threads.length > 0}
     fallback={<div class="review-archive-list__empty">Archived items will appear here.</div>}
@@ -23,7 +23,7 @@ export const ReviewArchiveList = (props: ReviewArchiveListProps) => (
               props.selectedThreadId === thread.id ? "is-selected" : ""
             }`}
           >
-            <ReviewReferenceCard
+            <RefineReferenceCard
               thread={thread}
               compact
               clickable

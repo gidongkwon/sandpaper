@@ -1,1 +1,1 @@
-export type Mode = "quick-capture" | "editor" | "review";
+export type Mode = "quick-capture" | "editor" | "refine";

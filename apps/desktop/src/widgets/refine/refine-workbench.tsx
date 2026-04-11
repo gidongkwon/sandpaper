@@ -8,46 +8,46 @@ import {
 } from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
-  DestinationRecommendation,
-  ReviewDestinationSuggestion,
-  ReviewQueueItem,
-  ReviewQueueSummary,
-  ReviewTab,
-  ReviewTemplate,
-  ReviewThread
-} from "../../entities/review/model/review-types";
+  RefineDestinationRecommendation,
+  RefineDestinationSuggestion,
+  RefineQueueItem,
+  RefineQueueSummary,
+  RefineTab,
+  RefineTemplate,
+  RefineThread
+} from "../../entities/refine/model/refine-types";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
 import { SegmentedTabs } from "../../shared/ui/segmented-tabs";
 import { Button } from "../../shared/ui/button";
 import { ArrowRight16Icon } from "../../shared/ui/icons";
-import { ReviewArchiveList } from "./review-archive-list";
-import { ReviewQueueDeck } from "./review-queue-deck";
-import { ReviewSessionBar } from "./review-session-bar";
+import { RefineArchiveList } from "./refine-archive-list";
+import { RefineQueueDeck } from "./refine-queue-deck";
+import { RefineSessionBar } from "./refine-session-bar";
 
 type PropsOf<T> = T extends (props: infer P) => unknown ? P : never;
 
-type ReviewWorkbenchProps = {
-  summary: Accessor<ReviewQueueSummary>;
-  items: Accessor<ReviewQueueItem[]>;
+type RefineWorkbenchProps = {
+  summary: Accessor<RefineQueueSummary>;
+  items: Accessor<RefineQueueItem[]>;
   busy: Accessor<boolean>;
   message: Accessor<string | null>;
-  templates: ReviewTemplate[];
+  templates: RefineTemplate[];
   selectedTemplate: Accessor<string>;
   setSelectedTemplate: (value: string) => void;
   formatReviewDate: (value: number | null) => string;
-  onAction: (item: ReviewQueueItem, action: "snooze" | "later" | "done") => void;
+  onAction: (item: RefineQueueItem, action: "snooze" | "later" | "done") => void;
   onCreateTemplate: () => void;
   isTauri: () => boolean;
   activeId: Accessor<string | null>;
   onAddCurrent: (id: string) => void | Promise<void>;
-  threads: Accessor<ReviewThread[]>;
-  activeThread: Accessor<ReviewThread | null>;
-  archivedThreads: Accessor<ReviewThread[]>;
-  selectedArchivedThread: Accessor<ReviewThread | null>;
-  activeTab: Accessor<ReviewTab>;
-  setActiveTab: (tab: ReviewTab) => void;
+  threads: Accessor<RefineThread[]>;
+  activeThread: Accessor<RefineThread | null>;
+  archivedThreads: Accessor<RefineThread[]>;
+  selectedArchivedThread: Accessor<RefineThread | null>;
+  activeTab: Accessor<RefineTab>;
+  setActiveTab: (tab: RefineTab) => void;
   selectedThreadId: Accessor<string | null>;
   onSelectThread: (id: string) => void;
   onOpenArchivedThread: (id: string) => void | Promise<void>;
@@ -55,11 +55,11 @@ type ReviewWorkbenchProps = {
   setDestinationQuery: (value: string) => void;
   destinationMatches: Accessor<PageSummary[]>;
   destinationHasExactMatch: Accessor<boolean>;
-  destinationSuggestions: Accessor<ReviewDestinationSuggestion[]>;
+  destinationSuggestions: Accessor<RefineDestinationSuggestion[]>;
   destinationTitle: Accessor<string | null>;
   destinationSelected: Accessor<boolean>;
   destinationPageUid: Accessor<string | null>;
-  destinationRecommendations: Accessor<DestinationRecommendation[]>;
+  destinationRecommendations: Accessor<RefineDestinationRecommendation[]>;
   destinationIsHardSelected: Accessor<boolean>;
   invalidated: Accessor<boolean>;
   hasDiscardableChanges: Accessor<boolean>;
@@ -71,7 +71,7 @@ type ReviewWorkbenchProps = {
   editor: PropsOf<typeof EditorPane>;
 };
 
-export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
+export const RefineWorkbench = (props: RefineWorkbenchProps) => {
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [pendingAction, setPendingAction] = createSignal<null | (() => void | Promise<void>)>(
     null
@@ -167,7 +167,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
       props.invalidated()
     ].join("|");
     if (nextSignature === previousSignature) return previousSignature;
-    if (props.activeTab() !== "to-review") {
+    if (props.activeTab() !== "to-refine") {
       setHasExplicitDestinationChoice(false);
       setDestinationPanelMode("editor");
       return nextSignature;
@@ -191,7 +191,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
 
   const canToggleDestinationSelection = createMemo(
     () =>
-      props.activeTab() === "to-review" &&
+      props.activeTab() === "to-refine" &&
       !props.invalidated() &&
       props.destinationSelected()
   );
@@ -201,10 +201,10 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
     setDestinationPanelMode((current) => (current === "select" ? "editor" : "select"));
   };
   const showEditorPane = createMemo(
-    () => props.activeTab() !== "to-review" || destinationPanelMode() === "editor"
+    () => props.activeTab() !== "to-refine" || destinationPanelMode() === "editor"
   );
 
-  const formatCapturedRange = (thread: ReviewThread) => {
+  const formatCapturedRange = (thread: RefineThread) => {
     if (!thread.captured_at_start) return "Captured —";
     const start = props.formatReviewDate(thread.captured_at_start);
     if (!thread.captured_at_end || thread.captured_at_end === thread.captured_at_start) {
@@ -282,9 +282,9 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
               style={{ "view-transition-name": "mode-pane-capture" }}
             >
               <Show
-                when={props.activeTab() === "to-review"}
+                when={props.activeTab() === "to-refine"}
                 fallback={
-                  <ReviewArchiveList
+                  <RefineArchiveList
                     threads={props.archivedThreads()}
                     selectedThreadId={props.selectedArchivedThread()?.id ?? null}
                     onOpenThread={(id) => void props.onOpenArchivedThread(id)}
@@ -293,7 +293,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                   />
                 }
               >
-                <ReviewQueueDeck
+                <RefineQueueDeck
                   threads={props.threads()}
                   activeThreadId={props.selectedThreadId()}
                   onSelectThread={handleSelectThread}
@@ -308,7 +308,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                 value={props.activeTab()}
                 onChange={props.setActiveTab}
                 items={[
-                  { value: "to-review", label: "To Refine" },
+                  { value: "to-refine", label: "To Refine" },
                   { value: "archived", label: "Archived" }
                 ]}
                 aria-label="Refine tabs"
@@ -316,7 +316,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                 triggerClass="review-workbench__tab"
               />
               <div class="review-workbench__footer-meta">
-                <Show when={props.activeTab() === "to-review" && remainingDeckCount() > 0}>
+                <Show when={props.activeTab() === "to-refine" && remainingDeckCount() > 0}>
                   <span class="review-queue-deck__more">{`${remainingDeckCount()} more`}</span>
                 </Show>
               </div>
@@ -346,7 +346,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
             style={{ "view-transition-name": "mode-pane-editor" }}
           >
             <div class="review-workbench__editor-card">
-              <ReviewSessionBar
+              <RefineSessionBar
                 activeTab={props.activeTab}
                 panelMode={destinationPanelMode}
                 destinationSelected={props.destinationSelected}
@@ -377,7 +377,7 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
                 <EditorPane {...props.editor} />
               </Show>
             </div>
-            <Show when={props.activeTab() === "to-review"}>
+            <Show when={props.activeTab() === "to-refine"}>
               <div class="review-workbench__action-row">
                 <Show when={canToggleDestinationSelection()}>
                   <Button

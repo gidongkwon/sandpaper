@@ -1,12 +1,12 @@
 import { For, Show } from "solid-js";
 import { extractImageSource } from "../../shared/lib/blocks/block-type-utils";
 import { AssetImage } from "../../shared/ui/asset-image";
-import type { ReviewThread } from "../../entities/review/model/review-types";
+import type { RefineThread } from "../../entities/refine/model/refine-types";
 import { Button } from "../../shared/ui/button";
 import { ArrowRight16Icon } from "../../shared/ui/icons";
 
-type ReviewReferenceCardProps = {
-  thread: ReviewThread;
+type RefineReferenceCardProps = {
+  thread: RefineThread;
   capturedLabel: string;
   clickable?: boolean;
   compact?: boolean;
@@ -17,13 +17,13 @@ type ReviewReferenceCardProps = {
   onSelect?: () => void;
 };
 
-export const ReviewReferenceCard = (props: ReviewReferenceCardProps) => {
-  const findBodyText = (entry: ReviewThread["entries"][number]) =>
+export const RefineReferenceCard = (props: RefineReferenceCardProps) => {
+  const findBodyText = (entry: RefineThread["entries"][number]) =>
     entry.blocks.find((block) => block.meta?.capture?.role === "body")?.text ??
     entry.blocks.find((block) => !extractImageSource(block.text))?.text ??
     entry.text;
 
-  const findImageSources = (entry: ReviewThread["entries"][number]) =>
+  const findImageSources = (entry: RefineThread["entries"][number]) =>
     entry.blocks
       .map((block) => extractImageSource(block.text))
       .filter((source): source is string => source !== null);

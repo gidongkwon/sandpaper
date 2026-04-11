@@ -1,15 +1,15 @@
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import type { ReviewThread } from "../../entities/review/model/review-types";
-import { ReviewReferenceCard } from "./review-reference-card";
+import type { RefineThread } from "../../entities/refine/model/refine-types";
+import { RefineReferenceCard } from "./refine-reference-card";
 
-type ReviewQueueDeckProps = {
-  threads: ReviewThread[];
+type RefineQueueDeckProps = {
+  threads: RefineThread[];
   activeThreadId: string | null;
   onSelectThread: (id: string) => void;
-  formatCapturedRange: (thread: ReviewThread) => string;
+  formatCapturedRange: (thread: RefineThread) => string;
 };
 
-export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
+export const RefineQueueDeck = (props: RefineQueueDeckProps) => {
   const [promotionState, setPromotionState] = createSignal<{
     incomingId: string;
     outgoingId: string;
@@ -80,7 +80,7 @@ export const ReviewQueueDeck = (props: ReviewQueueDeckProps) => {
                 }
                 data-promotion-target={promotionState()?.targetIndex}
               >
-                <ReviewReferenceCard
+                <RefineReferenceCard
                   thread={thread}
                   capturedLabel={props.formatCapturedRange(thread)}
                   active={index() === 0}

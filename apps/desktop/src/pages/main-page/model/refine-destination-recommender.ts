@@ -1,25 +1,25 @@
 import type { PageSummary } from "../../../entities/page/model/page-types";
 import type {
-  DestinationRecommendation,
-  ReviewDestinationSuggestion,
-  ReviewThread
-} from "../../../entities/review/model/review-types";
+  RefineDestinationRecommendation,
+  RefineDestinationSuggestion,
+  RefineThread
+} from "../../../entities/refine/model/refine-types";
 import { normalizePageUid } from "../../../shared/lib/page/normalize-page-uid";
 
-type ReviewDestinationRecommendationInput = {
-  thread: ReviewThread | null;
+type RefineDestinationRecommendationInput = {
+  thread: RefineThread | null;
   pages: PageSummary[];
   recentDestinationPageUids: string[];
 };
 
-type ReviewDestinationSearchHit = {
+type RefineDestinationSearchHit = {
   page_uid: string;
   title: string;
   breadcrumb?: string | null;
   snippet: string;
 };
 
-type ReviewDestinationFallbackInput = {
+type RefineDestinationFallbackInput = {
   pages: PageSummary[];
   currentPageUid: string | null;
   recentDestinationPageUids: string[];
@@ -32,7 +32,7 @@ const TOKEN_PATTERN = /[a-z0-9][a-z0-9-]*/giu;
 const toTokens = (value: string) =>
   Array.from(value.toLowerCase().matchAll(TOKEN_PATTERN), (match) => match[0]);
 
-const getWikilinks = (thread: ReviewThread) => {
+const getWikilinks = (thread: RefineThread) => {
   const links = new Set<string>();
   for (const entry of thread.entries) {
     for (const match of entry.text.matchAll(WIKILINK_PATTERN)) {
@@ -71,7 +71,7 @@ const scorePage = (
   );
   if (recentIndex >= 0) {
     score += Math.max(1, 5 - recentIndex);
-    reasons.push("Recently used in review");
+    reasons.push("Recently used in refine");
   }
 
   return {
@@ -83,11 +83,11 @@ const scorePage = (
   };
 };
 
-export const getReviewDestinationRecommendations = ({
+export const getRefineDestinationRecommendations = ({
   thread,
   pages,
   recentDestinationPageUids
-}: ReviewDestinationRecommendationInput): DestinationRecommendation[] => {
+}: RefineDestinationRecommendationInput): RefineDestinationRecommendation[] => {
   if (!thread) return [];
 
   const threadTokens = thread.entries.flatMap((entry) => toTokens(entry.text));
@@ -103,9 +103,9 @@ export const getReviewDestinationRecommendations = ({
     .slice(0, 5);
 };
 
-export const getReviewDestinationSuggestionsFromRecommendations = (
-  recommendations: DestinationRecommendation[]
-): ReviewDestinationSuggestion[] =>
+export const getRefineDestinationSuggestionsFromRecommendations = (
+  recommendations: RefineDestinationRecommendation[]
+): RefineDestinationSuggestion[] =>
   recommendations.map((recommendation) => ({
     page_uid: recommendation.page_uid,
     title: recommendation.title,
@@ -114,17 +114,17 @@ export const getReviewDestinationSuggestionsFromRecommendations = (
     provider: "heuristic"
   }));
 
-export const getReviewDestinationSuggestionsFromSearchHits = (
-  hits: ReviewDestinationSearchHit[],
+export const getRefineDestinationSuggestionsFromSearchHits = (
+  hits: RefineDestinationSearchHit[],
   pages: PageSummary[]
-): ReviewDestinationSuggestion[] => {
+): RefineDestinationSuggestion[] => {
   const visiblePageByUid = new Map(
     pages.map((page) => [normalizePageUid(page.uid), page] as const)
   );
   const visiblePageByTitle = new Map(
     pages.map((page) => [normalizePageUid(page.title), page] as const)
   );
-  const suggestions: ReviewDestinationSuggestion[] = [];
+  const suggestions: RefineDestinationSuggestion[] = [];
   const seen = new Set<string>();
 
   for (const hit of hits) {
@@ -148,22 +148,22 @@ export const getReviewDestinationSuggestionsFromSearchHits = (
   return suggestions;
 };
 
-export const getFallbackReviewDestinationSuggestions = ({
+export const getFallbackRefineDestinationSuggestions = ({
   pages,
   currentPageUid,
   recentDestinationPageUids,
   previewsByPageUid = {}
-}: ReviewDestinationFallbackInput): ReviewDestinationSuggestion[] => {
+}: RefineDestinationFallbackInput): RefineDestinationSuggestion[] => {
   const pageByUid = new Map(
     pages.map((page) => [normalizePageUid(page.uid), page] as const)
   );
-  const suggestions: ReviewDestinationSuggestion[] = [];
+  const suggestions: RefineDestinationSuggestion[] = [];
   const seen = new Set<string>();
 
   const pushSuggestion = (
     page: PageSummary | undefined,
     fallbackReason: string,
-    provider: ReviewDestinationSuggestion["provider"] = "heuristic"
+    provider: RefineDestinationSuggestion["provider"] = "heuristic"
   ) => {
     if (!page) return;
     const normalizedUid = normalizePageUid(page.uid);
@@ -191,7 +191,7 @@ export const getFallbackReviewDestinationSuggestions = ({
   for (const pageUid of recentDestinationPageUids) {
     pushSuggestion(
       pageByUid.get(normalizePageUid(pageUid)),
-      "Recent review destination"
+      "Recent refine destination"
     );
   }
 

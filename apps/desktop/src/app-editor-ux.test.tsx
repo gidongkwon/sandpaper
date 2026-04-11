@@ -16,7 +16,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 });
 
 import App from "./app/app";
-import { formatReviewDate } from "./pages/main-page/model/review-utils";
+import { formatRefineDate as formatReviewDate } from "./pages/main-page/model/refine-utils";
 import { clearResolvedAssetSrcCache } from "./shared/lib/assets/resolve-asset-src";
 
 const REFINE_MODE_LABEL = "Refine";
@@ -847,7 +847,7 @@ describe("App editor UX", () => {
     const focusPanel = reviewSurface.closest(".focus-panel");
 
     expect(reviewLayout).toHaveAttribute("data-layout", "split");
-    expect(focusPanel).toHaveAttribute("data-focus-mode", "review");
+    expect(focusPanel).toHaveAttribute("data-focus-mode", "refine");
   });
 
   it("lets the review divider resize the split panes", async () => {
@@ -1187,7 +1187,7 @@ describe("App editor UX", () => {
     await user.click(getModeControl("Review"));
 
     const reviewSurface = screen.getByRole("region", { name: REFINE_SURFACE_LABEL });
-    expect(reviewSurface).toHaveAttribute("data-review-tab", "to-review");
+    expect(reviewSurface).toHaveAttribute("data-review-tab", "to-refine");
     expect(
       within(reviewSurface).getByRole("navigation", { name: REFINE_QUEUE_LABEL })
     ).toBeInTheDocument();
@@ -1720,10 +1720,10 @@ describe("App editor UX", () => {
           last_pull_cursor: 0
         });
       }
-      if (command === "review_queue_summary") {
+      if (command === "refine_queue_summary") {
         return Promise.resolve({ due_count: 0, next_due_at: null });
       }
-      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "list_refine_queue_due") return Promise.resolve([]);
       if (command === "write_shadow_markdown") return Promise.resolve(null);
       return Promise.resolve(null);
     });
@@ -1831,10 +1831,10 @@ describe("App editor UX", () => {
           last_pull_cursor: 0
         });
       }
-      if (command === "review_queue_summary") {
+      if (command === "refine_queue_summary") {
         return Promise.resolve({ due_count: 0, next_due_at: null });
       }
-      if (command === "list_review_queue_due") return Promise.resolve([]);
+      if (command === "list_refine_queue_due") return Promise.resolve([]);
       if (command === "save_page_blocks") return Promise.resolve(null);
       if (command === "write_shadow_markdown") return Promise.resolve(null);
       return Promise.resolve(null);
@@ -1987,7 +1987,7 @@ describe("App editor UX", () => {
 
     const archivedStorageKey = Array.from({ length: window.localStorage.length }, (_, index) =>
       window.localStorage.key(index)
-    ).find((key): key is string => Boolean(key?.startsWith("sandpaper:review:archived-threads:")));
+    ).find((key): key is string => Boolean(key?.startsWith("sandpaper:refine:archived-threads:")));
     expect(archivedStorageKey).toBeTruthy();
     if (!archivedStorageKey) return;
 

@@ -5,7 +5,10 @@ import type {
   LocalPageRecord,
   PageSummary
 } from "../../../entities/page/model/page-types";
-import type { ReviewQueueItem, ReviewQueueSummary } from "../../../entities/review/model/review-types";
+import type {
+  RefineQueueItem as ReviewQueueItem,
+  RefineQueueSummary as ReviewQueueSummary
+} from "../../../entities/refine/model/refine-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { createVaultLoaders } from "./use-vault-loaders";
 

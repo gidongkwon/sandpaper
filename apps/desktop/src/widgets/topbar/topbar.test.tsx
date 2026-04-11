@@ -34,7 +34,7 @@ describe("Topbar", () => {
   const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
   const renderTopbar = () => {
-    const [mode, setMode] = createSignal<"quick-capture" | "review" | "editor">("editor");
+    const [mode, setMode] = createSignal<"quick-capture" | "refine" | "editor">("editor");
     return render(() => (
       <Topbar
         sidebarOpen={() => true}

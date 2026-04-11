@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createReviewPageHash } from "./review-session-hash";
+import { createRefinePageHash } from "./refine-session-hash";
 
-describe("review session hash", () => {
+describe("refine session hash", () => {
   const basePage = {
     pageUid: "project-atlas",
     title: "Project Atlas",
@@ -22,12 +22,12 @@ describe("review session hash", () => {
   };
 
   it("returns the same hash for the same input", () => {
-    expect(createReviewPageHash(basePage)).toBe(createReviewPageHash(basePage));
+    expect(createRefinePageHash(basePage)).toBe(createRefinePageHash(basePage));
   });
 
   it("changes when block text changes", () => {
     expect(
-      createReviewPageHash({
+      createRefinePageHash({
         ...basePage,
         blocks: [
           basePage.blocks[0],
@@ -37,12 +37,12 @@ describe("review session hash", () => {
           }
         ]
       })
-    ).not.toBe(createReviewPageHash(basePage));
+    ).not.toBe(createRefinePageHash(basePage));
   });
 
   it("changes when block indent changes", () => {
     expect(
-      createReviewPageHash({
+      createRefinePageHash({
         ...basePage,
         blocks: [
           basePage.blocks[0],
@@ -52,15 +52,15 @@ describe("review session hash", () => {
           }
         ]
       })
-    ).not.toBe(createReviewPageHash(basePage));
+    ).not.toBe(createRefinePageHash(basePage));
   });
 
   it("changes when title changes", () => {
     expect(
-      createReviewPageHash({
+      createRefinePageHash({
         ...basePage,
         title: "Project Borealis"
       })
-    ).not.toBe(createReviewPageHash(basePage));
+    ).not.toBe(createRefinePageHash(basePage));
   });
 });

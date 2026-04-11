@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { PageSummary } from "../../../entities/page/model/page-types";
-import type { ReviewThread } from "../../../entities/review/model/review-types";
+import type { RefineThread } from "../../../entities/refine/model/refine-types";
 import {
-  getFallbackReviewDestinationSuggestions,
-  getReviewDestinationRecommendations,
-  getReviewDestinationSuggestionsFromRecommendations,
-  getReviewDestinationSuggestionsFromSearchHits
-} from "./review-destination-recommender";
+  getFallbackRefineDestinationSuggestions,
+  getRefineDestinationRecommendations,
+  getRefineDestinationSuggestionsFromRecommendations,
+  getRefineDestinationSuggestionsFromSearchHits
+} from "./refine-destination-recommender";
 
-const makeThread = (entries: string[]): ReviewThread => ({
+const makeThread = (entries: string[]): RefineThread => ({
   id: "thread-1",
   root_text: entries[0] ?? "",
-  status: "to-review",
+  status: "to-refine",
   entries: entries.map((text, index) => ({
     id: `entry-${index + 1}`,
     text,
@@ -28,9 +28,9 @@ const pages: PageSummary[] = [
   { uid: "reading-list", title: "Reading List" }
 ];
 
-describe("review destination recommender", () => {
+describe("refine destination recommender", () => {
   it("prioritizes pages explicitly referenced with wikilinks", () => {
-    const recommendations = getReviewDestinationRecommendations({
+    const recommendations = getRefineDestinationRecommendations({
       thread: makeThread([
         "Need to connect this to [[Systems Design]]",
         "Architecture follow-up"
@@ -47,7 +47,7 @@ describe("review destination recommender", () => {
   });
 
   it("ranks title overlap ahead of unrelated pages", () => {
-    const recommendations = getReviewDestinationRecommendations({
+    const recommendations = getRefineDestinationRecommendations({
       thread: makeThread([
         "Project Atlas launch checklist",
         "Atlas dependencies and blockers"
@@ -61,7 +61,7 @@ describe("review destination recommender", () => {
   });
 
   it("uses recent history as a tie-breaker", () => {
-    const recommendations = getReviewDestinationRecommendations({
+    const recommendations = getRefineDestinationRecommendations({
       thread: makeThread(["notes", "todo"]),
       pages: [
         { uid: "alpha-notes", title: "Alpha Notes" },
@@ -71,11 +71,11 @@ describe("review destination recommender", () => {
     });
 
     expect(recommendations[0]?.page_uid).toBe("beta-notes");
-    expect(recommendations[0]?.reasons).toContain("Recently used in review");
+    expect(recommendations[0]?.reasons).toContain("Recently used in refine");
   });
 
   it("returns at most five recommendations", () => {
-    const recommendations = getReviewDestinationRecommendations({
+    const recommendations = getRefineDestinationRecommendations({
       thread: makeThread(["note summary"]),
       pages: [
         { uid: "alpha-note", title: "Alpha Note" },
@@ -92,7 +92,7 @@ describe("review destination recommender", () => {
   });
 
   it("maps heuristic recommendations into destination suggestions", () => {
-    const suggestions = getReviewDestinationSuggestionsFromRecommendations([
+    const suggestions = getRefineDestinationSuggestionsFromRecommendations([
       {
         page_uid: "project-atlas",
         title: "Project Atlas",
@@ -114,7 +114,7 @@ describe("review destination recommender", () => {
   });
 
   it("groups rag hits by visible page and keeps the first snippet", () => {
-    const suggestions = getReviewDestinationSuggestionsFromSearchHits(
+    const suggestions = getRefineDestinationSuggestionsFromSearchHits(
       [
         {
           page_uid: "project-atlas",
@@ -156,7 +156,7 @@ describe("review destination recommender", () => {
   });
 
   it("provides current and recent pages as fallback suggestions", () => {
-    const suggestions = getFallbackReviewDestinationSuggestions({
+    const suggestions = getFallbackRefineDestinationSuggestions({
       pages,
       currentPageUid: "meeting-notes",
       recentDestinationPageUids: ["reading-list", "project-atlas"],
