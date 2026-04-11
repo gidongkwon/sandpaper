@@ -52,3 +52,18 @@ Run from repo root:
 - Follow repo conventions and update `docs/BUILD_PLAN.md` when checkboxes are completed.
 - Prefer minimal, incremental changes; avoid reformatting unrelated files.
 - Keep the `"Create page with all block types"` command in sync with supported block types: whenever a new block type is added, update the showcase seed builder and its coverage test.
+
+## AGENTS Improvement Prompt
+Use the following policy when deciding whether to update this file after a task:
+
+- Add guidance to `AGENTS.md` only when the lesson is durable, reusable, and likely to matter across future tasks.
+- Prefer policy-level guidance over codebase facts that can be rediscovered from the repository.
+- Do not record one-off implementation details, temporary workarounds, or preferences tied to a single screen unless they generalize into a broader product rule.
+- When the user gives repeated UX feedback, consider whether it implies a stable product policy. If so, encode the policy, not just the specific fix.
+- Favor uninterrupted interaction flows. Avoid stealing focus, blocking ongoing typing, or forcing mode changes without clear intent.
+- Keyboard behavior is part of the product contract. If a surface is navigable, preserve predictable arrow-key and focus handoff behavior.
+- Avoid layout shift from transient status copy when a non-blocking pending treatment can communicate the same state.
+- When a workflow has a dedicated selection step, reduce competing UI and emphasize the primary decision the user is making.
+- For terminology changes, keep user-facing copy, internal state names, file names, command ids, and persistence keys aligned when feasible. If persisted data already exists, preserve backward compatibility or add migration fallbacks.
+- For broad renames or structural refactors, separate them from behavioral changes when possible and commit them as distinct logical steps.
+- Before adding a new rule here, ask: would this still be useful to another agent in a few months? If not, leave it out.
