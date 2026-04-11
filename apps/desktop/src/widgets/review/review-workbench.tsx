@@ -1,7 +1,15 @@
-import { Show, createMemo, createSignal, onCleanup, type Accessor } from "solid-js";
+import {
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  type Accessor
+} from "solid-js";
 import { EditorPane } from "../editor/editor-pane";
 import type {
   DestinationRecommendation,
+  ReviewDestinationSuggestion,
   ReviewQueueItem,
   ReviewQueueSummary,
   ReviewTab,
@@ -12,6 +20,8 @@ import type { PageSummary } from "../../entities/page/model/page-types";
 import { EmptyState } from "../../shared/ui/empty-state";
 import { AlertDialog } from "../../shared/ui/alert-dialog";
 import { SegmentedTabs } from "../../shared/ui/segmented-tabs";
+import { Button } from "../../shared/ui/button";
+import { ArrowRight16Icon } from "../../shared/ui/icons";
 import { ReviewArchiveList } from "./review-archive-list";
 import { ReviewQueueDeck } from "./review-queue-deck";
 import { ReviewSessionBar } from "./review-session-bar";
@@ -45,6 +55,7 @@ type ReviewWorkbenchProps = {
   setDestinationQuery: (value: string) => void;
   destinationMatches: Accessor<PageSummary[]>;
   destinationHasExactMatch: Accessor<boolean>;
+  destinationSuggestions: Accessor<ReviewDestinationSuggestion[]>;
   destinationTitle: Accessor<string | null>;
   destinationSelected: Accessor<boolean>;
   destinationPageUid: Accessor<string | null>;
@@ -65,6 +76,11 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
   const [pendingAction, setPendingAction] = createSignal<null | (() => void | Promise<void>)>(
     null
   );
+  const [hasExplicitDestinationChoice, setHasExplicitDestinationChoice] =
+    createSignal(false);
+  const [destinationPanelMode, setDestinationPanelMode] = createSignal<
+    "editor" | "select"
+  >("select");
   const [leftPanePercent, setLeftPanePercent] = createSignal(50);
   const [isResizing, setIsResizing] = createSignal(false);
   let layoutRef: HTMLDivElement | undefined;
@@ -140,6 +156,53 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
   onCleanup(() => {
     stopResizing();
   });
+
+  createEffect((previousSignature?: string) => {
+    const nextSignature = [
+      props.activeTab(),
+      props.selectedThreadId(),
+      props.destinationPageUid(),
+      props.destinationSelected(),
+      props.destinationIsHardSelected(),
+      props.invalidated()
+    ].join("|");
+    if (nextSignature === previousSignature) return previousSignature;
+    if (props.activeTab() !== "to-review") {
+      setHasExplicitDestinationChoice(false);
+      setDestinationPanelMode("editor");
+      return nextSignature;
+    }
+    if (!props.destinationSelected() || props.invalidated()) {
+      setHasExplicitDestinationChoice(false);
+      setDestinationPanelMode("select");
+      return nextSignature;
+    }
+    if (hasExplicitDestinationChoice()) {
+      setDestinationPanelMode("editor");
+      return nextSignature;
+    }
+    if (!props.destinationIsHardSelected()) {
+      setDestinationPanelMode("select");
+      return nextSignature;
+    }
+    setDestinationPanelMode("editor");
+    return nextSignature;
+  }, "");
+
+  const canToggleDestinationSelection = createMemo(
+    () =>
+      props.activeTab() === "to-review" &&
+      !props.invalidated() &&
+      props.destinationSelected()
+  );
+
+  const toggleDestinationPanelMode = () => {
+    if (!canToggleDestinationSelection()) return;
+    setDestinationPanelMode((current) => (current === "select" ? "editor" : "select"));
+  };
+  const showEditorPane = createMemo(
+    () => props.activeTab() !== "to-review" || destinationPanelMode() === "editor"
+  );
 
   const formatCapturedRange = (thread: ReviewThread) => {
     if (!thread.captured_at_start) return "Captured —";
@@ -282,26 +345,64 @@ export const ReviewWorkbench = (props: ReviewWorkbenchProps) => {
             data-transition-slot="editor"
             style={{ "view-transition-name": "mode-pane-editor" }}
           >
-            <ReviewSessionBar
-              activeTab={props.activeTab}
-              destinationSelected={props.destinationSelected}
-              destinationTitle={props.destinationTitle}
-              destinationPageUid={props.destinationPageUid}
-              destinationRecommendations={props.destinationRecommendations}
-              destinationIsHardSelected={props.destinationIsHardSelected}
-              destinationQuery={props.destinationQuery}
-              setDestinationQuery={props.setDestinationQuery}
-              destinationMatches={props.destinationMatches}
-              destinationHasExactMatch={props.destinationHasExactMatch}
-              invalidated={props.invalidated}
-              onOpenDestination={handleOpenDestination}
-              onCreateDestination={handleCreateDestination}
-              onCompleteReview={props.onCompleteReview}
-              canCompleteReview={props.canCompleteReview}
-              archivedAt={() => props.selectedArchivedThread()?.archived_at ?? null}
-              formatReviewDate={(value) => props.formatReviewDate(value ?? null)}
-            />
-            <EditorPane {...props.editor} />
+            <div class="review-workbench__editor-card">
+              <ReviewSessionBar
+                activeTab={props.activeTab}
+                panelMode={destinationPanelMode}
+                destinationSelected={props.destinationSelected}
+                destinationTitle={props.destinationTitle}
+                destinationPageUid={props.destinationPageUid}
+                destinationRecommendations={props.destinationRecommendations}
+                destinationIsHardSelected={props.destinationIsHardSelected}
+                destinationQuery={props.destinationQuery}
+                setDestinationQuery={props.setDestinationQuery}
+                destinationMatches={props.destinationMatches}
+                destinationHasExactMatch={props.destinationHasExactMatch}
+                destinationSuggestions={props.destinationSuggestions}
+                invalidated={props.invalidated}
+                onOpenDestination={async (pageUid) => {
+                  await handleOpenDestination(pageUid);
+                  setHasExplicitDestinationChoice(true);
+                  setDestinationPanelMode("editor");
+                }}
+                onCreateDestination={async () => {
+                  await handleCreateDestination();
+                  setHasExplicitDestinationChoice(true);
+                  setDestinationPanelMode("editor");
+                }}
+                archivedAt={() => props.selectedArchivedThread()?.archived_at ?? null}
+                formatReviewDate={(value) => props.formatReviewDate(value ?? null)}
+              />
+              <Show when={showEditorPane()}>
+                <EditorPane {...props.editor} />
+              </Show>
+            </div>
+            <Show when={props.activeTab() === "to-review"}>
+              <div class="review-workbench__action-row">
+                <Show when={canToggleDestinationSelection()}>
+                  <Button
+                    variant="surface"
+                    size="md"
+                    class="review__button review__button--secondary"
+                    onClick={toggleDestinationPanelMode}
+                  >
+                    {destinationPanelMode() === "select"
+                      ? "Cancel Change"
+                      : "Change Destination"}
+                  </Button>
+                </Show>
+                <Button
+                  variant="primary"
+                  size="md"
+                  class="review__button review__button--primary review__button--complete"
+                  disabled={!props.canCompleteReview()}
+                  onClick={() => props.onCompleteReview()}
+                >
+                  <ArrowRight16Icon width={16} height={16} />
+                  <span>Complete Review</span>
+                </Button>
+              </div>
+            </Show>
           </section>
         </div>
       </Show>

@@ -1,15 +1,24 @@
-import { Show, createEffect, createMemo, createSignal, type Accessor } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  type Accessor,
+  useTransition
+} from "solid-js";
 import type { PageSummary } from "../../entities/page/model/page-types";
 import type {
   DestinationRecommendation,
+  ReviewDestinationSuggestion,
   ReviewTab
 } from "../../entities/review/model/review-types";
-import { Button } from "../../shared/ui/button";
 import { Search16Icon } from "../../shared/ui/icons";
-import { SearchableCombobox, type SearchableComboboxOption } from "../../shared/ui/searchable-combobox";
+import { TextField } from "../../shared/ui/text-field";
 
 type ReviewSessionBarProps = {
   activeTab: Accessor<ReviewTab>;
+  panelMode: Accessor<"editor" | "select">;
   destinationSelected: Accessor<boolean>;
   destinationTitle: Accessor<string | null>;
   destinationPageUid: Accessor<string | null>;
@@ -19,36 +28,45 @@ type ReviewSessionBarProps = {
   setDestinationQuery: (value: string) => void;
   destinationMatches: Accessor<PageSummary[]>;
   destinationHasExactMatch: Accessor<boolean>;
+  destinationSuggestions: Accessor<ReviewDestinationSuggestion[]>;
   invalidated: Accessor<boolean>;
   onOpenDestination: (pageUid: string) => void | Promise<void>;
   onCreateDestination: () => void | Promise<void>;
-  onCompleteReview: () => void;
-  canCompleteReview: Accessor<boolean>;
   archivedAt: Accessor<number | null>;
   formatReviewDate: (value: number | null) => string;
 };
 
 export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
-  const [searchOpen, setSearchOpen] = createSignal(true);
+  type DestinationListItem =
+    | {
+        kind: "page";
+        key: string;
+        pageUid: string;
+        title: string;
+        reason: string;
+        snippet: string | null;
+        providerLabel: string;
+      }
+    | {
+        kind: "create";
+        key: string;
+        title: string;
+        reason: string;
+        providerLabel: string;
+      };
 
-  createEffect((wasHardSelected: boolean) => {
-    if (props.activeTab() === "archived") {
-      setSearchOpen(false);
-      return props.destinationIsHardSelected();
+  const [localDestinationQuery, setLocalDestinationQuery] = createSignal(
+    props.destinationQuery()
+  );
+  const [isDestinationTransitionPending, startDestinationTransition] =
+    useTransition();
+
+  createEffect(() => {
+    const nextQuery = props.destinationQuery();
+    if (nextQuery !== localDestinationQuery()) {
+      setLocalDestinationQuery(nextQuery);
     }
-    if (props.invalidated()) {
-      setSearchOpen(true);
-      return props.destinationIsHardSelected();
-    }
-    if (!props.destinationIsHardSelected()) {
-      setSearchOpen(true);
-      return false;
-    }
-    if (!wasHardSelected) {
-      setSearchOpen(false);
-    }
-    return true;
-  }, false);
+  });
 
   const isRecommended = createMemo(() => {
     if (props.activeTab() !== "to-review") return false;
@@ -60,116 +78,173 @@ export const ReviewSessionBar = (props: ReviewSessionBarProps) => {
       .some((item) => item.page_uid === destinationPageUid);
   });
 
-  const visibleRecommendations = createMemo(() => {
-    if (props.destinationQuery().trim().length > 0) return [];
-    return props.destinationRecommendations();
-  });
-  const handleDestinationSelect = (value: string) => {
-    if (value.startsWith("open:")) {
-      void props.onOpenDestination(value.slice(5));
-      return;
-    }
-    if (value.startsWith("create:")) {
-      void props.onCreateDestination();
-    }
-  };
-  const destinationOptions = createMemo<SearchableComboboxOption[]>(() => {
+  const destinationListItems = createMemo<DestinationListItem[]>(() => {
     const query = props.destinationQuery().trim();
     if (query.length > 0) {
-      const pageOptions: SearchableComboboxOption[] = props
-        .destinationMatches()
-        .map((page) => ({
-          value: `open:${page.uid}`,
-          label: `Open ${page.title}`,
-          inputLabel: page.title,
-          description: null
-        }));
+      const pageItems: DestinationListItem[] = props.destinationMatches().map((page) => ({
+        kind: "page",
+        key: `page:${page.uid}`,
+        pageUid: page.uid,
+        title: page.title,
+        reason: "Open existing page",
+        snippet: null,
+        providerLabel: "Existing"
+      }));
       if (!props.destinationHasExactMatch()) {
-        pageOptions.push({
-          value: `create:${query}`,
-          label: `Create "${query}"`,
-          inputLabel: query,
-          description: null,
-          tone: "accent"
+        pageItems.unshift({
+          kind: "create",
+          key: `create:${query}`,
+          title: `Create "${query}"`,
+          reason: "Create and open a new destination page",
+          providerLabel: "New"
         });
       }
-      return pageOptions;
+      return pageItems;
     }
-    return visibleRecommendations().map((recommendation) => ({
-      value: `open:${recommendation.page_uid}`,
-      label: recommendation.title,
-      inputLabel: recommendation.title,
-      description: recommendation.reasons[0] ?? "Recommended"
+    return props.destinationSuggestions().map((suggestion) => ({
+      kind: "page",
+      key: `suggestion:${suggestion.page_uid}`,
+      pageUid: suggestion.page_uid,
+      title: suggestion.title,
+      reason: suggestion.reason,
+      snippet: suggestion.snippet,
+      providerLabel: suggestion.provider === "rag" ? "Rag Match" : "Suggested"
     }));
   });
-  const hasMetaContent = createMemo(
-    () =>
-      isRecommended() ||
-      (props.activeTab() === "archived" && props.archivedAt() !== null) ||
-      props.invalidated()
+
+  const suggestionHeading = createMemo(() =>
+    props.destinationQuery().trim().length > 0
+      ? "Matching pages"
+      : "Suggested destinations"
   );
 
   return (
-    <header class="review-session-bar" data-has-meta={hasMetaContent()}>
-      <Show when={hasMetaContent()}>
-        <div class="review-session-bar__meta">
-          <div class="review-session-bar__title-row">
+    <header class="review-session-bar" data-mode={props.panelMode()}>
+      <Show
+        when={props.activeTab() === "to-review" && props.panelMode() === "select"}
+        fallback={
+          <div class="review-session-bar__panel review-session-bar__panel--editor">
+            <div class="review-session-bar__meta-row">
+              <Show when={isRecommended()}>
+                <span class="review-session-bar__badge">Recommended</span>
+              </Show>
+              <Show when={props.destinationIsHardSelected() && props.activeTab() === "to-review"}>
+                <span class="review-session-bar__hint">Locked for this review</span>
+              </Show>
+              <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
+                <span class="review-session-bar__hint">
+                  {`Archived ${props.formatReviewDate(props.archivedAt())}`}
+                </span>
+              </Show>
+              <Show when={props.invalidated()}>
+                <span class="review-session-bar__warning">Pick a destination again</span>
+              </Show>
+            </div>
+          </div>
+        }
+      >
+        <div class="review-session-bar__panel review-session-bar__panel--select">
+          <div class="review-session-bar__meta-row">
             <Show when={isRecommended()}>
               <span class="review-session-bar__badge">Recommended</span>
-            </Show>
-            <Show when={props.activeTab() === "archived" && props.archivedAt() !== null}>
-              <span class="review-session-bar__hint">
-                {`Archived ${props.formatReviewDate(props.archivedAt())}`}
-              </span>
             </Show>
             <Show when={props.invalidated()}>
               <span class="review-session-bar__warning">Pick a destination again</span>
             </Show>
           </div>
-        </div>
-      </Show>
 
-      <Show when={props.activeTab() === "to-review"}>
-        <div class="review-session-bar__actions">
-          <Show
-            when={!props.destinationIsHardSelected() || searchOpen()}
-            fallback={
-              <Button
-                variant="surface"
-                size="md"
-                class="review__button review__button--secondary"
-                onClick={() => setSearchOpen(true)}
-              >
-                Change destination
-              </Button>
-            }
-          >
-            <SearchableCombobox
-              options={destinationOptions()}
-              onChange={(value) => handleDestinationSelect(value)}
-              onOptionSelect={(option) => handleDestinationSelect(option.value)}
-              queryValue={props.destinationQuery()}
-              onQueryChange={props.setDestinationQuery}
-              shouldFilter={false}
-              ariaLabel="Destination page"
-              listboxLabel="Destination page options"
+          <div class="review-session-bar__search">
+            <span class="review-session-bar__search-icon" aria-hidden="true">
+              <Search16Icon width="14" height="14" />
+            </span>
+            <TextField
+              aria-label="Destination page"
+              type="text"
+              value={localDestinationQuery()}
+              onInput={(event) => {
+                const nextQuery = event.currentTarget.value;
+                setLocalDestinationQuery(nextQuery);
+                startDestinationTransition(() => {
+                  props.setDestinationQuery(nextQuery);
+                });
+              }}
+              size="md"
+              font="body"
+              class="review-session-bar__search-input"
+              data-pending={isDestinationTransitionPending() ? "" : undefined}
+              autocomplete="off"
+              spellcheck={false}
+              autocapitalize="off"
+              autocorrect="off"
               placeholder="Search or create a page..."
-              noResultsLabel="No matches"
-              variant="review"
-              class="review-session-bar__search"
-              iconClass="review-session-bar__search-icon"
-              icon={<Search16Icon width="14" height="14" />}
             />
-          </Show>
-          <Button
-            variant="primary"
-            size="md"
-            class="review__button review__button--primary"
-            disabled={!props.canCompleteReview()}
-            onClick={() => props.onCompleteReview()}
+          </div>
+
+          <div
+            class="review-session-bar__suggestions"
+            data-pending={isDestinationTransitionPending() ? "" : undefined}
           >
-            Complete Review
-          </Button>
+            <div class="review-session-bar__suggestions-header">
+              <span class="review-session-bar__suggestions-title">
+                {suggestionHeading()}
+              </span>
+            </div>
+            <Show
+              when={destinationListItems().length > 0}
+              fallback={
+                <div class="review-session-bar__suggestions-empty">
+                  Search for a page above or create a new destination.
+                </div>
+              }
+            >
+              <div
+                class="review-session-bar__suggestion-list"
+                role="listbox"
+                aria-label="Destination page options"
+              >
+                <For each={destinationListItems()}>
+                  {(item) => (
+                    <button
+                      type="button"
+                      role="option"
+                      class="review-session-bar__suggestion"
+                      aria-label={
+                        item.kind === "create"
+                          ? item.title
+                          : props.destinationQuery().trim().length > 0
+                            ? `Open ${item.title}`
+                            : item.title
+                      }
+                      onClick={() => {
+                        if (item.kind === "create") {
+                          void props.onCreateDestination();
+                          return;
+                        }
+                        void props.onOpenDestination(item.pageUid);
+                      }}
+                    >
+                      <div class="review-session-bar__suggestion-row">
+                        <span class="review-session-bar__suggestion-title">
+                          {item.title}
+                        </span>
+                        <span class="review-session-bar__suggestion-provider">
+                          {item.providerLabel}
+                        </span>
+                      </div>
+                      <div class="review-session-bar__suggestion-reason">
+                        {item.reason}
+                      </div>
+                      <Show when={item.kind === "page" && item.snippet}>
+                        <div class="review-session-bar__suggestion-snippet">
+                          {item.kind === "page" ? item.snippet : null}
+                        </div>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
         </div>
       </Show>
     </header>

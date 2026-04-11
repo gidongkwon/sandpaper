@@ -397,6 +397,14 @@ export const EditorPane = (props: EditorPaneProps) => {
   const isSuggestionPopoverFocus = () =>
     document.activeElement instanceof Element &&
     document.activeElement.closest("[data-editor-suggestion-popover='true']");
+  const focusWikilinkSuggestions = () => {
+    const listbox = document.querySelector(
+      ".wikilink-menu [role='listbox']"
+    ) as HTMLElement | null;
+    if (!listbox) return false;
+    listbox.focus();
+    return document.activeElement === listbox;
+  };
   const [dragBox, setDragBox] = createSignal<{
     left: number;
     top: number;
@@ -2720,6 +2728,8 @@ export const EditorPane = (props: EditorPaneProps) => {
     const atEnd =
       target.selectionStart === target.value.length &&
       target.selectionEnd === target.value.length;
+    const activeWikilinkMenu =
+      wikilinkMenu().open && wikilinkMenu().blockId === block.id;
 
     if (isMoveShortcut(event)) {
       if (!selectionRange()) {
@@ -2769,6 +2779,15 @@ export const EditorPane = (props: EditorPaneProps) => {
       event.preventDefault();
       recordLatency("delete");
       removeBlockAt(index);
+      return;
+    }
+
+    if (
+      activeWikilinkMenu &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
+    ) {
+      event.preventDefault();
+      focusWikilinkSuggestions();
       return;
     }
 

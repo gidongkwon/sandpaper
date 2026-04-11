@@ -43,6 +43,14 @@ export type DestinationRecommendation = {
   provider: "heuristic" | "ai";
 };
 
+export type ReviewDestinationSuggestion = {
+  page_uid: PageId;
+  title: string;
+  snippet: string | null;
+  reason: string;
+  provider: "heuristic" | "rag";
+};
+
 export type ReviewThreadArchiveRecord = {
   thread_id: string;
   destination_page_uid: PageId;

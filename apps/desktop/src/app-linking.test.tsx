@@ -134,6 +134,80 @@ describe("App linking UX", () => {
     expect(getPageOption("Project Orbit")).toBeInTheDocument();
   });
 
+  it("keeps editor focus while wikilink suggestions are open", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const displayText = await screen.findByText("Sandpaper outline prototype", {
+      selector: ".block__display span"
+    });
+    const block = displayText.closest(".block");
+    expect(block).not.toBeNull();
+    const firstInput = block?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+
+    await user.click(displayText.closest(".block__display") as HTMLElement);
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("data-block-id")).toBe(blockId);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "[[" } });
+    await screen.findByRole("listbox", {
+      name: /wikilink suggestions/i
+    });
+
+    expect(document.activeElement?.getAttribute("data-block-id")).toBe(blockId);
+    await user.keyboard("Pro");
+    expect(getInput()?.value).toBe("[[Pro");
+  });
+
+  it("moves focus to wikilink suggestions on arrow navigation", async () => {
+    const user = userEvent.setup();
+    render(() => <App />);
+    await screen.findByText(/saved/i);
+    const displayText = await screen.findByText("Sandpaper outline prototype", {
+      selector: ".block__display span"
+    });
+    const block = displayText.closest(".block");
+    expect(block).not.toBeNull();
+    const firstInput = block?.querySelector(
+      'textarea[data-block-id]'
+    ) as HTMLTextAreaElement | null;
+    expect(firstInput).not.toBeNull();
+    if (!firstInput) return;
+    const blockId = firstInput.dataset.blockId;
+    expect(blockId).toBeTruthy();
+    if (!blockId) return;
+    const getInput = () =>
+      document.querySelector(
+        `textarea[data-block-id="${blockId}"]`
+      ) as HTMLTextAreaElement | null;
+
+    await user.click(displayText.closest(".block__display") as HTMLElement);
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute("data-block-id")).toBe(blockId);
+    });
+
+    fireEvent.input(getInput() as HTMLTextAreaElement, { target: { value: "[[" } });
+    const menu = await screen.findByRole("listbox", {
+      name: /wikilink suggestions/i
+    });
+
+    fireEvent.keyDown(getInput() as HTMLTextAreaElement, { key: "ArrowDown" });
+    expect(menu.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.getAttribute("role")).toBe("option");
+  });
+
   it("updates wikilinks when renaming a page", async () => {
     const user = userEvent.setup();
     render(() => <App />);

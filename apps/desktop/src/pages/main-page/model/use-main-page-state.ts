@@ -1,6 +1,7 @@
 import {
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   on,
   onCleanup,
@@ -30,11 +31,12 @@ import type {
   PluginRenderer
 } from "../../../entities/plugin/model/plugin-types";
 import type {
+  ReviewDestinationSuggestion,
   ReviewQueueItem,
   ReviewQueueSummary,
-  ReviewSessionState
+  ReviewSessionState,
+  ReviewThread
 } from "../../../entities/review/model/review-types";
-import type { ReviewThread } from "../../../entities/review/model/review-types";
 import type { VaultRecord } from "../../../entities/vault/model/vault-types";
 import { importImageAssetFile } from "../../../shared/lib/assets/import-image-asset";
 import type { AnchorRect } from "../../../shared/model/position";
@@ -86,7 +88,12 @@ import {
   writeLocalStorage
 } from "../../../shared/lib/storage/safe-local-storage";
 import { createReviewPageHash } from "./review-session-hash";
-import { getReviewDestinationRecommendations } from "./review-destination-recommender";
+import {
+  getFallbackReviewDestinationSuggestions,
+  getReviewDestinationRecommendations,
+  getReviewDestinationSuggestionsFromRecommendations,
+  getReviewDestinationSuggestionsFromSearchHits
+} from "./review-destination-recommender";
 
 type RagStatusPayload = {
   index_exists: boolean;
@@ -213,6 +220,17 @@ const summarizeCaptureBlocks = (blocks: Block[]) => {
     return imageCount === 1 ? "1 image" : `${imageCount} images`;
   }
   return blocks[0]?.text.trim() || "Untitled capture";
+};
+
+const summarizePageBlocksForSuggestion = (blocks: Block[]) => {
+  const firstText = blocks
+    .find((block) => {
+      const text = block.text.trim();
+      return text.length > 0 && resolveBlockType(block) !== "image";
+    })
+    ?.text.trim();
+  if (!firstText) return "No saved content yet.";
+  return firstText.length > 120 ? `${firstText.slice(0, 117).trimEnd()}...` : firstText;
 };
 
 const buildCaptureBatchEntries = (
@@ -423,6 +441,15 @@ const normalizeStoredReviewThread = (value: unknown): ReviewThread | null => {
       typeof candidate.destination_title === "string" ? candidate.destination_title : undefined,
     archived_at: typeof candidate.archived_at === "number" ? candidate.archived_at : undefined
   };
+};
+
+type RagSearchHitPayload = {
+  page_uid: string;
+  block_uid: string;
+  chunk_id: string;
+  title: string;
+  breadcrumb?: string | null;
+  snippet: string;
 };
 
 const readStoredArchivedReviewThreads = (key: string) => {
@@ -2239,6 +2266,100 @@ export const createMainPageState = () => {
     reviewDestinationSelected() ? pageTitle() : null
   );
 
+  const reviewDestinationSuggestionQuery = createMemo(() => {
+    const explicitQuery = reviewDestinationQuery().trim();
+    if (explicitQuery) return explicitQuery;
+    const thread = activeReviewThread();
+    if (!thread) return "";
+    return thread.entries
+      .map((entry) => entry.text.trim())
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 400);
+  });
+
+  const [reviewDestinationRagSuggestions] = createResource(
+    () => ({
+      enabled:
+        isTauri() &&
+        mode() === "review" &&
+        reviewSession().tab === "to-review" &&
+        activeReviewThread()?.id !== undefined,
+      query: reviewDestinationSuggestionQuery(),
+      pageKey: visiblePages()
+        .map((page) => `${page.uid}:${page.title}`)
+        .join("|")
+    }),
+    async ({ enabled, query }) => {
+      if (!enabled) return [] as ReviewDestinationSuggestion[];
+      const trimmed = query.trim();
+      if (!trimmed) return [] as ReviewDestinationSuggestion[];
+      try {
+        const hits = (await invoke("rag_search_hybrid", {
+          payload: {
+            query: trimmed,
+            limit: 12
+          }
+        })) as RagSearchHitPayload[];
+        return getReviewDestinationSuggestionsFromSearchHits(
+          hits,
+          visiblePages()
+        );
+      } catch (error) {
+        console.error("Failed to load review destination suggestions", error);
+        return [] as ReviewDestinationSuggestion[];
+      }
+    },
+    { initialValue: [] as ReviewDestinationSuggestion[] }
+  );
+
+  const reviewDestinationSuggestions = createMemo<ReviewDestinationSuggestion[]>(() => {
+    const query = reviewDestinationQuery().trim();
+    const remoteSuggestions = reviewDestinationRagSuggestions();
+    if (remoteSuggestions.length > 0) return remoteSuggestions;
+
+    if (query.length > 0) {
+      const normalizedQuery = resolvePageUid(query);
+      return reviewDestinationMatches()
+        .slice(0, 6)
+        .map((page) => ({
+          page_uid: page.uid,
+          title: page.title,
+          snippet: null,
+          reason:
+            resolvePageUid(page.title) === normalizedQuery ||
+            resolvePageUid(page.uid) === normalizedQuery
+              ? "Exact title match"
+              : "Matches page title",
+          provider: "heuristic" as const
+        }));
+    }
+    const heuristicSuggestions = getReviewDestinationSuggestionsFromRecommendations(
+      reviewSession().destination_recommendations
+    );
+    if (heuristicSuggestions.length > 0) return heuristicSuggestions;
+
+    const pagePreviews = Object.fromEntries(
+      visiblePages().map((page) => {
+        const normalizedUid = resolvePageUid(page.uid);
+        if (normalizedUid === resolvePageUid(activePageUid())) {
+          return [normalizedUid, summarizePageBlocksForSuggestion(blocks)];
+        }
+        return [
+          normalizedUid,
+          summarizePageBlocksForSuggestion(localPages[normalizedUid]?.blocks ?? [])
+        ];
+      })
+    );
+
+    return getFallbackReviewDestinationSuggestions({
+      pages: visiblePages(),
+      currentPageUid: activePageUid(),
+      recentDestinationPageUids: reviewRecentDestinationPageUids(),
+      previewsByPageUid: pagePreviews
+    });
+  });
+
   const setReviewPendingBaselineFromCurrentPage = () => {
     setReviewPendingBaselineHash(currentReviewPageHash());
     setReviewPendingBaselineSnapshot(currentReviewPageSnapshot());
@@ -2886,6 +3007,7 @@ export const createMainPageState = () => {
         setDestinationQuery: setReviewDestinationQuery,
         destinationMatches: reviewDestinationMatches,
         destinationHasExactMatch: reviewDestinationHasExactMatch,
+        destinationSuggestions: reviewDestinationSuggestions,
         destinationTitle: reviewDestinationTitle,
         destinationPageUid: () => reviewSession().destination_page_uid,
         destinationRecommendations: () => reviewSession().destination_recommendations,

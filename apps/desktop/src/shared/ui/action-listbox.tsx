@@ -17,6 +17,7 @@ type ActionListboxProps<TData> = {
   ariaLabel: string;
   variant?: "default" | "search-history" | "search-results" | "command" | "page-nav";
   class?: string;
+  tabIndex?: number;
   selectedValue?: string | null;
   itemClass?: string | ((option: ActionListboxOption<TData>) => string);
   itemLabelClass?: string;
@@ -120,6 +121,7 @@ export const ActionListbox = <TData,>(props: ActionListboxProps<TData>) => {
         optionDisabled="disabled"
         onChange={handleChange}
         aria-label={props.ariaLabel}
+        tabIndex={props.tabIndex}
         class={cx(actionListboxVariants({ variant: variant() }), props.class)}
         renderItem={(item) => (
           <Listbox.Item

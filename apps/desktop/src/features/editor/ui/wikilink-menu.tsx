@@ -63,6 +63,7 @@ export const WikilinkMenu = (props: WikilinkMenuProps) => {
         ariaLabel="Wikilink suggestions"
         variant="command"
         class="wikilink-menu__options"
+        tabIndex={0}
         itemClass={(option) =>
           option.data.kind === "create"
             ? "wikilink-menu__item wikilink-menu__item--create"

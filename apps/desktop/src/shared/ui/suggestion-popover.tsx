@@ -38,6 +38,12 @@ export const SuggestionPopover = (props: SuggestionPopoverProps) => {
             <Popover.Content
               class={`suggestion-popover ${props.class ?? ""}`.trim()}
               data-editor-suggestion-popover="true"
+              onOpenAutoFocus={(event) => {
+                event.preventDefault();
+              }}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+              }}
             >
               <Show when={props.title}>
                 {(title) => (

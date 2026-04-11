@@ -117,9 +117,14 @@ describe("App modes", () => {
 
     expect(startViewTransition).toHaveBeenCalledTimes(2);
     expect(destinationNote).toHaveAttribute("data-transition-slot", "editor");
-    expect(destinationNote.querySelector(".editor-pane")).toHaveAttribute(
-      "data-transition-slot",
-      "editor"
+    expect(
+      destinationNote.querySelector('input[aria-label="Destination page"]')
+    ).toBeInTheDocument();
+    expect(destinationNote.querySelector(".review-workbench__editor-card")).toBeInTheDocument();
+    expect(destinationNote.querySelector(".editor-pane")).toBeNull();
+    expect(destinationNote.querySelector(".review-session-bar")).toHaveAttribute(
+      "data-mode",
+      "select"
     );
     expect(reviewSurfaceBody).toHaveAttribute("data-transition-slot", "capture");
 

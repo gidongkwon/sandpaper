@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PageSummary } from "../../../entities/page/model/page-types";
 import type { ReviewThread } from "../../../entities/review/model/review-types";
-import { getReviewDestinationRecommendations } from "./review-destination-recommender";
+import {
+  getFallbackReviewDestinationSuggestions,
+  getReviewDestinationRecommendations,
+  getReviewDestinationSuggestionsFromRecommendations,
+  getReviewDestinationSuggestionsFromSearchHits
+} from "./review-destination-recommender";
 
 const makeThread = (entries: string[]): ReviewThread => ({
   id: "thread-1",
@@ -84,5 +89,106 @@ describe("review destination recommender", () => {
     });
 
     expect(recommendations).toHaveLength(5);
+  });
+
+  it("maps heuristic recommendations into destination suggestions", () => {
+    const suggestions = getReviewDestinationSuggestionsFromRecommendations([
+      {
+        page_uid: "project-atlas",
+        title: "Project Atlas",
+        score: 42,
+        reasons: ["Referenced by wikilink"],
+        provider: "heuristic"
+      }
+    ]);
+
+    expect(suggestions).toEqual([
+      {
+        page_uid: "project-atlas",
+        title: "Project Atlas",
+        snippet: null,
+        reason: "Referenced by wikilink",
+        provider: "heuristic"
+      }
+    ]);
+  });
+
+  it("groups rag hits by visible page and keeps the first snippet", () => {
+    const suggestions = getReviewDestinationSuggestionsFromSearchHits(
+      [
+        {
+          page_uid: "project-atlas",
+          title: "Project Atlas",
+          breadcrumb: "Projects",
+          snippet: "Atlas launch checklist"
+        },
+        {
+          page_uid: "project-atlas",
+          title: "Project Atlas",
+          breadcrumb: "Projects",
+          snippet: "Later duplicate"
+        },
+        {
+          page_uid: "systems-design",
+          title: "Systems Design",
+          snippet: "Cache invalidation notes"
+        }
+      ],
+      pages
+    );
+
+    expect(suggestions).toEqual([
+      {
+        page_uid: "project-atlas",
+        title: "Project Atlas",
+        snippet: "Atlas launch checklist",
+        reason: "Projects",
+        provider: "rag"
+      },
+      {
+        page_uid: "systems-design",
+        title: "Systems Design",
+        snippet: "Cache invalidation notes",
+        reason: "RAG similarity match",
+        provider: "rag"
+      }
+    ]);
+  });
+
+  it("provides current and recent pages as fallback suggestions", () => {
+    const suggestions = getFallbackReviewDestinationSuggestions({
+      pages,
+      currentPageUid: "meeting-notes",
+      recentDestinationPageUids: ["reading-list", "project-atlas"],
+      previewsByPageUid: {
+        "meeting-notes": "Notes from the latest sync meeting",
+        "reading-list": "Books and papers to review next",
+        "project-atlas": "Launch milestones and blockers"
+      }
+    });
+
+    expect(suggestions.slice(0, 3)).toEqual([
+      {
+        page_uid: "meeting-notes",
+        title: "Meeting Notes",
+        snippet: null,
+        reason: "Notes from the latest sync meeting",
+        provider: "heuristic"
+      },
+      {
+        page_uid: "reading-list",
+        title: "Reading List",
+        snippet: null,
+        reason: "Books and papers to review next",
+        provider: "heuristic"
+      },
+      {
+        page_uid: "project-atlas",
+        title: "Project Atlas",
+        snippet: null,
+        reason: "Launch milestones and blockers",
+        provider: "heuristic"
+      }
+    ]);
   });
 });

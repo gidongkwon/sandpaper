@@ -26,10 +26,10 @@ const getReviewTabControl = (name: "To Review" | "Archived") =>
   screen.getByRole("radio", { name });
 
 const findDestinationSearch = () =>
-  screen.findByRole("combobox", { name: "Destination page" });
+  screen.findByRole("textbox", { name: "Destination page" });
 
 const getDestinationSearch = () =>
-  screen.getByRole("combobox", { name: "Destination page" });
+  screen.getByRole("textbox", { name: "Destination page" });
 
 const getPageOption = (name: string) =>
   within(screen.getByRole("listbox", { name: "Pages" })).getByRole("option", {
@@ -463,9 +463,7 @@ describe("App editor UX", () => {
     await user.click(getModeControl("Capture"));
     expect(await screen.findByText("Quick note updated")).toBeInTheDocument();
     await user.click(screen.getByText("Quick note updated"));
-    expect(await screen.findByRole("textbox", { name: "Captured item 1" })).toHaveValue(
-      "Quick note updated"
-    );
+    expect(await screen.findByDisplayValue("Quick note updated")).toBeInTheDocument();
   });
 
   it("stores quick captures in a hidden inbox instead of the active editor page", async () => {
@@ -795,7 +793,7 @@ describe("App editor UX", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows review tabs and keeps the destination editor visible", async () => {
+  it("shows review tabs and keeps the destination selector visible", async () => {
     render(() => <App />);
     const user = userEvent.setup();
     await user.click(getModeControl("Capture"));
@@ -816,7 +814,10 @@ describe("App editor UX", () => {
     expect(
       screen.getByText("Thread root")
     ).toBeInTheDocument();
-    expect(screen.getByText("Home", { selector: ".editor-pane__title" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search or create a page...")).toBeInTheDocument();
+    expect(
+      document.querySelector(".review .editor-pane textarea[data-block-id]")
+    ).toBeNull();
   });
 
   it("uses a full-width split review workspace", async () => {
@@ -936,17 +937,51 @@ describe("App editor UX", () => {
     const destinationPanel = await screen.findByRole("region", {
       name: "Destination note"
     });
-    expect(
-      within(destinationPanel).getByText("Home", {
-        selector: ".editor-pane__title"
-      })
-    ).toBeInTheDocument();
     expect(within(destinationPanel).getByText("Recommended")).toBeInTheDocument();
     expect(
       within(destinationPanel).getByPlaceholderText("Search or create a page...")
     ).toBeInTheDocument();
+    expect(
+      within(destinationPanel).getByRole("option", { name: "Home" })
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(".review .editor-pane textarea[data-block-id]")
+    ).toBeNull();
     expect(getReviewTabControl("To Review")).toBeChecked();
     expect(getReviewTabControl("Archived")).toBeInTheDocument();
+  });
+
+  it("filters destination suggestions inline without rendering a combobox popup", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Thread root");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(getModeControl("Review"));
+
+    expect(screen.queryByRole("combobox", { name: "Destination page" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Refreshing suggestions")).not.toBeInTheDocument();
+
+    const destinationSearch = await findDestinationSearch();
+    const destinationList = await screen.findByRole("listbox", {
+      name: "Destination page options"
+    });
+
+    await user.type(destinationSearch, "Home");
+    expect(within(destinationList).getByRole("option", { name: "Open Home" })).toBeInTheDocument();
+    expect(
+      within(destinationList).queryByRole("option", { name: 'Create "Home"' })
+    ).not.toBeInTheDocument();
+
+    await user.clear(destinationSearch);
+    await user.type(destinationSearch, "Research Note");
+    expect(
+      within(destinationList).getByRole("option", { name: 'Create "Research Note"' })
+    ).toBeInTheDocument();
   });
 
   it("turns a recommended destination into a hard-selected destination after editing", async () => {
@@ -969,11 +1004,16 @@ describe("App editor UX", () => {
       within(destinationPanel).getByPlaceholderText("Search or create a page...")
     ).toBeInTheDocument();
 
-    const editorInput = document.querySelector(
-      ".review .editor-pane textarea[data-block-id]"
-    ) as HTMLTextAreaElement | null;
-    expect(editorInput).not.toBeNull();
-    if (!editorInput) return;
+    await user.click(
+      within(destinationPanel).getByRole("option", { name: /home/i })
+    );
+    const editorInput = await waitFor(() => {
+      const input = document.querySelector(
+        ".review .editor-pane textarea[data-block-id]"
+      ) as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+      return input as HTMLTextAreaElement;
+    });
 
     fireEvent.input(editorInput, {
       target: { value: "Home summary" }
@@ -985,7 +1025,7 @@ describe("App editor UX", () => {
         within(destinationPanel).queryByPlaceholderText("Search or create a page...")
       ).not.toBeInTheDocument();
       expect(
-        within(destinationPanel).getByRole("button", { name: "Change destination" })
+        screen.getByRole("button", { name: "Change Destination" })
       ).toBeInTheDocument();
     });
   });
@@ -1001,6 +1041,12 @@ describe("App editor UX", () => {
     await user.type(captureInput, "Home follow up");
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    await user.click(
+      within(destinationPanel).getByRole("option", { name: /home/i })
+    );
 
     const editorInput = await waitFor(() => {
       const input = document.querySelector(
@@ -1033,6 +1079,8 @@ describe("App editor UX", () => {
     await user.click(getModeControl("Review"));
 
     expect(screen.getByPlaceholderText("Search or create a page...")).toBeInTheDocument();
+    await user.type(await findDestinationSearch(), "Home");
+    await selectDestinationOption(user, "Open Home");
 
     const editorInput = await waitFor(() => {
       const input = document.querySelector(
@@ -1048,8 +1096,73 @@ describe("App editor UX", () => {
 
     await waitFor(() => {
       expect(screen.queryByPlaceholderText("Search or create a page...")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Change destination" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Change Destination" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Complete Review" })).toBeEnabled();
+    });
+  });
+
+  it("toggles the destination panel between editor and selection modes", async () => {
+    render(() => <App />);
+    const user = userEvent.setup();
+    await user.click(getModeControl("Capture"));
+    const captureInput = (await screen.findByPlaceholderText(
+      "Capture a thought, link, or task..."
+    )) as HTMLTextAreaElement;
+
+    await user.type(captureInput, "Home follow up");
+    await user.click(screen.getByRole("button", { name: "Send capture" }));
+    await user.click(getModeControl("Review"));
+
+    const destinationPanel = await screen.findByRole("region", {
+      name: "Destination note"
+    });
+    expect(
+      within(destinationPanel).getByPlaceholderText("Search or create a page...")
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(".review .editor-pane textarea[data-block-id]")
+    ).toBeNull();
+
+    await user.click(
+      within(destinationPanel).getByRole("option", { name: /home/i })
+    );
+    const editorInput = await waitFor(() => {
+      const input = document.querySelector(
+        ".review .editor-pane textarea[data-block-id]"
+      ) as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+      return input as HTMLTextAreaElement;
+    });
+
+    fireEvent.input(editorInput, {
+      target: { value: "Home summary" }
+    });
+
+    await waitFor(() => {
+      expect(
+        within(destinationPanel).queryByPlaceholderText("Search or create a page...")
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Change Destination" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Change Destination" }));
+    expect(screen.getByRole("button", { name: "Cancel Change" })).toBeInTheDocument();
+    expect(
+      within(destinationPanel).getByPlaceholderText("Search or create a page...")
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector(".review .editor-pane textarea[data-block-id]")
+    ).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Cancel Change" }));
+    await waitFor(() => {
+      expect(
+        within(destinationPanel).queryByPlaceholderText("Search or create a page...")
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Change Destination" })).toBeInTheDocument();
+      expect(
+        document.querySelector(".review .editor-pane textarea[data-block-id]")
+      ).not.toBeNull();
     });
   });
 
@@ -1245,7 +1358,7 @@ describe("App editor UX", () => {
       ).toBeEnabled();
     });
 
-    await user.click(screen.getByRole("button", { name: "Change destination" }));
+    await user.click(screen.getByRole("button", { name: "Change Destination" }));
     const destinationSearch = await findDestinationSearch();
     await user.type(destinationSearch, "Research Note");
     await selectDestinationOption(user, 'Create "Research Note"');
@@ -1267,8 +1380,10 @@ describe("App editor UX", () => {
       screen.getByText("Project Atlas", { selector: ".editor-pane__title" })
     ).toBeInTheDocument();
 
-    await user.clear(await findDestinationSearch());
-    await user.type(await findDestinationSearch(), "Research Note");
+    await user.click(screen.getByRole("button", { name: "Change Destination" }));
+    const retryDestinationSearch = await findDestinationSearch();
+    await user.clear(retryDestinationSearch);
+    await user.type(retryDestinationSearch, "Research Note");
     await selectDestinationOption(user, 'Create "Research Note"');
     await user.click(screen.getByRole("button", { name: "Discard and switch" }));
 
@@ -1487,7 +1602,7 @@ describe("App editor UX", () => {
         screen.getByPlaceholderText("Search or create a page...")
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "Change destination" })
+        screen.queryByRole("button", { name: "Change Destination" })
       ).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "Complete Review" })).toBeDisabled();
@@ -1799,9 +1914,7 @@ describe("App editor UX", () => {
       target: { value: "Project Atlas summary" }
     });
 
-    await user.click(
-      within(destinationPanel).getByRole("button", { name: "Complete Review" })
-    );
+    await user.click(screen.getByRole("button", { name: "Complete Review" }));
 
     await waitFor(() => {
       expect(
@@ -1915,9 +2028,7 @@ describe("App editor UX", () => {
     await user.click(screen.getByRole("button", { name: "Send capture" }));
     await user.click(getModeControl("Review"));
 
-    const destinationSearch = await screen.findByRole("combobox", {
-      name: "Destination page"
-    });
+    const destinationSearch = await findDestinationSearch();
     await user.type(destinationSearch, "Home");
     await selectDestinationOption(user, "Open Home");
 
@@ -1932,4 +2043,3 @@ describe("App editor UX", () => {
   });
 
 });
-

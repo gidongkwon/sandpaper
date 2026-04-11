@@ -1,6 +1,7 @@
 import type { PageSummary } from "../../../entities/page/model/page-types";
 import type {
   DestinationRecommendation,
+  ReviewDestinationSuggestion,
   ReviewThread
 } from "../../../entities/review/model/review-types";
 import { normalizePageUid } from "../../../shared/lib/page/normalize-page-uid";
@@ -9,6 +10,20 @@ type ReviewDestinationRecommendationInput = {
   thread: ReviewThread | null;
   pages: PageSummary[];
   recentDestinationPageUids: string[];
+};
+
+type ReviewDestinationSearchHit = {
+  page_uid: string;
+  title: string;
+  breadcrumb?: string | null;
+  snippet: string;
+};
+
+type ReviewDestinationFallbackInput = {
+  pages: PageSummary[];
+  currentPageUid: string | null;
+  recentDestinationPageUids: string[];
+  previewsByPageUid?: Record<string, string | null | undefined>;
 };
 
 const WIKILINK_PATTERN = /\[\[([^[\]]+)\]\]/gu;
@@ -86,4 +101,104 @@ export const getReviewDestinationRecommendations = ({
       return left.title.localeCompare(right.title);
     })
     .slice(0, 5);
+};
+
+export const getReviewDestinationSuggestionsFromRecommendations = (
+  recommendations: DestinationRecommendation[]
+): ReviewDestinationSuggestion[] =>
+  recommendations.map((recommendation) => ({
+    page_uid: recommendation.page_uid,
+    title: recommendation.title,
+    snippet: null,
+    reason: recommendation.reasons[0] ?? "Recommended destination",
+    provider: "heuristic"
+  }));
+
+export const getReviewDestinationSuggestionsFromSearchHits = (
+  hits: ReviewDestinationSearchHit[],
+  pages: PageSummary[]
+): ReviewDestinationSuggestion[] => {
+  const visiblePageByUid = new Map(
+    pages.map((page) => [normalizePageUid(page.uid), page] as const)
+  );
+  const visiblePageByTitle = new Map(
+    pages.map((page) => [normalizePageUid(page.title), page] as const)
+  );
+  const suggestions: ReviewDestinationSuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const hit of hits) {
+    const visiblePage =
+      visiblePageByUid.get(normalizePageUid(hit.page_uid)) ??
+      visiblePageByTitle.get(normalizePageUid(hit.title));
+    if (!visiblePage) continue;
+    const pageUid = normalizePageUid(visiblePage.uid);
+    if (seen.has(pageUid)) continue;
+    seen.add(pageUid);
+    suggestions.push({
+      page_uid: visiblePage.uid,
+      title: visiblePage.title,
+      snippet: hit.snippet.trim() || null,
+      reason: hit.breadcrumb?.trim() || "RAG similarity match",
+      provider: "rag"
+    });
+    if (suggestions.length >= 6) break;
+  }
+
+  return suggestions;
+};
+
+export const getFallbackReviewDestinationSuggestions = ({
+  pages,
+  currentPageUid,
+  recentDestinationPageUids,
+  previewsByPageUid = {}
+}: ReviewDestinationFallbackInput): ReviewDestinationSuggestion[] => {
+  const pageByUid = new Map(
+    pages.map((page) => [normalizePageUid(page.uid), page] as const)
+  );
+  const suggestions: ReviewDestinationSuggestion[] = [];
+  const seen = new Set<string>();
+
+  const pushSuggestion = (
+    page: PageSummary | undefined,
+    fallbackReason: string,
+    provider: ReviewDestinationSuggestion["provider"] = "heuristic"
+  ) => {
+    if (!page) return;
+    const normalizedUid = normalizePageUid(page.uid);
+    if (seen.has(normalizedUid)) return;
+    seen.add(normalizedUid);
+    suggestions.push({
+      page_uid: page.uid,
+      title: page.title,
+      snippet: null,
+      reason:
+        previewsByPageUid[normalizedUid]?.trim() ||
+        previewsByPageUid[page.uid]?.trim() ||
+        fallbackReason,
+      provider
+    });
+  };
+
+  if (currentPageUid) {
+    pushSuggestion(
+      pageByUid.get(normalizePageUid(currentPageUid)),
+      "Current page"
+    );
+  }
+
+  for (const pageUid of recentDestinationPageUids) {
+    pushSuggestion(
+      pageByUid.get(normalizePageUid(pageUid)),
+      "Recent review destination"
+    );
+  }
+
+  for (const page of pages) {
+    pushSuggestion(page, "Available page");
+    if (suggestions.length >= 6) break;
+  }
+
+  return suggestions;
 };
