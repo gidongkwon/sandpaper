@@ -3,7 +3,7 @@ import {
   readAppSourceFile,
   readAppStyleFile,
   readAppStyles
-} from "./test/read-app-styles";
+} from "./read-app-styles";
 
 describe("App style structure", () => {
   it("loads the layered styles entrypoint from app.tsx", () => {

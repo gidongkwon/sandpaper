@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-import App from "./app/app";
+import App from "../app/app";
 
 const getModeControl = (name: "Capture" | "Review" | "Refine" | "Editor") =>
   screen.getByRole("radio", { name: name === "Review" ? "Refine" : name });

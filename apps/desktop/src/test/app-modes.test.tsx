@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-import App from "./app/app";
+import App from "../app/app";
 
 const REFINE_MODE_LABEL = "Refine";
 
@@ -219,9 +219,7 @@ describe("App modes", () => {
     expect(capturedItemDisplay).not.toBeNull();
     if (!capturedItemDisplay) return;
     await user.click(capturedItemDisplay);
-    const capturedItem = (await screen.findByRole("textbox", {
-      name: "Captured item 1"
-    })) as HTMLTextAreaElement;
+    const capturedItem = (await screen.findByDisplayValue(/Line 1/u)) as HTMLTextAreaElement;
     expect(capturedItem.value).toContain("Line 1");
     expect(capturedItem.value).toContain("Line 2");
     expect(capturedItem.value).toContain("\n");

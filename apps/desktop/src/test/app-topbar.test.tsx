@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-import App from "./app/app";
+import App from "../app/app";
 
 const clearStorage = () => {
   const storage = window.localStorage;

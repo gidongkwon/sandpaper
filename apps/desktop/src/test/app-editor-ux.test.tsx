@@ -15,9 +15,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-import App from "./app/app";
-import { formatRefineDate as formatReviewDate } from "./pages/main-page/model/refine-utils";
-import { clearResolvedAssetSrcCache } from "./shared/lib/assets/resolve-asset-src";
+import App from "../app/app";
+import { formatRefineDate as formatReviewDate } from "../pages/main-page/model/refine-utils";
+import { clearResolvedAssetSrcCache } from "../shared/lib/assets/resolve-asset-src";
 
 const REFINE_MODE_LABEL = "Refine";
 const TO_REFINE_TAB_LABEL = "To Refine";

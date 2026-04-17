@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readAppStyles } from "./test/read-app-styles";
+import { readAppStyles } from "./read-app-styles";
 
 const getFontSize = (css: string, selector: string) => {
   const pattern = /([^{}]+)\{([^{}]*?)\}/gu;

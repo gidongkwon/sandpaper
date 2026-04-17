@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
   };
 });
 
-vi.mock("./shared/lib/markdown/shiki-highlight", () => ({
+vi.mock("../shared/lib/markdown/shiki-highlight", () => ({
   highlightCodeWithShiki: vi.fn(async (code: string, lang: string) => {
     const lines = code.split(/\r?\n/u);
     const renderedLines = lines
@@ -27,7 +27,7 @@ vi.mock("./shared/lib/markdown/shiki-highlight", () => ({
   })
 }));
 
-import App from "./app/app";
+import App from "../app/app";
 
 describe("App code block preview", () => {
   beforeEach(() => {

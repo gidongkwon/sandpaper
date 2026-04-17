@@ -22,7 +22,7 @@ vi.mock("mermaid", () => ({
   default: mermaidMocks
 }));
 
-import App from "./app/app";
+import App from "../app/app";
 
 describe("App diagram preview", () => {
   beforeEach(() => {

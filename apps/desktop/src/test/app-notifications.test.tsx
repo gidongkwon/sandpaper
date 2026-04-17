@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@solidjs/testing-library";
+import { fireEvent, render, screen, within } from "@solidjs/testing-library";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -14,9 +14,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => {
 });
 
 import { invoke } from "@tauri-apps/api/core";
-import App from "./app/app";
+import App from "../app/app";
 
-describe("Sync activity log", () => {
+describe("Notifications panel", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(invoke).mockReset();
@@ -28,24 +28,7 @@ describe("Sync activity log", () => {
     vi.restoreAllMocks();
   });
 
-  it("records push and pull activity and allows copying", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo) => {
-      const url = typeof input === "string" ? input : input.url;
-      if (url.includes("/v1/ops/push")) {
-        return {
-          ok: true,
-          json: async () => ({ accepted: 1, cursor: 1 })
-        } as Response;
-      }
-      if (url.includes("/v1/ops/pull")) {
-        return {
-          ok: true,
-          json: async () => ({ ops: [], nextCursor: 0 })
-        } as Response;
-      }
-      return { ok: true, json: async () => ({}) } as Response;
-    }));
-
+  it("queues plugin errors for later review", async () => {
     vi.mocked(invoke).mockImplementation((command) => {
       if (command === "list_vaults") {
         return Promise.resolve({
@@ -67,51 +50,25 @@ describe("Sync activity log", () => {
       if (command === "list_page_wikilink_backlinks") return Promise.resolve([]);
       if (command === "list_plugins_command") return Promise.resolve([]);
       if (command === "load_plugins_command") {
-        return Promise.resolve({
-          loaded: [],
-          blocked: [],
-          commands: [],
-          panels: [],
-          toolbar_actions: [],
-          renderers: []
-        });
+        return Promise.reject(new Error("runtime failed"));
       }
       if (command === "vault_key_status") {
         return Promise.resolve({
-          configured: true,
-          kdf: "pbkdf2-sha256",
-          iterations: 1,
-          salt_b64: ""
+          configured: false,
+          kdf: null,
+          iterations: null,
+          salt_b64: null
         });
       }
       if (command === "get_sync_config") {
         return Promise.resolve({
-          server_url: "https://sync.local",
-          vault_id: "vault-1",
-          device_id: "device-1",
-          key_fingerprint: "abc",
+          server_url: null,
+          vault_id: null,
+          device_id: null,
+          key_fingerprint: null,
           last_push_cursor: 0,
           last_pull_cursor: 0
         });
-      }
-      if (command === "list_sync_ops_since") {
-        return Promise.resolve([
-          { cursor: 1, op_id: "op-1", payload: "{}" }
-        ]);
-      }
-      if (command === "set_sync_cursors") {
-        return Promise.resolve({
-          server_url: "https://sync.local",
-          vault_id: "vault-1",
-          device_id: "device-1",
-          key_fingerprint: "abc",
-          last_push_cursor: 1,
-          last_pull_cursor: 0
-        });
-      }
-      if (command === "store_sync_inbox_ops") return Promise.resolve(null);
-      if (command === "apply_sync_inbox") {
-        return Promise.resolve({ pages: [], applied: 0 });
       }
       if (command === "refine_queue_summary") {
         return Promise.resolve({ due_count: 0, next_due_at: null });
@@ -128,15 +85,13 @@ describe("Sync activity log", () => {
     render(() => <App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
-    fireEvent.click(screen.getByRole("tab", { name: "Sync" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("button", { name: /reload plugins/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open notifications/i }));
 
-    const syncNow = screen.getByRole("button", { name: /sync now/i });
-    fireEvent.click(syncNow);
-
-    expect(await screen.findByText(/push/i)).toBeInTheDocument();
-    expect(await screen.findByText(/pull/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copy log/i })).toBeInTheDocument();
-
-    vi.unstubAllGlobals();
+    const dialog = await screen.findByRole("dialog", { name: /notifications/i });
+    expect(dialog).toBeInTheDocument();
+    expect(await screen.findByText(/plugin error/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/runtime failed/i)).toBeInTheDocument();
   });
 });
